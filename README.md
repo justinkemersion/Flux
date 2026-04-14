@@ -1,288 +1,290 @@
 # Flux
 
-**Flux** is a slim, high-performance **Backend-as-a-Service (BaaS)** and **Database-as-a-Service (DBaaS)** platform. Each *project* is a self-contained **tenant bucket**: a dedicated **PostgreSQL** instance with durable storage and a **PostgREST** front door that turns your schema into a **REST API** without hand-written CRUD servers.
+**Flux** is a slim **Backend-as-a-Service (BaaS)** / **Database-as-a-Service (DBaaS)** platform. Each **project** is an isolated **tenant bucket**: a dedicated **PostgreSQL** container with durable storage and a **PostgREST** container that exposes your `api` schema as a **REST API** without hand-written CRUD servers.
 
-The long-term vision is to make it trivial to stand up isolated backends for **multi-tenant web applications**, then layer on **dashboards**, **routing**, **authentication**, and **billing** (e.g. **Stripe**) without operating a full managed control plane like Supabase at day one. Flux optimizes for **small teams**, **predictable resource use**, and **minimal moving parts**—Docker on a single host (or a small fleet) instead of a sprawling Kubernetes estate.
-
----
-
-## High-level intent
-
-| Goal | How Flux approaches it |
-|------|-------------------------|
-| **Isolation** | One Postgres container + one PostgREST container per project, on a shared user-defined bridge network, with named volumes for data. |
-| **Speed to API** | PostgREST reflects the `api` schema over HTTP as soon as Postgres and roles exist. |
-| **Operator ergonomics** | `@flux/core` encapsulates Docker + DB wiring; `@flux/cli` exposes a small verb set for day-two operations. |
-| **Path to product** | Same primitives can later be driven by a **Next.js dashboard**, **Traefik** host rules, and an **auth** layer—without re-architecting the tenant model. |
-
-Flux is deliberately **not** a hosted multi-region PaaS in v1. It is an **engineering-first control plane**: you run Docker where you want tenants to live, and Flux orchestrates containers, networks, volumes, and bootstrap SQL in a repeatable way.
+The goal is to make it straightforward to run **many isolated backends** on a **Docker host**—with a **control-plane** (CLI + optional Next.js dashboard) that provisions networks, containers, volumes, and bootstrap SQL in a repeatable way. Long-term, you can layer **auth**, **billing**, and **routing** without adopting a full managed platform like Supabase on day one.
 
 ---
 
-## The Lego blocks (tech stack)
+## Table of contents
 
-### pnpm workspaces
+- [What ships in this repo](#what-ships-in-this-repo)
+- [Architecture at a glance](#architecture-at-a-glance)
+- [Monorepo layout](#monorepo-layout)
+- [Core concepts](#core-concepts)
+- [Packages deep dive](#packages-deep-dive)
+- [Dashboard (`apps/dashboard`)](#dashboard-appsdashboard)
+- [Prerequisites](#prerequisites)
+- [Quick start](#quick-start)
+- [End-to-end validation](#end-to-end-validation)
+- [CLI reference](#cli-reference)
+- [Security and operations](#security-and-operations)
+- [Docs and guides](#docs-and-guides)
+- [Roadmap](#roadmap)
+- [Contributing mindset](#contributing-mindset)
 
-The repository is a **pnpm monorepo** (`pnpm-workspace.yaml` includes `packages/*` and `apps/*`). Workspace packages share a single lockfile, fast installs, and `workspace:*` links between `@flux/core`, `@flux/cli`, and future `apps/*` without publishing to npm for local development.
+---
 
-**Why:** strict boundaries between **orchestration logic** (`@flux/core`), **operator UX** (`@flux/cli`), and **product surfaces** (dashboard, marketing, etc.) while keeping one TypeScript toolchain and one `pnpm install` at the root.
-
-### Docker and dockerode (orchestration without Kubernetes)
-
-**Docker** is the runtime boundary: images, networks, published ports, and volumes. **`dockerode`** is the Node.js client for the Docker Engine API.
-
-**Why not Kubernetes (yet):** Kubernetes excels at fleet scale, RBAC across clusters, and long-running reconcilers—but it carries **control-plane weight**, YAML sprawl, and a learning curve that dominates small projects. Flux targets a **slim** deployment model: a Docker host (VM, bare metal, or a single cloud instance) with the Engine API and socket access. `ProjectManager` in `@flux/core` is the reconciler: idempotent-ish network creation, image pulls, container lifecycle, and volume attachment.
-
-This is a conscious trade-off: you gain **simplicity and debuggability**; you accept **single-host scaling** until you introduce an external scheduler or split the control plane.
-
-### PostgreSQL (`postgres:16-alpine`)
-
-Each tenant gets a **Postgres 16** container (`flux-<slug>-db`). Credentials are generated at provision time; data lives on a **Docker named volume** (`flux-<slug>-db-data`) mounted at `/var/lib/postgresql/data` so restarts and image upgrades do not wipe the database files.
-
-**Why Alpine:** smaller images, faster pulls, fewer packages—aligned with the “slim” mandate.
-
-### PostgREST (`postgrest/postgrest:latest`)
-
-**PostgREST** connects to Postgres with a database role and exposes tables and views in a configured schema as **HTTP resources**. It is the “magic” **on-the-fly REST API**: you evolve the schema (via migrations), and the API surface tracks it—subject to caching behavior (see below).
-
-Flux wires **internal URI** (`PGRST_DB_URI`), **JWT secret**, **`PGRST_DB_SCHEMA=api`**, and **`PGRST_DB_ANON_ROLE=anon`** after bootstrap roles exist.
-
-### Commander, Chalk, and Zod (`@flux/cli`)
+## What ships in this repo
 
 | Piece | Role |
 |-------|------|
-| **Commander** | Subcommands, options, and `--help` for the `flux` CLI. |
-| **Chalk** | Semantic coloring (progress, success, errors) for terminal output. |
-| **Zod** | Present in the CLI package for **runtime validation** of inputs and future structured config; the CLI is structured so flags and payloads can be validated without trusting raw strings alone. |
+| **`@flux/core`** | Docker orchestration: networks, gateway, per-tenant Postgres + PostgREST, bootstrap SQL, migrations, JWT helpers, **environment updates** on the API container. |
+| **`@flux/cli`** | Operator-facing `flux` commands (`create`, `push`, `list`, `start`/`stop`, `nuke`, **`env`**, …). |
+| **`@flux/sdk`** | Small TypeScript client over PostgREST-style HTTP (table queries, anon key headers). |
+| **`apps/dashboard`** | Next.js **control-plane UI**: GitHub sign-in, project list/create, container lifecycle, JWT/Clerk-style secrets, **Stripe** checkout/webhook hooks, all backed by a **`flux-system`** database. |
 
-Together they keep the operator interface **discoverable** and **professional** without pulling in a heavy TUI framework.
-
-### `pg` (node-postgres)
-
-**`pg`** connects from the **host** to the tenant Postgres **published port** (`localhost:<random 5432>`). That path is used for:
-
-- **`BOOTSTRAP_SQL`** during provision (roles, `api` schema, grants).
-- **`executeSql`** for ad-hoc and migration-style SQL pushed from the CLI.
-
-**Why host port:** the control plane runs on the host (Node), not inside the tenant network; connecting via published ports avoids bundling SQL clients into Postgres or PostgREST containers for migrations.
+Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **pnpm** workspaces.
 
 ---
 
-## How it works (the magic)
+## Architecture at a glance
 
-### Boot sequencing
+### Control plane vs data plane
 
-Provisioning is order-sensitive:
+- **Control plane** — Node processes (CLI, Next.js server) that call the Docker API and, for the dashboard, talk to **`flux-system`** Postgres on a published host port. It decides *what* runs, not tenant query traffic at scale.
+- **Data plane** — Each tenant’s **Postgres** (data) and **PostgREST** (HTTP API). App traffic hits PostgREST (via Traefik), not the Next.js app.
 
-1. Ensure **`flux-network`** (user-defined bridge) exists.
-2. Ensure the **data volume** and **container images** (pull if missing).
-3. Create and start **Postgres** with `POSTGRES_PASSWORD`, volume bind, and **random host port** mapping for `5432/tcp`.
-4. **Wait until Postgres accepts connections** before running bootstrap: `waitForPostgresAndRun` loops `pg.Client` connections with **exponential backoff** and a capped attempt count, so first-time data directory initialization does not race PostgREST or bootstrap DDL.
-5. Execute **`BOOTSTRAP_SQL`**: creates schema **`api`**, roles **`authenticator`**, **`anon`**, **`authenticated`**, and grants needed for PostgREST’s role model.
-6. Create and start **PostgREST** with `PGRST_DB_URI` pointing at **`flux-<slug>-db:5432`** on the **same Docker network** (DNS name = container name).
+### Docker resources (names are stable conventions)
 
-PostgREST is started with a **restart policy** so short-lived “DB not ready” failures during startup are absorbed without custom health-check daemons in Node.
+| Resource | Purpose |
+|----------|---------|
+| **`flux-network`** | User-defined bridge (`FLUX_NETWORK_NAME`). Tenant DB + API containers attach here; the **Traefik** gateway uses the same network so it can route to backends by container labels. |
+| **`flux-gateway`** | Traefik (`FLUX_GATEWAY_CONTAINER_NAME`) — Docker provider, read-only socket mount, listens on **host :80**, discovers routers from **labels** on the PostgREST containers. |
+| **`flux-<slug>-db`** | Postgres 16 (Alpine), named volume **`flux-<slug>-db-data`**, published random host port **`5432`** for host-side tools and migrations. |
+| **`flux-<slug>-api`** | PostgREST — **no** random public port; Traefik sends **`http://<slug>.flux.localhost`** to port **3000** inside the network. |
 
-### Internal networking
+Provisioning (`ProjectManager.provisionProject`) ensures the network exists, ensures the gateway image is present and running, creates the volume and Postgres container, runs **`BOOTSTRAP_SQL`**, then creates the PostgREST container with Traefik labels so **`http://<slug>.flux.localhost`** resolves (with `/etc/hosts` or DNS for `*.flux.localhost`).
 
-- **`flux-network`**: all tenant containers attach with `HostConfig.NetworkMode` set to this network.
-- **Postgres ↔ PostgREST**: `PGRST_DB_URI` uses the **internal hostname** `flux-<slug>-db` (Docker’s embedded DNS on user-defined bridges).
-- **Operator ↔ Postgres**: the CLI and `pg` use **`localhost:<published>`** for the mapped `5432/tcp` port so migrations and `executeSql` work from the host.
+### HTTP path to a tenant API
 
-Random host ports (`HostPort: "0"`) avoid collisions between projects and keep the surface area explicit: each tenant’s Postgres and API are reachable on distinct host ports for debugging and local tools.
+1. Client requests **`http://myapp.flux.localhost/...`** (Host header matches Traefik router rule).
+2. **Traefik** on `flux-network` forwards to the **`flux-myapp-api`** container’s port **3000**.
+3. **PostgREST** connects to **`flux-myapp-db:5432`** using **`PGRST_DB_URI`** (internal DNS).
 
-### Schema caching and migrations
+### Schema changes and cache reload
 
-PostgREST **caches schema metadata** for performance. After raw SQL runs (e.g. `flux push`), **`executeSql`** sends **`SIGHUP`** to the **`flux-<slug>-api`** container via Docker’s kill API with `signal: SIGHUP`, which triggers PostgREST to **reload its schema cache** without a full container restart. Missing or stopped API containers result in a **no-op** for the signal step so a successful migration is not failed if PostgREST is absent.
-
-> **Alternative (not implemented by default):** PostgreSQL `NOTIFY` channels can drive reloads when PostgREST is configured to listen—useful at scale. Flux defaults to **SIGHUP** for simplicity and reliability in a slim build.
+After SQL runs from the host (`executeSql`, `importSqlFile`, or `flux push`), Flux runs `NOTIFY pgrst, 'reload schema'` in Postgres, waits briefly, then sends **SIGUSR1** to the **`flux-<slug>-api`** container so PostgREST reloads its schema cache. (This matches PostgREST’s documented signal behavior; do not assume **SIGHUP** for schema cache.)
 
 ---
 
-## Repository layout (current)
+## Monorepo layout
+
+The workspace is defined in **`pnpm-workspace.yaml`** (`packages/*`, `apps/*`). Dependencies use **`workspace:*`** so local packages link without publishing.
 
 | Path | Package | Responsibility |
-|------|---------|----------------|
-| `packages/core` | **`@flux/core`** | `ProjectManager`, Docker orchestration, `BOOTSTRAP_SQL`, `pg` execution, PostgREST reload signaling. |
-| `packages/cli` | **`@flux/cli`** | `flux` CLI entry (`src/index.ts`), Commander + Chalk. |
-| `apps/dashboard` | **Dashboard** | **Next.js** control-plane UI: **Auth.js** (NextAuth v5) with **GitHub OAuth**, **Drizzle ORM** + **`pg`** against the **`flux-system`** Postgres project (provisioned by **`ProjectManager`** from **`@flux/core`**), project APIs, and **PostgREST**-backed tenant URLs. |
+|------|---------|------------------|
+| `packages/core` | **`@flux/core`** | `ProjectManager`, Docker + volume + network + gateway, `BOOTSTRAP_SQL`, `pg` against published ports, PostgREST reload signaling, `setProjectEnv` / `listProjectEnv`, JWT key derivation from `PGRST_JWT_SECRET`. |
+| `packages/cli` | **`@flux/cli`** | `flux` entry (`src/index.ts`), Commander + Chalk, calls into `ProjectManager`. |
+| `packages/sdk` | **`@flux/sdk`** | `createClient`, `FluxClient`, PostgREST-shaped `select`/`insert`/`update`/`delete` + `eq` filters over `fetch`. |
+| `apps/dashboard` | **`dashboard`** (private) | Next.js App Router, Auth.js, Drizzle + `pg` to `flux-system`, API routes under `app/api/*`, Stripe integration, `instrumentation.ts` for DB init. |
+| `docs/guides/` | — | Extra integration guides (e.g. Clerk + PostgREST). |
+
+Root **`package.json`** is minimal; install and scripts are usually run with **`pnpm --filter <name>`** from the repo root.
 
 ---
 
-## Dashboard stack (`apps/dashboard`)
+## Core concepts
 
-The dashboard is the first **product surface** on top of **`@flux/core`**. It uses the same Docker-backed Postgres model as tenants, but reserves the project name **`flux-system`** for the **control-plane database** that stores dashboard users (Auth.js tables), OAuth accounts, optional sessions/verification tokens, and **project ownership** metadata (`userId` on each row in `projects`).
+### Project name and slug
+
+User-facing names are **slugified** for container and volume names (lowercase, hyphen-separated). The CLI and dashboard accept display names; Docker objects always use the slug (e.g. **`my-app`** → `flux-my-app-db`).
+
+### Bootstrap SQL (`BOOTSTRAP_SQL`)
+
+On first connection to a new tenant DB, Flux runs SQL that:
+
+- Creates schema **`api`** (PostgREST exposes this via `PGRST_DB_SCHEMA`).
+- Creates roles **`authenticator`**, **`anon`**, **`authenticated`** and grants appropriate privileges so PostgREST’s JWT role model works.
+
+### JWTs and keys
+
+PostgREST verifies JWTs with **`PGRST_JWT_SECRET`**. The dashboard (and `getProjectKeys` in core) can derive **anon** and **service_role**-style keys from the same secret for client tooling. You can align this secret with an external issuer (e.g. Clerk); see **`docs/guides/clerk-integration.md`**.
+
+### Tenant environment variables (“project bucket”)
+
+The **PostgREST container** carries all runtime env: built-in `PGRST_*` variables plus **custom** keys (Stripe, public URLs, etc.). **`ProjectManager.setProjectEnv`** merges new keys into the existing container env and **recreates** the API container (same image, Traefik labels, network, limits) so changes apply. The CLI exposes this as **`flux env set`** / **`flux env list`** (list hides values for sensitive key names—see `isFluxSensitiveEnvKey` in `@flux/core`).
+
+---
+
+## Packages deep dive
+
+### `@flux/core` (`packages/core`)
+
+- **Exports** — `ProjectManager`, `FLUX_NETWORK_NAME`, `FLUX_GATEWAY_CONTAINER_NAME`, `FLUX_DOCKER_IMAGES`, `fluxApiUrlForSlug`, `BOOTSTRAP_SQL`, helpers like `isFluxSensitiveEnvKey`, and types (`FluxProject`, `FluxProjectSummary`, `FluxProjectEnvEntry`, …).
+- **Docker** — `dockerode`; pulls with stall detection; idempotent network/gateway provisioning.
+- **Typical flows** — `provisionProject`, `listProjects`, `stopProject` / `startProject`, `nukeProject`, `getPostgresHostConnectionString`, `executeSql`, `importSqlFile`, `updatePostgrestJwtSecret` (delegates to `setProjectEnv`), `setProjectEnv`, `listProjectEnv`, `getProjectKeys`.
+
+### `@flux/cli` (`packages/cli`)
+
+- Entry: **`packages/cli/bin/flux`** (runs the TypeScript entry via `tsx` for development).
+- Uses **Commander** for subcommands, **Chalk** for output.
+
+### `@flux/sdk` (`packages/sdk`)
+
+- Minimal **PostgREST client**: base URL + optional anon JWT as `apikey` / `Authorization` bearer.
+- **Not** a full query builder—enough for app code to hit tables in the `api` schema with filters like `eq`.
+
+---
+
+## Dashboard (`apps/dashboard`)
+
+The dashboard is the first **product UI** on top of `@flux/core`.
 
 | Piece | Role |
 |-------|------|
-| **Next.js (App Router)** | Server components, route handlers (`/api/*`), and the `proxy.ts` middleware entry used by this repo’s Next.js version for **auth-gated** `/projects` routes. |
-| **Auth.js / `next-auth` v5** | GitHub sign-in, **JWT session strategy** (so Edge middleware never talks to Postgres or Docker), and the **`@auth/drizzle-adapter`** for persisting users and linked accounts in **`flux-system`**. |
-| **Drizzle ORM** | Typed schema in `apps/dashboard/src/db/schema.ts` and queries via `drizzle-orm` + **`drizzle-kit`** (dev) for future migrations if you adopt them. |
-| **`pg` (node-postgres)** | Connection pool to **`flux-system`** after `ProjectManager` resolves the published host port. |
-| **`ProjectManager`** | **`provisionProject("flux-system")`** (or start if it already exists) before DDL and Drizzle attach—same primitive as tenant projects. |
+| **Next.js (App Router)** | UI under `app/`, Route Handlers under `app/api/`. |
+| **`instrumentation.ts`** | On Node server start, imports **`initSystemDb()`** — provisions or starts the **`flux-system`** Docker project and ensures Drizzle/Auth tables exist. Logs **`[flux] System DB ready.`** or a clear failure if Docker is unreachable. |
+| **`proxy.ts`** | Wraps **Auth.js** `auth` with a **matcher** for **`/projects/:path*`** (auth protection for the projects area). |
+| **Auth.js (`next-auth` v5)** | GitHub OAuth; sessions persisted via **`@auth/drizzle-adapter`** into **`flux-system`**. |
+| **Drizzle + `pg`** | Schema in `src/db/schema.ts`; migrations can be managed with `drizzle-kit` if you adopt it. |
+| **`@flux/core`** | `getProjectManager()` provisions tenant projects and drives start/stop/JWT/env updates from API routes (`app/api/projects/...`). |
+| **Stripe** | `app/api/billing/checkout` and `app/api/billing/webhook` — billing hooks at the application layer; tenant data still lives in per-project Postgres. |
 
-Environment variables (see also [Auth.js environment variables](https://authjs.dev/getting-started/deployment#environment-variables)):
+### Dashboard environment variables
 
-- **`AUTH_SECRET`** (or **`NEXTAUTH_SECRET`**) — required in production for session signing.
-- **`GITHUB_ID`** / **`GITHUB_SECRET`** (or **`AUTH_GITHUB_ID`** / **`AUTH_GITHUB_SECRET`**) — GitHub OAuth App credentials.
-- **`AUTH_URL`** or **`NEXTAUTH_URL`** — base URL of the dashboard (e.g. `http://localhost:3000`) so OAuth redirects match your GitHub App’s callback URL.
+Typical **`apps/dashboard/.env.local`** (never commit; root `.gitignore` covers `.env*`):
+
+- **`AUTH_SECRET`** (or **`NEXTAUTH_SECRET`**) — session signing.
+- **`GITHUB_ID`** / **`GITHUB_SECRET`** (or **`AUTH_GITHUB_ID`** / **`AUTH_GITHUB_SECRET`**) — GitHub OAuth.
+- **`AUTH_URL`** or **`NEXTAUTH_URL`** — public base URL (e.g. `http://localhost:3000`) for OAuth redirects.
+
+See [Auth.js deployment env](https://authjs.dev/getting-started/deployment#environment-variables) for the full set.
 
 ---
 
 ## Prerequisites
 
-- **Node.js** (LTS or current; repo uses modern ESM + TypeScript).
+- **Node.js** (LTS or current; ESM + strict TypeScript).
 - **pnpm** (see root `packageManager` in `package.json`).
-- **Docker Engine** running locally (or remote socket via `DOCKER_HOST` if you configure dockerode accordingly).
+- **Docker Engine** with the socket available to your user (or **`DOCKER_HOST`** pointing at a remote engine).
 
 ---
 
 ## Quick start
 
 ```bash
-# From repository root
+git clone <repo-url>
+cd flux
 pnpm install
+```
 
-# Run the CLI (from the cli package)
+Run the CLI from the package (or link/use the `flux` bin):
+
+```bash
 cd packages/cli
 pnpm run flux -- --help
 ```
 
-You can also use the **`flux`** bin after linking (`packages/cli/bin/flux` invokes `tsx` on `src/index.ts`).
+Run the dashboard:
+
+```bash
+pnpm --filter dashboard dev
+```
 
 ---
 
-## Testing everything (CLI + dashboard)
+## End-to-end validation
 
-Use this workflow to validate **Docker orchestration**, the **CLI**, and the **Next.js dashboard** with **GitHub OAuth** and **project APIs**. All steps assume a Unix-like shell and a running **Docker Engine** (socket available to your user, or **`DOCKER_HOST`** set for a remote engine).
+Assumes Docker is running.
 
-### 1. Install and sanity-check the workspace
+### 1. Typecheck (optional)
 
 ```bash
-cd /path/to/flux
-pnpm install
-pnpm --filter @flux/core exec tsc --noEmit   # optional: typecheck core only
+cd packages/core && pnpm exec tsc --noEmit
+cd packages/cli && pnpm exec tsc --noEmit
 ```
 
-### 2. Exercise the CLI against real Docker
-
-From `packages/cli` (or using the `flux` bin), run read-only then mutating commands as you prefer:
+### 2. CLI smoke test
 
 ```bash
 cd packages/cli
 pnpm run flux -- list
 pnpm run flux -- create "cli-smoke-test"
+pnpm run flux -- env list --project "cli-smoke-test"
+pnpm run flux -- env set PUBLIC_DEMO=hello --project "cli-smoke-test"
 pnpm run flux -- list
 pnpm run flux -- stop "cli-smoke-test"
 pnpm run flux -- start "cli-smoke-test"
-```
-
-Confirm containers appear on **`flux-network`**, Postgres accepts connections, and PostgREST responds at the printed **`http://<slug>.flux.localhost`** (or your Traefik/host setup). When finished, **`nuke`** removes the tenant if you want a clean slate:
-
-```bash
 pnpm run flux -- nuke "cli-smoke-test" --yes
 ```
 
-### 3. Configure the dashboard for GitHub OAuth
+Confirm tenant URLs like **`http://cli-smoke-test.flux.localhost`** respond once Traefik and DNS/`/etc/hosts` are aligned.
 
-1. In [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers), create an **OAuth App**.
-2. Set **Authorization callback URL** to **`http://localhost:3000/api/auth/callback/github`** (adjust host/port if you run the dev server elsewhere).
-3. Copy the **Client ID** and generate a **Client secret**.
+### 3. Dashboard + GitHub OAuth
 
-Create **`apps/dashboard/.env.local`** (never commit it; root `.gitignore` already ignores `.env*`) with at least:
+1. Create a [GitHub OAuth App](https://github.com/settings/developers); callback **`http://localhost:3000/api/auth/callback/github`** (adjust if the dev port differs).
+2. Add **`apps/dashboard/.env.local`** with `AUTH_SECRET`, GitHub credentials, and `AUTH_URL`.
+3. **`pnpm --filter dashboard dev`** — watch for **`[flux] System DB ready.`**
+4. Open **`http://localhost:3000`**, sign in, create a project from **`/projects`**.
 
-```bash
-AUTH_SECRET="<generate-a-long-random-string>"
-GITHUB_ID="<github-oauth-client-id>"
-GITHUB_SECRET="<github-oauth-client-secret>"
-AUTH_URL="http://localhost:3000"
-```
-
-You may use **`NEXTAUTH_SECRET`** / **`NEXTAUTH_URL`** instead of **`AUTH_SECRET`** / **`AUTH_URL`**; Auth.js accepts both.
-
-### 4. Run the dashboard and verify control-plane provisioning
-
-```bash
-# From repository root
-pnpm --filter dashboard dev
-```
-
-On first server start, **`instrumentation.ts`** calls **`initSystemDb()`**, which provisions or starts the **`flux-system`** Docker project and creates control-plane tables. Watch the terminal for **`[flux] System DB ready.`** or errors if Docker is unreachable.
-
-- Open **`http://localhost:3000`** in a browser.
-- Navigate to **`/projects`**. Middleware should send unauthenticated users to sign-in; complete **GitHub** sign-in.
-- After login, use **Create project** to provision a tenant; the **POST `/api/projects`** handler associates the row with **`session.user.id`**.
-- Reload the list and confirm the project appears with status and URLs.
-
-### 5. Production-style checks
+### 4. Production-style checks (dashboard)
 
 ```bash
 pnpm --filter dashboard build
 pnpm --filter dashboard lint
 ```
 
-Fix any failures before opening a pull request.
-
 ---
 
 ## CLI reference
 
-All commands are implemented in **`@flux/cli`** (`packages/cli/src/index.ts`). They delegate orchestration to **`ProjectManager`** in **`@flux/core`**.
+Implementation: **`packages/cli/src/index.ts`**. Orchestration: **`ProjectManager`** in **`@flux/core`**.
 
 | Command | Purpose |
 |---------|---------|
-| **`create <name>`** | Provision Postgres + PostgREST for a new project; prints connection URL and API base URL. |
-| **`push <file> -p, --project <name>`** | Read a `.sql` file and execute it against the project’s Postgres via the published host port; reloads PostgREST schema cache on success. |
-| **`list`** | List Flux projects derived from `flux-*-db` / `flux-*-api` containers (all states); shows **slug**, **combined status**, and **API host port** when known. |
-| **`stop <name>`** | Stop API then DB containers. |
-| **`start <name>`** | Start DB then API containers. |
-| **`nuke <name> -y, --yes`** | **Irreversible:** force-remove both containers and delete the **`flux-<slug>-db-data`** volume. Requires **`--yes`**. |
+| **`create <name>`** | Provision Postgres + PostgREST + Traefik labels; print Postgres URL (host) and tenant API base URL. |
+| **`push <file> -p, --project <name>`** | Stream a `.sql` file into the tenant DB via the published port; reload PostgREST schema afterward. |
+| **`list`** | List projects from **`flux-*-db` / `flux-*-api`** containers: slug, combined status, **API URL** (`http://<slug>.flux.localhost`). |
+| **`stop <name>`** | Stop API container, then DB. |
+| **`start <name>`** | Start DB, then API. |
+| **`nuke <name> -y, --yes`** | **Irreversible:** remove both containers and delete **`flux-<slug>-db-data`**. Requires **`--yes`**. |
+| **`env set <key=value...> -p, --project <name>`** | Merge variables into the **PostgREST** container env and recreate the container. |
+| **`env list -p, --project <name>`** | Show env keys; **values omitted** for keys classified as sensitive. |
 
 ### Examples
 
 ```bash
-# Create a tenant named "acme-corp" (slugified for container names)
 pnpm run flux -- create "ACME Corp"
-
-# Apply a migration file
 pnpm run flux -- push ./migrations/001_init.sql --project "ACME Corp"
-
-# Inspect all Flux-shaped containers
+pnpm run flux -- env set STRIPE_PUBLISHABLE_KEY=pk_test_xxx APP_URL=http://localhost:3000 --project "ACME Corp"
+pnpm run flux -- env list --project "ACME Corp"
 pnpm run flux -- list
-
-# Pause a tenant
 pnpm run flux -- stop "ACME Corp"
-
-# Resume
 pnpm run flux -- start "ACME Corp"
-
-# Destroy tenant data (requires explicit confirmation)
 pnpm run flux -- nuke "ACME Corp" --yes
 ```
 
 ---
 
-## Configuration and security notes
+## Security and operations
 
-- **Secrets** (generated Postgres password, JWT secret) are printed once on **`create`**; treat terminal history and logs accordingly.
-- **`.gitignore`** at the repo root excludes `.env*`, `node_modules`, build artifacts, and other common leakage vectors—**never commit** tenant credentials or production env files.
-- **Docker socket access** is equivalent to **root on the host**; restrict who can run Flux and where the control plane runs.
+- **Secrets** — Postgres password and `PGRST_JWT_SECRET` are generated at provision time (unless overridden for JWT). Treat shell history and logs as sensitive.
+- **`.gitignore`** — excludes `.env*`, `node_modules`, and build artifacts; do not commit tenant credentials.
+- **Docker socket** — access to the socket is effectively **root on the host**; restrict who runs the control plane and where.
+- **Tenant env listing** — `flux env list` intentionally hides values for keys matching common secret patterns; do not rely on it as a full secret scanner.
 
 ---
 
-## Future roadmap
+## Docs and guides
 
-| Initiative | Description |
-|------------|-------------|
-| **Next.js dashboard** | **`apps/dashboard`** now covers sign-in (GitHub), project list/create, and control-plane storage in **`flux-system`**; extend with detail views, start/stop/nuke from the UI, and deeper PostgREST links. |
-| **Traefik and subdomain routing** | Dynamic labels per tenant API container so `https://<project>.api.example.com` routes to the correct PostgREST instance without maintaining static Nginx configs. |
-| **Auth and multi-user apps** | Dashboard identity uses **Auth.js** + **Drizzle** on **`flux-system`**; tenant APIs still use **`PGRST_JWT_SECRET`** and roles from **`BOOTSTRAP_SQL`**. Next steps include stricter RLS, additional providers, and mapping dashboard users to tenant JWTs where needed. |
-| **Billing (Stripe)** | Out of scope for the engine itself; the intended pattern is to attach Stripe webhooks and customer metadata at the **application** layer, using Flux tenants as isolated data planes per customer or per app. |
+- **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s `PGRST_JWT_SECRET` and the dashboard.
+
+---
+
+## Roadmap
+
+| Direction | Notes |
+|-----------|--------|
+| **Dashboard depth** | More project detail, metrics, logs, and first-class env/JWT editing (partially present via APIs). |
+| **Production routing** | Today: **`*.flux.localhost`** via Traefik on the Docker host. Future: TLS, custom domains, and hosted DNS for `https://<project>.api.example.com`. |
+| **Auth & RLS** | Dashboard identity is Auth.js on **`flux-system`**; tenant APIs use PostgREST roles from **`BOOTSTRAP_SQL`**. Tighter RLS and claim mapping as apps grow. |
+| **Billing** | Stripe routes exist in the dashboard; extend webhooks and plan enforcement as needed. |
 
 ---
 
 ## Contributing mindset
 
-Flux optimizes for **clarity over cleverness**: small functions, strict TypeScript, explicit Docker calls, and operator-visible progress for long-running steps. When in doubt, prefer **one more log line** over a silent hang, and **one explicit Docker primitive** over a hidden sidecar.
+Prefer **small, strict TypeScript** functions, **explicit Docker** calls, and **visible progress** for long operations (image pulls, Postgres boot). When in doubt, add a clear log line instead of a silent hang.
 
 Welcome to the control plane.
