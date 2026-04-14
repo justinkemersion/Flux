@@ -1,4 +1,5 @@
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
+import type { Adapter } from "next-auth/adapters";
 import NextAuth from "next-auth";
 import type { DefaultSession, NextAuthConfig } from "next-auth";
 import GitHub from "next-auth/providers/github";
@@ -10,6 +11,32 @@ import {
   verificationTokens,
 } from "../db/schema";
 
+/**
+ * @auth/core merges provider credentials from AUTH_{PROVIDER}_* first.
+ * Mirror the legacy NextAuth / GitHub App env names so OAuth + JWT work reliably.
+ */
+if (typeof process !== "undefined") {
+  process.env.AUTH_SECRET ||= process.env.NEXTAUTH_SECRET;
+  process.env.AUTH_URL ||= process.env.NEXTAUTH_URL;
+  process.env.AUTH_GITHUB_ID ||= process.env.GITHUB_ID;
+  process.env.AUTH_GITHUB_SECRET ||= process.env.GITHUB_SECRET;
+}
+
+/** Some providers send `expires_at` as a float or string; Postgres `integer` rejects non-integers. */
+function withCoercedAccountTimestamps(adapter: Adapter): Adapter {
+  return {
+    ...adapter,
+    async linkAccount(data) {
+      const next = { ...data } as typeof data;
+      if (next.expires_at != null) {
+        const n = Number(next.expires_at);
+        next.expires_at = Number.isFinite(n) ? Math.trunc(n) : undefined;
+      }
+      await adapter.linkAccount!(next);
+    },
+  };
+}
+
 declare module "next-auth" {
   interface Session {
     user: { id: string } & DefaultSession["user"];
@@ -17,14 +44,19 @@ declare module "next-auth" {
 }
 
 function coreAuthConfig(): Omit<NextAuthConfig, "adapter"> {
+  const secret =
+    process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+
   return {
     trustHost: true,
+    debug: process.env.NODE_ENV !== "production",
+    secret,
     session: { strategy: "jwt" },
     providers: [
       GitHub({
-        clientId: process.env.GITHUB_ID ?? process.env.AUTH_GITHUB_ID,
+        clientId: process.env.AUTH_GITHUB_ID ?? process.env.GITHUB_ID,
         clientSecret:
-          process.env.GITHUB_SECRET ?? process.env.AUTH_GITHUB_SECRET,
+          process.env.AUTH_GITHUB_SECRET ?? process.env.GITHUB_SECRET,
       }),
     ],
     callbacks: {
@@ -57,12 +89,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
   await initSystemDb();
   return {
     ...core,
-    adapter: DrizzleAdapter(getDb(), {
-      usersTable: users,
-      accountsTable: accounts,
-      sessionsTable: sessions,
-      verificationTokensTable: verificationTokens,
-      authenticatorsTable: authenticators,
-    }),
+    adapter: withCoercedAccountTimestamps(
+      DrizzleAdapter(getDb(), {
+        usersTable: users,
+        accountsTable: accounts,
+        sessionsTable: sessions,
+        verificationTokensTable: verificationTokens,
+        authenticatorsTable: authenticators,
+      }),
+    ),
   };
 });
