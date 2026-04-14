@@ -744,16 +744,19 @@ export class ProjectManager {
    *
    * Retrieves connection details (host port, password) from the running container's
    * inspect data so callers don't need to store credentials out of band.
-   * After the DB session closes, sends SIGHUP to the PostgREST container (`flux-<slug>-api`)
-   * so it reloads the schema cache.
+   * After migrations, asks PostgREST to reload its schema cache: `NOTIFY pgrst, 'reload schema'`
+   * (handled by PostgREST’s DB listener), a short pause, then **SIGUSR1** on the API container.
+   * PostgREST documents SIGUSR1 for schema reload; SIGHUP does not reload the schema cache.
    */
   async executeSql(projectName: string, sql: string): Promise<void> {
     const { slug, hostPort, password } =
       await this.resolveRunningPostgresCredentials(projectName);
     await runSql(hostPort, password, sql);
+    await runSql(hostPort, password, `NOTIFY pgrst, 'reload schema';`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
     const apiName = postgrestContainerName(slug);
     try {
-      await this.docker.getContainer(apiName).kill({ signal: "SIGHUP" });
+      await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
     } catch (err: unknown) {
       const code = getHttpStatus(err);
       if (code === 404 || code === 409) return;

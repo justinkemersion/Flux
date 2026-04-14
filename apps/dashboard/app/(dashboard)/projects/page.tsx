@@ -32,6 +32,11 @@ type ProjectRow = {
 
 type DisplayStatus = ServerStatus | "transitioning";
 
+const HOBBY_LIMIT_API_MESSAGE =
+  "Project limit reached. Please upgrade to Pro.";
+const PRO_LIMIT_API_MESSAGE =
+  "Project limit reached (10 projects on Pro).";
+
 function StatusBadge({ status }: { status: DisplayStatus }) {
   const base =
     "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium";
@@ -391,6 +396,12 @@ export default function ProjectsPage() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createLimitBanner, setCreateLimitBanner] = useState<
+    "hobby" | "pro" | null
+  >(null);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [userPlan, setUserPlan] = useState<"hobby" | "pro" | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -400,8 +411,12 @@ export default function ProjectsPage() {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? `Request failed (${String(res.status)})`);
       }
-      const data = (await res.json()) as { projects: ProjectRow[] };
+      const data = (await res.json()) as {
+        projects: ProjectRow[];
+        plan?: "hobby" | "pro";
+      };
       setProjectList(data.projects);
+      setUserPlan(data.plan === "pro" ? "pro" : "hobby");
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -440,19 +455,46 @@ export default function ProjectsPage() {
 
   function openCreateModal(): void {
     setCreateError(null);
+    setCreateLimitBanner(null);
+    setBillingError(null);
     setName("");
     setCreateOpen(true);
   }
 
   function closeCreateModal(): void {
-    if (creating) return;
+    if (creating || upgradeLoading) return;
     setCreateOpen(false);
+  }
+
+  async function startProCheckout(): Promise<void> {
+    setUpgradeLoading(true);
+    setBillingError(null);
+    try {
+      const res = await fetch("/api/billing/checkout", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        url?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Checkout failed (${String(res.status)})`);
+      }
+      if (typeof data.url === "string") {
+        window.location.href = data.url;
+        return;
+      }
+      throw new Error("No checkout URL returned");
+    } catch (err) {
+      setBillingError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpgradeLoading(false);
+    }
   }
 
   async function onCreate(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setCreating(true);
     setCreateError(null);
+    setCreateLimitBanner(null);
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
@@ -468,10 +510,19 @@ export default function ProjectsPage() {
           typeof (data as { error: unknown }).error === "string"
             ? (data as { error: string }).error
             : `Create failed (${String(res.status)})`;
+        if (res.status === 403 && msg === HOBBY_LIMIT_API_MESSAGE) {
+          setCreateLimitBanner("hobby");
+          return;
+        }
+        if (res.status === 403 && msg === PRO_LIMIT_API_MESSAGE) {
+          setCreateLimitBanner("pro");
+          return;
+        }
         throw new Error(msg);
       }
       setCreateOpen(false);
       setName("");
+      setCreateLimitBanner(null);
       setFetching(true);
       await load();
     } catch (err) {
@@ -496,15 +547,46 @@ export default function ProjectsPage() {
             Manage your Flux database projects
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreateModal}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
-          aria-label="Create project"
-        >
-          <Plus className="h-5 w-5" aria-hidden />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {userPlan === "hobby" ? (
+            <button
+              type="button"
+              onClick={() => void startProCheckout()}
+              disabled={upgradeLoading}
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-amber-300/90 bg-gradient-to-r from-red-600 to-amber-600 px-4 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700/80"
+            >
+              {upgradeLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : null}
+              {upgradeLoading ? "Redirecting…" : "Upgrade to Pro"}
+            </button>
+          ) : userPlan === "pro" ? (
+            <span
+              className="inline-flex h-10 items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
+              title="Your account is on the Pro plan"
+            >
+              Pro
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
+            aria-label="Create project"
+          >
+            <Plus className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
       </header>
+
+      {billingError && !createOpen ? (
+        <p
+          className="mb-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+          role="alert"
+        >
+          {billingError}
+        </p>
+      ) : null}
 
       {fetching ? (
         <div className="flex justify-center py-20">
@@ -561,6 +643,63 @@ export default function ProjectsPage() {
               <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                 Provisions Postgres and PostgREST (this may take a minute).
               </p>
+
+              {createLimitBanner === "hobby" ? (
+                <div
+                  className="mt-5 flex flex-col gap-3 rounded-xl border border-amber-300/80 bg-gradient-to-br from-red-50 to-amber-50 p-4 dark:border-amber-700/60 dark:from-red-950/50 dark:to-amber-950/40"
+                  role="alert"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-200/90 dark:bg-amber-900/80">
+                      <AlertTriangle
+                        className="h-5 w-5 text-amber-800 dark:text-amber-200"
+                        aria-hidden
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-red-900 dark:text-red-200">
+                        Free tier limit reached (2/2 projects).
+                      </p>
+                      <p className="mt-1 text-sm text-amber-900/90 dark:text-amber-100/90">
+                        Delete a project or upgrade to create more.
+                      </p>
+                      {billingError ? (
+                        <p className="mt-2 text-sm text-red-700 dark:text-red-400">
+                          {billingError}
+                        </p>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void startProCheckout()}
+                        disabled={upgradeLoading}
+                        className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-red-600 to-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {upgradeLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                        ) : null}
+                        {upgradeLoading ? "Redirecting…" : "Upgrade to Pro"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {createLimitBanner === "pro" ? (
+                <div
+                  className="mt-5 flex items-start gap-3 rounded-xl border border-amber-300/80 bg-amber-50 p-4 dark:border-amber-700/60 dark:bg-amber-950/50"
+                  role="alert"
+                >
+                  <AlertTriangle
+                    className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300"
+                    aria-hidden
+                  />
+                  <p className="text-sm text-amber-950 dark:text-amber-100">
+                    You&apos;ve reached the project limit for your Pro plan (10
+                    projects).
+                  </p>
+                </div>
+              ) : null}
+
               <form onSubmit={(e) => void onCreate(e)} className="mt-6">
                 <label
                   htmlFor="project-name"

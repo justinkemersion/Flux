@@ -18,6 +18,12 @@ export const users = pgTable("users", {
   email: text("email").unique(),
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
+  plan: text("plan")
+    .notNull()
+    .default("hobby")
+    .$type<"hobby" | "pro">(),
+  stripeCustomerId: text("stripeCustomerId"),
+  stripeSubscriptionId: text("stripeSubscriptionId"),
 });
 
 export const accounts = pgTable(
@@ -85,4 +91,8 @@ export const projects = pgTable("projects", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  /** Last API / usage touch — used for idle reaper (auto-pause) policy. */
+  lastActiveAt: timestamp("last_active_at", { mode: "date" })
+    .notNull()
+    .defaultNow(),
 });

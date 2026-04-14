@@ -1,10 +1,17 @@
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
-import { projects } from "@/src/db/schema";
+import { projects, users } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
 export const runtime = "nodejs";
+
+const HOBBY_PROJECT_LIMIT = 2;
+const PRO_PROJECT_LIMIT = 10;
+const HOBBY_LIMIT_ERROR =
+  "Project limit reached. Please upgrade to Pro.";
+const PRO_LIMIT_ERROR =
+  "Project limit reached (10 projects on Pro).";
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
@@ -17,6 +24,14 @@ export async function GET(): Promise<Response> {
   await initSystemDb();
   const db = getDb();
   const pm = getProjectManager();
+
+  const [userRow] = await db
+    .select({ plan: users.plan })
+    .from(users)
+    .where(eq(users.id, session.user.id));
+
+  const plan: "hobby" | "pro" =
+    userRow?.plan === "pro" ? "pro" : "hobby";
 
   const userProjects = await db
     .select()
@@ -52,7 +67,7 @@ export async function GET(): Promise<Response> {
     }),
   );
 
-  return Response.json({ projects: enriched });
+  return Response.json({ projects: enriched, plan });
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -81,6 +96,26 @@ export async function POST(req: Request): Promise<Response> {
   await initSystemDb();
   const db = getDb();
   const pm = getProjectManager();
+
+  const [{ n: projectCount }] = await db
+    .select({ n: count() })
+    .from(projects)
+    .where(eq(projects.userId, session.user.id));
+
+  const [userRow] = await db
+    .select({ plan: users.plan })
+    .from(users)
+    .where(eq(users.id, session.user.id));
+
+  const plan: "hobby" | "pro" =
+    userRow?.plan === "pro" ? "pro" : "hobby";
+
+  if (plan === "hobby" && projectCount >= HOBBY_PROJECT_LIMIT) {
+    return jsonError(HOBBY_LIMIT_ERROR, 403);
+  }
+  if (plan === "pro" && projectCount >= PRO_PROJECT_LIMIT) {
+    return jsonError(PRO_LIMIT_ERROR, 403);
+  }
 
   try {
     const project = await pm.provisionProject(rawName);

@@ -37,6 +37,9 @@ importers:
       react-dom:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
+      stripe:
+        specifier: ^22.0.1
+        version: 22.0.1(@types/node@20.19.39)
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4
@@ -74,6 +77,9 @@ importers:
       '@flux/core':
         specifier: workspace:*
         version: link:../core
+      '@flux/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -121,6 +127,15 @@ importers:
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+
+  packages/sdk:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -2794,6 +2809,15 @@ packages:
   strip-json-comments@3.1.1:
     resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
     engines: {node: '>=8'}
+
+  stripe@22.0.1:
+    resolution: {integrity: sha512-Yw764pZ6s8Xu4CtUZdD5uWOkw6gc9xzO9OKylCuj1gMhMDLbyGbDtaPNNSFE4mB6njYSHESYIVbF1iIzUfAl2g==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   styled-jsx@5.1.6:
     resolution: {integrity: sha512-qSVyDTeMotdvQYoHWLNGwRFJHC+i+ZvdBRYosOFgC+Wg1vx4frN2/RG/NA7SYqqvKNLf39P2LSRA2pu6n0XYZA==}
@@ -5573,6 +5597,10 @@ snapshots:
   strip-bom@3.0.0: {}
 
   strip-json-comments@3.1.1: {}
+
+  stripe@22.0.1(@types/node@20.19.39):
+    optionalDependencies:
+      '@types/node': 20.19.39
 
   styled-jsx@5.1.6(@babel/core@7.29.0)(react@19.2.4):
     dependencies:

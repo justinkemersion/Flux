@@ -68,7 +68,10 @@ async function _init(): Promise<void> {
       name TEXT,
       email TEXT UNIQUE,
       "emailVerified" TIMESTAMPTZ,
-      image TEXT
+      image TEXT,
+      plan TEXT NOT NULL DEFAULT 'hobby',
+      "stripeCustomerId" TEXT,
+      "stripeSubscriptionId" TEXT
     );
 
     CREATE TABLE IF NOT EXISTS accounts (
@@ -116,8 +119,22 @@ async function _init(): Promise<void> {
       name TEXT NOT NULL,
       slug TEXT NOT NULL UNIQUE,
       "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_active_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ;
+    UPDATE projects SET last_active_at = created_at WHERE last_active_at IS NULL;
+    ALTER TABLE projects ALTER COLUMN last_active_at SET DEFAULT NOW();
+    ALTER TABLE projects ALTER COLUMN last_active_at SET NOT NULL;
+  `);
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'hobby';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS "stripeCustomerId" TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS "stripeSubscriptionId" TEXT;
   `);
 
   db = drizzle(pool, { schema });
