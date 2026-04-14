@@ -46,6 +46,8 @@ export async function GET(): Promise<Response> {
     userProjects.map(async (p) => {
       const docker = dockerBySlug.get(p.slug);
       let postgresConnectionString: string | null = null;
+      let anonKey: string | null = null;
+      let serviceRoleKey: string | null = null;
       if (docker?.status === "running") {
         try {
           postgresConnectionString = await pm.getPostgresHostConnectionString(
@@ -55,12 +57,21 @@ export async function GET(): Promise<Response> {
           // DB stopped or unavailable — surface null
         }
       }
+      try {
+        const keys = await pm.getProjectKeys(p.slug);
+        anonKey = keys.anonKey;
+        serviceRoleKey = keys.serviceRoleKey;
+      } catch {
+        /* PostgREST container missing or env unreadable */
+      }
       return {
         id: p.id,
         name: p.name,
         slug: p.slug,
         status: docker?.status ?? "stopped",
         apiUrl: docker?.apiUrl ?? `http://${p.slug}.flux.localhost`,
+        anonKey,
+        serviceRoleKey,
         postgresConnectionString,
         createdAt: p.createdAt,
       };
@@ -93,6 +104,15 @@ export async function POST(req: Request): Promise<Response> {
   const rawName = (body as { name: string }).name.trim();
   if (!rawName) return jsonError("Project name is required", 400);
 
+  let customJwtSecret: string | undefined;
+  if (
+    "customJwtSecret" in body &&
+    typeof (body as { customJwtSecret?: unknown }).customJwtSecret === "string"
+  ) {
+    const s = (body as { customJwtSecret: string }).customJwtSecret.trim();
+    if (s.length > 0) customJwtSecret = s;
+  }
+
   await initSystemDb();
   const db = getDb();
   const pm = getProjectManager();
@@ -118,7 +138,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    const project = await pm.provisionProject(rawName);
+    const project = await pm.provisionProject(rawName, {
+      ...(customJwtSecret ? { customJwtSecret } : {}),
+    });
     const postgresHostConnectionString =
       await pm.getPostgresHostConnectionString(project.name);
 

@@ -17,10 +17,12 @@
   "dependencies": {
     "dockerode": "^4.0.10",
     "dotenv": "^17.4.2",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.6.0",
     "@types/pg": "^8.20.0",
     "tsx": "^4.21.0",

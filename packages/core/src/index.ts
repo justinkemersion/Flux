@@ -1,5 +1,6 @@
 import { createReadStream } from "node:fs";
 import { randomBytes } from "node:crypto";
+import type { ClientRequest } from "node:http";
 import { PassThrough, Readable, type Duplex } from "node:stream";
 import { finished } from "node:stream/promises";
 import Docker from "dockerode";
@@ -86,6 +87,32 @@ function randomHexChars(byteLength: number): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * After stdin is closed, wait until Docker reports the exec is no longer running, then destroy the
+ * attach stream. Some Engine/docker-modem combinations never emit `end` on the duplex even after
+ * `psql` exits, which would hang `finished(duplex)` forever.
+ */
+async function waitForDockerExecNotRunning(
+  exec: { inspect: () => Promise<{ Running?: boolean }> },
+  duplex: Duplex,
+): Promise<void> {
+  const intervalMs = 100;
+  const maxMs = 86_400_000;
+  const started = Date.now();
+  while (Date.now() - started < maxMs) {
+    const info = await exec.inspect();
+    if (info.Running === false) {
+      duplex.destroy();
+      return;
+    }
+    await sleep(intervalMs);
+  }
+  duplex.destroy();
+  throw new Error(
+    "Timed out waiting for psql to finish importing SQL (exec still running).",
+  );
 }
 
 function fetchWithTimeout(url: string, ms: number): Promise<Response> {
@@ -985,6 +1012,8 @@ export class ProjectManager {
    *
    * Uses `exec.start({ stdin: true })` without `hijack: true`: docker-modem pipes stdin over the
    * request body; raw `hijack` sockets require manual multiplex framing for stdin.
+   * Completion is detected via `exec.inspect().Running`, not `finished(attachStream)`, because the
+   * attach stream may never close cleanly after `psql` exits.
    */
   async importSqlFile(slug: string, filePath: string): Promise<void> {
     const { slug: normalizedSlug, hostPort, password } =
@@ -995,17 +1024,19 @@ export class ProjectManager {
 
     const exec = await container.exec({
       Cmd: ["psql", "-U", POSTGRES_USER, "-d", "postgres"],
+      Env: [`PGPASSWORD=${password}`],
       AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
     });
 
+    /** docker-modem returns HttpDuplex: `end()` destroys the response side early and can hang `finished(duplex)`. */
     const duplex = (await exec.start({
       hijack: false,
       stdin: true,
       Detach: false,
       Tty: false,
-    })) as Duplex;
+    })) as Duplex & { req: ClientRequest };
 
     const stdout = new PassThrough();
     const stderr = new PassThrough();
@@ -1031,8 +1062,10 @@ export class ProjectManager {
 
     const input = createReadStream(filePath);
     try {
-      input.pipe(duplex, { end: true });
-      await finished(duplex);
+      input.pipe(duplex, { end: false });
+      await finished(input);
+      duplex.req.end();
+      await waitForDockerExecNotRunning(exec, duplex);
     } finally {
       input.destroy();
     }

@@ -2,8 +2,10 @@
 
 import {
   AlertTriangle,
-  Database,
-  Globe,
+  Check,
+  Clipboard,
+  Eye,
+  EyeOff,
   Loader2,
   Play,
   Plus,
@@ -26,6 +28,8 @@ type ProjectRow = {
   slug: string;
   status: ServerStatus;
   apiUrl: string;
+  anonKey: string | null;
+  serviceRoleKey: string | null;
   postgresConnectionString: string | null;
   createdAt: string;
 };
@@ -86,15 +90,108 @@ function StatusBadge({ status }: { status: DisplayStatus }) {
   }
 }
 
+function CopyableField({
+  label,
+  value,
+  isSecret,
+  visuallyTruncate = false,
+}: {
+  label: string;
+  value: string | null;
+  isSecret: boolean;
+  /** Single-line ellipsis for long non-secret values (e.g. anon JWT). */
+  visuallyTruncate?: boolean;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const raw = value ?? "";
+  const unavailable = raw.length === 0;
+  const masked = isSecret && !revealed && !unavailable;
+  const displayText = unavailable
+    ? "Unavailable"
+    : masked
+      ? "••••••••"
+      : raw;
+
+  async function copy(): Promise<void> {
+    if (unavailable) return;
+    try {
+      await navigator.clipboard.writeText(raw);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard denied */
+    }
+  }
+
+  return (
+    <div className="min-w-0">
+      <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+        {label}
+      </p>
+      <div className="flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-200/80 bg-zinc-50/80 px-2 py-1.5 dark:border-zinc-700/80 dark:bg-zinc-900/50">
+        <span
+          className={`min-w-0 flex-1 font-mono text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 ${
+            visuallyTruncate && !masked
+              ? "truncate"
+              : unavailable
+                ? "text-zinc-400 dark:text-zinc-500"
+                : "break-all"
+          }`}
+          title={unavailable || masked ? undefined : raw}
+        >
+          {displayText}
+        </span>
+        {isSecret && !unavailable ? (
+          <button
+            type="button"
+            onClick={() => setRevealed((v) => !v)}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-200/80 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            aria-label={revealed ? "Hide value" : "Reveal value"}
+            title={revealed ? "Hide" : "Reveal"}
+          >
+            {revealed ? (
+              <EyeOff className="h-4 w-4" aria-hidden />
+            ) : (
+              <Eye className="h-4 w-4" aria-hidden />
+            )}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void copy()}
+          disabled={unavailable}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-200/80 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+          aria-label={`Copy ${label}`}
+          title="Copy"
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          ) : (
+            <Clipboard className="h-4 w-4" aria-hidden />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type ProjectCardProps = {
   project: ProjectRow;
   onDelete: () => void;
+  onSettingsSaved?: () => void;
 };
 
-function ProjectCard({ project: p, onDelete }: ProjectCardProps) {
+function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps) {
   const [isBusy, setIsBusy] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<DisplayStatus>(p.status);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [jwtSecretInput, setJwtSecretInput] = useState("");
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSuccess, setSettingsSuccess] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -116,6 +213,15 @@ function ProjectCard({ project: p, onDelete }: ProjectCardProps) {
   }, [deleteOpen]);
 
   useEffect(() => {
+    if (!settingsOpen) return;
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") setSettingsOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [settingsOpen]);
+
+  useEffect(() => {
     if (!deleteOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -123,6 +229,15 @@ function ProjectCard({ project: p, onDelete }: ProjectCardProps) {
       document.body.style.overflow = prev;
     };
   }, [deleteOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [settingsOpen]);
 
   async function togglePower(): Promise<void> {
     if (isBusy || currentStatus === "partial") return;
@@ -146,6 +261,49 @@ function ProjectCard({ project: p, onDelete }: ProjectCardProps) {
       setCurrentStatus(p.status);
     } finally {
       setIsBusy(false);
+    }
+  }
+
+  function openSettingsModal(): void {
+    setJwtSecretInput("");
+    setSettingsError(null);
+    setSettingsSuccess(false);
+    setSettingsOpen(true);
+  }
+
+  function closeSettingsModal(): void {
+    if (settingsSaving) return;
+    setSettingsOpen(false);
+  }
+
+  async function saveJwtSettings(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    const trimmed = jwtSecretInput.trim();
+    if (!trimmed) {
+      setSettingsError("Enter a JWT secret (or webhook signing key).");
+      return;
+    }
+    setSettingsSaving(true);
+    setSettingsError(null);
+    setSettingsSuccess(false);
+    try {
+      const res = await fetch(`/api/projects/${p.slug}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jwtSecret: trimmed }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Save failed (${String(res.status)})`);
+      }
+      setSettingsSuccess(true);
+      setJwtSecretInput("");
+      onSettingsSaved?.();
+      window.setTimeout(() => setSettingsSuccess(false), 4000);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSettingsSaving(false);
     }
   }
 
@@ -201,33 +359,33 @@ function ProjectCard({ project: p, onDelete }: ProjectCardProps) {
         </header>
 
         <div className="mt-4 flex flex-col gap-3">
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-              API URL
-            </p>
-            <div className="flex min-w-0 items-start gap-2 overflow-hidden rounded-md bg-gray-50 p-2 dark:bg-zinc-900/60">
-              <Globe
-                className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500"
-                aria-hidden
+          <div className="rounded-lg border border-zinc-200/70 bg-zinc-50/40 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Connection details
+            </h3>
+            <div className="flex flex-col gap-3">
+              <CopyableField
+                label="API URL"
+                value={p.apiUrl}
+                isSecret={false}
+                visuallyTruncate
               />
-              <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-800 dark:text-zinc-200">
-                {p.apiUrl}
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-              Postgres
-            </p>
-            <div className="flex min-w-0 items-start gap-2 overflow-hidden rounded-md bg-gray-50 p-2 dark:bg-zinc-900/60">
-              <Database
-                className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500"
-                aria-hidden
+              <CopyableField
+                label="Anon key"
+                value={p.anonKey}
+                isSecret={false}
+                visuallyTruncate
               />
-              <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-800 dark:text-zinc-200">
-                {p.postgresConnectionString ??
-                  "Unavailable while Postgres is stopped"}
-              </span>
+              <CopyableField
+                label="Service role key"
+                value={p.serviceRoleKey}
+                isSecret
+              />
+              <CopyableField
+                label="Postgres connection string"
+                value={p.postgresConnectionString}
+                isSecret
+              />
             </div>
           </div>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -270,17 +428,119 @@ function ProjectCard({ project: p, onDelete }: ProjectCardProps) {
               <Play className="h-5 w-5" aria-hidden />
             )}
           </button>
-          <button
-            type="button"
-            onClick={openDeleteModal}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label={`Project settings for ${p.name}`}
-            title="Settings"
-          >
-            <Settings className="h-5 w-5" aria-hidden />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={openSettingsModal}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              aria-label={`Project settings for ${p.name}`}
+              title="Project settings"
+            >
+              <Settings className="h-5 w-5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={openDeleteModal}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+              aria-label={`Delete project ${p.name}`}
+              title="Delete project"
+            >
+              <Trash2 className="h-5 w-5" aria-hidden />
+            </button>
+          </div>
         </footer>
       </article>
+
+      {settingsOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={closeSettingsModal}
+        >
+          <div
+            className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`settings-title-${p.id}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={closeSettingsModal}
+              disabled={settingsSaving}
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+
+            <div className="pr-10">
+              <h2
+                id={`settings-title-${p.id}`}
+                className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+              >
+                Project settings
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                Use the same signing secret as your auth provider (e.g. Clerk JWT
+                template or NextAuth) so PostgREST can verify user tokens. Anon and
+                service-role keys in the card above update after you save.
+              </p>
+
+              <form onSubmit={(e) => void saveJwtSettings(e)} className="mt-6">
+                <label
+                  htmlFor={`jwt-secret-${p.id}`}
+                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
+                >
+                  JWT secret / webhook secret
+                </label>
+                <input
+                  id={`jwt-secret-${p.id}`}
+                  type="password"
+                  value={jwtSecretInput}
+                  onChange={(e) => setJwtSecretInput(e.target.value)}
+                  autoComplete="off"
+                  placeholder="Paste signing key"
+                  disabled={settingsSaving}
+                  className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 font-mono text-sm outline-none transition-shadow focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-950"
+                />
+
+                {settingsError ? (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                    {settingsError}
+                  </p>
+                ) : null}
+                {settingsSuccess ? (
+                  <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">
+                    Saved. PostgREST was restarted with the new secret.
+                  </p>
+                ) : null}
+
+                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={closeSettingsModal}
+                    disabled={settingsSaving}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={settingsSaving}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  >
+                    {settingsSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : null}
+                    {settingsSaving ? "Saving…" : "Save settings"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {deleteOpen ? (
         <div
@@ -605,6 +865,7 @@ export default function ProjectsPage() {
               key={p.id}
               project={p}
               onDelete={() => handleProjectDeleted(p.slug)}
+              onSettingsSaved={() => void load()}
             />
           ))}
         </div>
