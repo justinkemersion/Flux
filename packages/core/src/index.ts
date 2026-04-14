@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { finished } from "node:stream/promises";
+import { Readable } from "node:stream";
 import Docker from "dockerode";
 import pg from "pg";
 
@@ -165,6 +165,10 @@ export function fluxApiUrlForSlug(slug: string): string {
   return `http://${slug}.flux.localhost`;
 }
 
+/**
+ * Traefik v3 `Host()` matcher: backticks wrap the literal hostname (required syntax).
+ * Example for slug `acme`: `Host(\`acme.flux.localhost\`)`.
+ */
 function traefikHostRule(slug: string): string {
   return `Host(\`${slug}.flux.localhost\`)`;
 }
@@ -194,6 +198,154 @@ function tenantVolumeName(slug: string): string {
 /** Flux tenant container name pattern: flux-&lt;slug&gt;-db | flux-&lt;slug&gt;-api */
 const FLUX_TENANT_CONTAINER = /^flux-(.+)-(db|api)$/;
 
+/** If a pull emits no progress for this long, fail (slow or stuck network). */
+const DOCKER_PULL_STALL_MS = 120_000;
+
+/** How often we check for a stalled pull. */
+const DOCKER_PULL_STALL_CHECK_MS = 2_000;
+
+type PullProgressMap = Map<string, { current: number; total: number }>;
+
+function aggregatedPullPercent(layers: PullProgressMap): number {
+  let sumCurrent = 0;
+  let sumTotal = 0;
+  for (const { current, total } of layers.values()) {
+    if (total > 0) {
+      sumCurrent += Math.min(current, total);
+      sumTotal += total;
+    }
+  }
+  if (sumTotal === 0) return 0;
+  return Math.min(100, (100 * sumCurrent) / sumTotal);
+}
+
+/**
+ * Consumes a Docker Engine pull JSON stream: handles `error` / `end`, detects stalls, and logs ~10% steps.
+ */
+async function consumeDockerPullStream(
+  stream: Readable,
+  ctx: { image: string; onStatus?: (message: string) => void },
+): Promise<void> {
+  const { image, onStatus } = ctx;
+  const layers: PullProgressMap = new Map();
+  let buffer = "";
+  let lastActivity = Date.now();
+  let lastDecileLogged = -1;
+
+  const touch = (): void => {
+    lastActivity = Date.now();
+  };
+
+  const maybeLogDecile = (): void => {
+    const pct = aggregatedPullPercent(layers);
+    const decile = Math.min(10, Math.floor(pct / 10));
+    if (decile > lastDecileLogged) {
+      lastDecileLogged = decile;
+      onStatus?.(`Pull ${image}: ~${String(decile * 10)}%`);
+    }
+  };
+
+  const stallTimer = setInterval(() => {
+    if (Date.now() - lastActivity >= DOCKER_PULL_STALL_MS) {
+      stream.destroy(
+        new Error(
+          `Docker image pull stalled: no progress for ${String(DOCKER_PULL_STALL_MS / 1000)}s while pulling ${image}`,
+        ),
+      );
+    }
+  }, DOCKER_PULL_STALL_CHECK_MS);
+
+  const cleanup = (): void => {
+    clearInterval(stallTimer);
+  };
+
+  const onLine = (line: string): void => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let row: unknown;
+    try {
+      row = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      touch();
+      return;
+    }
+    touch();
+    if (!row || typeof row !== "object") return;
+    const o = row as Record<string, unknown>;
+    const detail = o.progressDetail as { current?: number; total?: number } | undefined;
+    if (
+      detail &&
+      typeof detail.current === "number" &&
+      typeof detail.total === "number"
+    ) {
+      const id =
+        typeof o.id === "string" && o.id.length > 0 ? o.id : "__aggregate__";
+      layers.set(id, { current: detail.current, total: detail.total });
+      maybeLogDecile();
+    } else if (typeof o.status === "string") {
+      if (lastDecileLogged < 0) {
+        lastDecileLogged = 0;
+        onStatus?.(`Pull ${image}: ~0% (${o.status})`);
+      }
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      stream.removeListener("data", onData);
+      stream.removeListener("error", onError);
+      stream.removeListener("end", onEnd);
+      fn();
+    };
+
+    const onError = (err: unknown): void => {
+      settle(() => {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      });
+    };
+
+    const onEnd = (): void => {
+      try {
+        touch();
+        if (buffer.trim()) onLine(buffer);
+        buffer = "";
+        if (lastDecileLogged < 10) {
+          lastDecileLogged = 10;
+          onStatus?.(`Pull ${image}: ~100%`);
+        }
+        settle(() => resolve());
+      } catch (err: unknown) {
+        settle(() => {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+      }
+    };
+
+    const onData = (chunk: Buffer | string): void => {
+      try {
+        touch();
+        buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+        const parts = buffer.split("\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) onLine(part);
+      } catch (err: unknown) {
+        settle(() => {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+      }
+    };
+
+    stream.on("data", onData);
+    stream.on("error", onError);
+    stream.on("end", onEnd);
+  });
+}
+
 /** Row returned by {@link ProjectManager.listProjects}. */
 export interface FluxProjectSummary {
   /** Normalized project slug (from container names). */
@@ -213,11 +365,12 @@ async function ensureImage(
     await docker.getImage(image).inspect();
     onStatus?.(`Image ${image} is already present locally.`);
   } catch {
-    onStatus?.(
-      `Pulling ${image} — the first run can take several minutes; please wait…`,
+    onStatus?.(`Pulling ${image} (stall timeout ${String(DOCKER_PULL_STALL_MS / 1000)}s without progress)…`);
+    const stream = (await docker.pull(image)) as Readable;
+    await consumeDockerPullStream(
+      stream,
+      onStatus ? { image, onStatus } : { image },
     );
-    const stream = await docker.pull(image);
-    await finished(stream);
     onStatus?.(`Finished pulling ${image}.`);
   }
 }
@@ -359,9 +512,8 @@ export class ProjectManager {
     options?: ProvisionOptions,
   ): Promise<FluxProject> {
     const log = options?.onStatus;
-    log?.("Checking Docker network…");
-    await this.ensureFluxNetwork();
-    log?.(`Network ${FLUX_NETWORK_NAME} is ready.`);
+    await this.ensureFluxNetwork(log);
+    await this.ensureFluxGateway(log);
     const slug = slugifyProjectName(name);
     const postgresPassword = randomHexChars(16);
     const jwtSecret = randomHexChars(32);
@@ -417,11 +569,15 @@ export class ProjectManager {
 
     const dbUri = postgresJdbcUri(slug, postgresPassword);
 
+    const routerId = `flux-${slug}-api`;
     const traefikLabels: Record<string, string> = {
       "traefik.enable": "true",
-      [`traefik.http.routers.flux-${slug}-api.rule`]: traefikHostRule(slug),
-      [`traefik.http.routers.flux-${slug}-api.entrypoints`]: "web",
-      [`traefik.http.services.flux-${slug}-api.loadbalancer.server.port`]: "3000",
+      /** Force backend IP on the same bridge Traefik uses (avoids wrong-network 404/502). */
+      "traefik.docker.network": FLUX_NETWORK_NAME,
+      [`traefik.http.routers.${routerId}.rule`]: traefikHostRule(slug),
+      [`traefik.http.routers.${routerId}.entrypoints`]: "web",
+      [`traefik.http.routers.${routerId}.service`]: routerId,
+      [`traefik.http.services.${routerId}.loadbalancer.server.port`]: "3000",
     };
 
     let apiContainer: Docker.Container;
@@ -456,6 +612,10 @@ export class ProjectManager {
     log?.("Starting PostgREST…");
     await apiContainer.start();
     const apiInspect = await apiContainer.inspect();
+    await this.ensureContainerAttachedToFluxNetwork(apiInspect.Id);
+    log?.(
+      `Verified PostgREST container is attached to ${FLUX_NETWORK_NAME} (Traefik can reach it).`,
+    );
 
     log?.("Provision complete.");
     return {
@@ -662,10 +822,12 @@ export class ProjectManager {
   }
 
   /**
-   * Ensures a Docker bridge network named {@link FLUX_NETWORK_NAME} exists, then ensures the
-   * shared Traefik gateway is running on that network (idempotent).
+   * Ensures the Docker bridge {@link FLUX_NETWORK_NAME} exists (create if missing).
    */
-  private async ensureFluxNetwork(): Promise<void> {
+  private async ensureFluxNetwork(
+    onStatus?: (message: string) => void,
+  ): Promise<void> {
+    onStatus?.(`Checking Docker network ${FLUX_NETWORK_NAME}…`);
     const networks = await this.docker.listNetworks({
       filters: { name: [FLUX_NETWORK_NAME] },
     });
@@ -675,22 +837,34 @@ export class ProjectManager {
         Driver: "bridge",
         CheckDuplicate: true,
       });
+      onStatus?.(`Created network ${FLUX_NETWORK_NAME}.`);
+    } else {
+      onStatus?.(`Network ${FLUX_NETWORK_NAME} already exists.`);
     }
-    await this.ensureFluxGateway();
   }
 
   /**
    * Ensures {@link FLUX_GATEWAY_CONTAINER_NAME} runs Traefik with the Docker provider, socket
    * access (read-only), `web` on host port 80, and attachment to {@link FLUX_NETWORK_NAME}.
+   *
+   * Idempotent: **start** if stopped, **create** if missing, **attach** to `flux-network` if needed.
+   * Invoked on every {@link ProjectManager.provisionProject} so a stopped gateway is revived even
+   * when the bridge network already existed.
    */
-  private async ensureFluxGateway(): Promise<void> {
+  private async ensureFluxGateway(
+    onStatus?: (message: string) => void,
+  ): Promise<void> {
     const name = FLUX_GATEWAY_CONTAINER_NAME;
+    onStatus?.(`Ensuring Traefik gateway ${name}…`);
 
     try {
       const existing = this.docker.getContainer(name);
       const inspect = await existing.inspect();
       if (!inspect.State.Running) {
+        onStatus?.(`Starting existing gateway container ${name}…`);
         await existing.start();
+      } else {
+        onStatus?.(`Gateway ${name} is already running.`);
       }
       await this.ensureContainerAttachedToFluxNetwork(inspect.Id);
       return;
@@ -698,7 +872,8 @@ export class ProjectManager {
       if (getHttpStatus(err) !== 404) throw err;
     }
 
-    await ensureImage(this.docker, TRAEFIK_IMAGE);
+    onStatus?.(`Creating gateway ${name} (image ${TRAEFIK_IMAGE})…`);
+    await ensureImage(this.docker, TRAEFIK_IMAGE, onStatus);
 
     try {
       const gateway = await this.docker.createContainer({
@@ -707,6 +882,7 @@ export class ProjectManager {
         Cmd: [
           "--providers.docker=true",
           "--providers.docker.exposedbydefault=false",
+          `--providers.docker.network=${FLUX_NETWORK_NAME}`,
           "--entrypoints.web.address=:80",
         ],
         ExposedPorts: { "80/tcp": {} },
@@ -726,6 +902,7 @@ export class ProjectManager {
         const existing = this.docker.getContainer(name);
         const inspect = await existing.inspect();
         if (!inspect.State.Running) {
+          onStatus?.(`Gateway ${name} already exists but was stopped; starting…`);
           await existing.start();
         }
         await this.ensureContainerAttachedToFluxNetwork(inspect.Id);
