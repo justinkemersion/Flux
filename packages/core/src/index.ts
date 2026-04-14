@@ -33,6 +33,8 @@ const POSTGRES_USER = "postgres";
  *
  * Also grants on existing tables/sequences and sets ALTER DEFAULT PRIVILEGES so future objects in
  * `api` automatically grant DML to `anon` / `authenticated`, plus sequence USAGE for serial IDs.
+ * Default privileges for objects created by `postgres` (typical migration role) ensure new tables
+ * and sequences stay visible to PostgREST roles without manual GRANTs.
  */
 export const BOOTSTRAP_SQL = `
 -- Schema that PostgREST will expose (PGRST_DB_SCHEMA=api)
@@ -68,6 +70,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA api
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA api
   GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA api GRANT ALL ON TABLES TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA api GRANT ALL ON SEQUENCES TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA api GRANT ALL ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA api GRANT ALL ON SEQUENCES TO authenticated;
 `.trim();
 
 function randomHexChars(byteLength: number): string {
@@ -420,6 +427,16 @@ export interface FluxProjectSummary {
   apiUrl: string;
 }
 
+/** Catalog row from the flux-system `projects` table (control-plane metadata DB). */
+export interface FluxSystemProjectActivity {
+  id: string;
+  name: string;
+  slug: string;
+  lastActiveAt: Date;
+  /** `true` when {@link FluxSystemProjectActivity.lastActiveAt} is older than `maxAgeDays` passed to {@link ProjectManager.stopInactiveProjects}. */
+  inactiveByPolicy: boolean;
+}
+
 async function ensureImage(
   docker: Docker,
   image: string,
@@ -727,12 +744,21 @@ export class ProjectManager {
    *
    * Retrieves connection details (host port, password) from the running container's
    * inspect data so callers don't need to store credentials out of band.
+   * After the DB session closes, sends SIGHUP to the PostgREST container (`flux-<slug>-api`)
+   * so it reloads the schema cache.
    */
   async executeSql(projectName: string, sql: string): Promise<void> {
     const { slug, hostPort, password } =
       await this.resolveRunningPostgresCredentials(projectName);
     await runSql(hostPort, password, sql);
-    await this.signalPostgrestSchemaReload(slug);
+    const apiName = postgrestContainerName(slug);
+    try {
+      await this.docker.getContainer(apiName).kill({ signal: "SIGHUP" });
+    } catch (err: unknown) {
+      const code = getHttpStatus(err);
+      if (code === 404 || code === 409) return;
+      throw err;
+    }
   }
 
   private async resolveRunningPostgresCredentials(projectName: string): Promise<{
@@ -774,31 +800,6 @@ export class ProjectManager {
     }
 
     return { slug, hostPort, password };
-  }
-
-  /**
-   * Tells PostgREST to reload its schema cache (Docker SIGHUP) so new tables show up without a full restart.
-   * No-op if the API container is missing or not running.
-   */
-  private async signalPostgrestSchemaReload(slug: string): Promise<void> {
-    const apiName = postgrestContainerName(slug);
-    const containers = await this.docker.listContainers({
-      all: true,
-      filters: { name: [apiName] },
-    });
-    const match = containers.find((c) =>
-      c.Names?.some((n) => n === `/${apiName}` || n === apiName),
-    );
-    if (!match || match.State !== "running") {
-      return;
-    }
-    try {
-      await this.docker.getContainer(match.Id).kill({ signal: "SIGHUP" });
-    } catch (err: unknown) {
-      const code = getHttpStatus(err);
-      if (code === 404 || code === 409) return;
-      throw err;
-    }
   }
 
   /**
@@ -847,6 +848,49 @@ export class ProjectManager {
     }
 
     return rows.sort((a, b) => a.slug.localeCompare(b.slug));
+  }
+
+  /**
+   * Stub for a future “reaper” that auto-pauses idle free-tier tenant stacks.
+   * Loads every row from the flux-system `projects` table with `last_active_at` and flags rows
+   * older than `maxAgeDays`. Does not stop containers yet.
+   */
+  async stopInactiveProjects(
+    maxAgeDays: number,
+  ): Promise<FluxSystemProjectActivity[]> {
+    const uri = await this.getPostgresHostConnectionString("flux-system");
+    const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - maxAgeMs;
+
+    const client = new pg.Client({
+      connectionString: uri,
+      connectionTimeoutMillis: 3000,
+    });
+    await client.connect();
+    try {
+      const res = await client.query<{
+        id: string;
+        name: string;
+        slug: string;
+        last_active_at: Date;
+      }>(
+        `SELECT id::text AS id, name, slug, last_active_at
+         FROM projects
+         ORDER BY slug`,
+      );
+      return res.rows.map((row) => {
+        const lastActiveAt = new Date(row.last_active_at);
+        return {
+          id: row.id,
+          name: row.name,
+          slug: row.slug,
+          lastActiveAt,
+          inactiveByPolicy: lastActiveAt.getTime() < cutoff,
+        };
+      });
+    } finally {
+      await client.end();
+    }
   }
 
   /**
