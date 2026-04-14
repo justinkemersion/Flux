@@ -1,0 +1,26 @@
+# Flux Project Rules
+
+## Project Context
+We are building "Flux", a slimmed-down, high-performance Backend-as-a-Service (BaaS) / Database-as-a-Service (DBaaS) platform. 
+It allows users to create "projects". Each project dynamically spins up an isolated PostgreSQL database and a PostgREST container to instantly generate a REST API. 
+
+## Architecture & Tech Stack
+- **Monorepo:** pnpm workspaces.
+- **Language:** TypeScript / Node.js.
+- **Orchestration:** Docker Engine API (via `dockerode`).
+- **Routing:** Traefik (using dynamic Docker labels for routing subdomains).
+- **Tenant DBs:** PostgreSQL (Docker containers).
+- **Tenant APIs:** PostgREST (Docker containers mapped to the PG databases).
+- **Core API / Control Plane:** Express or Hono (Node.js).
+
+## Core Principles (AI Instructions)
+1. **Security & Isolation:** When generating Docker configs, always prioritize container isolation. Use secure random passwords for DBs. Set memory/CPU limits to prevent noisy neighbors.
+2. **Slim & Fast:** Avoid bloated libraries. If Node.js built-in modules can do it (e.g., `crypto`, `fs`), use them.
+3. **Idempotency:** Scripts that create infrastructure must be idempotent. If a project already exists, do not crash; handle it gracefully.
+4. **Error Handling:** Always wrap Docker/Infrastructure calls in try/catch blocks. Log errors with clear, actionable context.
+5. **No Hallucinated DBs:** We do not use ORMs for the tenant databases. We manage raw PostgreSQL instances. 
+
+## Code Style
+- Use ES Modules (`import`/`export`).
+- Strict TypeScript (`"strict": true` in tsconfig).
+- Keep functions small and single-purpose.
