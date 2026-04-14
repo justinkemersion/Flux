@@ -49,7 +49,8 @@ function coreAuthConfig(): Omit<NextAuthConfig, "adapter"> {
 
   return {
     trustHost: true,
-    debug: process.env.NODE_ENV !== "production",
+    // Verbose logs can include provider secrets; opt in with AUTH_DEBUG=1 only when needed.
+    debug: process.env.AUTH_DEBUG === "1",
     secret,
     session: { strategy: "jwt" },
     providers: [
