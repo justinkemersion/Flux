@@ -1,6 +1,6 @@
-// next-auth v4 middleware verifies the JWT session cookie at the edge
-// without touching Docker or the system DB.
-export { default } from "next-auth/middleware";
+import { auth } from "@/src/lib/auth";
+
+export default auth;
 
 export const config = {
   matcher: ["/projects/:path*"],

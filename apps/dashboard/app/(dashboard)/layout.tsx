@@ -1,14 +1,13 @@
-import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { UserMenu } from "@/src/components/UserMenu";
-import { authOptions } from "@/src/lib/auth";
+import { auth } from "@/src/lib/auth";
 
 export default async function DashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   const user = session?.user;
 
   return (

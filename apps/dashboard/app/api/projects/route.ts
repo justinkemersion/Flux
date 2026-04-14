@@ -1,8 +1,8 @@
-import { getServerSession } from "next-auth";
 import { eq } from "drizzle-orm";
-import { authOptions, getDb, initSystemDb } from "@/src/lib/auth";
+import { auth } from "@/src/lib/auth";
+import { projects } from "@/src/db/schema";
+import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
-import { projects } from "@/src/lib/db/schema";
 
 export const runtime = "nodejs";
 
@@ -11,7 +11,7 @@ function jsonError(message: string, status: number): Response {
 }
 
 export async function GET(): Promise<Response> {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.id) return jsonError("Unauthorized", 401);
 
   await initSystemDb();
@@ -56,7 +56,7 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.id) return jsonError("Unauthorized", 401);
 
   let body: unknown;
