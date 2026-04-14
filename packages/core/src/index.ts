@@ -30,6 +30,9 @@ const POSTGRES_USER = "postgres";
  *   authenticator — the login role PostgREST connects as (no direct login for users)
  *   anon          — privileges for unauthenticated requests
  *   authenticated — privileges for JWT-verified requests
+ *
+ * Also grants on existing tables/sequences and sets ALTER DEFAULT PRIVILEGES so future objects in
+ * `api` automatically grant DML to `anon` / `authenticated`, plus sequence USAGE for serial IDs.
  */
 export const BOOTSTRAP_SQL = `
 -- Schema that PostgREST will expose (PGRST_DB_SCHEMA=api)
@@ -55,6 +58,16 @@ GRANT authenticated TO authenticator;
 
 -- Allow request roles to use the api schema
 GRANT USAGE ON SCHEMA api TO anon, authenticated;
+
+-- Existing tables / sequences (none on first boot; safe on empty schema)
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA api TO anon, authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO anon, authenticated;
+
+-- Objects created later in this schema (e.g. migrations) inherit these grants
+ALTER DEFAULT PRIVILEGES IN SCHEMA api
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA api
+  GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;
 `.trim();
 
 function randomHexChars(byteLength: number): string {
@@ -63,6 +76,56 @@ function randomHexChars(byteLength: number): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => {
+    ctrl.abort();
+  }, ms);
+  return fetch(url, { signal: ctrl.signal }).finally(() => {
+    clearTimeout(t);
+  });
+}
+
+/**
+ * Polls `url` until the gateway returns HTTP (not connection errors / gateway timeouts).
+ * Used after provision so we do not report success while Traefik or PostgREST are still starting.
+ */
+async function waitForApiReachable(
+  url: string,
+  options?: { maxAttempts?: number; onStatus?: (message: string) => void },
+): Promise<void> {
+  const maxAttempts = options?.maxAttempts ?? 40;
+  const onStatus = options?.onStatus;
+  let attempt = 0;
+  onStatus?.(`Checking ${url} (gateway + PostgREST)…`);
+
+  while (true) {
+    attempt++;
+    try {
+      const res = await fetchWithTimeout(url, 8000);
+      const transient =
+        res.status === 502 || res.status === 503 || res.status === 504;
+      if (!transient) {
+        onStatus?.("API URL responded.");
+        return;
+      }
+    } catch {
+      /* connection refused, DNS, reset — retry */
+    }
+    if (attempt >= maxAttempts) {
+      throw new Error(
+        `API URL ${url} did not become reachable after ${String(maxAttempts)} attempts (check Traefik and PostgREST).`,
+      );
+    }
+    if (attempt === 1 || attempt % 5 === 0) {
+      onStatus?.(
+        `Still waiting for ${url} (attempt ${String(attempt)}/${String(maxAttempts)})…`,
+      );
+    }
+    await sleep(Math.min(400 * 2 ** Math.min(attempt, 5), 5000));
+  }
 }
 
 /**
@@ -626,6 +689,9 @@ export class ProjectManager {
       `Verified PostgREST container is attached to ${FLUX_NETWORK_NAME} (Traefik can reach it).`,
     );
 
+    const apiUrl = fluxApiUrlForSlug(slug);
+    await waitForApiReachable(apiUrl, log ? { onStatus: log } : undefined);
+
     log?.("Provision complete.");
     return {
       name,
@@ -640,7 +706,7 @@ export class ProjectManager {
         containerId: apiInspect.Id,
         containerName: apiContainerName,
       },
-      apiUrl: fluxApiUrlForSlug(slug),
+      apiUrl,
       jwtSecret,
       postgresPassword,
     };
@@ -716,8 +782,18 @@ export class ProjectManager {
    */
   private async signalPostgrestSchemaReload(slug: string): Promise<void> {
     const apiName = postgrestContainerName(slug);
+    const containers = await this.docker.listContainers({
+      all: true,
+      filters: { name: [apiName] },
+    });
+    const match = containers.find((c) =>
+      c.Names?.some((n) => n === `/${apiName}` || n === apiName),
+    );
+    if (!match || match.State !== "running") {
+      return;
+    }
     try {
-      await this.docker.getContainer(apiName).kill({ signal: "SIGHUP" });
+      await this.docker.getContainer(match.Id).kill({ signal: "SIGHUP" });
     } catch (err: unknown) {
       const code = getHttpStatus(err);
       if (code === 404 || code === 409) return;
