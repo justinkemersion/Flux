@@ -12,7 +12,8 @@ export const FLUX_GATEWAY_CONTAINER_NAME = "flux-gateway";
 export const FLUX_DOCKER_IMAGES = {
   postgres: "postgres:16-alpine",
   postgrest: "postgrest/postgrest:latest",
-  traefik: "traefik:v3.0",
+  /** v3.6+ negotiates Docker API version (v3.0 used API 1.24 and breaks on modern Engine). */
+  traefik: "traefik:v3.6",
 } as const;
 
 const POSTGRES_IMAGE = FLUX_DOCKER_IMAGES.postgres;
@@ -569,15 +570,16 @@ export class ProjectManager {
 
     const dbUri = postgresJdbcUri(slug, postgresPassword);
 
-    const routerId = `flux-${slug}-api`;
+    /** Router and service name segment (must match Traefik label keys). */
+    const traefikSvc = `flux-${slug}-api`;
     const traefikLabels: Record<string, string> = {
       "traefik.enable": "true",
       /** Force backend IP on the same bridge Traefik uses (avoids wrong-network 404/502). */
       "traefik.docker.network": FLUX_NETWORK_NAME,
-      [`traefik.http.routers.${routerId}.rule`]: traefikHostRule(slug),
-      [`traefik.http.routers.${routerId}.entrypoints`]: "web",
-      [`traefik.http.routers.${routerId}.service`]: routerId,
-      [`traefik.http.services.${routerId}.loadbalancer.server.port`]: "3000",
+      [`traefik.http.routers.${traefikSvc}.rule`]: traefikHostRule(slug),
+      [`traefik.http.routers.${traefikSvc}.entrypoints`]: "web",
+      [`traefik.http.routers.${traefikSvc}.service`]: traefikSvc,
+      [`traefik.http.services.${traefikSvc}.loadbalancer.server.port`]: "3000",
     };
 
     let apiContainer: Docker.Container;
@@ -847,6 +849,10 @@ export class ProjectManager {
    * Ensures {@link FLUX_GATEWAY_CONTAINER_NAME} runs Traefik with the Docker provider, socket
    * access (read-only), `web` on host port 80, and attachment to {@link FLUX_NETWORK_NAME}.
    *
+   * Uses {@link FLUX_DOCKER_IMAGES.traefik} **v3.6+** so the Docker client negotiates API version with
+   * the Engine (older Traefik builds pinned API 1.24 and fail on recent Docker). The gateway also sets
+   * `DOCKER_API_VERSION=1.41` and `--providers.docker.httpClientTimeout=300s` for the socket client.
+   *
    * Idempotent: **start** if stopped, **create** if missing, **attach** to `flux-network` if needed.
    * Invoked on every {@link ProjectManager.provisionProject} so a stopped gateway is revived even
    * when the bridge network already existed.
@@ -879,10 +885,12 @@ export class ProjectManager {
       const gateway = await this.docker.createContainer({
         name,
         Image: TRAEFIK_IMAGE,
+        Env: ["DOCKER_API_VERSION=1.41"],
         Cmd: [
           "--providers.docker=true",
           "--providers.docker.exposedbydefault=false",
           `--providers.docker.network=${FLUX_NETWORK_NAME}`,
+          "--providers.docker.httpClientTimeout=300s",
           "--entrypoints.web.address=:80",
         ],
         ExposedPorts: { "80/tcp": {} },
