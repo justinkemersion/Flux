@@ -105,7 +105,27 @@ PostgREST **caches schema metadata** for performance. After raw SQL runs (e.g. `
 |------|---------|----------------|
 | `packages/core` | **`@flux/core`** | `ProjectManager`, Docker orchestration, `BOOTSTRAP_SQL`, `pg` execution, PostgREST reload signaling. |
 | `packages/cli` | **`@flux/cli`** | `flux` CLI entry (`src/index.ts`), Commander + Chalk. |
-| `apps/*` | (reserved) | Future **Next.js dashboard** and other product apps. |
+| `apps/dashboard` | **Dashboard** | **Next.js** control-plane UI: **Auth.js** (NextAuth v5) with **GitHub OAuth**, **Drizzle ORM** + **`pg`** against the **`flux-system`** Postgres project (provisioned by **`ProjectManager`** from **`@flux/core`**), project APIs, and **PostgREST**-backed tenant URLs. |
+
+---
+
+## Dashboard stack (`apps/dashboard`)
+
+The dashboard is the first **product surface** on top of **`@flux/core`**. It uses the same Docker-backed Postgres model as tenants, but reserves the project name **`flux-system`** for the **control-plane database** that stores dashboard users (Auth.js tables), OAuth accounts, optional sessions/verification tokens, and **project ownership** metadata (`userId` on each row in `projects`).
+
+| Piece | Role |
+|-------|------|
+| **Next.js (App Router)** | Server components, route handlers (`/api/*`), and the `proxy.ts` middleware entry used by this repo’s Next.js version for **auth-gated** `/projects` routes. |
+| **Auth.js / `next-auth` v5** | GitHub sign-in, **JWT session strategy** (so Edge middleware never talks to Postgres or Docker), and the **`@auth/drizzle-adapter`** for persisting users and linked accounts in **`flux-system`**. |
+| **Drizzle ORM** | Typed schema in `apps/dashboard/src/db/schema.ts` and queries via `drizzle-orm` + **`drizzle-kit`** (dev) for future migrations if you adopt them. |
+| **`pg` (node-postgres)** | Connection pool to **`flux-system`** after `ProjectManager` resolves the published host port. |
+| **`ProjectManager`** | **`provisionProject("flux-system")`** (or start if it already exists) before DDL and Drizzle attach—same primitive as tenant projects. |
+
+Environment variables (see also [Auth.js environment variables](https://authjs.dev/getting-started/deployment#environment-variables)):
+
+- **`AUTH_SECRET`** (or **`NEXTAUTH_SECRET`**) — required in production for session signing.
+- **`GITHUB_ID`** / **`GITHUB_SECRET`** (or **`AUTH_GITHUB_ID`** / **`AUTH_GITHUB_SECRET`**) — GitHub OAuth App credentials.
+- **`AUTH_URL`** or **`NEXTAUTH_URL`** — base URL of the dashboard (e.g. `http://localhost:3000`) so OAuth redirects match your GitHub App’s callback URL.
 
 ---
 
@@ -129,6 +149,79 @@ pnpm run flux -- --help
 ```
 
 You can also use the **`flux`** bin after linking (`packages/cli/bin/flux` invokes `tsx` on `src/index.ts`).
+
+---
+
+## Testing everything (CLI + dashboard)
+
+Use this workflow to validate **Docker orchestration**, the **CLI**, and the **Next.js dashboard** with **GitHub OAuth** and **project APIs**. All steps assume a Unix-like shell and a running **Docker Engine** (socket available to your user, or **`DOCKER_HOST`** set for a remote engine).
+
+### 1. Install and sanity-check the workspace
+
+```bash
+cd /path/to/flux
+pnpm install
+pnpm --filter @flux/core exec tsc --noEmit   # optional: typecheck core only
+```
+
+### 2. Exercise the CLI against real Docker
+
+From `packages/cli` (or using the `flux` bin), run read-only then mutating commands as you prefer:
+
+```bash
+cd packages/cli
+pnpm run flux -- list
+pnpm run flux -- create "cli-smoke-test"
+pnpm run flux -- list
+pnpm run flux -- stop "cli-smoke-test"
+pnpm run flux -- start "cli-smoke-test"
+```
+
+Confirm containers appear on **`flux-network`**, Postgres accepts connections, and PostgREST responds at the printed **`http://<slug>.flux.localhost`** (or your Traefik/host setup). When finished, **`nuke`** removes the tenant if you want a clean slate:
+
+```bash
+pnpm run flux -- nuke "cli-smoke-test" --yes
+```
+
+### 3. Configure the dashboard for GitHub OAuth
+
+1. In [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers), create an **OAuth App**.
+2. Set **Authorization callback URL** to **`http://localhost:3000/api/auth/callback/github`** (adjust host/port if you run the dev server elsewhere).
+3. Copy the **Client ID** and generate a **Client secret**.
+
+Create **`apps/dashboard/.env.local`** (never commit it; root `.gitignore` already ignores `.env*`) with at least:
+
+```bash
+AUTH_SECRET="<generate-a-long-random-string>"
+GITHUB_ID="<github-oauth-client-id>"
+GITHUB_SECRET="<github-oauth-client-secret>"
+AUTH_URL="http://localhost:3000"
+```
+
+You may use **`NEXTAUTH_SECRET`** / **`NEXTAUTH_URL`** instead of **`AUTH_SECRET`** / **`AUTH_URL`**; Auth.js accepts both.
+
+### 4. Run the dashboard and verify control-plane provisioning
+
+```bash
+# From repository root
+pnpm --filter dashboard dev
+```
+
+On first server start, **`instrumentation.ts`** calls **`initSystemDb()`**, which provisions or starts the **`flux-system`** Docker project and creates control-plane tables. Watch the terminal for **`[flux] System DB ready.`** or errors if Docker is unreachable.
+
+- Open **`http://localhost:3000`** in a browser.
+- Navigate to **`/projects`**. Middleware should send unauthenticated users to sign-in; complete **GitHub** sign-in.
+- After login, use **Create project** to provision a tenant; the **POST `/api/projects`** handler associates the row with **`session.user.id`**.
+- Reload the list and confirm the project appears with status and URLs.
+
+### 5. Production-style checks
+
+```bash
+pnpm --filter dashboard build
+pnpm --filter dashboard lint
+```
+
+Fix any failures before opening a pull request.
 
 ---
 
@@ -181,9 +274,9 @@ pnpm run flux -- nuke "ACME Corp" --yes
 
 | Initiative | Description |
 |------------|-------------|
-| **Next.js dashboard** | Server-driven UI over the same `ProjectManager` primitives: project list, detail, start/stop, guarded nuke, and links to PostgREST—initially co-located with Docker for simplicity. |
+| **Next.js dashboard** | **`apps/dashboard`** now covers sign-in (GitHub), project list/create, and control-plane storage in **`flux-system`**; extend with detail views, start/stop/nuke from the UI, and deeper PostgREST links. |
 | **Traefik and subdomain routing** | Dynamic labels per tenant API container so `https://<project>.api.example.com` routes to the correct PostgREST instance without maintaining static Nginx configs. |
-| **Auth and multi-user apps** | JWT validation already has a hook via `PGRST_JWT_SECRET`; future work includes issuer integration, row-level policies, and dashboard login—without abandoning the per-tenant container model. |
+| **Auth and multi-user apps** | Dashboard identity uses **Auth.js** + **Drizzle** on **`flux-system`**; tenant APIs still use **`PGRST_JWT_SECRET`** and roles from **`BOOTSTRAP_SQL`**. Next steps include stricter RLS, additional providers, and mapping dashboard users to tenant JWTs where needed. |
 | **Billing (Stripe)** | Out of scope for the engine itself; the intended pattern is to attach Stripe webhooks and customer metadata at the **application** layer, using Flux tenants as isolated data planes per customer or per app. |
 
 ---
