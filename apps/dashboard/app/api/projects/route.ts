@@ -1,38 +1,54 @@
+import { getServerSession } from "next-auth";
+import { eq } from "drizzle-orm";
+import { authOptions, getDb, initSystemDb } from "@/src/lib/auth";
 import { getProjectManager } from "@/src/lib/flux";
+import { projects } from "@/src/lib/db/schema";
 
 export const runtime = "nodejs";
-
-const DEFAULT_OWNER_ID = "default-user";
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
 }
 
 export async function GET(): Promise<Response> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return jsonError("Unauthorized", 401);
+
+  await initSystemDb();
+  const db = getDb();
   const pm = getProjectManager();
-  const list = await pm.listProjects();
+
+  const userProjects = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.userId, session.user.id));
+
+  // Enrich with live Docker status in parallel
+  const [dockerProjects] = await Promise.all([pm.listProjects().catch(() => [])]);
+  const dockerBySlug = new Map(dockerProjects.map((p) => [p.slug, p]));
 
   const enriched = await Promise.all(
-    list.map(async (row) => {
-      try {
-        const postgresConnectionString =
-          await pm.getPostgresHostConnectionString(row.slug);
-        return {
-          slug: row.slug,
-          status: row.status,
-          apiUrl: row.apiUrl,
-          postgresConnectionString,
-          ownerId: DEFAULT_OWNER_ID,
-        };
-      } catch {
-        return {
-          slug: row.slug,
-          status: row.status,
-          apiUrl: row.apiUrl,
-          postgresConnectionString: null as string | null,
-          ownerId: DEFAULT_OWNER_ID,
-        };
+    userProjects.map(async (p) => {
+      const docker = dockerBySlug.get(p.slug);
+      let postgresConnectionString: string | null = null;
+      if (docker?.status === "running") {
+        try {
+          postgresConnectionString = await pm.getPostgresHostConnectionString(
+            p.slug,
+          );
+        } catch {
+          // DB stopped or unavailable — surface null
+        }
       }
+      return {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        status: docker?.status ?? "stopped",
+        apiUrl: docker?.apiUrl ?? `http://${p.slug}.flux.localhost`,
+        postgresConnectionString,
+        createdAt: p.createdAt,
+      };
     }),
   );
 
@@ -40,6 +56,9 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return jsonError("Unauthorized", 401);
+
   let body: unknown;
   try {
     body = await req.json();
@@ -57,10 +76,10 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const rawName = (body as { name: string }).name.trim();
-  if (!rawName) {
-    return jsonError("Project name is required", 400);
-  }
+  if (!rawName) return jsonError("Project name is required", 400);
 
+  await initSystemDb();
+  const db = getDb();
   const pm = getProjectManager();
 
   try {
@@ -68,13 +87,24 @@ export async function POST(req: Request): Promise<Response> {
     const postgresHostConnectionString =
       await pm.getPostgresHostConnectionString(project.name);
 
-    return Response.json({
-      ownerId: DEFAULT_OWNER_ID,
-      project: {
+    const [dbProject] = await db
+      .insert(projects)
+      .values({
         name: project.name,
         slug: project.slug,
+        userId: session.user.id,
+      })
+      .returning();
+
+    return Response.json({
+      ownerId: session.user.id,
+      project: {
+        id: dbProject.id,
+        name: dbProject.name,
+        slug: dbProject.slug,
         apiUrl: project.apiUrl,
         postgresHostConnectionString,
+        createdAt: dbProject.createdAt,
       },
     });
   } catch (err: unknown) {

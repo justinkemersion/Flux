@@ -4,26 +4,47 @@ import { Loader2, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type ProjectRow = {
+  id: string;
+  name: string;
   slug: string;
   status: "running" | "stopped" | "partial";
   apiUrl: string;
   postgresConnectionString: string | null;
-  ownerId: string;
+  createdAt: string;
 };
 
-function statusLabel(s: ProjectRow["status"]): string {
+function statusBadge(s: ProjectRow["status"]) {
+  const base = "rounded-full px-2 py-0.5 text-xs font-medium";
   switch (s) {
     case "running":
-      return "Running";
+      return (
+        <span
+          className={`${base} bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200`}
+        >
+          Running
+        </span>
+      );
     case "stopped":
-      return "Stopped";
+      return (
+        <span
+          className={`${base} bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100`}
+        >
+          Stopped
+        </span>
+      );
     default:
-      return "Partial";
+      return (
+        <span
+          className={`${base} bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100`}
+        >
+          Partial
+        </span>
+      );
   }
 }
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [projectList, setProjectList] = useState<ProjectRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -40,7 +61,7 @@ export default function ProjectsPage() {
         throw new Error(data.error ?? `Request failed (${String(res.status)})`);
       }
       const data = (await res.json()) as { projects: ProjectRow[] };
-      setProjects(data.projects);
+      setProjectList(data.projects);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -85,6 +106,7 @@ export default function ProjectsPage() {
       }
       closeDialog();
       setName("");
+      setFetching(true);
       await load();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : String(err));
@@ -118,30 +140,25 @@ export default function ProjectsPage() {
         </div>
       ) : loadError ? (
         <p className="text-red-600 dark:text-red-400">{loadError}</p>
-      ) : projects.length === 0 ? (
+      ) : projectList.length === 0 ? (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           No projects yet. Use the plus button to create one.
         </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((p) => (
+          {projectList.map((p) => (
             <article
-              key={p.slug}
+              key={p.id}
               className="flex flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
             >
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="font-mono text-sm font-semibold">{p.slug}</h2>
-                <span
-                  className={
-                    p.status === "running"
-                      ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
-                      : p.status === "stopped"
-                        ? "rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100"
-                        : "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-100"
-                  }
-                >
-                  {statusLabel(p.status)}
-                </span>
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-semibold">{p.name}</h2>
+                  <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                    {p.slug}
+                  </span>
+                </div>
+                {statusBadge(p.status)}
               </div>
               <dl className="flex flex-col gap-2 text-xs">
                 <div>
@@ -157,6 +174,16 @@ export default function ProjectsPage() {
                       "Unavailable while Postgres is stopped"}
                   </dd>
                 </div>
+                <div>
+                  <dt className="text-zinc-500 dark:text-zinc-400">Created</dt>
+                  <dd className="mt-0.5 text-zinc-900 dark:text-zinc-100">
+                    {new Date(p.createdAt).toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </dd>
+                </div>
               </dl>
             </article>
           ))}
@@ -165,7 +192,7 @@ export default function ProjectsPage() {
 
       <dialog
         ref={dialogRef}
-        className="open:backdrop:bg-black/50 w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-lg backdrop:bg-zinc-900/40 dark:border-zinc-800 dark:bg-zinc-950"
+        className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-lg backdrop:bg-zinc-900/40 open:backdrop:bg-black/50 dark:border-zinc-800 dark:bg-zinc-950"
       >
         <h2 className="text-lg font-semibold">New project</h2>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
@@ -194,8 +221,8 @@ export default function ProjectsPage() {
             <button
               type="button"
               onClick={closeDialog}
-              className="rounded-md px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
               disabled={creating}
+              className="rounded-md px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               Cancel
             </button>
