@@ -392,6 +392,13 @@ function postgresJdbcUri(slug: string, password: string): string {
   return `postgres://${user}:${pass}@${host}:5432/postgres`;
 }
 
+/** Connection URI for tools on the Docker host (`localhost` published port). */
+function postgresHostConnectionUri(hostPort: number, password: string): string {
+  const user = encodeURIComponent(POSTGRES_USER);
+  const pass = encodeURIComponent(password);
+  return `postgres://${user}:${pass}@127.0.0.1:${String(hostPort)}/postgres`;
+}
+
 export async function createProjectBucket(
   projectName: string,
   dbPassword: string,
@@ -640,12 +647,33 @@ export class ProjectManager {
   }
 
   /**
+   * Host-side Postgres URI (`127.0.0.1:{publishedPort}`) for the project.
+   * Requires the Postgres container to be running (same as {@link executeSql}).
+   */
+  async getPostgresHostConnectionString(projectName: string): Promise<string> {
+    const { hostPort, password } =
+      await this.resolveRunningPostgresCredentials(projectName);
+    return postgresHostConnectionUri(hostPort, password);
+  }
+
+  /**
    * Runs arbitrary SQL against an existing Flux project's Postgres instance.
    *
    * Retrieves connection details (host port, password) from the running container's
    * inspect data so callers don't need to store credentials out of band.
    */
   async executeSql(projectName: string, sql: string): Promise<void> {
+    const { slug, hostPort, password } =
+      await this.resolveRunningPostgresCredentials(projectName);
+    await runSql(hostPort, password, sql);
+    await this.signalPostgrestSchemaReload(slug);
+  }
+
+  private async resolveRunningPostgresCredentials(projectName: string): Promise<{
+    slug: string;
+    hostPort: number;
+    password: string;
+  }> {
     const slug = slugifyProjectName(projectName);
     const containerName = postgresContainerName(slug);
 
@@ -679,9 +707,7 @@ export class ProjectManager {
       );
     }
 
-    await runSql(hostPort, password, sql);
-
-    await this.signalPostgrestSchemaReload(slug);
+    return { slug, hostPort, password };
   }
 
   /**
