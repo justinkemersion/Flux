@@ -5,14 +5,19 @@ import pg from "pg";
 
 export const FLUX_NETWORK_NAME = "flux-network";
 
-/** Pinned images for Flux project stacks (Postgres + PostgREST). */
+/** Traefik gateway container (Docker provider, host :80 → entrypoint `web`). */
+export const FLUX_GATEWAY_CONTAINER_NAME = "flux-gateway";
+
+/** Pinned images for Flux project stacks (Postgres + PostgREST + Traefik). */
 export const FLUX_DOCKER_IMAGES = {
   postgres: "postgres:16-alpine",
   postgrest: "postgrest/postgrest:latest",
+  traefik: "traefik:v3.0",
 } as const;
 
 const POSTGRES_IMAGE = FLUX_DOCKER_IMAGES.postgres;
 const POSTGREST_IMAGE = FLUX_DOCKER_IMAGES.postgrest;
+const TRAEFIK_IMAGE = FLUX_DOCKER_IMAGES.traefik;
 
 /** Default superuser when only `POSTGRES_PASSWORD` is set on official images. */
 const POSTGRES_USER = "postgres";
@@ -155,6 +160,15 @@ function postgrestContainerName(slug: string): string {
   return `flux-${slug}-api`;
 }
 
+/** HTTP origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik). */
+export function fluxApiUrlForSlug(slug: string): string {
+  return `http://${slug}.flux.localhost`;
+}
+
+function traefikHostRule(slug: string): string {
+  return `Host(\`${slug}.flux.localhost\`)`;
+}
+
 function containerNameForProject(projectName: string): string {
   return postgresContainerName(slugifyProjectName(projectName));
 }
@@ -173,17 +187,6 @@ function hostPortForTcp(
   return Number.parseInt(hostPort, 10);
 }
 
-function hostPortFromInspectOptional(
-  inspect: {
-    NetworkSettings: { Ports?: Record<string, Array<{ HostPort?: string }> | null> };
-  },
-  containerPort: "5432/tcp" | "3000/tcp",
-): number | undefined {
-  const bindings = inspect.NetworkSettings.Ports?.[containerPort];
-  const hostPort = bindings?.[0]?.HostPort;
-  return hostPort ? Number.parseInt(hostPort, 10) : undefined;
-}
-
 function tenantVolumeName(slug: string): string {
   return `flux-${slug}-db-data`;
 }
@@ -197,8 +200,8 @@ export interface FluxProjectSummary {
   slug: string;
   /** Combined health of Postgres + PostgREST containers. */
   status: "running" | "stopped" | "partial";
-  /** Published host port for the PostgREST container (maps to 3000), when known. */
-  apiHostPort?: number;
+  /** Public API URL via the Flux Traefik gateway (`Host: {slug}.flux.localhost`). */
+  apiUrl: string;
 }
 
 async function ensureImage(
@@ -300,9 +303,9 @@ export interface FluxProject {
   postgrest: {
     containerId: string;
     containerName: string;
-    /** Host port mapped to the PostgREST listen port (default 3000 in image). */
-    hostPort?: number;
   };
+  /** Public PostgREST base URL via Traefik (no per-tenant host port). */
+  apiUrl: string;
   /** Generated secret for PostgREST JWT verification — treat as sensitive. */
   jwtSecret: string;
   /** Generated Postgres superuser password — treat as sensitive. */
@@ -342,6 +345,10 @@ export class ProjectManager {
 
   /**
    * Provisions Postgres + PostgREST on {@link FLUX_NETWORK_NAME}, with internal DNS between services.
+   *
+   * The shared {@link FLUX_GATEWAY_CONTAINER_NAME} Traefik instance (started with the Flux network)
+   * routes `http://{slug}.flux.localhost` to PostgREST via Docker labels; PostgREST is not published
+   * on a random host port.
    *
    * PostgREST is started with RestartPolicy `on-failure` (with a retry cap) so it survives Postgres
    * startup races without a Node-side health probe; a short delay after Postgres start reduces churn
@@ -410,12 +417,20 @@ export class ProjectManager {
 
     const dbUri = postgresJdbcUri(slug, postgresPassword);
 
+    const traefikLabels: Record<string, string> = {
+      "traefik.enable": "true",
+      [`traefik.http.routers.flux-${slug}-api.rule`]: traefikHostRule(slug),
+      [`traefik.http.routers.flux-${slug}-api.entrypoints`]: "web",
+      [`traefik.http.services.flux-${slug}-api.loadbalancer.server.port`]: "3000",
+    };
+
     let apiContainer: Docker.Container;
     log?.(`Creating PostgREST container ${apiContainerName}…`);
     try {
       apiContainer = await this.docker.createContainer({
         name: apiContainerName,
         Image: POSTGREST_IMAGE,
+        Labels: traefikLabels,
         Env: [
           `PGRST_DB_URI=${dbUri}`,
           `PGRST_JWT_SECRET=${jwtSecret}`,
@@ -425,9 +440,6 @@ export class ProjectManager {
         ExposedPorts: { "3000/tcp": {} },
         HostConfig: {
           NetworkMode: FLUX_NETWORK_NAME,
-          PortBindings: {
-            "3000/tcp": [{ HostIp: "0.0.0.0", HostPort: "0" }],
-          },
           Memory: 256 * 1024 * 1024,
           RestartPolicy: { Name: "on-failure", MaximumRetryCount: 25 },
         },
@@ -444,7 +456,6 @@ export class ProjectManager {
     log?.("Starting PostgREST…");
     await apiContainer.start();
     const apiInspect = await apiContainer.inspect();
-    const postgrestHostPort = hostPortForTcp(apiInspect, "3000/tcp");
 
     log?.("Provision complete.");
     return {
@@ -459,8 +470,8 @@ export class ProjectManager {
       postgrest: {
         containerId: apiInspect.Id,
         containerName: apiContainerName,
-        hostPort: postgrestHostPort,
       },
+      apiUrl: fluxApiUrlForSlug(slug),
       jwtSecret,
       postgresPassword,
     };
@@ -533,7 +544,7 @@ export class ProjectManager {
     const containers = await this.docker.listContainers({ all: true });
     const bySlug = new Map<
       string,
-      { dbState?: string; apiState?: string; apiId?: string }
+      { dbState?: string; apiState?: string }
     >();
 
     for (const c of containers) {
@@ -544,10 +555,7 @@ export class ProjectManager {
       const kind = m[2] as "db" | "api";
       const cur = bySlug.get(slug) ?? {};
       if (kind === "db") cur.dbState = c.State;
-      else {
-        cur.apiState = c.State;
-        cur.apiId = c.Id;
-      }
+      else cur.apiState = c.State;
       bySlug.set(slug, cur);
     }
 
@@ -567,20 +575,10 @@ export class ProjectManager {
         status = "partial";
       }
 
-      let apiHostPort: number | undefined;
-      if (e.apiId) {
-        try {
-          const inspect = await this.docker.getContainer(e.apiId).inspect();
-          apiHostPort = hostPortFromInspectOptional(inspect, "3000/tcp");
-        } catch {
-          /* ignore */
-        }
-      }
-
       rows.push({
         slug,
         status,
-        ...(apiHostPort !== undefined ? { apiHostPort } : {}),
+        apiUrl: fluxApiUrlForSlug(slug),
       });
     }
 
@@ -663,18 +661,94 @@ export class ProjectManager {
     }
   }
 
-  /** Ensures a Docker bridge network named {@link FLUX_NETWORK_NAME} exists. */
+  /**
+   * Ensures a Docker bridge network named {@link FLUX_NETWORK_NAME} exists, then ensures the
+   * shared Traefik gateway is running on that network (idempotent).
+   */
   private async ensureFluxNetwork(): Promise<void> {
     const networks = await this.docker.listNetworks({
       filters: { name: [FLUX_NETWORK_NAME] },
     });
-    if (networks.some((n) => n.Name === FLUX_NETWORK_NAME)) return;
+    if (!networks.some((n) => n.Name === FLUX_NETWORK_NAME)) {
+      await this.docker.createNetwork({
+        Name: FLUX_NETWORK_NAME,
+        Driver: "bridge",
+        CheckDuplicate: true,
+      });
+    }
+    await this.ensureFluxGateway();
+  }
 
-    await this.docker.createNetwork({
-      Name: FLUX_NETWORK_NAME,
-      Driver: "bridge",
-      CheckDuplicate: true,
-    });
+  /**
+   * Ensures {@link FLUX_GATEWAY_CONTAINER_NAME} runs Traefik with the Docker provider, socket
+   * access (read-only), `web` on host port 80, and attachment to {@link FLUX_NETWORK_NAME}.
+   */
+  private async ensureFluxGateway(): Promise<void> {
+    const name = FLUX_GATEWAY_CONTAINER_NAME;
+
+    try {
+      const existing = this.docker.getContainer(name);
+      const inspect = await existing.inspect();
+      if (!inspect.State.Running) {
+        await existing.start();
+      }
+      await this.ensureContainerAttachedToFluxNetwork(inspect.Id);
+      return;
+    } catch (err: unknown) {
+      if (getHttpStatus(err) !== 404) throw err;
+    }
+
+    await ensureImage(this.docker, TRAEFIK_IMAGE);
+
+    try {
+      const gateway = await this.docker.createContainer({
+        name,
+        Image: TRAEFIK_IMAGE,
+        Cmd: [
+          "--providers.docker=true",
+          "--providers.docker.exposedbydefault=false",
+          "--entrypoints.web.address=:80",
+        ],
+        ExposedPorts: { "80/tcp": {} },
+        HostConfig: {
+          Binds: ["/var/run/docker.sock:/var/run/docker.sock:ro"],
+          PortBindings: {
+            "80/tcp": [{ HostIp: "0.0.0.0", HostPort: "80" }],
+          },
+          NetworkMode: FLUX_NETWORK_NAME,
+          Memory: 256 * 1024 * 1024,
+          RestartPolicy: { Name: "unless-stopped" },
+        },
+      });
+      await gateway.start();
+    } catch (err: unknown) {
+      if (getHttpStatus(err) === 409) {
+        const existing = this.docker.getContainer(name);
+        const inspect = await existing.inspect();
+        if (!inspect.State.Running) {
+          await existing.start();
+        }
+        await this.ensureContainerAttachedToFluxNetwork(inspect.Id);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async ensureContainerAttachedToFluxNetwork(
+    containerId: string,
+  ): Promise<void> {
+    const inspect = await this.docker.getContainer(containerId).inspect();
+    const nets = inspect.NetworkSettings.Networks ?? {};
+    if (nets[FLUX_NETWORK_NAME]) return;
+    try {
+      await this.docker.getNetwork(FLUX_NETWORK_NAME).connect({
+        Container: containerId,
+      });
+    } catch (err: unknown) {
+      if (getHttpStatus(err) === 409) return;
+      throw err;
+    }
   }
 }
 

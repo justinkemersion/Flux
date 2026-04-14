@@ -14,10 +14,6 @@ function postgresConnectionUrl(
   return `postgresql://${user}:${pass}@localhost:${String(hostPort)}/postgres`;
 }
 
-function postgrestBaseUrl(hostPort: number): string {
-  return `http://localhost:${String(hostPort)}/`;
-}
-
 function printBanner(title: string): void {
   console.log();
   console.log(chalk.bold.cyan(`  ${title}`));
@@ -48,13 +44,12 @@ async function cmdCreate(name: string): Promise<void> {
   });
 
   const pgPort = project.postgres.hostPort;
-  const apiPort = project.postgrest.hostPort;
-  if (pgPort == null || apiPort == null) {
-    throw new Error("Provision completed without published host ports.");
+  if (pgPort == null) {
+    throw new Error("Provision completed without a published Postgres host port.");
   }
 
   const pgUrl = postgresConnectionUrl(pgPort, project.postgresPassword);
-  const apiUrl = postgrestBaseUrl(apiPort);
+  const { apiUrl } = project;
 
   printBanner("Project ready");
   console.log(
@@ -121,13 +116,11 @@ async function cmdList(): Promise<void> {
   const wProject = 26;
   const wStatus = 12;
   console.log(
-    chalk.dim(`  ${"PROJECT".padEnd(wProject)}${"STATUS".padEnd(wStatus)}API PORT`),
+    chalk.dim(`  ${"PROJECT".padEnd(wProject)}${"STATUS".padEnd(wStatus)}API URL`),
   );
   for (const r of rows) {
-    const port =
-      r.apiHostPort !== undefined ? chalk.white(String(r.apiHostPort)) : chalk.dim("—");
     console.log(
-      `  ${chalk.cyan.bold(r.slug.padEnd(wProject))}${statusCell(r.status)}${port}`,
+      `  ${chalk.cyan.bold(r.slug.padEnd(wProject))}${statusCell(r.status)}${chalk.white(r.apiUrl)}`,
     );
   }
   console.log();
@@ -210,7 +203,9 @@ async function main(): Promise<void> {
 
   program
     .command("list")
-    .description("List Flux projects (containers flux-*-db / flux-*-api) and API ports")
+    .description(
+      "List Flux projects (containers flux-*-db / flux-*-api) and gateway API URLs",
+    )
     .action(async () => {
       try {
         await cmdList();
