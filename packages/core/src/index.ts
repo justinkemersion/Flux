@@ -92,18 +92,32 @@ async function waitForPostgresAndRun(
   hostPort: number,
   password: string,
   sql: string,
-  maxAttempts = 20,
+  options?: {
+    maxAttempts?: number;
+    onStatus?: (message: string) => void;
+  },
 ): Promise<void> {
+  const maxAttempts = options?.maxAttempts ?? 20;
+  const onStatus = options?.onStatus;
   let attempt = 0;
+  onStatus?.(
+    "Waiting for Postgres to accept connections (initializing a new data directory can take 30–90s)…",
+  );
   while (true) {
     try {
       await runSql(hostPort, password, sql);
+      onStatus?.("Postgres is up; bootstrap SQL applied.");
       return;
     } catch (err: unknown) {
       attempt++;
       if (attempt >= maxAttempts) {
         throw new Error(
           `Postgres on port ${hostPort} was not ready after ${maxAttempts} attempts: ${String(err)}`,
+        );
+      }
+      if (attempt === 1 || attempt % 3 === 0) {
+        onStatus?.(
+          `Postgres not ready yet (attempt ${String(attempt)}/${String(maxAttempts)}); retrying…`,
         );
       }
       const backoff = Math.min(500 * 2 ** attempt, 8000);
@@ -159,12 +173,49 @@ function hostPortForTcp(
   return Number.parseInt(hostPort, 10);
 }
 
-async function ensureImage(docker: Docker, image: string): Promise<void> {
+function hostPortFromInspectOptional(
+  inspect: {
+    NetworkSettings: { Ports?: Record<string, Array<{ HostPort?: string }> | null> };
+  },
+  containerPort: "5432/tcp" | "3000/tcp",
+): number | undefined {
+  const bindings = inspect.NetworkSettings.Ports?.[containerPort];
+  const hostPort = bindings?.[0]?.HostPort;
+  return hostPort ? Number.parseInt(hostPort, 10) : undefined;
+}
+
+function tenantVolumeName(slug: string): string {
+  return `flux-${slug}-db-data`;
+}
+
+/** Flux tenant container name pattern: flux-&lt;slug&gt;-db | flux-&lt;slug&gt;-api */
+const FLUX_TENANT_CONTAINER = /^flux-(.+)-(db|api)$/;
+
+/** Row returned by {@link ProjectManager.listProjects}. */
+export interface FluxProjectSummary {
+  /** Normalized project slug (from container names). */
+  slug: string;
+  /** Combined health of Postgres + PostgREST containers. */
+  status: "running" | "stopped" | "partial";
+  /** Published host port for the PostgREST container (maps to 3000), when known. */
+  apiHostPort?: number;
+}
+
+async function ensureImage(
+  docker: Docker,
+  image: string,
+  onStatus?: (message: string) => void,
+): Promise<void> {
   try {
     await docker.getImage(image).inspect();
+    onStatus?.(`Image ${image} is already present locally.`);
   } catch {
+    onStatus?.(
+      `Pulling ${image} — the first run can take several minutes; please wait…`,
+    );
     const stream = await docker.pull(image);
     await finished(stream);
+    onStatus?.(`Finished pulling ${image}.`);
   }
 }
 
@@ -258,6 +309,16 @@ export interface FluxProject {
   postgresPassword: string;
 }
 
+/** Optional hooks for long-running {@link ProjectManager.provisionProject} work (CLIs, logs). */
+export interface ProvisionOptions {
+  onStatus?: (message: string) => void;
+}
+
+/** Required for {@link ProjectManager.nukeProject} — confirms permanent data loss. */
+export interface NukeProjectOptions {
+  acknowledgeDataLoss: true;
+}
+
 /**
  * Orchestrates Docker resources for Flux projects: shared network, Postgres, PostgREST.
  */
@@ -286,21 +347,30 @@ export class ProjectManager {
    * startup races without a Node-side health probe; a short delay after Postgres start reduces churn
    * during first-time volume initialization.
    */
-  async provisionProject(name: string): Promise<FluxProject> {
+  async provisionProject(
+    name: string,
+    options?: ProvisionOptions,
+  ): Promise<FluxProject> {
+    const log = options?.onStatus;
+    log?.("Checking Docker network…");
     await this.ensureFluxNetwork();
+    log?.(`Network ${FLUX_NETWORK_NAME} is ready.`);
     const slug = slugifyProjectName(name);
     const postgresPassword = randomHexChars(16);
     const jwtSecret = randomHexChars(32);
 
-    const volumeName = `flux-${slug}-db-data`;
+    const volumeName = tenantVolumeName(slug);
     const pgContainerName = postgresContainerName(slug);
     const apiContainerName = postgrestContainerName(slug);
 
+    log?.(`Ensuring volume ${volumeName}…`);
     await ensureNamedVolume(this.docker, volumeName);
-    await ensureImage(this.docker, POSTGRES_IMAGE);
-    await ensureImage(this.docker, POSTGREST_IMAGE);
+    log?.("Ensuring container images…");
+    await ensureImage(this.docker, POSTGRES_IMAGE, log);
+    await ensureImage(this.docker, POSTGREST_IMAGE, log);
 
     let pgContainer: Docker.Container;
+    log?.(`Creating Postgres container ${pgContainerName}…`);
     try {
       pgContainer = await this.docker.createContainer({
         name: pgContainerName,
@@ -326,15 +396,22 @@ export class ProjectManager {
       throw err;
     }
 
+    log?.("Starting Postgres…");
     await pgContainer.start();
     const pgInspect = await pgContainer.inspect();
     const postgresHostPort = hostPortForTcp(pgInspect, "5432/tcp");
 
-    await waitForPostgresAndRun(postgresHostPort, postgresPassword, BOOTSTRAP_SQL);
+    await waitForPostgresAndRun(
+      postgresHostPort,
+      postgresPassword,
+      BOOTSTRAP_SQL,
+      log ? { onStatus: log } : undefined,
+    );
 
     const dbUri = postgresJdbcUri(slug, postgresPassword);
 
     let apiContainer: Docker.Container;
+    log?.(`Creating PostgREST container ${apiContainerName}…`);
     try {
       apiContainer = await this.docker.createContainer({
         name: apiContainerName,
@@ -364,10 +441,12 @@ export class ProjectManager {
       throw err;
     }
 
+    log?.("Starting PostgREST…");
     await apiContainer.start();
     const apiInspect = await apiContainer.inspect();
     const postgrestHostPort = hostPortForTcp(apiInspect, "3000/tcp");
 
+    log?.("Provision complete.");
     return {
       name,
       slug,
@@ -428,6 +507,160 @@ export class ProjectManager {
     }
 
     await runSql(hostPort, password, sql);
+
+    await this.signalPostgrestSchemaReload(slug);
+  }
+
+  /**
+   * Tells PostgREST to reload its schema cache (Docker SIGHUP) so new tables show up without a full restart.
+   * No-op if the API container is missing or not running.
+   */
+  private async signalPostgrestSchemaReload(slug: string): Promise<void> {
+    const apiName = postgrestContainerName(slug);
+    try {
+      await this.docker.getContainer(apiName).kill({ signal: "SIGHUP" });
+    } catch (err: unknown) {
+      const code = getHttpStatus(err);
+      if (code === 404 || code === 409) return;
+      throw err;
+    }
+  }
+
+  /**
+   * Lists Flux tenant projects by scanning Docker for `flux-*-db` / `flux-*-api` containers.
+   */
+  async listProjects(): Promise<FluxProjectSummary[]> {
+    const containers = await this.docker.listContainers({ all: true });
+    const bySlug = new Map<
+      string,
+      { dbState?: string; apiState?: string; apiId?: string }
+    >();
+
+    for (const c of containers) {
+      const raw = c.Names?.[0]?.replace(/^\//, "") ?? "";
+      const m = raw.match(FLUX_TENANT_CONTAINER);
+      if (!m?.[1] || !m[2]) continue;
+      const slug = m[1];
+      const kind = m[2] as "db" | "api";
+      const cur = bySlug.get(slug) ?? {};
+      if (kind === "db") cur.dbState = c.State;
+      else {
+        cur.apiState = c.State;
+        cur.apiId = c.Id;
+      }
+      bySlug.set(slug, cur);
+    }
+
+    const rows: FluxProjectSummary[] = [];
+    for (const [slug, e] of bySlug) {
+      const hasDb = e.dbState !== undefined;
+      const hasApi = e.apiState !== undefined;
+      const dr = e.dbState === "running";
+      const ar = e.apiState === "running";
+
+      let status: FluxProjectSummary["status"];
+      if (hasDb && hasApi) {
+        if (dr && ar) status = "running";
+        else if (!dr && !ar) status = "stopped";
+        else status = "partial";
+      } else {
+        status = "partial";
+      }
+
+      let apiHostPort: number | undefined;
+      if (e.apiId) {
+        try {
+          const inspect = await this.docker.getContainer(e.apiId).inspect();
+          apiHostPort = hostPortFromInspectOptional(inspect, "3000/tcp");
+        } catch {
+          /* ignore */
+        }
+      }
+
+      rows.push({
+        slug,
+        status,
+        ...(apiHostPort !== undefined ? { apiHostPort } : {}),
+      });
+    }
+
+    return rows.sort((a, b) => a.slug.localeCompare(b.slug));
+  }
+
+  /**
+   * Stops the Postgres and PostgREST containers for a project (API first, then DB).
+   */
+  async stopProject(name: string): Promise<void> {
+    const slug = slugifyProjectName(name);
+    const apiName = postgrestContainerName(slug);
+    const dbName = postgresContainerName(slug);
+    await this.stopContainerOrThrow(apiName);
+    await this.stopContainerOrThrow(dbName);
+  }
+
+  /**
+   * Starts the Postgres and PostgREST containers (DB first, then API).
+   */
+  async startProject(name: string): Promise<void> {
+    const slug = slugifyProjectName(name);
+    const dbName = postgresContainerName(slug);
+    const apiName = postgrestContainerName(slug);
+    await this.startContainerOrThrow(dbName);
+    await this.startContainerOrThrow(apiName);
+  }
+
+  /**
+   * Stops and removes both tenant containers and deletes the Postgres data volume.
+   * Irreversible: all database files for the project are destroyed.
+   */
+  async nukeProject(
+    name: string,
+    options: NukeProjectOptions,
+  ): Promise<void> {
+    const slug = slugifyProjectName(name);
+    const vol = tenantVolumeName(slug);
+    const apiName = postgrestContainerName(slug);
+    const dbName = postgresContainerName(slug);
+
+    for (const containerName of [apiName, dbName]) {
+      try {
+        await this.docker.getContainer(containerName).remove({ force: true });
+      } catch (err: unknown) {
+        if (getHttpStatus(err) !== 404) throw err;
+      }
+    }
+
+    try {
+      await this.docker.getVolume(vol).remove({ force: true });
+    } catch (err: unknown) {
+      if (getHttpStatus(err) !== 404) throw err;
+    }
+  }
+
+  private async stopContainerOrThrow(containerName: string): Promise<void> {
+    try {
+      await this.docker.getContainer(containerName).stop();
+    } catch (err: unknown) {
+      const code = getHttpStatus(err);
+      if (code === 404) {
+        throw new Error(`Container "${containerName}" does not exist.`);
+      }
+      if (code === 304) return;
+      throw err;
+    }
+  }
+
+  private async startContainerOrThrow(containerName: string): Promise<void> {
+    try {
+      await this.docker.getContainer(containerName).start();
+    } catch (err: unknown) {
+      const code = getHttpStatus(err);
+      if (code === 404) {
+        throw new Error(`Container "${containerName}" does not exist.`);
+      }
+      if (code === 304) return;
+      throw err;
+    }
   }
 
   /** Ensures a Docker bridge network named {@link FLUX_NETWORK_NAME} exists. */
@@ -477,5 +710,3 @@ export async function testDockerConnection(): Promise<void> {
     process.exit(1);
   }
 }
-
-void testDockerConnection();
