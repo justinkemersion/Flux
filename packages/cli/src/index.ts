@@ -1,9 +1,10 @@
-import { readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { FluxProjectSummary } from "@flux/core";
+import type { FluxProjectEnvEntry, FluxProjectSummary } from "@flux/core";
 import { ProjectManager } from "@flux/core";
 import chalk from "chalk";
 import { Command } from "commander";
+import ora from "ora";
 
 function postgresConnectionUrl(
   hostPort: number,
@@ -73,20 +74,27 @@ async function cmdCreate(name: string): Promise<void> {
 
 async function cmdPush(file: string, project: string): Promise<void> {
   const abs = resolve(process.cwd(), file);
-  let sql: string;
   try {
-    sql = await readFile(abs, "utf8");
-  } catch (err: unknown) {
-    console.error(chalk.red("Could not read SQL file:"), abs);
-    console.error(err);
+    await access(abs);
+  } catch {
+    console.error(chalk.red("SQL file not found or not accessible:"), abs);
     process.exitCode = 1;
     return;
   }
 
   const pm = new ProjectManager();
-  console.log(chalk.blue(`Applying ${chalk.bold(file)} to project ${chalk.bold(project)}…`));
-  await pm.executeSql(project, sql);
-  console.log(chalk.green.bold("✓"), chalk.white("SQL executed successfully."));
+  console.log(
+    chalk.blue(
+      `Applying ${chalk.bold(file)} to project ${chalk.bold(project)}…`,
+    ),
+  );
+  const spinner = ora("Streaming SQL into database…").start();
+  try {
+    await pm.importSqlFile(project, abs);
+  } finally {
+    spinner.stop();
+  }
+  console.log(chalk.green.bold("✓"), chalk.white("SQL applied successfully."));
 }
 
 function statusCell(status: FluxProjectSummary["status"]): string {
@@ -140,6 +148,69 @@ async function cmdStart(name: string): Promise<void> {
   console.log(chalk.green.bold("✓"), chalk.white("Containers started."));
 }
 
+function parseEnvPairs(pairs: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of pairs) {
+    const i = raw.indexOf("=");
+    if (i <= 0) {
+      throw new Error(
+        `Invalid "${raw}": expected KEY=value (use quotes if the value contains spaces).`,
+      );
+    }
+    const key = raw.slice(0, i).trim();
+    if (!key) {
+      throw new Error(`Invalid "${raw}": key cannot be empty.`);
+    }
+    out[key] = raw.slice(i + 1);
+  }
+  return out;
+}
+
+function formatEnvListRow(entry: FluxProjectEnvEntry): string {
+  if (entry.sensitive) {
+    return `${chalk.cyan(entry.key)} ${chalk.dim("(set)")}`;
+  }
+  return `${chalk.cyan(entry.key)}=${chalk.white(entry.value)}`;
+}
+
+async function cmdEnvSet(project: string, pairs: string[]): Promise<void> {
+  if (pairs.length === 0) {
+    throw new Error("Provide at least one KEY=value pair.");
+  }
+  const envs = parseEnvPairs(pairs);
+  const pm = new ProjectManager();
+  console.log(
+    chalk.blue(
+      `Updating API container environment for project ${chalk.bold(project)}…`,
+    ),
+  );
+  await pm.setProjectEnv(project, envs);
+  console.log(
+    chalk.green.bold("✓"),
+    chalk.white("Environment updated; PostgREST container was recreated."),
+  );
+}
+
+async function cmdEnvList(project: string): Promise<void> {
+  const pm = new ProjectManager();
+  const rows = await pm.listProjectEnv(project);
+  if (rows.length === 0) {
+    console.log(chalk.dim("No environment variables on the API container."));
+    return;
+  }
+  printBanner(`Environment — ${project}`);
+  for (const row of rows) {
+    console.log(`  ${formatEnvListRow(row)}`);
+  }
+  console.log();
+  console.log(
+    chalk.dim(
+      "  Values for sensitive keys (secrets, tokens, DB URI, JWT) are not shown.",
+    ),
+  );
+  console.log();
+}
+
 async function cmdNuke(name: string, yes: boolean): Promise<void> {
   if (!yes) {
     console.error(
@@ -167,7 +238,9 @@ async function main(): Promise<void> {
 
   program
     .name("flux")
-    .description("Flux — provision projects and run SQL against tenant Postgres")
+    .description(
+      "Flux — provision projects, manage API env vars, and run SQL against tenant Postgres",
+    )
     .version("1.0.0", "-V, --version");
 
   program
@@ -260,6 +333,49 @@ async function main(): Promise<void> {
         process.exit(1);
       }
     });
+
+  const envRoot = program
+    .command("env")
+    .description(
+      "Read or update environment variables on the project PostgREST (API) container",
+    );
+
+  const envSet = envRoot
+    .command("set")
+    .description(
+      "Merge KEY=value pairs into the API container env and recreate it so changes apply",
+    )
+    .argument("<pairs...>", "one or more KEY=value entries")
+    .requiredOption("-p, --project <name>", "Flux project name");
+
+  envSet.action(async (pairs: string[]) => {
+    try {
+      const opts = envSet.opts<{ project: string }>();
+      await cmdEnvSet(opts.project, pairs);
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
+
+  const envList = envRoot
+    .command("list")
+    .description(
+      "List env keys on the API container (values omitted for sensitive keys)",
+    )
+    .requiredOption("-p, --project <name>", "Flux project name");
+
+  envList.action(async () => {
+    try {
+      const opts = envList.opts<{ project: string }>();
+      await cmdEnvList(opts.project);
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
 
   await program.parseAsync(process.argv);
 }

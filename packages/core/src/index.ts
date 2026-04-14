@@ -1,6 +1,9 @@
+import { createReadStream } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { Readable } from "node:stream";
+import { PassThrough, Readable, type Duplex } from "node:stream";
+import { finished } from "node:stream/promises";
 import Docker from "dockerode";
+import jwt from "jsonwebtoken";
 import pg from "pg";
 
 export const FLUX_NETWORK_NAME = "flux-network";
@@ -209,6 +212,43 @@ function getHttpStatus(err: unknown): number | undefined {
   }
   return undefined;
 }
+
+/** Parses Docker `Config.Env` entries (`KEY=value`, first `=` splits). */
+function envRecordFromDockerEnv(env: string[] | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of env ?? []) {
+    const i = line.indexOf("=");
+    if (i <= 0) continue;
+    out[line.slice(0, i)] = line.slice(i + 1);
+  }
+  return out;
+}
+
+function dockerEnvFromRecord(record: Record<string, string>): string[] {
+  return Object.keys(record)
+    .sort((a, b) => a.localeCompare(b))
+    .map((k) => `${k}=${record[k] ?? ""}`);
+}
+
+/**
+ * Whether an env var name should not have its **value** printed (e.g. `flux env list`).
+ * Heuristic: connection strings, JWT material, passwords, and typical secret/token names.
+ */
+export function isFluxSensitiveEnvKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  if (lower === "pgrst_db_uri" || lower === "pgrst_jwt_secret") return true;
+  if (lower.includes("password") || lower.includes("passwd")) return true;
+  if (lower.includes("secret") && !lower.includes("publishable")) return true;
+  if (/_token$|_tokens$/i.test(key)) return true;
+  if (lower.includes("private_key") || lower.includes("privatekey")) return true;
+  if (/_api_key$/i.test(key) && !lower.includes("publishable")) return true;
+  return false;
+}
+
+/** One row for {@link ProjectManager.listProjectEnv}. */
+export type FluxProjectEnvEntry =
+  | { key: string; sensitive: true }
+  | { key: string; value: string; sensitive: false };
 
 function slugifyProjectName(name: string): string {
   const slug = name
@@ -547,7 +587,7 @@ export interface FluxProject {
   };
   /** Public PostgREST base URL via Traefik (no per-tenant host port). */
   apiUrl: string;
-  /** Generated secret for PostgREST JWT verification — treat as sensitive. */
+  /** Secret PostgREST uses for JWT verification (generated or from {@link ProvisionOptions.customJwtSecret}). */
   jwtSecret: string;
   /** Generated Postgres superuser password — treat as sensitive. */
   postgresPassword: string;
@@ -556,6 +596,11 @@ export interface FluxProject {
 /** Optional hooks for long-running {@link ProjectManager.provisionProject} work (CLIs, logs). */
 export interface ProvisionOptions {
   onStatus?: (message: string) => void;
+  /**
+   * When set (e.g. Clerk or NextAuth JWT signing secret), used as `PGRST_JWT_SECRET` for PostgREST
+   * so the tenant API can verify tokens minted by your auth provider. If omitted, a random secret is generated.
+   */
+  customJwtSecret?: string;
 }
 
 /** Required for {@link ProjectManager.nukeProject} — confirms permanent data loss. */
@@ -604,7 +649,11 @@ export class ProjectManager {
     await this.ensureFluxGateway(log);
     const slug = slugifyProjectName(name);
     const postgresPassword = randomHexChars(16);
-    const jwtSecret = randomHexChars(32);
+    const trimmedCustomJwt = options?.customJwtSecret?.trim();
+    const jwtSecret =
+      trimmedCustomJwt && trimmedCustomJwt.length > 0
+        ? trimmedCustomJwt
+        : randomHexChars(32);
 
     const volumeName = tenantVolumeName(slug);
     const pgContainerName = postgresContainerName(slug);
@@ -730,6 +779,137 @@ export class ProjectManager {
   }
 
   /**
+   * Merges `envs` into the PostgREST/API container’s existing `Config.Env`, recreates the
+   * container (same image, Traefik labels, network, limits), and starts it if it was running
+   * so new variables (e.g. custom app config) take effect.
+   */
+  async setProjectEnv(slug: string, envs: Record<string, string>): Promise<void> {
+    const normalized = slugifyProjectName(slug);
+    const existing = await this.getPostgrestInspectOrThrow(normalized);
+    const merged = {
+      ...envRecordFromDockerEnv(existing.Config.Env),
+      ...envs,
+    };
+    await this.replacePostgrestApiContainer(normalized, existing, merged);
+  }
+
+  /**
+   * Returns env entries from the PostgREST container. Sensitive keys omit values; use
+   * {@link isFluxSensitiveEnvKey} for the rule set.
+   */
+  async listProjectEnv(slug: string): Promise<FluxProjectEnvEntry[]> {
+    const normalized = slugifyProjectName(slug);
+    const inspect = await this.getPostgrestInspectOrThrow(normalized);
+    const record = envRecordFromDockerEnv(inspect.Config.Env);
+    const rows: FluxProjectEnvEntry[] = [];
+    for (const key of Object.keys(record).sort((a, b) => a.localeCompare(b))) {
+      if (isFluxSensitiveEnvKey(key)) {
+        rows.push({ key, sensitive: true });
+      } else {
+        rows.push({ key, value: record[key] ?? "", sensitive: false });
+      }
+    }
+    return rows;
+  }
+
+  /**
+   * Replaces `PGRST_JWT_SECRET` on the PostgREST container by recreating it with the same image,
+   * labels, and host config. Restarts the container if it was running so the new secret applies.
+   */
+  async updatePostgrestJwtSecret(
+    projectName: string,
+    newJwtSecret: string,
+  ): Promise<void> {
+    const secret = newJwtSecret.trim();
+    if (!secret) {
+      throw new Error("JWT secret cannot be empty.");
+    }
+    const slug = slugifyProjectName(projectName);
+    await this.setProjectEnv(slug, { PGRST_JWT_SECRET: secret });
+  }
+
+  private async getPostgrestInspectOrThrow(
+    slug: string,
+  ): Promise<Awaited<ReturnType<Docker.Container["inspect"]>>> {
+    const apiName = postgrestContainerName(slug);
+    try {
+      return await this.docker.getContainer(apiName).inspect();
+    } catch (err: unknown) {
+      if (getHttpStatus(err) === 404) {
+        throw new Error(
+          `PostgREST container "${apiName}" not found for this project.`,
+        );
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Stops/removes the API container and creates a new one with `mergedEnv`, preserving Traefik
+   * labels and host settings from `inspect`.
+   */
+  private async replacePostgrestApiContainer(
+    slug: string,
+    inspect: Awaited<ReturnType<Docker.Container["inspect"]>>,
+    mergedEnv: Record<string, string>,
+  ): Promise<void> {
+    const apiName = postgrestContainerName(slug);
+    const container = this.docker.getContainer(inspect.Id);
+    const env = dockerEnvFromRecord(mergedEnv);
+    const wasRunning = inspect.State.Running;
+
+    if (wasRunning) {
+      try {
+        await container.stop({ t: 10 });
+      } catch (err: unknown) {
+        const code = getHttpStatus(err);
+        if (code !== 304 && code !== 404) throw err;
+      }
+    }
+
+    try {
+      await container.remove();
+    } catch (err: unknown) {
+      if (getHttpStatus(err) !== 404) throw err;
+    }
+
+    const hc = inspect.HostConfig;
+    const networkMode =
+      hc.NetworkMode &&
+      hc.NetworkMode !== "" &&
+      hc.NetworkMode !== "default"
+        ? hc.NetworkMode
+        : FLUX_NETWORK_NAME;
+    const memory =
+      typeof hc.Memory === "number" && hc.Memory > 0
+        ? hc.Memory
+        : 256 * 1024 * 1024;
+    const restartPolicy = hc.RestartPolicy ?? {
+      Name: "on-failure" as const,
+      MaximumRetryCount: 25,
+    };
+
+    const created = await this.docker.createContainer({
+      name: apiName,
+      Image: inspect.Config.Image,
+      Labels: inspect.Config.Labels ?? {},
+      Env: env,
+      ExposedPorts: inspect.Config.ExposedPorts ?? { "3000/tcp": {} },
+      HostConfig: {
+        NetworkMode: networkMode,
+        Memory: memory,
+        RestartPolicy: restartPolicy,
+      },
+    });
+
+    if (wasRunning) {
+      await created.start();
+      const newInspect = await created.inspect();
+      await this.ensureContainerAttachedToFluxNetwork(newInspect.Id);
+    }
+  }
+
+  /**
    * Host-side Postgres URI (`127.0.0.1:{publishedPort}`) for the project.
    * Requires the Postgres container to be running (same as {@link executeSql}).
    */
@@ -737,6 +917,40 @@ export class ProjectManager {
     const { hostPort, password } =
       await this.resolveRunningPostgresCredentials(projectName);
     return postgresHostConnectionUri(hostPort, password);
+  }
+
+  /**
+   * Reads `PGRST_JWT_SECRET` from the PostgREST container (`flux-{slug}-api`) and returns
+   * JWTs signed with the same secret PostgREST uses for verification (anon vs service_role).
+   */
+  async getProjectKeys(
+    slug: string,
+  ): Promise<{ anonKey: string; serviceRoleKey: string }> {
+    const containerName = postgrestContainerName(slug);
+    let inspect;
+    try {
+      inspect = await this.docker.getContainer(containerName).inspect();
+    } catch (err: unknown) {
+      if (getHttpStatus(err) === 404) {
+        throw new Error(
+          `No PostgREST container found for slug "${slug}" (expected "${containerName}").`,
+        );
+      }
+      throw err;
+    }
+
+    const secret = inspect.Config.Env?.find((e) =>
+      e.startsWith("PGRST_JWT_SECRET="),
+    )?.slice("PGRST_JWT_SECRET=".length);
+    if (!secret) {
+      throw new Error(
+        `Could not read PGRST_JWT_SECRET from container "${containerName}".`,
+      );
+    }
+
+    const anonKey = jwt.sign({ role: "anon" }, secret);
+    const serviceRoleKey = jwt.sign({ role: "service_role" }, secret);
+    return { anonKey, serviceRoleKey };
   }
 
   /**
@@ -755,6 +969,88 @@ export class ProjectManager {
     await runSql(hostPort, password, `NOTIFY pgrst, 'reload schema';`);
     await new Promise((resolve) => setTimeout(resolve, 500));
     const apiName = postgrestContainerName(slug);
+    try {
+      await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
+    } catch (err: unknown) {
+      const code = getHttpStatus(err);
+      if (code === 404 || code === 409) return;
+      throw err;
+    }
+  }
+
+  /**
+   * Streams a SQL dump file into the tenant Postgres via `psql` exec stdin (Docker HTTP attach).
+   * Does not load the file into Node.js memory; uses {@link createReadStream}.
+   * After import, reloads PostgREST the same way as {@link executeSql}.
+   *
+   * Uses `exec.start({ stdin: true })` without `hijack: true`: docker-modem pipes stdin over the
+   * request body; raw `hijack` sockets require manual multiplex framing for stdin.
+   */
+  async importSqlFile(slug: string, filePath: string): Promise<void> {
+    const { slug: normalizedSlug, hostPort, password } =
+      await this.resolveRunningPostgresCredentials(slug);
+    const container = this.docker.getContainer(
+      postgresContainerName(normalizedSlug),
+    );
+
+    const exec = await container.exec({
+      Cmd: ["psql", "-U", POSTGRES_USER, "-d", "postgres"],
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+
+    const duplex = (await exec.start({
+      hijack: false,
+      stdin: true,
+      Detach: false,
+      Tty: false,
+    })) as Duplex;
+
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const stderrChunks: Buffer[] = [];
+    let stderrBytes = 0;
+    const stderrCap = 32 * 1024;
+    stderr.on("data", (chunk: Buffer) => {
+      if (stderrBytes >= stderrCap) return;
+      const take = Math.min(chunk.length, stderrCap - stderrBytes);
+      stderrChunks.push(chunk.subarray(0, take));
+      stderrBytes += take;
+    });
+
+    const modem = exec.modem as {
+      demuxStream: (
+        stream: Duplex,
+        out: NodeJS.WritableStream,
+        err: NodeJS.WritableStream,
+      ) => void;
+    };
+    modem.demuxStream(duplex, stdout, stderr);
+    stdout.resume();
+
+    const input = createReadStream(filePath);
+    try {
+      input.pipe(duplex, { end: true });
+      await finished(duplex);
+    } finally {
+      input.destroy();
+    }
+
+    const inspect = await exec.inspect();
+    const exitCode = inspect.ExitCode ?? -1;
+    if (exitCode !== 0) {
+      const errText = Buffer.concat(stderrChunks).toString("utf8").trim();
+      throw new Error(
+        errText
+          ? `psql exited with code ${String(exitCode)}: ${errText}`
+          : `psql exited with code ${String(exitCode)}`,
+      );
+    }
+
+    await runSql(hostPort, password, `NOTIFY pgrst, 'reload schema';`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const apiName = postgrestContainerName(normalizedSlug);
     try {
       await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
     } catch (err: unknown) {
