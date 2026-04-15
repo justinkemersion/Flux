@@ -1,11 +1,23 @@
-import { createReadStream } from "node:fs";
 import { randomBytes } from "node:crypto";
-import type { ClientRequest } from "node:http";
-import { PassThrough, Readable, type Duplex } from "node:stream";
-import { finished } from "node:stream/promises";
+import { Readable } from "node:stream";
 import Docker from "dockerode";
 import jwt from "jsonwebtoken";
 import pg from "pg";
+
+import {
+  materializePreparedSqlFile,
+  queryPostgresMajorVersion,
+  type ImportSqlFileOptions,
+} from "./import-dump.ts";
+import { runTenantPsqlFile } from "./run-tenant-psql-file.ts";
+
+export type { ImportSqlFileOptions } from "./import-dump.ts";
+export {
+  applySupabaseCompatibilityTransforms,
+  preparePlainSqlDumpForFlux,
+  queryPostgresMajorVersion,
+  sanitizePlainSqlDumpForPostgresMajor,
+} from "./import-dump.ts";
 
 export const FLUX_NETWORK_NAME = "flux-network";
 
@@ -87,32 +99,6 @@ function randomHexChars(byteLength: number): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * After stdin is closed, wait until Docker reports the exec is no longer running, then destroy the
- * attach stream. Some Engine/docker-modem combinations never emit `end` on the duplex even after
- * `psql` exits, which would hang `finished(duplex)` forever.
- */
-async function waitForDockerExecNotRunning(
-  exec: { inspect: () => Promise<{ Running?: boolean }> },
-  duplex: Duplex,
-): Promise<void> {
-  const intervalMs = 100;
-  const maxMs = 86_400_000;
-  const started = Date.now();
-  while (Date.now() - started < maxMs) {
-    const info = await exec.inspect();
-    if (info.Running === false) {
-      duplex.destroy();
-      return;
-    }
-    await sleep(intervalMs);
-  }
-  duplex.destroy();
-  throw new Error(
-    "Timed out waiting for psql to finish importing SQL (exec still running).",
-  );
 }
 
 function fetchWithTimeout(url: string, ms: number): Promise<Response> {
@@ -1006,91 +992,70 @@ export class ProjectManager {
   }
 
   /**
-   * Streams a SQL dump file into the tenant Postgres via `psql` exec stdin (Docker HTTP attach).
-   * Does not load the file into Node.js memory; uses {@link createReadStream}.
-   * After import, reloads PostgREST the same way as {@link executeSql}.
+   * Applies a plain SQL dump file to the tenant Postgres using **`psql -f`** (not Docker API stdin
+   * attach, which can hang): host `psql` to `127.0.0.1:{port}` when available, otherwise
+   * **`docker cp`** the file into the DB container and **`docker exec psql -f`**.
    *
-   * Uses `exec.start({ stdin: true })` without `hijack: true`: docker-modem pipes stdin over the
-   * request body; raw `hijack` sockets require manual multiplex framing for stdin.
-   * Completion is detected via `exec.inspect().Running`, not `finished(attachStream)`, because the
-   * attach stream may never close cleanly after `psql` exits.
+   * By default, strips session `SET` lines that the tenant Postgres version does not support (see
+   * {@link preparePlainSqlDumpForFlux}). Use {@link ImportSqlFileOptions} for Supabase-style dumps.
    */
-  async importSqlFile(slug: string, filePath: string): Promise<void> {
+  async importSqlFile(
+    slug: string,
+    filePath: string,
+    options?: ImportSqlFileOptions,
+  ): Promise<void> {
     const { slug: normalizedSlug, hostPort, password } =
       await this.resolveRunningPostgresCredentials(slug);
-    const container = this.docker.getContainer(
-      postgresContainerName(normalizedSlug),
+
+    const materialized = await materializePreparedSqlFile(
+      filePath,
+      options,
+      () => queryPostgresMajorVersion(hostPort, password),
     );
 
-    const exec = await container.exec({
-      Cmd: ["psql", "-U", POSTGRES_USER, "-d", "postgres"],
-      Env: [`PGPASSWORD=${password}`],
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-    });
-
-    /** docker-modem returns HttpDuplex: `end()` destroys the response side early and can hang `finished(duplex)`. */
-    const duplex = (await exec.start({
-      hijack: false,
-      stdin: true,
-      Detach: false,
-      Tty: false,
-    })) as Duplex & { req: ClientRequest };
-
-    const stdout = new PassThrough();
-    const stderr = new PassThrough();
-    const stderrChunks: Buffer[] = [];
-    let stderrBytes = 0;
-    const stderrCap = 32 * 1024;
-    stderr.on("data", (chunk: Buffer) => {
-      if (stderrBytes >= stderrCap) return;
-      const take = Math.min(chunk.length, stderrCap - stderrBytes);
-      stderrChunks.push(chunk.subarray(0, take));
-      stderrBytes += take;
-    });
-
-    const modem = exec.modem as {
-      demuxStream: (
-        stream: Duplex,
-        out: NodeJS.WritableStream,
-        err: NodeJS.WritableStream,
-      ) => void;
-    };
-    modem.demuxStream(duplex, stdout, stderr);
-    stdout.resume();
-
-    const input = createReadStream(filePath);
     try {
-      input.pipe(duplex, { end: false });
-      await finished(input);
-      duplex.req.end();
-      await waitForDockerExecNotRunning(exec, duplex);
+      await runTenantPsqlFile({
+        hostPort,
+        password,
+        sqlPath: materialized.path,
+        pgUser: POSTGRES_USER,
+        containerName: postgresContainerName(normalizedSlug),
+      });
+
+      await runSql(hostPort, password, `NOTIFY pgrst, 'reload schema';`);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const apiName = postgrestContainerName(normalizedSlug);
+      try {
+        await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
+      } catch (err: unknown) {
+        const code = getHttpStatus(err);
+        if (code === 404 || code === 409) return;
+        throw err;
+      }
     } finally {
-      input.destroy();
+      await materialized.cleanup();
     }
+  }
 
-    const inspect = await exec.inspect();
-    const exitCode = inspect.ExitCode ?? -1;
-    if (exitCode !== 0) {
-      const errText = Buffer.concat(stderrChunks).toString("utf8").trim();
-      throw new Error(
-        errText
-          ? `psql exited with code ${String(exitCode)}: ${errText}`
-          : `psql exited with code ${String(exitCode)}`,
-      );
-    }
-
-    await runSql(hostPort, password, `NOTIFY pgrst, 'reload schema';`);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const apiName = postgrestContainerName(normalizedSlug);
-    try {
-      await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
-    } catch (err: unknown) {
-      const code = getHttpStatus(err);
-      if (code === 404 || code === 409) return;
-      throw err;
-    }
+  /**
+   * Drops `public` and `auth` (if present) and reapplies {@link BOOTSTRAP_SQL} so the next
+   * {@link importSqlFile} runs against a clean slate. Does not remove the Docker volume (use
+   * {@link nukeProject} for that).
+   */
+  async resetTenantDatabaseForImport(projectName: string): Promise<void> {
+    const { hostPort, password } =
+      await this.resolveRunningPostgresCredentials(projectName);
+    const resetSql = `
+DROP SCHEMA IF EXISTS auth CASCADE;
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;
+ALTER SCHEMA public OWNER TO postgres;
+GRANT ALL ON SCHEMA public TO postgres;
+GRANT ALL ON SCHEMA public TO public;
+COMMENT ON SCHEMA public IS 'standard public schema';
+`.trim();
+    await runSql(hostPort, password, resetSql);
+    await runSql(hostPort, password, BOOTSTRAP_SQL);
   }
 
   private async resolveRunningPostgresCredentials(projectName: string): Promise<{

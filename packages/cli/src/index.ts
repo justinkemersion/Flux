@@ -72,7 +72,14 @@ async function cmdCreate(name: string): Promise<void> {
   console.log();
 }
 
-async function cmdPush(file: string, project: string): Promise<void> {
+async function cmdPush(
+  file: string,
+  project: string,
+  options: {
+    supabaseCompat: boolean;
+    noSanitize: boolean;
+  },
+): Promise<void> {
   const abs = resolve(process.cwd(), file);
   try {
     await access(abs);
@@ -90,11 +97,44 @@ async function cmdPush(file: string, project: string): Promise<void> {
   );
   const spinner = ora("Streaming SQL into database…").start();
   try {
-    await pm.importSqlFile(project, abs);
+    await pm.importSqlFile(project, abs, {
+      supabaseCompat: options.supabaseCompat,
+      sanitizeForTarget: !options.noSanitize,
+    });
   } finally {
     spinner.stop();
   }
   console.log(chalk.green.bold("✓"), chalk.white("SQL applied successfully."));
+}
+
+async function cmdDbReset(project: string, yes: boolean): Promise<void> {
+  if (!yes) {
+    console.error(
+      chalk.red.bold(
+        "Refusing db-reset without confirmation: this drops public and auth schemas and all data in them.",
+      ),
+    );
+    console.error(
+      chalk.dim("Run with "),
+      chalk.yellow("--yes"),
+      chalk.dim(" to proceed."),
+    );
+    process.exit(1);
+    return;
+  }
+  const pm = new ProjectManager();
+  console.log(
+    chalk.blue(
+      `Resetting database for project ${chalk.bold(project)} (drop public + auth, reapply Flux bootstrap)…`,
+    ),
+  );
+  await pm.resetTenantDatabaseForImport(project);
+  console.log(
+    chalk.green.bold("✓"),
+    chalk.white("Database reset; you can run"),
+    chalk.cyan("flux push"),
+    chalk.white("with a plain SQL dump."),
+  );
 }
 
 function statusCell(status: FluxProjectSummary["status"]): string {
@@ -259,14 +299,51 @@ async function main(): Promise<void> {
 
   const push = program
     .command("push")
-    .description("Execute a SQL file against a project database")
+    .description(
+      "Execute a SQL file against a project database (sanitizes pg_dump SET lines for the server version by default)",
+    )
     .argument("<file>", "path to .sql file")
-    .requiredOption("-p, --project <name>", "Flux project name");
+    .requiredOption("-p, --project <name>", "Flux project name")
+    .option(
+      "--supabase-compat",
+      "Adapt Supabase-style dumps (auth schema, auth.uid, seed auth.users before FKs)",
+      false,
+    )
+    .option(
+      "--no-sanitize",
+      "Do not strip SET session lines unsupported by the tenant Postgres major version",
+    );
 
   push.action(async (file: string) => {
     try {
-      const opts = push.opts<{ project: string }>();
-      await cmdPush(file, opts.project);
+      const opts = push.opts<{
+        project: string;
+        supabaseCompat: boolean;
+        noSanitize?: boolean;
+      }>();
+      await cmdPush(file, opts.project, {
+        supabaseCompat: opts.supabaseCompat,
+        noSanitize: opts.noSanitize === true,
+      });
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
+
+  const dbReset = program
+    .command("db-reset")
+    .description(
+      "Drop public and auth schemas and reapply Flux bootstrap (for a clean import; irreversible data loss in those schemas)",
+    )
+    .requiredOption("-p, --project <name>", "Flux project name")
+    .option("-y, --yes", "confirm", false);
+
+  dbReset.action(async () => {
+    try {
+      const opts = dbReset.opts<{ project: string; yes: boolean }>();
+      await cmdDbReset(opts.project, opts.yes);
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
       console.error(formatCliError(err));
