@@ -34,9 +34,10 @@ Use:
 ```bash
 flux db-reset -p myproject --yes
 flux push ./dump.sql -p myproject --supabase-compat
+# or: flux push ./dump.sql -p myproject -s
 ```
 
-`--supabase-compat` inserts a minimal `auth` schema, `auth.users`, `auth.uid()` (JWT `sub` via PostgREST’s `request.jwt.claim.sub`), and seeds `auth.users` before the standard `batches_user_id_fkey → auth.users` block. If your dump layout differs, adjust manually or extend `applySupabaseCompatibilityTransforms` in `@flux/core`.
+`--supabase-compat` (`-s`) turns on **Supabase compatibility**: dump transforms (minimal `auth` schema, `auth.users`, `auth.uid()`, seed before `auth.users` FKs), then **moves** tables, sequences, views, and materialized views from `public` into `api`, and reapplies grants on `api`. A short **post-migration report** lists how many objects moved. If your dump layout differs, adjust manually or extend `applySupabaseCompatibilityTransforms` in `@flux/core`.
 
 ## Flags
 
@@ -48,5 +49,5 @@ flux push ./dump.sql -p myproject --supabase-compat
 ## API (`@flux/core`)
 
 - `preparePlainSqlDumpForFlux`, `sanitizePlainSqlDumpForPostgresMajor`, `applySupabaseCompatibilityTransforms` — build tooling or tests.  
-- `ProjectManager.importSqlFile(path, { supabaseCompat, sanitizeForTarget, targetMajor })` — runs **`psql -f`** via host `psql` when available, otherwise `docker cp` + `docker exec psql -f` (avoids Docker Engine attach stdin, which can hang).  
+- `ProjectManager.importSqlFile(path, { supabaseCompat, moveFromPublic, sanitizeForTarget, targetMajor })` — runs **`psql -f`** via host `psql` when available, otherwise `docker cp` + `docker exec psql -f`. With `moveFromPublic: true`, runs the schema mover (`public` → `api`) and returns `ImportSqlFileResult` counts.  
 - `ProjectManager.resetTenantDatabaseForImport(name)` — same work as `flux db-reset`.

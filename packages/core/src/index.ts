@@ -4,14 +4,23 @@ import Docker from "dockerode";
 import jwt from "jsonwebtoken";
 import pg from "pg";
 
+import { API_SCHEMA_PRIVILEGES_SQL } from "./api-schema-privileges.ts";
 import {
   materializePreparedSqlFile,
   queryPostgresMajorVersion,
   type ImportSqlFileOptions,
 } from "./import-dump.ts";
+import { runMovePublicToApiWithClient } from "./schema-move-public-to-api.ts";
 import { runTenantPsqlFile } from "./run-tenant-psql-file.ts";
 
 export type { ImportSqlFileOptions } from "./import-dump.ts";
+export type { MovePublicToApiResult } from "./schema-move-public-to-api.ts";
+
+export type ImportSqlFileResult = {
+  tablesMoved: number;
+  sequencesMoved: number;
+  viewsMoved: number;
+};
 export {
   applySupabaseCompatibilityTransforms,
   preparePlainSqlDumpForFlux,
@@ -74,23 +83,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 GRANT anon          TO authenticator;
 GRANT authenticated TO authenticator;
 
--- Allow request roles to use the api schema
-GRANT USAGE ON SCHEMA api TO anon, authenticated;
-
--- Existing tables / sequences (none on first boot; safe on empty schema)
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA api TO anon, authenticated;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO anon, authenticated;
-
--- Objects created later in this schema (e.g. migrations) inherit these grants
-ALTER DEFAULT PRIVILEGES IN SCHEMA api
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA api
-  GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;
-
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA api GRANT ALL ON TABLES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA api GRANT ALL ON SEQUENCES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA api GRANT ALL ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA api GRANT ALL ON SEQUENCES TO authenticated;
+${API_SCHEMA_PRIVILEGES_SQL}
 `.trim();
 
 function randomHexChars(byteLength: number): string {
@@ -998,12 +991,20 @@ export class ProjectManager {
    *
    * By default, strips session `SET` lines that the tenant Postgres version does not support (see
    * {@link preparePlainSqlDumpForFlux}). Use {@link ImportSqlFileOptions} for Supabase-style dumps.
+   *
+   * Returns counts of objects moved when {@link ImportSqlFileOptions.moveFromPublic} is true.
    */
   async importSqlFile(
     slug: string,
     filePath: string,
     options?: ImportSqlFileOptions,
-  ): Promise<void> {
+  ): Promise<ImportSqlFileResult> {
+    const emptyResult: ImportSqlFileResult = {
+      tablesMoved: 0,
+      sequencesMoved: 0,
+      viewsMoved: 0,
+    };
+
     const { slug: normalizedSlug, hostPort, password } =
       await this.resolveRunningPostgresCredentials(slug);
 
@@ -1022,6 +1023,15 @@ export class ProjectManager {
         containerName: postgresContainerName(normalizedSlug),
       });
 
+      let moveResult = emptyResult;
+      if (options?.moveFromPublic === true) {
+        moveResult = await runMovePublicToApiWithClient(
+          hostPort,
+          password,
+          POSTGRES_USER,
+        );
+      }
+
       await runSql(hostPort, password, `NOTIFY pgrst, 'reload schema';`);
       await new Promise((resolve) => setTimeout(resolve, 500));
       const apiName = postgrestContainerName(normalizedSlug);
@@ -1029,9 +1039,11 @@ export class ProjectManager {
         await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
       } catch (err: unknown) {
         const code = getHttpStatus(err);
-        if (code === 404 || code === 409) return;
+        if (code === 404 || code === 409) return moveResult;
         throw err;
       }
+
+      return moveResult;
     } finally {
       await materialized.cleanup();
     }

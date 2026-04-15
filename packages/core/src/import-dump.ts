@@ -21,6 +21,11 @@ export type ImportSqlFileOptions = {
    * Supabase-style `REFERENCES auth.users` FKs. Only for dumps that include those FKs.
    */
   supabaseCompat?: boolean;
+  /**
+   * After import, move tables, sequences, and views from `public` into `api` (Supabase-style
+   * layout → Flux PostgREST schema), then re-apply grants on `api`.
+   */
+  moveFromPublic?: boolean;
 };
 
 const AUTH_PRELUDE = `

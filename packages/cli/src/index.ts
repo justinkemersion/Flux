@@ -1,6 +1,10 @@
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { FluxProjectEnvEntry, FluxProjectSummary } from "@flux/core";
+import type {
+  FluxProjectEnvEntry,
+  FluxProjectSummary,
+  ImportSqlFileResult,
+} from "@flux/core";
 import { ProjectManager } from "@flux/core";
 import chalk from "chalk";
 import { Command } from "commander";
@@ -96,15 +100,48 @@ async function cmdPush(
     ),
   );
   const spinner = ora("Streaming SQL into database…").start();
+  if (options.supabaseCompat) {
+    spinner.stop();
+    console.log(
+      chalk.dim("  ▸ Detected Supabase compatibility mode. Adjusting schemas…"),
+    );
+    spinner.start("Applying SQL and migrating schema…");
+  }
+  const emptyReport: ImportSqlFileResult = {
+    tablesMoved: 0,
+    sequencesMoved: 0,
+    viewsMoved: 0,
+  };
+  let result: ImportSqlFileResult = emptyReport;
   try {
-    await pm.importSqlFile(project, abs, {
+    result = await pm.importSqlFile(project, abs, {
       supabaseCompat: options.supabaseCompat,
       sanitizeForTarget: !options.noSanitize,
+      moveFromPublic: options.supabaseCompat,
     });
   } finally {
     spinner.stop();
   }
   console.log(chalk.green.bold("✓"), chalk.white("SQL applied successfully."));
+  if (options.supabaseCompat) {
+    printBanner("Post-migration report");
+    console.log(
+      chalk.dim("  "),
+      chalk.white("Tables moved to api:".padEnd(28)),
+      chalk.cyan.bold(String(result.tablesMoved)),
+    );
+    console.log(
+      chalk.dim("  "),
+      chalk.white("Sequences moved to api:".padEnd(28)),
+      chalk.cyan.bold(String(result.sequencesMoved)),
+    );
+    console.log(
+      chalk.dim("  "),
+      chalk.white("Views / matviews moved to api:".padEnd(28)),
+      chalk.cyan.bold(String(result.viewsMoved)),
+    );
+    console.log();
+  }
 }
 
 async function cmdDbReset(project: string, yes: boolean): Promise<void> {
@@ -305,8 +342,8 @@ async function main(): Promise<void> {
     .argument("<file>", "path to .sql file")
     .requiredOption("-p, --project <name>", "Flux project name")
     .option(
-      "--supabase-compat",
-      "Adapt Supabase-style dumps (auth schema, auth.uid, seed auth.users before FKs)",
+      "-s, --supabase-compat",
+      "Supabase mode: auth stubs, move public → api after import, post-migration report",
       false,
     )
     .option(
