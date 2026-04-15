@@ -26,6 +26,13 @@ export type ImportSqlFileOptions = {
    * layout → Flux PostgREST schema), then re-apply grants on `api`.
    */
   moveFromPublic?: boolean;
+  /**
+   * After import, disable RLS on every `api` table that has it enabled. Supabase-style dumps often
+   * enable RLS with policies that do not match Flux’s `anon` / JWT setup; without this, PostgREST
+   * may return empty result sets. Prefer rewriting policies for production; this is for porting
+   * and local testing.
+   */
+  disableRowLevelSecurityInApi?: boolean;
 };
 
 const AUTH_PRELUDE = `

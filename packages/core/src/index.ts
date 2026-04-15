@@ -4,7 +4,10 @@ import Docker from "dockerode";
 import jwt from "jsonwebtoken";
 import pg from "pg";
 
-import { API_SCHEMA_PRIVILEGES_SQL } from "./api-schema-privileges.ts";
+import {
+  API_SCHEMA_PRIVILEGES_SQL,
+  DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
+} from "./api-schema-privileges.ts";
 import {
   materializePreparedSqlFile,
   queryPostgresMajorVersion,
@@ -27,6 +30,10 @@ export {
   queryPostgresMajorVersion,
   sanitizePlainSqlDumpForPostgresMajor,
 } from "./import-dump.ts";
+export {
+  API_SCHEMA_PRIVILEGES_SQL,
+  DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
+} from "./api-schema-privileges.ts";
 
 export const FLUX_NETWORK_NAME = "flux-network";
 
@@ -62,7 +69,7 @@ const POSTGRES_USER = "postgres";
  * and sequences stay visible to PostgREST roles without manual GRANTs.
  */
 export const BOOTSTRAP_SQL = `
--- Schema that PostgREST will expose (PGRST_DB_SCHEMA=api)
+-- Schema that PostgREST will expose (default: first entry of PGRST_DB_SCHEMAS=api,public)
 CREATE SCHEMA IF NOT EXISTS api;
 
 -- Role that PostgREST connects as; cannot log in directly
@@ -237,6 +244,34 @@ function dockerEnvFromRecord(record: Record<string, string>): string[] {
 }
 
 /**
+ * Reads `PGRST_JWT_SECRET` from `inspect.Config.Env` only — never generates or substitutes a secret.
+ */
+function readPgrstJwtSecretFromContainerEnv(
+  inspect: { Config?: { Env?: string[] } },
+  apiName: string,
+): string {
+  const rawEnv = inspect.Config?.Env;
+  if (rawEnv == null || rawEnv.length === 0) {
+    throw new Error(
+      `Container "${apiName}" has no Config.Env; cannot align JWT keys with PostgREST.`,
+    );
+  }
+  const entry = rawEnv.find((line) => line.startsWith("PGRST_JWT_SECRET="));
+  if (entry === undefined) {
+    throw new Error(
+      `PGRST_JWT_SECRET is missing from container "${apiName}" (inspect.Config.Env).`,
+    );
+  }
+  const secret = entry.slice("PGRST_JWT_SECRET=".length);
+  if (!secret) {
+    throw new Error(
+      `PGRST_JWT_SECRET is empty on container "${apiName}"; refusing to mint ad-hoc signing keys.`,
+    );
+  }
+  return secret;
+}
+
+/**
  * Whether an env var name should not have its **value** printed (e.g. `flux env list`).
  * Heuristic: connection strings, JWT material, passwords, and typical secret/token names.
  */
@@ -288,6 +323,97 @@ export function fluxApiUrlForSlug(slug: string): string {
  */
 function traefikHostRule(slug: string): string {
   return `Host(\`${slug}.flux.localhost\`)`;
+}
+
+/** Shared Traefik middleware names (repeated on each PostgREST container; Traefik merges identical defs). */
+const TRAEFIK_MW_STRIP_PREFIX = "flux-stripprefix";
+/** CORS for local dev (e.g. YeastCoast on port 3001 → `*.flux.localhost`). */
+const TRAEFIK_MW_CORS_LOCALHOST_3001 = "flux-cors-localhost-3001";
+
+/** Supabase JS + PostgREST (explicit list; no wildcard). */
+const TRAEFIK_CORS_ALLOW_HEADERS =
+  "apikey,Authorization,Content-Type,X-Client-Info,Accept-Profile,Content-Profile,Prefer,Accept,Range";
+
+/** PostgREST `db-schemas`: default `api`; include `public` for Supabase-style dumps. */
+const PGRST_DB_SCHEMAS_VALUE = "api,public";
+
+/** Traefik labels for the tenant PostgREST router (shared by provision and label updates). */
+function postgrestTraefikDockerLabels(
+  slug: string,
+  stripSupabaseRestPrefix: boolean,
+): Record<string, string> {
+  const traefikSvc = `flux-${slug}-api`;
+  const labels: Record<string, string> = {
+    "traefik.enable": "true",
+    "traefik.docker.network": FLUX_NETWORK_NAME,
+    [`traefik.http.routers.${traefikSvc}.rule`]: traefikHostRule(slug),
+    [`traefik.http.routers.${traefikSvc}.entrypoints`]: "web",
+    [`traefik.http.routers.${traefikSvc}.service`]: traefikSvc,
+    [`traefik.http.services.${traefikSvc}.loadbalancer.server.port`]: "3000",
+  };
+
+  labels[`traefik.http.middlewares.${TRAEFIK_MW_STRIP_PREFIX}.stripprefix.prefixes`] =
+    "/rest/v1";
+
+  labels[
+    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolalloworiginlist`
+  ] = "http://localhost:3001";
+  labels[
+    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolallowmethods`
+  ] = "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD";
+  labels[
+    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolallowheaders`
+  ] = TRAEFIK_CORS_ALLOW_HEADERS;
+  labels[
+    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolmaxage`
+  ] = "86400";
+  labels[
+    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.addvaryheader`
+  ] = "true";
+
+  const middlewares = stripSupabaseRestPrefix
+    ? `${TRAEFIK_MW_CORS_LOCALHOST_3001},${TRAEFIK_MW_STRIP_PREFIX}`
+    : TRAEFIK_MW_CORS_LOCALHOST_3001;
+  labels[`traefik.http.routers.${traefikSvc}.middlewares`] = middlewares;
+
+  return labels;
+}
+
+/**
+ * Strips Flux’s Traefik routing labels for this tenant’s API so they can be replaced (toggle strip).
+ * Preserves unrelated Docker labels on the same container.
+ */
+function removeFluxPostgrestTraefikDockerLabels(
+  existing: Record<string, string>,
+  slug: string,
+): Record<string, string> {
+  const traefikSvc = `flux-${slug}-api`;
+  const sharedMwPrefixes = [
+    `traefik.http.middlewares.${TRAEFIK_MW_STRIP_PREFIX}`,
+    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}`,
+    `traefik.http.middlewares.flux-${slug}-supabase-rest-strip`,
+  ];
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(existing)) {
+    if (k === "traefik.enable") continue;
+    if (k === "traefik.docker.network") continue;
+    if (k.startsWith(`traefik.http.routers.${traefikSvc}.`)) continue;
+    if (k.startsWith(`traefik.http.services.${traefikSvc}.`)) continue;
+    if (sharedMwPrefixes.some((p) => k.startsWith(p))) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function mergedPostgrestTraefikDockerLabels(
+  existing: Record<string, string>,
+  slug: string,
+  stripSupabaseRestPrefix: boolean,
+): Record<string, string> {
+  return {
+    ...removeFluxPostgrestTraefikDockerLabels(existing, slug),
+    ...postgrestTraefikDockerLabels(slug, stripSupabaseRestPrefix),
+  };
 }
 
 function containerNameForProject(projectName: string): string {
@@ -597,6 +723,10 @@ export interface FluxProject {
   jwtSecret: string;
   /** Generated Postgres superuser password — treat as sensitive. */
   postgresPassword: string;
+  /**
+   * When true, the gateway chains CORS + `flux-stripprefix` for `/rest/v1` (see {@link ProvisionOptions.stripSupabaseRestPrefix}).
+   */
+  stripSupabaseRestPrefix: boolean;
 }
 
 /** Optional hooks for long-running {@link ProjectManager.provisionProject} work (CLIs, logs). */
@@ -607,6 +737,12 @@ export interface ProvisionOptions {
    * so the tenant API can verify tokens minted by your auth provider. If omitted, a random secret is generated.
    */
   customJwtSecret?: string;
+  /**
+   * When true (default), the tenant router chains CORS (localhost:3001) and the shared
+   * `flux-stripprefix` middleware so the Supabase JS client’s `/rest/v1` path reaches PostgREST.
+   * Set to false only if clients call PostgREST at the URL root with no `/rest/v1` prefix.
+   */
+  stripSupabaseRestPrefix?: boolean;
 }
 
 /** Required for {@link ProjectManager.nukeProject} — confirms permanent data loss. */
@@ -640,7 +776,9 @@ export class ProjectManager {
    *
    * The shared {@link FLUX_GATEWAY_CONTAINER_NAME} Traefik instance (started with the Flux network)
    * routes `http://{slug}.flux.localhost` to PostgREST via Docker labels; PostgREST is not published
-   * on a random host port.
+   * on a random host port. By default, Traefik chains a Headers (CORS) middleware for
+   * `http://localhost:3001` and the shared `flux-stripprefix` middleware for `/rest/v1` (Supabase JS).
+   * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
    *
    * PostgREST is started with RestartPolicy `on-failure` (with a retry cap) so it survives Postgres
    * startup races without a Node-side health probe; a short delay after Postgres start reduces churn
@@ -712,17 +850,11 @@ export class ProjectManager {
 
     const dbUri = postgresJdbcUri(slug, postgresPassword);
 
-    /** Router and service name segment (must match Traefik label keys). */
-    const traefikSvc = `flux-${slug}-api`;
-    const traefikLabels: Record<string, string> = {
-      "traefik.enable": "true",
-      /** Force backend IP on the same bridge Traefik uses (avoids wrong-network 404/502). */
-      "traefik.docker.network": FLUX_NETWORK_NAME,
-      [`traefik.http.routers.${traefikSvc}.rule`]: traefikHostRule(slug),
-      [`traefik.http.routers.${traefikSvc}.entrypoints`]: "web",
-      [`traefik.http.routers.${traefikSvc}.service`]: traefikSvc,
-      [`traefik.http.services.${traefikSvc}.loadbalancer.server.port`]: "3000",
-    };
+    const stripSupabaseRestPrefix = options?.stripSupabaseRestPrefix !== false;
+    const traefikLabels = postgrestTraefikDockerLabels(
+      slug,
+      stripSupabaseRestPrefix,
+    );
 
     let apiContainer: Docker.Container;
     log?.(`Creating PostgREST container ${apiContainerName}…`);
@@ -734,7 +866,7 @@ export class ProjectManager {
         Env: [
           `PGRST_DB_URI=${dbUri}`,
           `PGRST_JWT_SECRET=${jwtSecret}`,
-          `PGRST_DB_SCHEMA=api`,
+          `PGRST_DB_SCHEMAS=${PGRST_DB_SCHEMAS_VALUE}`,
           `PGRST_DB_ANON_ROLE=anon`,
         ],
         ExposedPorts: { "3000/tcp": {} },
@@ -781,6 +913,7 @@ export class ProjectManager {
       apiUrl,
       jwtSecret,
       postgresPassword,
+      stripSupabaseRestPrefix,
     };
   }
 
@@ -797,6 +930,28 @@ export class ProjectManager {
       ...envs,
     };
     await this.replacePostgrestApiContainer(normalized, existing, merged);
+  }
+
+  /**
+   * Recreates the PostgREST container with updated Traefik labels so the gateway strips `/rest/v1`
+   * before forwarding to PostgREST (required for the Supabase JS client’s default REST path), or
+   * removes that middleware when `enabled` is false.
+   */
+  async setPostgrestSupabaseRestPrefix(
+    projectName: string,
+    enabled: boolean,
+  ): Promise<void> {
+    const slug = slugifyProjectName(projectName);
+    const existing = await this.getPostgrestInspectOrThrow(slug);
+    const merged = envRecordFromDockerEnv(existing.Config.Env);
+    const labels = mergedPostgrestTraefikDockerLabels(
+      existing.Config.Labels ?? {},
+      slug,
+      enabled,
+    );
+    await this.replacePostgrestApiContainer(slug, existing, merged, {
+      labels,
+    });
   }
 
   /**
@@ -852,12 +1007,13 @@ export class ProjectManager {
 
   /**
    * Stops/removes the API container and creates a new one with `mergedEnv`, preserving Traefik
-   * labels and host settings from `inspect`.
+   * labels and host settings from `inspect` unless `replaceOptions.labels` is set.
    */
   private async replacePostgrestApiContainer(
     slug: string,
     inspect: Awaited<ReturnType<Docker.Container["inspect"]>>,
     mergedEnv: Record<string, string>,
+    replaceOptions?: { labels?: Record<string, string> },
   ): Promise<void> {
     const apiName = postgrestContainerName(slug);
     const container = this.docker.getContainer(inspect.Id);
@@ -898,7 +1054,7 @@ export class ProjectManager {
     const created = await this.docker.createContainer({
       name: apiName,
       Image: inspect.Config.Image,
-      Labels: inspect.Config.Labels ?? {},
+      Labels: replaceOptions?.labels ?? inspect.Config.Labels ?? {},
       Env: env,
       ExposedPorts: inspect.Config.ExposedPorts ?? { "3000/tcp": {} },
       HostConfig: {
@@ -926,33 +1082,26 @@ export class ProjectManager {
   }
 
   /**
-   * Reads `PGRST_JWT_SECRET` from the PostgREST container (`flux-{slug}-api`) and returns
-   * JWTs signed with the same secret PostgREST uses for verification (anon vs service_role).
+   * Reads `PGRST_JWT_SECRET` from the running PostgREST container’s `inspect().Config.Env` and signs
+   * anon / service_role JWTs with that same material — never invents a new secret.
    */
   async getProjectKeys(
     slug: string,
   ): Promise<{ anonKey: string; serviceRoleKey: string }> {
-    const containerName = postgrestContainerName(slug);
-    let inspect;
+    const apiName = postgrestContainerName(slug);
+    let inspect: Awaited<ReturnType<Docker.Container["inspect"]>>;
     try {
-      inspect = await this.docker.getContainer(containerName).inspect();
+      inspect = await this.docker.getContainer(apiName).inspect();
     } catch (err: unknown) {
       if (getHttpStatus(err) === 404) {
         throw new Error(
-          `No PostgREST container found for slug "${slug}" (expected "${containerName}").`,
+          `No PostgREST container found for slug "${slug}" (expected "${apiName}").`,
         );
       }
       throw err;
     }
 
-    const secret = inspect.Config.Env?.find((e) =>
-      e.startsWith("PGRST_JWT_SECRET="),
-    )?.slice("PGRST_JWT_SECRET=".length);
-    if (!secret) {
-      throw new Error(
-        `Could not read PGRST_JWT_SECRET from container "${containerName}".`,
-      );
-    }
+    const secret = readPgrstJwtSecretFromContainerEnv(inspect, apiName);
 
     const anonKey = jwt.sign({ role: "anon" }, secret);
     const serviceRoleKey = jwt.sign({ role: "service_role" }, secret);
@@ -992,6 +1141,11 @@ export class ProjectManager {
    * By default, strips session `SET` lines that the tenant Postgres version does not support (see
    * {@link preparePlainSqlDumpForFlux}). Use {@link ImportSqlFileOptions} for Supabase-style dumps.
    *
+   * After the dump applies, always re-runs {@link API_SCHEMA_PRIVILEGES_SQL} so `anon` /
+   * `authenticated` keep `USAGE`/`SELECT`/DML on all tables in `api` (including objects from the
+   * dump). Optional {@link ImportSqlFileOptions.disableRowLevelSecurityInApi} turns off RLS on
+   * imported tables that still have it enabled (common when porting from Supabase).
+   *
    * Returns counts of objects moved when {@link ImportSqlFileOptions.moveFromPublic} is true.
    */
   async importSqlFile(
@@ -1029,6 +1183,15 @@ export class ProjectManager {
           hostPort,
           password,
           POSTGRES_USER,
+        );
+      }
+
+      await runSql(hostPort, password, API_SCHEMA_PRIVILEGES_SQL);
+      if (options?.disableRowLevelSecurityInApi === true) {
+        await runSql(
+          hostPort,
+          password,
+          DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
         );
       }
 

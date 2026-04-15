@@ -113,6 +113,16 @@ export async function POST(req: Request): Promise<Response> {
     if (s.length > 0) customJwtSecret = s;
   }
 
+  let stripSupabaseRestPrefix: boolean | undefined;
+  if (
+    "stripSupabaseRestPrefix" in body &&
+    typeof (body as { stripSupabaseRestPrefix?: unknown })
+      .stripSupabaseRestPrefix === "boolean"
+  ) {
+    stripSupabaseRestPrefix = (body as { stripSupabaseRestPrefix: boolean })
+      .stripSupabaseRestPrefix;
+  }
+
   await initSystemDb();
   const db = getDb();
   const pm = getProjectManager();
@@ -140,6 +150,9 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const project = await pm.provisionProject(rawName, {
       ...(customJwtSecret ? { customJwtSecret } : {}),
+      ...(stripSupabaseRestPrefix !== undefined
+        ? { stripSupabaseRestPrefix }
+        : {}),
     });
     const postgresHostConnectionString =
       await pm.getPostgresHostConnectionString(project.name);
@@ -160,6 +173,7 @@ export async function POST(req: Request): Promise<Response> {
         name: dbProject.name,
         slug: dbProject.slug,
         apiUrl: project.apiUrl,
+        stripSupabaseRestPrefix: project.stripSupabaseRestPrefix,
         postgresHostConnectionString,
         createdAt: dbProject.createdAt,
       },

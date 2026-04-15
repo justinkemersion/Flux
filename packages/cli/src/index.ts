@@ -36,7 +36,10 @@ function formatCliError(err: unknown): string {
   }
 }
 
-async function cmdCreate(name: string): Promise<void> {
+async function cmdCreate(
+  name: string,
+  options: { noSupabaseRestPath?: boolean },
+): Promise<void> {
   const pm = new ProjectManager();
   console.log(chalk.blue("Provisioning project…"));
   console.log(
@@ -46,6 +49,9 @@ async function cmdCreate(name: string): Promise<void> {
   );
   const project = await pm.provisionProject(name, {
     onStatus: (msg) => console.log(chalk.dim(`  ▸ ${msg}`)),
+    ...(options.noSupabaseRestPath === true
+      ? { stripSupabaseRestPrefix: false }
+      : {}),
   });
 
   const pgPort = project.postgres.hostPort;
@@ -69,6 +75,19 @@ async function cmdCreate(name: string): Promise<void> {
   console.log();
   console.log(chalk.blue.bold("  PostgREST"));
   console.log(chalk.dim("  "), chalk.white(apiUrl));
+  if (project.stripSupabaseRestPrefix) {
+    console.log(
+      chalk.dim(
+        "  Gateway: CORS http://localhost:3001 + strip /rest/v1 (Supabase client path).",
+      ),
+    );
+  } else {
+    console.log(
+      chalk.dim(
+        "  Gateway: CORS http://localhost:3001 only (no /rest/v1 strip).",
+      ),
+    );
+  }
   console.log();
   console.log(
     chalk.dim("  Store the connection string securely; it includes credentials."),
@@ -82,6 +101,7 @@ async function cmdPush(
   options: {
     supabaseCompat: boolean;
     noSanitize: boolean;
+    disableApiRls: boolean;
   },
 ): Promise<void> {
   const abs = resolve(process.cwd(), file);
@@ -105,6 +125,13 @@ async function cmdPush(
     console.log(
       chalk.dim("  ▸ Detected Supabase compatibility mode. Adjusting schemas…"),
     );
+    if (options.disableApiRls) {
+      console.log(
+        chalk.dim(
+          "  ▸ Will disable RLS on api tables that have it (Supabase policies often block Flux anon until rewritten).",
+        ),
+      );
+    }
     spinner.start("Applying SQL and migrating schema…");
   }
   const emptyReport: ImportSqlFileResult = {
@@ -118,6 +145,9 @@ async function cmdPush(
       supabaseCompat: options.supabaseCompat,
       sanitizeForTarget: !options.noSanitize,
       moveFromPublic: options.supabaseCompat,
+      ...(options.disableApiRls
+        ? { disableRowLevelSecurityInApi: true }
+        : {}),
     });
   } finally {
     spinner.stop();
@@ -142,6 +172,24 @@ async function cmdPush(
     );
     console.log();
   }
+}
+
+async function cmdSupabaseRestPath(project: string, enable: boolean): Promise<void> {
+  const pm = new ProjectManager();
+  console.log(
+    chalk.blue(
+      enable
+        ? "Enabling Traefik strip of /rest/v1 (Supabase JS client → PostgREST at /)…"
+        : "Removing /rest/v1 strip (PostgREST served at gateway URL root only)…",
+    ),
+  );
+  await pm.setPostgrestSupabaseRestPrefix(project, enable);
+  console.log(
+    chalk.green.bold("✓"),
+    chalk.white(
+      "PostgREST container recreated with updated labels. If the app still fails, confirm NEXT_PUBLIC_SUPABASE_URL is the project API URL (no /rest/v1 suffix) and keys match the dashboard.",
+    ),
+  );
 }
 
 async function cmdDbReset(project: string, yes: boolean): Promise<void> {
@@ -320,13 +368,21 @@ async function main(): Promise<void> {
     )
     .version("1.0.0", "-V, --version");
 
-  program
+  const createCmd = program
     .command("create")
     .description("Provision Postgres + PostgREST for a new project")
     .argument("<name>", "project name")
+    .option(
+      "--no-supabase-rest-path",
+      "Omit flux-stripprefix on the tenant router (PostgREST at URL root; default is strip + CORS)",
+      false,
+    )
     .action(async (name: string) => {
       try {
-        await cmdCreate(name);
+        const opts = createCmd.opts<{ noSupabaseRestPath?: boolean }>();
+        await cmdCreate(name, {
+          noSupabaseRestPath: opts.noSupabaseRestPath === true,
+        });
       } catch (err: unknown) {
         console.error(chalk.red.bold("Error"));
         console.error(formatCliError(err));
@@ -349,6 +405,11 @@ async function main(): Promise<void> {
     .option(
       "--no-sanitize",
       "Do not strip SET session lines unsupported by the tenant Postgres major version",
+    )
+    .option(
+      "--disable-api-rls",
+      "After import: disable RLS on api tables that have it (typical Supabase port / local testing)",
+      false,
     );
 
   push.action(async (file: string) => {
@@ -357,10 +418,12 @@ async function main(): Promise<void> {
         project: string;
         supabaseCompat: boolean;
         noSanitize?: boolean;
+        disableApiRls?: boolean;
       }>();
       await cmdPush(file, opts.project, {
         supabaseCompat: opts.supabaseCompat,
         noSanitize: opts.noSanitize === true,
+        disableApiRls: opts.disableApiRls === true,
       });
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
@@ -381,6 +444,32 @@ async function main(): Promise<void> {
     try {
       const opts = dbReset.opts<{ project: string; yes: boolean }>();
       await cmdDbReset(opts.project, opts.yes);
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
+
+  const supabaseRestPathCmd = program
+    .command("supabase-rest-path")
+    .description(
+      "Enable/disable Traefik strip of /rest/v1 for the Supabase JS client on an existing project",
+    )
+    .requiredOption("-p, --project <name>", "Flux project name")
+    .option(
+      "--off",
+      "Remove the strip middleware instead of enabling it",
+      false,
+    );
+
+  supabaseRestPathCmd.action(async () => {
+    try {
+      const opts = supabaseRestPathCmd.opts<{
+        project: string;
+        off?: boolean;
+      }>();
+      await cmdSupabaseRestPath(opts.project, opts.off !== true);
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
       console.error(formatCliError(err));

@@ -12,6 +12,7 @@ The goal is to make it straightforward to run **many isolated backends** on a **
 - [Architecture at a glance](#architecture-at-a-glance)
 - [Monorepo layout](#monorepo-layout)
 - [Core concepts](#core-concepts)
+- [Supabase → Flux (migrations)](#supabase--flux-migrations)
 - [Packages deep dive](#packages-deep-dive)
 - [Dashboard (`apps/dashboard`)](#dashboard-appsdashboard)
 - [Prerequisites](#prerequisites)
@@ -29,12 +30,14 @@ The goal is to make it straightforward to run **many isolated backends** on a **
 
 | Piece | Role |
 |-------|------|
-| **`@flux/core`** | Docker orchestration: networks, gateway, per-tenant Postgres + PostgREST, bootstrap SQL, migrations, JWT helpers, **environment updates** on the API container. |
-| **`@flux/cli`** | Operator-facing `flux` commands (`create`, `push`, `list`, `start`/`stop`, `nuke`, **`env`**, …). |
+| **`@flux/core`** | Docker orchestration: networks, gateway, per-tenant Postgres + PostgREST, bootstrap SQL, **plain-SQL import** (Supabase-aware transforms, `public` → `api` move), JWT helpers, **environment updates** on the API container, Traefik label helpers. |
+| **`@flux/cli`** | Operator-facing `flux` commands (`create`, `push`, `db-reset`, `list`, `start`/`stop`, `nuke`, **`env`**, **`supabase-rest-path`**, …). |
 | **`@flux/sdk`** | Small TypeScript client over PostgREST-style HTTP (table queries, anon key headers). |
 | **`apps/dashboard`** | Next.js **control-plane UI**: GitHub sign-in, project list/create, container lifecycle, JWT/Clerk-style secrets, **Stripe** checkout/webhook hooks, all backed by a **`flux-system`** database. |
 
-Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **pnpm** workspaces.
+Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **pnpm** workspaces (**pnpm 10.x**, see root `packageManager`).
+
+**Typical versions in tree:** **Node.js** 20+ / **TypeScript** 5–6 (strict), **Next.js 16** + **React 19** (dashboard), **Auth.js** (`next-auth` v5 beta) with **Drizzle ORM** + **`pg`**, **Stripe** server SDK, **Commander** + **Chalk** (CLI), **dockerode** + **`pg`** + **jsonwebtoken** (`@flux/core`).
 
 ---
 
@@ -51,16 +54,19 @@ Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **p
 |----------|---------|
 | **`flux-network`** | User-defined bridge (`FLUX_NETWORK_NAME`). Tenant DB + API containers attach here; the **Traefik** gateway uses the same network so it can route to backends by container labels. |
 | **`flux-gateway`** | Traefik (`FLUX_GATEWAY_CONTAINER_NAME`) — Docker provider, read-only socket mount, listens on **host :80**, discovers routers from **labels** on the PostgREST containers. |
-| **`flux-<slug>-db`** | Postgres 16 (Alpine), named volume **`flux-<slug>-db-data`**, published random host port **`5432`** for host-side tools and migrations. |
-| **`flux-<slug>-api`** | PostgREST — **no** random public port; Traefik sends **`http://<slug>.flux.localhost`** to port **3000** inside the network. |
+| **`flux-<slug>-db`** | **PostgreSQL 16** (Alpine image from `FLUX_DOCKER_IMAGES.postgres`), named volume **`flux-<slug>-db-data`**, published random host port **`5432`** for host-side tools and migrations. |
+| **`flux-<slug>-api`** | **PostgREST** (`postgrest/postgrest:latest`) — **no** random public port; **Traefik v3.6** (`traefik:v3.6` gateway) sends **`http://<slug>.flux.localhost`** to port **3000** inside the network. |
 
 Provisioning (`ProjectManager.provisionProject`) ensures the network exists, ensures the gateway image is present and running, creates the volume and Postgres container, runs **`BOOTSTRAP_SQL`**, then creates the PostgREST container with Traefik labels so **`http://<slug>.flux.localhost`** resolves (with `/etc/hosts` or DNS for `*.flux.localhost`).
 
 ### HTTP path to a tenant API
 
-1. Client requests **`http://myapp.flux.localhost/...`** (Host header matches Traefik router rule).
-2. **Traefik** on `flux-network` forwards to the **`flux-myapp-api`** container’s port **3000**.
-3. **PostgREST** connects to **`flux-myapp-db:5432`** using **`PGRST_DB_URI`** (internal DNS).
+1. Client requests **`http://myapp.flux.localhost/...`** (Host header matches Traefik router rule **`Host(\`myapp.flux.localhost\`)`**).
+2. **Traefik** applies a **Headers** CORS middleware (`flux-cors-localhost-3001`, `http://localhost:3001` by default) and, when enabled, the shared **`flux-stripprefix`** middleware so paths under **`/rest/v1`** match **Supabase JS** (PostgREST itself serves resources at **`/`**).
+3. **Traefik** forwards to **`flux-myapp-api:3000`**.
+4. **PostgREST** connects to **`flux-myapp-db:5432`** using **`PGRST_DB_URI`** (internal Docker DNS).
+
+Tenant PostgREST is configured with **`PGRST_DB_SCHEMAS=api,public`** (`api` first for the default schema). **`PGRST_JWT_SECRET`** is generated at provision time (or taken from dashboard **`customJwtSecret`**). **`getProjectKeys`** reads that secret **only** from the running API container’s **`inspect().Config.Env`**—it never mints a substitute secret.
 
 ### Schema changes and cache reload
 
@@ -78,7 +84,7 @@ The workspace is defined in **`pnpm-workspace.yaml`** (`packages/*`, `apps/*`). 
 | `packages/cli` | **`@flux/cli`** | `flux` entry (`src/index.ts`), Commander + Chalk, calls into `ProjectManager`. |
 | `packages/sdk` | **`@flux/sdk`** | `createClient`, `FluxClient`, PostgREST-shaped `select`/`insert`/`update`/`delete` + `eq` filters over `fetch`. |
 | `apps/dashboard` | **`dashboard`** (private) | Next.js App Router, Auth.js, Drizzle + `pg` to `flux-system`, API routes under `app/api/*`, Stripe integration, `instrumentation.ts` for DB init. |
-| `docs/guides/` | — | Extra integration guides (e.g. Clerk + PostgREST). |
+| `docs/guides/` | — | **PostgreSQL / Supabase → Flux** import guide, **Clerk + PostgREST**, etc. |
 
 Root **`package.json`** is minimal; install and scripts are usually run with **`pnpm --filter <name>`** from the repo root.
 
@@ -94,12 +100,12 @@ User-facing names are **slugified** for container and volume names (lowercase, h
 
 On first connection to a new tenant DB, Flux runs SQL that:
 
-- Creates schema **`api`** (PostgREST exposes this via `PGRST_DB_SCHEMA`).
-- Creates roles **`authenticator`**, **`anon`**, **`authenticated`** and grants appropriate privileges so PostgREST’s JWT role model works.
+- Creates schema **`api`** and grants **`anon` / `authenticated`** usage on **`api`** and **`public`** (so **`PGRST_DB_SCHEMAS=api,public`** can resolve both).
+- Creates roles **`authenticator`**, **`anon`**, **`authenticated`** and applies **`API_SCHEMA_PRIVILEGES_SQL`** (table/sequence grants + default privileges) so PostgREST’s JWT role model works.
 
 ### JWTs and keys
 
-PostgREST verifies JWTs with **`PGRST_JWT_SECRET`**. The dashboard (and `getProjectKeys` in core) can derive **anon** and **service_role**-style keys from the same secret for client tooling. You can align this secret with an external issuer (e.g. Clerk); see **`docs/guides/clerk-integration.md`**.
+PostgREST verifies JWTs with **`PGRST_JWT_SECRET`**. The dashboard (and **`getProjectKeys`** in core) derive **anon** and **service_role**-style JWTs **from the container env only** (same material PostgREST uses). You can align this secret with an external issuer (e.g. Clerk); see **`docs/guides/clerk-integration.md`**.
 
 ### Tenant environment variables (“project bucket”)
 
@@ -107,13 +113,41 @@ The **PostgREST container** carries all runtime env: built-in `PGRST_*` variable
 
 ---
 
+## Supabase → Flux (migrations)
+
+Flux can ingest **plain `pg_dump` SQL** from Supabase-style apps and land tables in the **`api`** schema PostgREST exposes.
+
+| Capability | Where it lives |
+|------------|----------------|
+| **Dump transforms** | `preparePlainSqlDumpForFlux`, `applySupabaseCompatibilityTransforms` — optional `auth` stubs, `auth.uid()`, seed rows before `auth.users` FKs. |
+| **`public` → `api`** | After import with **`moveFromPublic`**, `movePublicSchemaObjectsToApi` moves tables / sequences / views; if **`api.<name>`** already exists (dump created both), the **`public`** duplicate is **`DROP … CASCADE`**’d instead of failing. |
+| **Grants after import** | Every **`importSqlFile`** ends by re-running **`API_SCHEMA_PRIVILEGES_SQL`** so **`anon` / `authenticated`** keep DML on all **`api`** objects. |
+| **RLS (local / porting)** | Optional **`disableRowLevelSecurityInApi`** / CLI **`--disable-api-rls`**: disables RLS on **`api`** tables that still have it enabled (Supabase policies often block **`anon`** until rewritten). |
+| **Gateway + browser** | Default Traefik labels: **CORS** for **`http://localhost:3001`** + **`flux-stripprefix`** for **`/rest/v1`**. New projects default to strip on; **`flux create --no-supabase-rest-path`** opts out. **`flux supabase-rest-path -p <name>`** updates an existing API container; pass **`--off`** to remove strip from the middleware chain. |
+| **Dashboard create** | `POST /api/projects` accepts optional **`stripSupabaseRestPrefix`** (boolean) and **`customJwtSecret`**. |
+
+**Typical CLI flow**
+
+```bash
+flux db-reset -p myapp --yes
+flux push ./dump.sql -p myapp -s --disable-api-rls
+```
+
+- **`-s` / `--supabase-compat`** — compatibility transforms + move **`public` → `api`** after the file runs.  
+- **`--disable-api-rls`** — post-import RLS teardown for **`api`** (see `@flux/core` **`DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL`**).  
+- **`--no-sanitize`** — do not strip unsupported `SET` lines (advanced).
+
+**Downstream app (e.g. Next.js + Supabase JS)** — point **`NEXT_PUBLIC_SUPABASE_URL`** at **`http://<slug>.flux.localhost`** with **no** `/rest/v1` suffix, use dashboard **anon key**, and set **`createClient(..., { db: { schema: "api" } })`**. Full notes: **`docs/guides/postgresql-import-to-flux.md`**.
+
+---
+
 ## Packages deep dive
 
 ### `@flux/core` (`packages/core`)
 
-- **Exports** — `ProjectManager`, `FLUX_NETWORK_NAME`, `FLUX_GATEWAY_CONTAINER_NAME`, `FLUX_DOCKER_IMAGES`, `fluxApiUrlForSlug`, `BOOTSTRAP_SQL`, helpers like `isFluxSensitiveEnvKey`, and types (`FluxProject`, `FluxProjectSummary`, `FluxProjectEnvEntry`, …).
+- **Exports** — `ProjectManager`, `FLUX_NETWORK_NAME`, `FLUX_GATEWAY_CONTAINER_NAME`, `FLUX_DOCKER_IMAGES`, `fluxApiUrlForSlug`, `BOOTSTRAP_SQL`, **`API_SCHEMA_PRIVILEGES_SQL`**, **`DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL`**, dump helpers (`preparePlainSqlDumpForFlux`, `sanitizePlainSqlDumpForPostgresMajor`, `applySupabaseCompatibilityTransforms`, `queryPostgresMajorVersion`), `isFluxSensitiveEnvKey`, types (`FluxProject`, `FluxProjectSummary`, `FluxProjectEnvEntry`, `ImportSqlFileOptions`, …).
 - **Docker** — `dockerode`; pulls with stall detection; idempotent network/gateway provisioning.
-- **Typical flows** — `provisionProject`, `listProjects`, `stopProject` / `startProject`, `nukeProject`, `getPostgresHostConnectionString`, `executeSql`, `importSqlFile`, `updatePostgrestJwtSecret` (delegates to `setProjectEnv`), `setProjectEnv`, `listProjectEnv`, `getProjectKeys`.
+- **Typical flows** — `provisionProject`, `listProjects`, `stopProject` / `startProject`, `nukeProject`, `getPostgresHostConnectionString`, `executeSql`, **`importSqlFile`** (optional Supabase compat + **`moveFromPublic`**, post-import grants + optional RLS disable), **`resetTenantDatabaseForImport`**, `updatePostgrestJwtSecret`, **`setPostgrestSupabaseRestPrefix`**, `setProjectEnv`, `listProjectEnv`, **`getProjectKeys`** (JWTs from container **`PGRST_JWT_SECRET` only**).
 
 ### `@flux/cli` (`packages/cli`)
 
@@ -233,12 +267,14 @@ Implementation: **`packages/cli/src/index.ts`**. Orchestration: **`ProjectManage
 
 | Command | Purpose |
 |---------|---------|
-| **`create <name>`** | Provision Postgres + PostgREST + Traefik labels; print Postgres URL (host) and tenant API base URL. |
-| **`push <file> -p, --project <name>`** | Stream a `.sql` file into the tenant DB via the published port; reload PostgREST schema afterward. |
+| **`create <name>`** | Provision Postgres + PostgREST + Traefik labels (default: CORS + **`/rest/v1`** strip). **`--no-supabase-rest-path`** omits strip on the tenant router. |
+| **`push <file> -p, --project <name>`** | Apply a `.sql` file via host **`psql`** or **`docker exec psql`**; optional **`-s` / `--supabase-compat`**, **`--disable-api-rls`**, **`--no-sanitize`**; reload PostgREST afterward. |
+| **`db-reset -p, --project <name> -y, --yes`** | Drop **`public`** + **`auth`**, recreate **`public`**, reapply **`BOOTSTRAP_SQL`** (clean slate before a full dump import). |
 | **`list`** | List projects from **`flux-*-db` / `flux-*-api`** containers: slug, combined status, **API URL** (`http://<slug>.flux.localhost`). |
 | **`stop <name>`** | Stop API container, then DB. |
 | **`start <name>`** | Start DB, then API. |
 | **`nuke <name> -y, --yes`** | **Irreversible:** remove both containers and delete **`flux-<slug>-db-data`**. Requires **`--yes`**. |
+| **`supabase-rest-path -p, --project <name> [--off]`** | Recreate the API container with updated Traefik strip (**`/rest/v1`**) labels; **`--off`** removes strip from the chain (CORS remains). |
 | **`env set <key=value...> -p, --project <name>`** | Merge variables into the **PostgREST** container env and recreate the container. |
 | **`env list -p, --project <name>`** | Show env keys; **values omitted** for keys classified as sensitive. |
 
@@ -268,7 +304,8 @@ pnpm run flux -- nuke "ACME Corp" --yes
 
 ## Docs and guides
 
-- **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s `PGRST_JWT_SECRET` and the dashboard.
+- **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
+- **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
 
 ---
 

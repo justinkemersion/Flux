@@ -39,6 +39,26 @@ flux push ./dump.sql -p myproject --supabase-compat
 
 `--supabase-compat` (`-s`) turns on **Supabase compatibility**: dump transforms (minimal `auth` schema, `auth.users`, `auth.uid()`, seed before `auth.users` FKs), then **moves** tables, sequences, views, and materialized views from `public` into `api`, and reapplies grants on `api`. A short **post-migration report** lists how many objects moved. If your dump layout differs, adjust manually or extend `applySupabaseCompatibilityTransforms` in `@flux/core`.
 
+### Supabase JS `createClient` (schema)
+
+Flux PostgREST is configured for tenant data in the **`api`** schema (first in `PGRST_DB_SCHEMAS`). `@supabase/supabase-js` defaults to **`public`**, so the client must select `api` or requests miss tables / return empty errors.
+
+In the app (for example `lib/supabase.ts`):
+
+```ts
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    db: {
+      schema: "api",
+    },
+  },
+);
+```
+
+Point `NEXT_PUBLIC_SUPABASE_URL` at the Flux tenant API URL (no `/rest/v1` suffix on the env value; the client adds that path). Use the **anon key** from the Flux dashboard or CLI so JWTs match `PGRST_JWT_SECRET` on the PostgREST container.
+
 ## Flags
 
 | Command | Meaning |

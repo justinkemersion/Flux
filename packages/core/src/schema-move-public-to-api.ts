@@ -13,6 +13,27 @@ function qIdent(name: string): string {
 }
 
 /**
+ * True if `api` already has any relation (table, sequence, view, …) with this name.
+ * Supabase-style dumps sometimes create objects in both `public` and `api`; moving `public` → `api`
+ * then fails with "already exists". In that case we drop the redundant `public` copy.
+ */
+async function apiHasRelationNamed(
+  client: pg.Client,
+  relname: string,
+): Promise<boolean> {
+  const { rowCount } = await client.query(
+    `
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'api' AND c.relname = $1
+    `,
+    [relname],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/**
  * FK edges within `public`: parent table → child table (child references parent).
  * Move parents before children.
  */
@@ -158,6 +179,9 @@ async function listPublicMatviews(client: pg.Client): Promise<string[]> {
 /**
  * Moves user tables, sequences, views, and materialized views from `public` to `api`, then
  * reapplies {@link API_SCHEMA_PRIVILEGES_SQL}.
+ *
+ * When the dump already created the same object in `api`, drops the duplicate in `public`
+ * (`… CASCADE`) instead of moving.
  */
 export async function movePublicSchemaObjectsToApi(
   client: pg.Client,
@@ -171,17 +195,29 @@ export async function movePublicSchemaObjectsToApi(
   const ordered = orderTablesForMove(baseTables, fkEdges);
 
   for (const relname of ordered) {
-    await client.query(
-      `ALTER TABLE public.${qIdent(relname)} SET SCHEMA api`,
-    );
+    if (await apiHasRelationNamed(client, relname)) {
+      await client.query(
+        `DROP TABLE public.${qIdent(relname)} CASCADE`,
+      );
+    } else {
+      await client.query(
+        `ALTER TABLE public.${qIdent(relname)} SET SCHEMA api`,
+      );
+    }
     tablesMoved++;
   }
 
   const sequences = await listPublicSequences(client);
   for (const relname of sequences) {
-    await client.query(
-      `ALTER SEQUENCE public.${qIdent(relname)} SET SCHEMA api`,
-    );
+    if (await apiHasRelationNamed(client, relname)) {
+      await client.query(
+        `DROP SEQUENCE public.${qIdent(relname)} CASCADE`,
+      );
+    } else {
+      await client.query(
+        `ALTER SEQUENCE public.${qIdent(relname)} SET SCHEMA api`,
+      );
+    }
     sequencesMoved++;
   }
 
@@ -192,9 +228,13 @@ export async function movePublicSchemaObjectsToApi(
     progress = false;
     for (const v of [...remainingViews].sort()) {
       try {
-        await client.query(
-          `ALTER VIEW public.${qIdent(v)} SET SCHEMA api`,
-        );
+        if (await apiHasRelationNamed(client, v)) {
+          await client.query(`DROP VIEW public.${qIdent(v)} CASCADE`);
+        } else {
+          await client.query(
+            `ALTER VIEW public.${qIdent(v)} SET SCHEMA api`,
+          );
+        }
         remainingViews.delete(v);
         viewsMoved++;
         progress = true;
@@ -218,9 +258,15 @@ export async function movePublicSchemaObjectsToApi(
     matProgress = false;
     for (const relname of [...remainingMat].sort()) {
       try {
-        await client.query(
-          `ALTER MATERIALIZED VIEW public.${qIdent(relname)} SET SCHEMA api`,
-        );
+        if (await apiHasRelationNamed(client, relname)) {
+          await client.query(
+            `DROP MATERIALIZED VIEW public.${qIdent(relname)} CASCADE`,
+          );
+        } else {
+          await client.query(
+            `ALTER MATERIALIZED VIEW public.${qIdent(relname)} SET SCHEMA api`,
+          );
+        }
         remainingMat.delete(relname);
         viewsMoved++;
         matProgress = true;
