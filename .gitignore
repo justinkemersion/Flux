@@ -39,3 +39,6 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Ad-hoc SQL kept locally (not the supported public→api path; use `flux push -s`)
+packages/cli/migrations/move_to_api.sql
