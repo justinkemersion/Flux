@@ -189,6 +189,10 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
   const [actionError, setActionError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [jwtSecretInput, setJwtSecretInput] = useState("");
+  /** In-memory only: value just saved in this session so we can show reveal/copy (API never returns it). */
+  const [lastSavedJwtSecret, setLastSavedJwtSecret] = useState<string | null>(
+    null,
+  );
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
@@ -212,14 +216,31 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
     return () => document.removeEventListener("keydown", onKey);
   }, [deleteOpen]);
 
+  const closeSettingsModal = useCallback((): void => {
+    if (settingsSaving) return;
+    setSettingsOpen(false);
+    setLastSavedJwtSecret(null);
+    setJwtSecretInput("");
+    setSettingsError(null);
+    setSettingsSuccess(false);
+  }, [settingsSaving]);
+
+  const openSettingsModal = useCallback((): void => {
+    setJwtSecretInput("");
+    setLastSavedJwtSecret(null);
+    setSettingsError(null);
+    setSettingsSuccess(false);
+    setSettingsOpen(true);
+  }, []);
+
   useEffect(() => {
     if (!settingsOpen) return;
     function onKey(e: KeyboardEvent): void {
-      if (e.key === "Escape") setSettingsOpen(false);
+      if (e.key === "Escape") closeSettingsModal();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [settingsOpen]);
+  }, [settingsOpen, closeSettingsModal]);
 
   useEffect(() => {
     if (!deleteOpen) return;
@@ -264,18 +285,6 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
     }
   }
 
-  function openSettingsModal(): void {
-    setJwtSecretInput("");
-    setSettingsError(null);
-    setSettingsSuccess(false);
-    setSettingsOpen(true);
-  }
-
-  function closeSettingsModal(): void {
-    if (settingsSaving) return;
-    setSettingsOpen(false);
-  }
-
   async function saveJwtSettings(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     const trimmed = jwtSecretInput.trim();
@@ -297,6 +306,7 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
         throw new Error(data.error ?? `Save failed (${String(res.status)})`);
       }
       setSettingsSuccess(true);
+      setLastSavedJwtSecret(trimmed);
       setJwtSecretInput("");
       onSettingsSaved?.();
       window.setTimeout(() => setSettingsSuccess(false), 4000);
@@ -488,11 +498,37 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
               </p>
 
               <form onSubmit={(e) => void saveJwtSettings(e)} className="mt-6">
+                {lastSavedJwtSecret ? (
+                  <div className="mb-6 space-y-2">
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      Signing key below is only kept until you close this dialog;
+                      the server never sends it back.
+                    </p>
+                    <CopyableField
+                      key={lastSavedJwtSecret}
+                      label="Signing key you saved"
+                      value={lastSavedJwtSecret}
+                      isSecret
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLastSavedJwtSecret(null);
+                        setJwtSecretInput("");
+                      }}
+                      className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      Replace secret
+                    </button>
+                  </div>
+                ) : null}
                 <label
                   htmlFor={`jwt-secret-${p.id}`}
                   className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
                 >
-                  JWT secret / webhook secret
+                  {lastSavedJwtSecret
+                    ? "Update JWT secret (optional)"
+                    : "JWT secret / webhook secret"}
                 </label>
                 <input
                   id={`jwt-secret-${p.id}`}
