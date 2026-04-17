@@ -1,4 +1,7 @@
+import { existsSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
 import Docker from "dockerode";
 import jwt from "jsonwebtoken";
@@ -789,8 +792,39 @@ function defaultSshAgentOptions(): Record<string, unknown> {
   return agent ? { agent } : {};
 }
 
-function mergeSshOptions(user?: Record<string, unknown>): Record<string, unknown> {
-  return { ...defaultSshAgentOptions(), ...user };
+/** Default SSH key when none is passed (fixes common “Authentication failed” with DOCKER_HOST=ssh://…). */
+function maybeEd25519PrivateKeyOption(): { privateKey: Buffer } | Record<string, never> {
+  try {
+    const keyPath = path.join(homedir(), ".ssh", "id_ed25519");
+    if (!existsSync(keyPath)) return {};
+    return { privateKey: readFileSync(keyPath) };
+  } catch {
+    return {};
+  }
+}
+
+function mergeSshOptionsForSshProtocol(user?: Record<string, unknown>): Record<string, unknown> {
+  const agentPart = defaultSshAgentOptions();
+  const keyPart =
+    user?.privateKey !== undefined ? {} : maybeEd25519PrivateKeyOption();
+  return { ...agentPart, ...keyPart, ...user };
+}
+
+/**
+ * If this client uses SSH to reach the Engine and no `privateKey` was configured, load
+ * `~/.ssh/id_ed25519` when present (same merge order as explicit SSH options).
+ */
+function augmentDockerSshClientIfNeeded(docker: Docker): void {
+  const m = docker.modem as {
+    protocol?: string;
+    sshOptions?: Record<string, unknown>;
+  };
+  if (m.protocol !== "ssh") return;
+  const cur = m.sshOptions ?? {};
+  if (cur.privateKey !== undefined) return;
+  const extra = maybeEd25519PrivateKeyOption();
+  if (!("privateKey" in extra)) return;
+  m.sshOptions = mergeSshOptionsForSshProtocol({ ...cur, ...extra });
 }
 
 type DockerCtorOptions = NonNullable<ConstructorParameters<typeof Docker>[0]>;
@@ -815,7 +849,7 @@ function buildExplicitModemOptions(
       protocol: "ssh",
       pathPrefix: "/",
       username: options.username,
-      sshOptions: mergeSshOptions(options.sshOptions),
+      sshOptions: mergeSshOptionsForSshProtocol(options.sshOptions),
     } as DockerCtorOptions;
   }
 
@@ -831,21 +865,78 @@ function buildExplicitModemOptions(
  * Creates a dockerode client from optional {@link ProjectManagerConnectOptions}.
  * With no options (or no `host` / `docker`), uses `new Docker()` so **`DOCKER_HOST`** and the
  * default local socket behave like the Docker CLI.
+ *
+ * For **`protocol: 'ssh'`** or **`DOCKER_HOST=ssh://…`**, merges `~/.ssh/id_ed25519` as
+ * `sshOptions.privateKey` when the file exists and no key was supplied (see {@link augmentDockerSshClientIfNeeded}).
  */
 export function createFluxDocker(
   options?: ProjectManagerConnectOptions,
 ): Docker {
   if (options?.docker) {
+    augmentDockerSshClientIfNeeded(options.docker);
     return options.docker;
   }
   assertNoRemoteFieldsWithoutHost(options ?? {});
   const trimmed = options?.host?.trim();
   if (trimmed) {
-    return new Docker(
+    const d = new Docker(
       buildExplicitModemOptions({ ...options, host: trimmed }),
     );
+    augmentDockerSshClientIfNeeded(d);
+    return d;
   }
-  return new Docker();
+  const d = new Docker();
+  augmentDockerSshClientIfNeeded(d);
+  return d;
+}
+
+/** Human-readable Engine target for logs (prefers `DOCKER_HOST` when set). */
+export function formatDockerEngineTarget(docker: Docker): string {
+  const dh = process.env.DOCKER_HOST?.trim();
+  if (dh) return dh;
+  const m = docker.modem as {
+    host?: string;
+    port?: number | string;
+    protocol?: string;
+    username?: string;
+  };
+  if (m.host) {
+    const auth = m.username ? `${m.username}@` : "";
+    const portPart =
+      m.port != null && m.port !== "" ? `:${String(m.port)}` : "";
+    return `${String(m.protocol ?? "http")}://${auth}${m.host}${portPart}`;
+  }
+  return "local-socket (DOCKER_HOST unset; default unix socket or Windows named pipe)";
+}
+
+/**
+ * When true, Flux refuses to proceed if the Engine cannot be reached (avoids silently using a
+ * different daemon than `DOCKER_HOST` / explicit remote options imply).
+ */
+export function dockerEngineRequiresStrictReachability(docker: Docker): boolean {
+  if (process.env.DOCKER_HOST?.trim()) return true;
+  const m = docker.modem as { host?: string };
+  return Boolean(m.host);
+}
+
+/**
+ * If {@link dockerEngineRequiresStrictReachability} is true, **`docker.ping()`** must succeed or
+ * this throws (no fallback to another socket).
+ */
+export async function assertFluxDockerEngineReachableOrThrow(
+  docker: Docker,
+): Promise<void> {
+  if (!dockerEngineRequiresStrictReachability(docker)) return;
+  try {
+    await docker.ping();
+  } catch (err: unknown) {
+    const target = formatDockerEngineTarget(docker);
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Flux: cannot reach Docker Engine "${target}" (ping failed: ${detail}). ` +
+        "DOCKER_HOST is set or a remote host was configured—aborting so we never fall back to a different engine.",
+    );
+  }
 }
 
 function resolveProjectManagerDocker(
@@ -863,6 +954,10 @@ function resolveProjectManagerDocker(
  * Pass a {@link Docker} instance, {@link ProjectManagerConnectOptions} (remote `host` / `protocol`,
  * or injected `docker`), or omit the argument to use {@link createFluxDocker} (`DOCKER_HOST` + default
  * socket, same as the Docker CLI).
+ *
+ * When **`DOCKER_HOST`** is set or a remote **`host`** was passed, {@link provisionProject} (and
+ * {@link assertDockerEngineReachableOrThrow}) **ping** that Engine first and **throw** if it is
+ * unreachable—there is no fallback to `/var/run/docker.sock`.
  */
 export class ProjectManager {
   private readonly docker: Docker;
@@ -871,6 +966,14 @@ export class ProjectManager {
   constructor(options?: ProjectManagerConnectOptions);
   constructor(arg?: Docker | ProjectManagerConnectOptions) {
     this.docker = resolveProjectManagerDocker(arg);
+  }
+
+  /**
+   * Verifies the configured Engine responds to **`ping`** when strict remote mode applies
+   * ({@link dockerEngineRequiresStrictReachability}); no-op for local-socket-only setups.
+   */
+  async assertDockerEngineReachableOrThrow(): Promise<void> {
+    await assertFluxDockerEngineReachableOrThrow(this.docker);
   }
 
   /** Docker DNS names for Postgres and PostgREST on {@link FLUX_NETWORK_NAME} (internal connectivity). */
@@ -905,6 +1008,10 @@ export class ProjectManager {
     options?: ProvisionOptions,
   ): Promise<FluxProject> {
     const log = options?.onStatus;
+    const targetMsg = `▸ Targeting Docker Engine: ${formatDockerEngineTarget(this.docker)}`;
+    console.log(targetMsg);
+    log?.(targetMsg);
+    await assertFluxDockerEngineReachableOrThrow(this.docker);
     await this.ensureFluxNetwork(log);
     await this.ensureFluxGateway(log);
     const slug = slugifyProjectName(name);
@@ -1805,9 +1912,11 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 export async function testDockerConnection(): Promise<void> {
   const docker = createFluxDocker();
 
+  console.log(`▸ Targeting Docker Engine: ${formatDockerEngineTarget(docker)}`);
   console.log("🔄 Attempting to connect to Docker Engine...");
 
   try {
+    await assertFluxDockerEngineReachableOrThrow(docker);
     const ping = await docker.ping();
     console.log("✅ Docker Connection: SUCCESS");
     console.log(`📡 Ping Response: ${ping.toString()}`);
