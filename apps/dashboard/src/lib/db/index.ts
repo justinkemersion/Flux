@@ -27,7 +27,9 @@ async function _init(): Promise<void> {
   const pm = getProjectManager();
 
   try {
-    await pm.provisionProject("flux-system");
+    await pm.provisionProject("flux-system", {
+      isProduction: process.env.NODE_ENV === "production",
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!msg.includes("already exists")) throw err;

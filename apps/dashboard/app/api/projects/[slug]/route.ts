@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { auth } from "@/src/lib/auth";
 import { projects } from "@/src/db/schema";
+import { fluxApiUrlForSlug } from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
@@ -58,7 +59,9 @@ export async function GET(
     name: project.name,
     slug: project.slug,
     status: summary?.status ?? "missing",
-    apiUrl: summary?.apiUrl ?? `http://${slug}.flux.localhost`,
+    apiUrl:
+      summary?.apiUrl ??
+      fluxApiUrlForSlug(slug, process.env.NODE_ENV === "production"),
     createdAt: project.createdAt,
   });
 }

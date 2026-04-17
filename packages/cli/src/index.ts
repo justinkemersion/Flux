@@ -52,6 +52,7 @@ async function cmdCreate(
     ...(options.noSupabaseRestPath === true
       ? { stripSupabaseRestPrefix: false }
       : {}),
+    isProduction: process.env.NODE_ENV === "production",
   });
 
   const pgPort = project.postgres.hostPort;
@@ -78,13 +79,13 @@ async function cmdCreate(
   if (project.stripSupabaseRestPrefix) {
     console.log(
       chalk.dim(
-        "  Gateway: CORS http://localhost:3001 + strip /rest/v1 (Supabase client path).",
+        "  Gateway: CORS (localhost:3001 + dashboard) + strip /rest/v1 (Supabase client path).",
       ),
     );
   } else {
     console.log(
       chalk.dim(
-        "  Gateway: CORS http://localhost:3001 only (no /rest/v1 strip).",
+        "  Gateway: CORS (localhost:3001 + dashboard) only (no /rest/v1 strip).",
       ),
     );
   }

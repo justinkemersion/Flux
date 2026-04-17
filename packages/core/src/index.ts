@@ -311,22 +311,47 @@ function postgrestContainerName(slug: string): string {
   return `flux-${slug}-api`;
 }
 
-/** HTTP origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik). */
-export function fluxApiUrlForSlug(slug: string): string {
-  return `http://${slug}.flux.localhost`;
+/** Default public parent domain for tenant hostnames (`{slug}.<domain>`). Override with `FLUX_DOMAIN`. */
+export const FLUX_DEFAULT_DOMAIN = "vsl-base.com";
+
+/**
+ * Parent domain for tenant API hostnames: `FLUX_DOMAIN` when set, otherwise {@link FLUX_DEFAULT_DOMAIN}.
+ */
+export function fluxTenantDomain(): string {
+  const d = process.env.FLUX_DOMAIN?.trim();
+  return d && d.length > 0 ? d : FLUX_DEFAULT_DOMAIN;
+}
+
+/**
+ * HTTP(S) origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik).
+ * When `isProduction` is true, uses `https://`; otherwise `http://` (local / TLS-terminated elsewhere).
+ */
+export function fluxApiUrlForSlug(slug: string, isProduction = false): string {
+  const scheme = isProduction ? "https" : "http";
+  return `${scheme}://${slug}.${fluxTenantDomain()}`;
+}
+
+/** Used when synthesizing `apiUrl` for {@link ProjectManager.listProjects} / {@link ProjectManager.getProjectSummariesForSlugs}. */
+function fluxApiProductionForListedUrls(): boolean {
+  return process.env.NODE_ENV === "production";
 }
 
 /**
  * Traefik v3 `Host()` matcher: backticks wrap the literal hostname (required syntax).
- * Example for slug `acme`: `Host(\`acme.flux.localhost\`)`.
+ * Example for slug `acme`: `Host(\`acme.vsl-base.com\`)` (or `FLUX_DOMAIN`).
  */
 function traefikHostRule(slug: string): string {
-  return `Host(\`${slug}.flux.localhost\`)`;
+  return `Host(\`${slug}.${fluxTenantDomain()}\`)`;
+}
+
+function traefikCorsAllowOriginList(): string {
+  const dashboard = `https://app.${fluxTenantDomain()}`;
+  return `http://localhost:3001,${dashboard}`;
 }
 
 /** Shared Traefik middleware names (repeated on each PostgREST container; Traefik merges identical defs). */
 const TRAEFIK_MW_STRIP_PREFIX = "flux-stripprefix";
-/** CORS for local dev (e.g. YeastCoast on port 3001 → `*.flux.localhost`). */
+/** CORS: local dashboard (port 3001) + `https://app.<FLUX_DOMAIN|vsl-base.com>`. */
 const TRAEFIK_MW_CORS_LOCALHOST_3001 = "flux-cors-localhost-3001";
 
 /** Supabase JS + PostgREST (explicit list; no wildcard). */
@@ -356,7 +381,7 @@ function postgrestTraefikDockerLabels(
 
   labels[
     `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolalloworiginlist`
-  ] = "http://localhost:3001";
+  ] = traefikCorsAllowOriginList();
   labels[
     `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolallowmethods`
   ] = "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD";
@@ -598,7 +623,7 @@ export interface FluxProjectSummary {
    * **corrupted** — exactly one of the two containers exists.
    */
   status: "running" | "stopped" | "partial" | "missing" | "corrupted";
-  /** Public API URL via the Flux Traefik gateway (`Host: {slug}.flux.localhost`). */
+  /** Public API URL via the Flux Traefik gateway (`Host: {slug}.<FLUX_DOMAIN|vsl-base.com>`). */
   apiUrl: string;
 }
 
@@ -780,11 +805,16 @@ export interface ProvisionOptions {
    */
   customJwtSecret?: string;
   /**
-   * When true (default), the tenant router chains CORS (localhost:3001) and the shared
-   * `flux-stripprefix` middleware so the Supabase JS client’s `/rest/v1` path reaches PostgREST.
+   * When true (default), the tenant router chains CORS (localhost:3001 + dashboard `https://app.<domain>`)
+   * and the shared `flux-stripprefix` middleware so the Supabase JS client’s `/rest/v1` path reaches PostgREST.
    * Set to false only if clients call PostgREST at the URL root with no `/rest/v1` prefix.
    */
   stripSupabaseRestPrefix?: boolean;
+  /**
+   * When true, {@link ProjectManager.provisionProject} returns an `https://` {@link FluxProject.apiUrl}
+   * (public TLS at the edge). When false (default), returns `http://` (local dev or plain HTTP).
+   */
+  isProduction?: boolean;
 }
 
 /** Required for {@link ProjectManager.nukeProject} — confirms permanent data loss. */
@@ -938,9 +968,9 @@ export class ProjectManager {
    * Provisions Postgres + PostgREST on {@link FLUX_NETWORK_NAME}, with internal DNS between services.
    *
    * The shared {@link FLUX_GATEWAY_CONTAINER_NAME} Traefik instance (started with the Flux network)
-   * routes `http://{slug}.flux.localhost` to PostgREST via Docker labels; PostgREST is not published
+   * routes `{slug}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
    * on a random host port. By default, Traefik chains a Headers (CORS) middleware for
-   * `http://localhost:3001` and the shared `flux-stripprefix` middleware for `/rest/v1` (Supabase JS).
+   * `http://localhost:3001` and `https://app.<domain>` and the shared `flux-stripprefix` middleware for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
    *
    * PostgREST is started with RestartPolicy `on-failure` (with a retry cap) so it survives Postgres
@@ -1056,7 +1086,8 @@ export class ProjectManager {
       `Verified PostgREST container is attached to ${FLUX_NETWORK_NAME} (Traefik can reach it).`,
     );
 
-    const apiUrl = fluxApiUrlForSlug(slug);
+    const isProduction = options?.isProduction === true;
+    const apiUrl = fluxApiUrlForSlug(slug, isProduction);
     await waitForApiReachable(apiUrl, log ? { onStatus: log } : undefined);
 
     log?.("Provision complete.");
@@ -1501,7 +1532,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       rows.push({
         slug,
         status,
-        apiUrl: fluxApiUrlForSlug(slug),
+        apiUrl: fluxApiUrlForSlug(slug, fluxApiProductionForListedUrls()),
       });
     }
 
@@ -1527,7 +1558,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
         return {
           slug,
           status: fluxTenantStatusFromContainerPair(db, api),
-          apiUrl: fluxApiUrlForSlug(slug),
+          apiUrl: fluxApiUrlForSlug(slug, fluxApiProductionForListedUrls()),
         };
       }),
     );

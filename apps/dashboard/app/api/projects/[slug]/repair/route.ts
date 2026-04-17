@@ -39,7 +39,9 @@ export async function POST(
   const pm = getProjectManager();
   try {
     await pm.nukeProject(slug, { acknowledgeDataLoss: true });
-    const provisioned = await pm.provisionProject(project.name, {});
+    const provisioned = await pm.provisionProject(project.name, {
+      isProduction: process.env.NODE_ENV === "production",
+    });
     return Response.json({
       ok: true,
       apiUrl: provisioned.apiUrl,

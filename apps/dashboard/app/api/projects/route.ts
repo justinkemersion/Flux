@@ -1,6 +1,7 @@
 import { count, eq } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
 import { projects, users } from "@/src/db/schema";
+import { fluxApiUrlForSlug } from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
@@ -57,7 +58,9 @@ export async function GET(): Promise<Response> {
       name: p.name,
       slug: p.slug,
       status: docker?.status ?? "missing",
-      apiUrl: docker?.apiUrl ?? `http://${p.slug}.flux.localhost`,
+      apiUrl:
+        docker?.apiUrl ??
+        fluxApiUrlForSlug(p.slug, process.env.NODE_ENV === "production"),
       createdAt: p.createdAt,
     };
   });
@@ -137,6 +140,7 @@ export async function POST(req: Request): Promise<Response> {
       ...(stripSupabaseRestPrefix !== undefined
         ? { stripSupabaseRestPrefix }
         : {}),
+      isProduction: process.env.NODE_ENV === "production",
     });
 
     const [dbProject] = await db
