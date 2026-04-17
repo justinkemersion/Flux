@@ -30,22 +30,7 @@ export type ContainerExecResult = {
   stderr: string;
 };
 
-function isRecoverableDockerExecTransportError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes("ERR_STREAM_PREMATURE_CLOSE")) return true;
-  const code =
-    err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
-  if (
-    code === "ERR_STREAM_PREMATURE_CLOSE" ||
-    code === "ECONNRESET" ||
-    code === "EPIPE"
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function execTransportErrorSummary(err: unknown): string {
+function execErrorSummary(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
@@ -96,6 +81,8 @@ export async function dockerContainerExec(
 
 /**
  * Polls `pg_isready` inside the Postgres container until it succeeds or `maxAttempts` is exceeded.
+ * Any **`docker exec`** failure (e.g. premature close over SSH) waits **3s** and retries up to
+ * **`maxAttempts`** (default 30).
  */
 export async function waitPostgresReadyInsideContainer(
   docker: Docker,
@@ -105,7 +92,7 @@ export async function waitPostgresReadyInsideContainer(
     onStatus?: (message: string) => void;
   },
 ): Promise<void> {
-  const maxAttempts = options?.maxAttempts ?? 60;
+  const maxAttempts = options?.maxAttempts ?? 30;
   const onStatus = options?.onStatus;
   let attempt = 0;
   onStatus?.(
@@ -119,14 +106,11 @@ export async function waitPostgresReadyInsideContainer(
         Cmd: ["pg_isready", "-U", "postgres"],
       });
     } catch (err: unknown) {
-      if (
-        isRecoverableDockerExecTransportError(err) &&
-        attempt < maxAttempts
-      ) {
+      if (attempt < maxAttempts) {
         onStatus?.(
-          `pg_isready transport error (${execTransportErrorSummary(err)}); waiting 2s before retry (${String(attempt)}/${String(maxAttempts)})…`,
+          `pg_isready error (${execErrorSummary(err)}); waiting 3s before retry (${String(attempt)}/${String(maxAttempts)})…`,
         );
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 3000));
         continue;
       }
       throw err;

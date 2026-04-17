@@ -166,6 +166,19 @@ async function startFluxContainerIfStopped(
   }
 }
 
+/** `inspect()` for a named container, or `null` if it does not exist (404). */
+async function fluxInspectContainerOrNull(
+  docker: Docker,
+  name: string,
+): Promise<Awaited<ReturnType<Docker.Container["inspect"]>> | null> {
+  try {
+    return await docker.getContainer(name).inspect();
+  } catch (err: unknown) {
+    if (getHttpStatus(err) === 404) return null;
+    throw err;
+  }
+}
+
 function getHttpStatus(err: unknown): number | undefined {
   if (err && typeof err === "object" && "statusCode" in err) {
     const code = (err as { statusCode?: number }).statusCode;
@@ -1062,8 +1075,9 @@ export class ProjectManager {
    * PostgREST is started with RestartPolicy `on-failure` (with a retry cap) so it survives Postgres
    * startup races; internal readiness uses `pg_isready` in-container before applying {@link BOOTSTRAP_SQL}.
    *
-   * **Resume:** If the Postgres or PostgREST container name already exists (HTTP 409), Flux **adopts**
-   * it (reads secrets from inspect, starts if stopped) and continues bootstrap instead of failing.
+   * **Resume:** If the Postgres or PostgREST container already exists (by name), Flux **adopts** it
+   * (reads secrets from inspect, starts if stopped) and continues bootstrap—no error, whether the
+   * prior run failed after create or only partially completed.
    */
   async provisionProject(
     name: string,
@@ -1098,8 +1112,27 @@ export class ProjectManager {
     await ensureImage(this.docker, POSTGREST_IMAGE, log);
 
     let pgContainer: Docker.Container;
-    log?.(`Creating Postgres container ${pgContainerName}…`);
-    try {
+    const pgExisting = await fluxInspectContainerOrNull(
+      this.docker,
+      pgContainerName,
+    );
+    if (pgExisting) {
+      log?.(
+        `Postgres container "${pgContainerName}" already exists; resuming (start if stopped, then bootstrap)…`,
+      );
+      pgContainer = this.docker.getContainer(pgContainerName);
+      const pwLine = pgExisting.Config?.Env?.find((e) =>
+        e.startsWith("POSTGRES_PASSWORD="),
+      );
+      const pw = pwLine?.slice("POSTGRES_PASSWORD=".length);
+      if (!pw) {
+        throw new Error(
+          `Cannot adopt "${pgContainerName}": POSTGRES_PASSWORD missing from container env.`,
+        );
+      }
+      postgresPassword = pw;
+    } else {
+      log?.(`Creating Postgres container ${pgContainerName}…`);
       pgContainer = await this.docker.createContainer({
         name: pgContainerName,
         Image: POSTGRES_IMAGE,
@@ -1112,26 +1145,6 @@ export class ProjectManager {
           /* Intentionally no PortBindings: health + SQL use docker exec inside the container. */
         },
       });
-    } catch (err: unknown) {
-      if (getHttpStatus(err) === 409) {
-        log?.(
-          `Postgres container "${pgContainerName}" already exists; adopting for resume…`,
-        );
-        pgContainer = this.docker.getContainer(pgContainerName);
-        const adoptInsp = await pgContainer.inspect();
-        const pwLine = adoptInsp.Config?.Env?.find((e) =>
-          e.startsWith("POSTGRES_PASSWORD="),
-        );
-        const pw = pwLine?.slice("POSTGRES_PASSWORD=".length);
-        if (!pw) {
-          throw new Error(
-            `Cannot adopt "${pgContainerName}": POSTGRES_PASSWORD missing from container env.`,
-          );
-        }
-        postgresPassword = pw;
-      } else {
-        throw err;
-      }
     }
 
     log?.("Starting Postgres (if stopped)…");
@@ -1161,8 +1174,21 @@ export class ProjectManager {
     );
 
     let apiContainer: Docker.Container;
-    log?.(`Creating PostgREST container ${apiContainerName}…`);
-    try {
+    const apiExisting = await fluxInspectContainerOrNull(
+      this.docker,
+      apiContainerName,
+    );
+    if (apiExisting) {
+      log?.(
+        `PostgREST container "${apiContainerName}" already exists; resuming (start if stopped, reuse JWT)…`,
+      );
+      apiContainer = this.docker.getContainer(apiContainerName);
+      jwtSecret = readPgrstJwtSecretFromContainerEnv(
+        apiExisting,
+        apiContainerName,
+      );
+    } else {
+      log?.(`Creating PostgREST container ${apiContainerName}…`);
       apiContainer = await this.docker.createContainer({
         name: apiContainerName,
         Image: POSTGREST_IMAGE,
@@ -1180,20 +1206,6 @@ export class ProjectManager {
           RestartPolicy: { Name: "on-failure", MaximumRetryCount: 25 },
         },
       });
-    } catch (err: unknown) {
-      if (getHttpStatus(err) === 409) {
-        log?.(
-          `PostgREST container "${apiContainerName}" already exists; adopting for resume…`,
-        );
-        apiContainer = this.docker.getContainer(apiContainerName);
-        const adoptApiInsp = await apiContainer.inspect();
-        jwtSecret = readPgrstJwtSecretFromContainerEnv(
-          adoptApiInsp,
-          apiContainerName,
-        );
-      } else {
-        throw err;
-      }
     }
 
     log?.("Starting PostgREST (if stopped)…");
