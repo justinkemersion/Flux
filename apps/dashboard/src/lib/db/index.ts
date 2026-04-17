@@ -41,7 +41,8 @@ async function _init(): Promise<void> {
   }
 
   const connectionString =
-    await pm.getPostgresHostConnectionString("flux-system");
+    process.env.FLUX_SYSTEM_DATABASE_URL?.trim() ||
+    (await pm.getPostgresHostConnectionString("flux-system"));
   const pool = new Pool({ connectionString });
 
   // One-time upgrade from the pre–Auth.js v5 UUID user model to Auth.js string ids.

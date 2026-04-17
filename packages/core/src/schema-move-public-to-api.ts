@@ -1,6 +1,10 @@
-import pg from "pg";
+import type Docker from "dockerode";
 
 import { API_SCHEMA_PRIVILEGES_SQL } from "./api-schema-privileges.ts";
+import {
+  createFluxPgRunner,
+  type FluxPgRunner,
+} from "./postgres-internal-exec.ts";
 
 export type MovePublicToApiResult = {
   tablesMoved: number;
@@ -12,25 +16,31 @@ function qIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+function sqlStringLiteral(s: string): string {
+  return `'${s.replace(/'/g, "''")}'`;
+}
+
 /**
  * True if `api` already has any relation (table, sequence, view, …) with this name.
  * Supabase-style dumps sometimes create objects in both `public` and `api`; moving `public` → `api`
  * then fails with "already exists". In that case we drop the redundant `public` copy.
  */
 async function apiHasRelationNamed(
-  client: pg.Client,
+  run: FluxPgRunner,
   relname: string,
 ): Promise<boolean> {
-  const { rowCount } = await client.query(
+  const { rows } = await run.query(
     `
-    SELECT 1
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'api' AND c.relname = $1
+    SELECT EXISTS (
+      SELECT 1
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'api' AND c.relname = ${sqlStringLiteral(relname)}::name
+    ) AS exists
     `,
-    [relname],
   );
-  return (rowCount ?? 0) > 0;
+  const row = rows[0] as { exists?: boolean } | undefined;
+  return row?.exists === true;
 }
 
 /**
@@ -38,12 +48,9 @@ async function apiHasRelationNamed(
  * Move parents before children.
  */
 async function listPublicFkParentChild(
-  client: pg.Client,
+  run: FluxPgRunner,
 ): Promise<{ parent: string; child: string }[]> {
-  const { rows } = await client.query<{
-    parent: string;
-    child: string;
-  }>(
+  const { rows } = await run.query(
     `
     SELECT
       ref.relname AS parent,
@@ -60,11 +67,11 @@ async function listPublicFkParentChild(
       AND ref.relkind IN ('r', 'p')
     `,
   );
-  return rows;
+  return rows as { parent: string; child: string }[];
 }
 
-async function listPublicBaseTables(client: pg.Client): Promise<string[]> {
-  const { rows } = await client.query<{ relname: string }>(
+async function listPublicBaseTables(run: FluxPgRunner): Promise<string[]> {
+  const { rows } = await run.query(
     `
     SELECT c.relname
     FROM pg_class c
@@ -74,7 +81,7 @@ async function listPublicBaseTables(client: pg.Client): Promise<string[]> {
     ORDER BY c.relname
     `,
   );
-  return rows.map((r) => r.relname);
+  return (rows as { relname: string }[]).map((r) => r.relname);
 }
 
 /**
@@ -134,8 +141,8 @@ function orderTablesForMove(
   return out;
 }
 
-async function listPublicSequences(client: pg.Client): Promise<string[]> {
-  const { rows } = await client.query<{ relname: string }>(
+async function listPublicSequences(run: FluxPgRunner): Promise<string[]> {
+  const { rows } = await run.query(
     `
     SELECT c.relname
     FROM pg_class c
@@ -145,11 +152,11 @@ async function listPublicSequences(client: pg.Client): Promise<string[]> {
     ORDER BY c.relname
     `,
   );
-  return rows.map((r) => r.relname);
+  return (rows as { relname: string }[]).map((r) => r.relname);
 }
 
-async function listPublicViews(client: pg.Client): Promise<string[]> {
-  const { rows } = await client.query<{ relname: string }>(
+async function listPublicViews(run: FluxPgRunner): Promise<string[]> {
+  const { rows } = await run.query(
     `
     SELECT c.relname
     FROM pg_class c
@@ -159,11 +166,11 @@ async function listPublicViews(client: pg.Client): Promise<string[]> {
     ORDER BY c.relname
     `,
   );
-  return rows.map((r) => r.relname);
+  return (rows as { relname: string }[]).map((r) => r.relname);
 }
 
-async function listPublicMatviews(client: pg.Client): Promise<string[]> {
-  const { rows } = await client.query<{ relname: string }>(
+async function listPublicMatviews(run: FluxPgRunner): Promise<string[]> {
+  const { rows } = await run.query(
     `
     SELECT c.relname
     FROM pg_class c
@@ -173,7 +180,7 @@ async function listPublicMatviews(client: pg.Client): Promise<string[]> {
     ORDER BY c.relname
     `,
   );
-  return rows.map((r) => r.relname);
+  return (rows as { relname: string }[]).map((r) => r.relname);
 }
 
 /**
@@ -182,58 +189,51 @@ async function listPublicMatviews(client: pg.Client): Promise<string[]> {
  *
  * When the dump already created the same object in `api`, drops the duplicate in `public`
  * (`… CASCADE`) instead of moving.
+ *
+ * Uses sequential `psql` sessions inside the container (no host TCP). Not wrapped in a single
+ * DB transaction — same practical behavior as implicit commits per DDL statement.
  */
 export async function movePublicSchemaObjectsToApi(
-  client: pg.Client,
+  run: FluxPgRunner,
 ): Promise<MovePublicToApiResult> {
   let tablesMoved = 0;
   let sequencesMoved = 0;
   let viewsMoved = 0;
 
-  const baseTables = await listPublicBaseTables(client);
-  const fkEdges = await listPublicFkParentChild(client);
+  const baseTables = await listPublicBaseTables(run);
+  const fkEdges = await listPublicFkParentChild(run);
   const ordered = orderTablesForMove(baseTables, fkEdges);
 
   for (const relname of ordered) {
-    if (await apiHasRelationNamed(client, relname)) {
-      await client.query(
-        `DROP TABLE public.${qIdent(relname)} CASCADE`,
-      );
+    if (await apiHasRelationNamed(run, relname)) {
+      await run.query(`DROP TABLE public.${qIdent(relname)} CASCADE`);
     } else {
-      await client.query(
-        `ALTER TABLE public.${qIdent(relname)} SET SCHEMA api`,
-      );
+      await run.query(`ALTER TABLE public.${qIdent(relname)} SET SCHEMA api`);
     }
     tablesMoved++;
   }
 
-  const sequences = await listPublicSequences(client);
+  const sequences = await listPublicSequences(run);
   for (const relname of sequences) {
-    if (await apiHasRelationNamed(client, relname)) {
-      await client.query(
-        `DROP SEQUENCE public.${qIdent(relname)} CASCADE`,
-      );
+    if (await apiHasRelationNamed(run, relname)) {
+      await run.query(`DROP SEQUENCE public.${qIdent(relname)} CASCADE`);
     } else {
-      await client.query(
-        `ALTER SEQUENCE public.${qIdent(relname)} SET SCHEMA api`,
-      );
+      await run.query(`ALTER SEQUENCE public.${qIdent(relname)} SET SCHEMA api`);
     }
     sequencesMoved++;
   }
 
   let progress = true;
-  const viewNames = await listPublicViews(client);
+  const viewNames = await listPublicViews(run);
   const remainingViews = new Set(viewNames);
   while (progress && remainingViews.size > 0) {
     progress = false;
     for (const v of [...remainingViews].sort()) {
       try {
-        if (await apiHasRelationNamed(client, v)) {
-          await client.query(`DROP VIEW public.${qIdent(v)} CASCADE`);
+        if (await apiHasRelationNamed(run, v)) {
+          await run.query(`DROP VIEW public.${qIdent(v)} CASCADE`);
         } else {
-          await client.query(
-            `ALTER VIEW public.${qIdent(v)} SET SCHEMA api`,
-          );
+          await run.query(`ALTER VIEW public.${qIdent(v)} SET SCHEMA api`);
         }
         remainingViews.delete(v);
         viewsMoved++;
@@ -252,18 +252,18 @@ export async function movePublicSchemaObjectsToApi(
   }
 
   let matProgress = true;
-  const matNames = await listPublicMatviews(client);
+  const matNames = await listPublicMatviews(run);
   const remainingMat = new Set(matNames);
   while (matProgress && remainingMat.size > 0) {
     matProgress = false;
     for (const relname of [...remainingMat].sort()) {
       try {
-        if (await apiHasRelationNamed(client, relname)) {
-          await client.query(
+        if (await apiHasRelationNamed(run, relname)) {
+          await run.query(
             `DROP MATERIALIZED VIEW public.${qIdent(relname)} CASCADE`,
           );
         } else {
-          await client.query(
+          await run.query(
             `ALTER MATERIALIZED VIEW public.${qIdent(relname)} SET SCHEMA api`,
           );
         }
@@ -281,38 +281,17 @@ export async function movePublicSchemaObjectsToApi(
     );
   }
 
-  await client.query(API_SCHEMA_PRIVILEGES_SQL);
+  await run.query(API_SCHEMA_PRIVILEGES_SQL);
 
   return { tablesMoved, sequencesMoved, viewsMoved };
 }
 
-export async function runMovePublicToApiWithClient(
-  hostPort: number,
+export async function runMovePublicToApiWithDockerExec(
+  docker: Docker,
+  containerId: string,
   password: string,
   pgUser: string,
 ): Promise<MovePublicToApiResult> {
-  const client = new pg.Client({
-    host: "localhost",
-    port: hostPort,
-    user: pgUser,
-    password,
-    database: "postgres",
-    connectionTimeoutMillis: 8000,
-  });
-  await client.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await movePublicSchemaObjectsToApi(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {
-      /* ignore */
-    }
-    throw err;
-  } finally {
-    await client.end();
-  }
+  const run = createFluxPgRunner(docker, containerId, password, pgUser);
+  return movePublicSchemaObjectsToApi(run);
 }

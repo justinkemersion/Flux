@@ -1,7 +1,11 @@
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import pg from "pg";
+import type Docker from "dockerode";
+
+import { queryPsqlScalar } from "./postgres-internal-exec.ts";
+
+const PG_SUPERUSER = "postgres";
 
 /**
  * Options for {@link preparePlainSqlDumpForFlux} and {@link ProjectManager.importSqlFile}.
@@ -136,30 +140,22 @@ export function preparePlainSqlDumpForFlux(options: PreparePlainSqlDumpOptions):
 }
 
 export async function queryPostgresMajorVersion(
-  hostPort: number,
+  docker: Docker,
+  containerId: string,
   password: string,
 ): Promise<number> {
-  const client = new pg.Client({
-    host: "localhost",
-    port: hostPort,
-    user: "postgres",
+  const ver = await queryPsqlScalar(
+    docker,
+    containerId,
     password,
-    database: "postgres",
-    connectionTimeoutMillis: 8000,
-  });
-  await client.connect();
-  try {
-    const { rows } = await client.query<{ ver: string }>(
-      "SELECT current_setting('server_version_num') AS ver",
-    );
-    const n = Number.parseInt(rows[0]?.ver ?? "0", 10);
-    if (!Number.isFinite(n) || n <= 0) {
-      throw new Error("Could not read server_version_num from Postgres.");
-    }
-    return Math.floor(n / 10000);
-  } finally {
-    await client.end();
+    `SELECT current_setting('server_version_num')`,
+    PG_SUPERUSER,
+  );
+  const n = Number.parseInt(ver, 10);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error("Could not read server_version_num from Postgres.");
   }
+  return Math.floor(n / 10000);
 }
 
 /**

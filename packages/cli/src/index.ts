@@ -10,13 +10,10 @@ import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
 
-function postgresConnectionUrl(
-  hostPort: number,
-  password: string,
-): string {
+function postgresConnectionUrl(containerName: string, password: string): string {
   const user = encodeURIComponent("postgres");
   const pass = encodeURIComponent(password);
-  return `postgresql://${user}:${pass}@localhost:${String(hostPort)}/postgres`;
+  return `postgresql://${user}:${pass}@${containerName}:5432/postgres`;
 }
 
 function printBanner(title: string): void {
@@ -55,12 +52,10 @@ async function cmdCreate(
     isProduction: process.env.NODE_ENV === "production",
   });
 
-  const pgPort = project.postgres.hostPort;
-  if (pgPort == null) {
-    throw new Error("Provision completed without a published Postgres host port.");
-  }
-
-  const pgUrl = postgresConnectionUrl(pgPort, project.postgresPassword);
+  const pgUrl = postgresConnectionUrl(
+    project.postgres.containerName,
+    project.postgresPassword,
+  );
   const { apiUrl } = project;
 
   printBanner("Project ready");

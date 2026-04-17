@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import { Readable } from "node:stream";
 import Docker from "dockerode";
 import jwt from "jsonwebtoken";
-import pg from "pg";
 
 import {
   API_SCHEMA_PRIVILEGES_SQL,
@@ -13,8 +12,13 @@ import {
   queryPostgresMajorVersion,
   type ImportSqlFileOptions,
 } from "./import-dump.ts";
-import { runMovePublicToApiWithClient } from "./schema-move-public-to-api.ts";
-import { runTenantPsqlFile } from "./run-tenant-psql-file.ts";
+import {
+  queryPsqlJsonRows,
+  runPsqlHostFileInsideContainer,
+  runPsqlSqlInsideContainer,
+  waitPostgresReadyInsideContainer,
+} from "./postgres-internal-exec.ts";
+import { runMovePublicToApiWithDockerExec } from "./schema-move-public-to-api.ts";
 
 export type { ImportSqlFileOptions } from "./import-dump.ts";
 export type { MovePublicToApiResult } from "./schema-move-public-to-api.ts";
@@ -147,73 +151,6 @@ async function waitForApiReachable(
       );
     }
     await sleep(Math.min(400 * 2 ** Math.min(attempt, 5), 5000));
-  }
-}
-
-/**
- * Opens a one-shot pg connection to `localhost:{hostPort}`, runs `sql`, then closes.
- * Throws if the query fails.
- */
-async function runSql(
-  hostPort: number,
-  password: string,
-  sql: string,
-): Promise<void> {
-  const client = new pg.Client({
-    host: "localhost",
-    port: hostPort,
-    user: POSTGRES_USER,
-    password,
-    database: "postgres",
-    connectionTimeoutMillis: 3000,
-  });
-  await client.connect();
-  try {
-    await client.query(sql);
-  } finally {
-    await client.end();
-  }
-}
-
-/**
- * Polls Postgres on `localhost:{hostPort}` until it accepts connections, then runs `sql`.
- * Uses exponential back-off; gives up after `maxAttempts`.
- */
-async function waitForPostgresAndRun(
-  hostPort: number,
-  password: string,
-  sql: string,
-  options?: {
-    maxAttempts?: number;
-    onStatus?: (message: string) => void;
-  },
-): Promise<void> {
-  const maxAttempts = options?.maxAttempts ?? 20;
-  const onStatus = options?.onStatus;
-  let attempt = 0;
-  onStatus?.(
-    "Waiting for Postgres to accept connections (initializing a new data directory can take 30–90s)…",
-  );
-  while (true) {
-    try {
-      await runSql(hostPort, password, sql);
-      onStatus?.("Postgres is up; bootstrap SQL applied.");
-      return;
-    } catch (err: unknown) {
-      attempt++;
-      if (attempt >= maxAttempts) {
-        throw new Error(
-          `Postgres on port ${hostPort} was not ready after ${maxAttempts} attempts: ${String(err)}`,
-        );
-      }
-      if (attempt === 1 || attempt % 3 === 0) {
-        onStatus?.(
-          `Postgres not ready yet (attempt ${String(attempt)}/${String(maxAttempts)}); retrying…`,
-        );
-      }
-      const backoff = Math.min(500 * 2 ** attempt, 8000);
-      await sleep(backoff);
-    }
   }
 }
 
@@ -442,20 +379,6 @@ function mergedPostgrestTraefikDockerLabels(
 
 function containerNameForProject(projectName: string): string {
   return postgresContainerName(slugifyProjectName(projectName));
-}
-
-function hostPortForTcp(
-  inspect: {
-    NetworkSettings: { Ports?: Record<string, Array<{ HostPort?: string }> | null> };
-  },
-  containerPort: "5432/tcp" | "3000/tcp",
-): number {
-  const bindings = inspect.NetworkSettings.Ports?.[containerPort];
-  const hostPort = bindings?.[0]?.HostPort;
-  if (!hostPort) {
-    throw new Error(`Expected a published host port for ${containerPort}`);
-  }
-  return Number.parseInt(hostPort, 10);
 }
 
 function tenantVolumeName(slug: string): string {
@@ -711,17 +634,20 @@ function postgresJdbcUri(slug: string, password: string): string {
   return `postgres://${user}:${pass}@${host}:5432/postgres`;
 }
 
-/** Connection URI for tools on the Docker host (`localhost` published port). */
-function postgresHostConnectionUri(hostPort: number, password: string): string {
+/**
+ * Connection URI using the Postgres container’s Docker DNS name (reachable from containers on
+ * {@link FLUX_NETWORK_NAME}, not from arbitrary hosts unless routed onto that network).
+ */
+function postgresDockerInternalUri(containerName: string, password: string): string {
   const user = encodeURIComponent(POSTGRES_USER);
   const pass = encodeURIComponent(password);
-  return `postgres://${user}:${pass}@127.0.0.1:${String(hostPort)}/postgres`;
+  return `postgres://${user}:${pass}@${containerName}:5432/postgres`;
 }
 
 export async function createProjectBucket(
   projectName: string,
   dbPassword: string,
-): Promise<{ containerId: string; hostPort: number }> {
+): Promise<{ containerId: string }> {
   const docker = new Docker();
   const name = containerNameForProject(projectName);
 
@@ -732,17 +658,13 @@ export async function createProjectBucket(
       name,
       Image: POSTGRES_IMAGE,
       Env: [`POSTGRES_PASSWORD=${dbPassword}`],
-      ExposedPorts: { "5432/tcp": {} },
       HostConfig: {
-        PortBindings: {
-          "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
-        },
         Memory: 512 * 1024 * 1024,
       },
     });
     await container.start();
     const inspect = await container.inspect();
-    return { containerId: inspect.Id, hostPort: hostPortForTcp(inspect, "5432/tcp") };
+    return { containerId: inspect.Id };
   } catch (err: unknown) {
     const statusCode = getHttpStatus(err);
     if (statusCode !== 409) throw err;
@@ -761,7 +683,7 @@ export async function createProjectBucket(
       await container.start();
     }
     const inspect = await container.inspect();
-    return { containerId: inspect.Id, hostPort: hostPortForTcp(inspect, "5432/tcp") };
+    return { containerId: inspect.Id };
   }
 }
 
@@ -777,8 +699,6 @@ export interface FluxProject {
     containerId: string;
     /** Resolvable hostname on `networkName` (Docker DNS: same as container name). */
     containerName: string;
-    /** Host port mapped to 5432 when published (omit if only internal access). */
-    hostPort?: number;
   };
   postgrest: {
     containerId: string;
@@ -973,9 +893,12 @@ export class ProjectManager {
    * `http://localhost:3001` and `https://app.<domain>` and the shared `flux-stripprefix` middleware for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
    *
+   * Postgres is **not** published on the Docker host: bootstrap SQL and health checks use
+   * **`docker exec`** (`pg_isready`, `psql`) inside the DB container so provisioning works with
+   * remote Engine endpoints (no `localhost:5432` from the control plane).
+   *
    * PostgREST is started with RestartPolicy `on-failure` (with a retry cap) so it survives Postgres
-   * startup races without a Node-side health probe; a short delay after Postgres start reduces churn
-   * during first-time volume initialization.
+   * startup races; internal readiness uses `pg_isready` in-container before applying {@link BOOTSTRAP_SQL}.
    */
   async provisionProject(
     name: string,
@@ -1009,13 +932,9 @@ export class ProjectManager {
         name: pgContainerName,
         Image: POSTGRES_IMAGE,
         Env: [`POSTGRES_PASSWORD=${postgresPassword}`],
-        ExposedPorts: { "5432/tcp": {} },
         HostConfig: {
           NetworkMode: FLUX_NETWORK_NAME,
           Binds: [`${volumeName}:/var/lib/postgresql/data`],
-          PortBindings: {
-            "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
-          },
           Memory: 512 * 1024 * 1024,
           RestartPolicy: { Name: "unless-stopped" },
         },
@@ -1032,14 +951,20 @@ export class ProjectManager {
     log?.("Starting Postgres…");
     await pgContainer.start();
     const pgInspect = await pgContainer.inspect();
-    const postgresHostPort = hostPortForTcp(pgInspect, "5432/tcp");
 
-    await waitForPostgresAndRun(
-      postgresHostPort,
-      postgresPassword,
-      BOOTSTRAP_SQL,
+    await waitPostgresReadyInsideContainer(
+      this.docker,
+      pgInspect.Id,
       log ? { onStatus: log } : undefined,
     );
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      pgInspect.Id,
+      postgresPassword,
+      BOOTSTRAP_SQL,
+      POSTGRES_USER,
+    );
+    log?.("Postgres is up; bootstrap SQL applied.");
 
     const dbUri = postgresJdbcUri(slug, postgresPassword);
 
@@ -1098,7 +1023,6 @@ export class ProjectManager {
       postgres: {
         containerId: pgInspect.Id,
         containerName: pgContainerName,
-        hostPort: postgresHostPort,
       },
       postgrest: {
         containerId: apiInspect.Id,
@@ -1266,13 +1190,14 @@ export class ProjectManager {
   }
 
   /**
-   * Host-side Postgres URI (`127.0.0.1:{publishedPort}`) for the project.
-   * Requires the Postgres container to be running (same as {@link executeSql}).
+   * Postgres URI using the container’s Docker DNS hostname (`flux-<slug>-db` on {@link FLUX_NETWORK_NAME}).
+   * Connect from another container on that network, or set `FLUX_SYSTEM_DATABASE_URL` for the
+   * dashboard when the control plane runs outside Docker.
    */
   async getPostgresHostConnectionString(projectName: string): Promise<string> {
-    const { hostPort, password } =
+    const { password, containerName } =
       await this.resolveRunningPostgresCredentials(projectName);
-    return postgresHostConnectionUri(hostPort, password);
+    return postgresDockerInternalUri(containerName, password);
   }
 
   /**
@@ -1332,10 +1257,22 @@ export class ProjectManager {
    * PostgREST documents SIGUSR1 for schema reload; SIGHUP does not reload the schema cache.
    */
   async executeSql(projectName: string, sql: string): Promise<void> {
-    const { slug, hostPort, password } =
+    const { slug, containerId, password } =
       await this.resolveRunningPostgresCredentials(projectName);
-    await runSql(hostPort, password, sql);
-    await runSql(hostPort, password, `NOTIFY pgrst, 'reload schema';`);
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      containerId,
+      password,
+      sql,
+      POSTGRES_USER,
+    );
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      containerId,
+      password,
+      `NOTIFY pgrst, 'reload schema';`,
+      POSTGRES_USER,
+    );
     await new Promise((resolve) => setTimeout(resolve, 500));
     const apiName = postgrestContainerName(slug);
     try {
@@ -1348,9 +1285,8 @@ export class ProjectManager {
   }
 
   /**
-   * Applies a plain SQL dump file to the tenant Postgres using **`psql -f`** (not Docker API stdin
-   * attach, which can hang): host `psql` to `127.0.0.1:{port}` when available, otherwise
-   * **`docker cp`** the file into the DB container and **`docker exec psql -f`**.
+   * Applies a plain SQL dump by uploading a tar via the Docker API and running **`psql -f`** inside
+   * the Postgres container (no host TCP to Postgres; works with remote Docker daemons).
    *
    * By default, strips session `SET` lines that the tenant Postgres version does not support (see
    * {@link preparePlainSqlDumpForFlux}). Use {@link ImportSqlFileOptions} for Supabase-style dumps.
@@ -1373,43 +1309,58 @@ export class ProjectManager {
       viewsMoved: 0,
     };
 
-    const { slug: normalizedSlug, hostPort, password } =
+    const { slug: normalizedSlug, containerId, password } =
       await this.resolveRunningPostgresCredentials(slug);
 
     const materialized = await materializePreparedSqlFile(
       filePath,
       options,
-      () => queryPostgresMajorVersion(hostPort, password),
+      () => queryPostgresMajorVersion(this.docker, containerId, password),
     );
 
     try {
-      await runTenantPsqlFile({
-        hostPort,
+      await runPsqlHostFileInsideContainer(
+        this.docker,
+        containerId,
         password,
-        sqlPath: materialized.path,
-        pgUser: POSTGRES_USER,
-        containerName: postgresContainerName(normalizedSlug),
-      });
+        materialized.path,
+        POSTGRES_USER,
+      );
 
       let moveResult = emptyResult;
       if (options?.moveFromPublic === true) {
-        moveResult = await runMovePublicToApiWithClient(
-          hostPort,
+        moveResult = await runMovePublicToApiWithDockerExec(
+          this.docker,
+          containerId,
           password,
           POSTGRES_USER,
         );
       }
 
-      await runSql(hostPort, password, API_SCHEMA_PRIVILEGES_SQL);
+      await runPsqlSqlInsideContainer(
+        this.docker,
+        containerId,
+        password,
+        API_SCHEMA_PRIVILEGES_SQL,
+        POSTGRES_USER,
+      );
       if (options?.disableRowLevelSecurityInApi === true) {
-        await runSql(
-          hostPort,
+        await runPsqlSqlInsideContainer(
+          this.docker,
+          containerId,
           password,
           DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
+          POSTGRES_USER,
         );
       }
 
-      await runSql(hostPort, password, `NOTIFY pgrst, 'reload schema';`);
+      await runPsqlSqlInsideContainer(
+        this.docker,
+        containerId,
+        password,
+        `NOTIFY pgrst, 'reload schema';`,
+        POSTGRES_USER,
+      );
       await new Promise((resolve) => setTimeout(resolve, 500));
       const apiName = postgrestContainerName(normalizedSlug);
       try {
@@ -1432,7 +1383,7 @@ export class ProjectManager {
    * {@link nukeProject} for that).
    */
   async resetTenantDatabaseForImport(projectName: string): Promise<void> {
-    const { hostPort, password } =
+    const { containerId, password } =
       await this.resolveRunningPostgresCredentials(projectName);
     const resetSql = `
 DROP SCHEMA IF EXISTS auth CASCADE;
@@ -1443,13 +1394,26 @@ GRANT ALL ON SCHEMA public TO postgres;
 GRANT ALL ON SCHEMA public TO public;
 COMMENT ON SCHEMA public IS 'standard public schema';
 `.trim();
-    await runSql(hostPort, password, resetSql);
-    await runSql(hostPort, password, BOOTSTRAP_SQL);
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      containerId,
+      password,
+      resetSql,
+      POSTGRES_USER,
+    );
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      containerId,
+      password,
+      BOOTSTRAP_SQL,
+      POSTGRES_USER,
+    );
   }
 
   private async resolveRunningPostgresCredentials(projectName: string): Promise<{
     slug: string;
-    hostPort: number;
+    containerId: string;
+    containerName: string;
     password: string;
   }> {
     const slug = slugifyProjectName(projectName);
@@ -1474,7 +1438,6 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     }
 
     const inspect = await this.docker.getContainer(match.Id).inspect();
-    const hostPort = hostPortForTcp(inspect, "5432/tcp");
 
     const password = inspect.Config.Env?.find((e) =>
       e.startsWith("POSTGRES_PASSWORD="),
@@ -1485,7 +1448,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       );
     }
 
-    return { slug, hostPort, password };
+    return { slug, containerId: inspect.Id, containerName, password };
   }
 
   /**
@@ -1572,39 +1535,37 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   async stopInactiveProjects(
     maxAgeDays: number,
   ): Promise<FluxSystemProjectActivity[]> {
-    const uri = await this.getPostgresHostConnectionString("flux-system");
+    const { containerId, password } =
+      await this.resolveRunningPostgresCredentials("flux-system");
     const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
     const cutoff = Date.now() - maxAgeMs;
 
-    const client = new pg.Client({
-      connectionString: uri,
-      connectionTimeoutMillis: 3000,
-    });
-    await client.connect();
-    try {
-      const res = await client.query<{
+    const rows = await queryPsqlJsonRows(
+      this.docker,
+      containerId,
+      password,
+      `SELECT id::text AS id, name, slug, last_accessed_at
+       FROM projects
+       ORDER BY slug`,
+      POSTGRES_USER,
+    );
+    return (
+      rows as Array<{
         id: string;
         name: string;
         slug: string;
-        last_accessed_at: Date;
-      }>(
-        `SELECT id::text AS id, name, slug, last_accessed_at
-         FROM projects
-         ORDER BY slug`,
-      );
-      return res.rows.map((row) => {
-        const lastAccessedAt = new Date(row.last_accessed_at);
-        return {
-          id: row.id,
-          name: row.name,
-          slug: row.slug,
-          lastAccessedAt,
-          inactiveByPolicy: lastAccessedAt.getTime() < cutoff,
-        };
-      });
-    } finally {
-      await client.end();
-    }
+        last_accessed_at: string;
+      }>
+    ).map((row) => {
+      const lastAccessedAt = new Date(row.last_accessed_at);
+      return {
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        lastAccessedAt,
+        inactiveByPolicy: lastAccessedAt.getTime() < cutoff,
+      };
+    });
   }
 
   /**
@@ -1618,26 +1579,21 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     if (!Number.isFinite(maxIdleHours) || maxIdleHours <= 0) {
       throw new Error("maxIdleHours must be a positive number.");
     }
-    const uri = await this.getPostgresHostConnectionString("flux-system");
+    const { containerId, password } =
+      await this.resolveRunningPostgresCredentials("flux-system");
     const cutoff = new Date(Date.now() - maxIdleHours * 60 * 60 * 1000);
+    const cutoffIso = cutoff.toISOString();
 
-    const client = new pg.Client({
-      connectionString: uri,
-      connectionTimeoutMillis: 8000,
-    });
-    await client.connect();
-    let slugs: string[];
-    try {
-      const res = await client.query<{ slug: string }>(
-        `SELECT slug FROM projects
-         WHERE slug <> 'flux-system' AND last_accessed_at < $1
-         ORDER BY slug`,
-        [cutoff],
-      );
-      slugs = res.rows.map((r) => r.slug);
-    } finally {
-      await client.end();
-    }
+    const rows = await queryPsqlJsonRows(
+      this.docker,
+      containerId,
+      password,
+      `SELECT slug FROM projects
+       WHERE slug <> 'flux-system' AND last_accessed_at < '${cutoffIso}'::timestamptz
+       ORDER BY slug`,
+      POSTGRES_USER,
+    );
+    const slugs = (rows as { slug: string }[]).map((r) => r.slug);
 
     const stopped: string[] = [];
     const errors: Array<{ slug: string; message: string }> = [];
