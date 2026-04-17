@@ -751,13 +751,134 @@ export interface NukeProjectOptions {
 }
 
 /**
+ * How {@link ProjectManager} connects to the Docker Engine API.
+ *
+ * **Precedence:** Injected {@link ProjectManagerConnectOptions.docker} wins; else if
+ * {@link ProjectManagerConnectOptions.host} is set, a client is built for that remote endpoint; else
+ * {@link createFluxDocker} uses `new Docker()`, which applies **`DOCKER_HOST`** (including
+ * `unix://`, `tcp://`, TLS env vars, and **`ssh://user@host`** via docker-modem + ssh2) the same way
+ * as the Docker CLI.
+ */
+export interface ProjectManagerConnectOptions {
+  /** Use a pre-configured client (tests, custom modem options). */
+  docker?: Docker;
+  /** Remote Engine hostname or IP (not a `ssh://` URL — use {@link protocol} `ssh` instead). */
+  host?: string;
+  /** Engine API port; defaults by protocol: HTTP `2375`, HTTPS `2376`, SSH `22`. */
+  port?: number | string;
+  /** When omitted with a TCP {@link host}, defaults to `http`. */
+  protocol?: "http" | "https" | "ssh";
+  /** SSH login when {@link protocol} is `ssh` (docker-modem `username`). */
+  username?: string;
+  /**
+   * Extra ssh2 connect options merged with modem defaults (`SSH_AUTH_SOCK` agent when set).
+   * See ssh2 `ConnectConfig` — common keys include `agent`, `privateKey`, `tryKeyboard`, etc.
+   */
+  sshOptions?: Record<string, unknown>;
+}
+
+function assertNoRemoteFieldsWithoutHost(opts: ProjectManagerConnectOptions): void {
+  const hasHost = opts.host != null && String(opts.host).trim() !== "";
+  if (hasHost) return;
+  if (
+    opts.port != null ||
+    opts.protocol != null ||
+    opts.username != null ||
+    opts.sshOptions != null
+  ) {
+    throw new TypeError(
+      "ProjectManagerConnectOptions: `host` is required when `port`, `protocol`, `username`, or `sshOptions` is set",
+    );
+  }
+}
+
+function defaultSshAgentOptions(): Record<string, unknown> {
+  const agent = process.env.SSH_AUTH_SOCK;
+  return agent ? { agent } : {};
+}
+
+function mergeSshOptions(user?: Record<string, unknown>): Record<string, unknown> {
+  return { ...defaultSshAgentOptions(), ...user };
+}
+
+type DockerCtorOptions = NonNullable<ConstructorParameters<typeof Docker>[0]>;
+
+function buildExplicitModemOptions(
+  options: ProjectManagerConnectOptions & { host: string },
+): DockerCtorOptions {
+  const host = options.host.trim();
+  const protocol = options.protocol ?? "http";
+  let port = options.port;
+  if (port == null || port === "") {
+    if (protocol === "https") port = 2376;
+    else if (protocol === "ssh") port = 22;
+    else port = 2375;
+  }
+  const portStr = typeof port === "number" ? String(port) : String(port);
+
+  if (protocol === "ssh") {
+    return {
+      host,
+      port: portStr,
+      protocol: "ssh",
+      pathPrefix: "/",
+      username: options.username,
+      sshOptions: mergeSshOptions(options.sshOptions),
+    } as DockerCtorOptions;
+  }
+
+  return {
+    host,
+    port: portStr,
+    protocol,
+    pathPrefix: "/",
+  } as DockerCtorOptions;
+}
+
+/**
+ * Creates a dockerode client from optional {@link ProjectManagerConnectOptions}.
+ * With no options (or no `host` / `docker`), uses `new Docker()` so **`DOCKER_HOST`** and the
+ * default local socket behave like the Docker CLI.
+ */
+export function createFluxDocker(
+  options?: ProjectManagerConnectOptions,
+): Docker {
+  if (options?.docker) {
+    return options.docker;
+  }
+  assertNoRemoteFieldsWithoutHost(options ?? {});
+  const trimmed = options?.host?.trim();
+  if (trimmed) {
+    return new Docker(
+      buildExplicitModemOptions({ ...options, host: trimmed }),
+    );
+  }
+  return new Docker();
+}
+
+function resolveProjectManagerDocker(
+  arg?: Docker | ProjectManagerConnectOptions,
+): Docker {
+  if (arg instanceof Docker) {
+    return arg;
+  }
+  return createFluxDocker(arg);
+}
+
+/**
  * Orchestrates Docker resources for Flux projects: shared network, Postgres, PostgREST.
+ *
+ * Pass a {@link Docker} instance, {@link ProjectManagerConnectOptions} (remote `host` / `protocol`,
+ * or injected `docker`), or omit the argument to use {@link createFluxDocker} (`DOCKER_HOST` + default
+ * socket, same as the Docker CLI).
  */
 export class ProjectManager {
   private readonly docker: Docker;
 
-  constructor(docker?: Docker) {
-    this.docker = docker ?? new Docker();
+  constructor(docker?: Docker);
+  constructor(options?: ProjectManagerConnectOptions);
+  constructor(arg?: Docker | ProjectManagerConnectOptions) {
+    this.docker = resolveProjectManagerDocker(arg);
   }
 
   /** Docker DNS names for Postgres and PostgREST on {@link FLUX_NETWORK_NAME} (internal connectivity). */
@@ -1556,9 +1677,9 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 }
 
 export async function testDockerConnection(): Promise<void> {
-  const docker = new Docker();
+  const docker = createFluxDocker();
 
-  console.log("🔄 Attempting to connect to Docker socket...");
+  console.log("🔄 Attempting to connect to Docker Engine...");
 
   try {
     const ping = await docker.ping();
