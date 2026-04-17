@@ -937,6 +937,7 @@ export class ProjectManager {
           Binds: [`${volumeName}:/var/lib/postgresql/data`],
           Memory: 512 * 1024 * 1024,
           RestartPolicy: { Name: "unless-stopped" },
+          /* Intentionally no PortBindings: health + SQL use docker exec inside the container. */
         },
       });
     } catch (err: unknown) {
@@ -1250,11 +1251,12 @@ export class ProjectManager {
   /**
    * Runs arbitrary SQL against an existing Flux project's Postgres instance.
    *
-   * Retrieves connection details (host port, password) from the running container's
-   * inspect data so callers don't need to store credentials out of band.
-   * After migrations, asks PostgREST to reload its schema cache: `NOTIFY pgrst, 'reload schema'`
-   * (handled by PostgREST’s DB listener), a short pause, then **SIGUSR1** on the API container.
-   * PostgREST documents SIGUSR1 for schema reload; SIGHUP does not reload the schema cache.
+   * Resolves the running DB container and `POSTGRES_PASSWORD` from Docker inspect, then runs
+   * **`psql` via `docker exec`** inside that container (no TCP from the control plane to Postgres;
+   * works with remote Docker daemons). After SQL, asks PostgREST to reload its schema cache:
+   * `NOTIFY pgrst, 'reload schema'` (handled by PostgREST’s DB listener), a short pause, then
+   * **SIGUSR1** on the API container. PostgREST documents SIGUSR1 for schema reload; SIGHUP does
+   * not reload the schema cache.
    */
   async executeSql(projectName: string, sql: string): Promise<void> {
     const { slug, containerId, password } =

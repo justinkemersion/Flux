@@ -54,7 +54,7 @@ Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **p
 |----------|---------|
 | **`flux-network`** | User-defined bridge (`FLUX_NETWORK_NAME`). Tenant DB + API containers attach here; the **Traefik** gateway uses the same network so it can route to backends by container labels. |
 | **`flux-gateway`** | Traefik (`FLUX_GATEWAY_CONTAINER_NAME`) — Docker provider, read-only socket mount, listens on **host :80**, discovers routers from **labels** on the PostgREST containers. |
-| **`flux-<slug>-db`** | **PostgreSQL 16.2** (Alpine image from `FLUX_DOCKER_IMAGES.postgres`), named volume **`flux-<slug>-db-data`**, published random host port **`5432`** bound to **`127.0.0.1` only** (host-side tools / SSH tunnel; not LAN-wide). |
+| **`flux-<slug>-db`** | **PostgreSQL 16.2** (Alpine image from `FLUX_DOCKER_IMAGES.postgres`), named volume **`flux-<slug>-db-data`**. **No host port publish** — bootstrap, health checks, and admin SQL use **`docker exec`** (`pg_isready`, `psql`) inside the container so the control plane works with remote engines without exposing Postgres on the internet. |
 | **`flux-<slug>-api`** | **PostgREST** (pinned tag in `FLUX_DOCKER_IMAGES.postgrest`) — **no** random public port; **Traefik** (`FLUX_DOCKER_IMAGES.traefik`) sends **`http://<slug>.flux.localhost`** to port **3000** inside the network. |
 
 Provisioning (`ProjectManager.provisionProject`) ensures the network exists, ensures the gateway image is present and running, creates the volume and Postgres container, runs **`BOOTSTRAP_SQL`**, then creates the PostgREST container with Traefik labels so **`http://<slug>.flux.localhost`** resolves (with `/etc/hosts` or DNS for `*.flux.localhost`).
@@ -70,7 +70,7 @@ Tenant PostgREST is configured with **`PGRST_DB_SCHEMAS=api,public`** (`api` fir
 
 ### Schema changes and cache reload
 
-After SQL runs from the host (`executeSql`, `importSqlFile`, or `flux push`), Flux runs `NOTIFY pgrst, 'reload schema'` in Postgres, waits briefly, then sends **SIGUSR1** to the **`flux-<slug>-api`** container so PostgREST reloads its schema cache. (This matches PostgREST’s documented signal behavior; do not assume **SIGHUP** for schema cache.)
+After SQL runs **inside the tenant Postgres container** via the Docker API (`executeSql`, `importSqlFile`, or `flux push`), Flux runs `NOTIFY pgrst, 'reload schema'` in Postgres, waits briefly, then sends **SIGUSR1** to the **`flux-<slug>-api`** container so PostgREST reloads its schema cache. (This matches PostgREST’s documented signal behavior; do not assume **SIGHUP** for schema cache.)
 
 ---
 
@@ -80,7 +80,7 @@ The workspace is defined in **`pnpm-workspace.yaml`** (`packages/*`, `apps/*`). 
 
 | Path | Package | Responsibility |
 |------|---------|------------------|
-| `packages/core` | **`@flux/core`** | `ProjectManager`, Docker + volume + network + gateway, `BOOTSTRAP_SQL`, `pg` against published ports, PostgREST reload signaling, `setProjectEnv` / `listProjectEnv`, JWT key derivation from `PGRST_JWT_SECRET`. |
+| `packages/core` | **`@flux/core`** | `ProjectManager`, Docker + volume + network + gateway, `BOOTSTRAP_SQL`, tenant Postgres ops via **`docker exec`** (`pg_isready`, `psql`; tar upload for large SQL), PostgREST reload signaling, `setProjectEnv` / `listProjectEnv`, JWT key derivation from `PGRST_JWT_SECRET`. |
 | `packages/cli` | **`@flux/cli`** | `flux` entry (`src/index.ts`), Commander + Chalk, calls into `ProjectManager`. |
 | `packages/sdk` | **`@flux/sdk`** | `createClient`, `FluxClient`, PostgREST-shaped `select`/`insert`/`update`/`delete` + `eq` filters over `fetch`. |
 | `apps/dashboard` | **`dashboard`** (private) | Next.js App Router, Auth.js, Drizzle + `pg` to `flux-system`, API routes under `app/api/*`, Stripe integration, `instrumentation.ts` for DB init. |
@@ -270,7 +270,7 @@ Implementation: **`packages/cli/src/index.ts`**. Orchestration: **`ProjectManage
 | Command | Purpose |
 |---------|---------|
 | **`create <name>`** | Provision Postgres + PostgREST + Traefik labels (default: CORS + **`/rest/v1`** strip). **`--no-supabase-rest-path`** omits strip on the tenant router. |
-| **`push <file> -p, --project <name>`** | Apply a `.sql` file via host **`psql`** or **`docker exec psql`**; optional **`-s` / `--supabase-compat`**, **`--disable-api-rls`**, **`--no-sanitize`**; reload PostgREST afterward. |
+| **`push <file> -p, --project <name>`** | Apply a `.sql` file via **`ProjectManager.importSqlFile`** (Docker API: upload + **`psql -f`** inside the tenant DB container); optional **`-s` / `--supabase-compat`**, **`--disable-api-rls`**, **`--no-sanitize`**; reload PostgREST afterward. |
 | **`db-reset -p, --project <name> -y, --yes`** | Drop **`public`** + **`auth`**, recreate **`public`**, reapply **`BOOTSTRAP_SQL`** (clean slate before a full dump import). |
 | **`list`** | List projects from **`flux-*-db` / `flux-*-api`** containers: slug, combined status, **API URL** (`http://<slug>.flux.localhost`). |
 | **`stop <name>`** | Stop API container, then DB. |

@@ -115,7 +115,7 @@ async function cmdPush(
       `Applying ${chalk.bold(file)} to project ${chalk.bold(project)}…`,
     ),
   );
-  const spinner = ora("Streaming SQL into database…").start();
+  const spinner = ora("Running psql inside the Postgres container…").start();
   if (options.supabaseCompat) {
     spinner.stop();
     console.log(
@@ -423,7 +423,7 @@ async function main(): Promise<void> {
   const push = program
     .command("push")
     .description(
-      "Execute a SQL file against a project database (sanitizes pg_dump SET lines for the server version by default)",
+      "Apply a SQL file via Docker exec inside the tenant Postgres container (sanitizes pg_dump SET lines for the server version by default)",
     )
     .argument("<file>", "path to .sql file")
     .requiredOption("-p, --project <name>", "Flux project name")

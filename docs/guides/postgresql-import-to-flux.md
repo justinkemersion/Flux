@@ -69,5 +69,5 @@ Point `NEXT_PUBLIC_SUPABASE_URL` at the Flux tenant API URL (no `/rest/v1` suffi
 ## API (`@flux/core`)
 
 - `preparePlainSqlDumpForFlux`, `sanitizePlainSqlDumpForPostgresMajor`, `applySupabaseCompatibilityTransforms` — build tooling or tests.  
-- `ProjectManager.importSqlFile(path, { supabaseCompat, moveFromPublic, sanitizeForTarget, targetMajor })` — runs **`psql -f`** via host `psql` when available, otherwise `docker cp` + `docker exec psql -f`. With `moveFromPublic: true`, runs the schema mover (`public` → `api`) and returns `ImportSqlFileResult` counts.  
+- `ProjectManager.importSqlFile(path, { supabaseCompat, moveFromPublic, sanitizeForTarget, targetMajor })` — uploads the SQL into the tenant Postgres container and runs **`psql -f`** there via the Docker API (no host TCP to Postgres; works with remote daemons). With `moveFromPublic: true`, runs the schema mover (`public` → `api`) and returns `ImportSqlFileResult` counts.  
 - `ProjectManager.resetTenantDatabaseForImport(name)` — same work as `flux db-reset`.
