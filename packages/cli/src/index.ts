@@ -229,7 +229,41 @@ function statusCell(status: FluxProjectSummary["status"]): string {
   if (status === "stopped") {
     return chalk.yellow("Stopped".padEnd(10));
   }
-  return chalk.magenta("Partial".padEnd(10));
+  if (status === "partial") {
+    return chalk.magenta("Partial".padEnd(10));
+  }
+  if (status === "missing") {
+    return chalk.red("Missing".padEnd(10));
+  }
+  if (status === "corrupted") {
+    return chalk.redBright("Drift".padEnd(10));
+  }
+  return chalk.dim(String(status).padEnd(10));
+}
+
+async function cmdReap(hours: number): Promise<void> {
+  const pm = new ProjectManager();
+  console.log(
+    chalk.blue(
+      `Reaping tenant stacks idle longer than ${chalk.bold(String(hours))} hour(s) (catalog last_accessed_at; flux-system excluded)…`,
+    ),
+  );
+  const { stopped, errors } = await pm.reapIdleProjects(hours);
+  if (stopped.length === 0 && errors.length === 0) {
+    console.log(chalk.dim("  No catalog rows past the idle threshold."));
+    return;
+  }
+  for (const slug of stopped) {
+    console.log(chalk.green.bold("  ✓"), chalk.white("Stopped"), chalk.cyan(slug));
+  }
+  for (const e of errors) {
+    console.log(
+      chalk.red.bold("  ✗"),
+      chalk.cyan(e.slug),
+      chalk.dim(e.message),
+    );
+  }
+  console.log();
 }
 
 async function cmdList(): Promise<void> {
@@ -530,6 +564,29 @@ async function main(): Promise<void> {
     .action(async (name: string, opts: { yes: boolean }) => {
       try {
         await cmdNuke(name, opts.yes);
+      } catch (err: unknown) {
+        console.error(chalk.red.bold("Error"));
+        console.error(formatCliError(err));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("reap")
+    .description(
+      "Stop Docker stacks for catalog projects with last_accessed_at older than the threshold (excludes flux-system)",
+    )
+    .requiredOption(
+      "--hours <n>",
+      "idle threshold in hours (must be a positive number)",
+    )
+    .action(async (opts: { hours: string }) => {
+      try {
+        const hours = Number(opts.hours);
+        if (!Number.isFinite(hours) || hours <= 0) {
+          throw new Error("--hours must be a positive number.");
+        }
+        await cmdReap(hours);
       } catch (err: unknown) {
         console.error(chalk.red.bold("Error"));
         console.error(formatCliError(err));

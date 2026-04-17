@@ -588,14 +588,50 @@ async function consumeDockerPullStream(
   });
 }
 
-/** Row returned by {@link ProjectManager.listProjects}. */
+/** Row returned by {@link ProjectManager.listProjects} and {@link ProjectManager.getProjectSummariesForSlugs}. */
 export interface FluxProjectSummary {
   /** Normalized project slug (from container names). */
   slug: string;
-  /** Combined health of Postgres + PostgREST containers. */
-  status: "running" | "stopped" | "partial";
+  /**
+   * Combined health of Postgres + PostgREST containers.
+   * **missing** — neither container exists (e.g. catalog row without Docker).
+   * **corrupted** — exactly one of the two containers exists.
+   */
+  status: "running" | "stopped" | "partial" | "missing" | "corrupted";
   /** Public API URL via the Flux Traefik gateway (`Host: {slug}.flux.localhost`). */
   apiUrl: string;
+}
+
+type ContainerLifecycleState = "running" | "stopped" | "missing";
+
+/**
+ * Maps Postgres + PostgREST container states to a single tenant status (shared by
+ * {@link ProjectManager.listProjects} and {@link ProjectManager.getProjectSummariesForSlugs}).
+ */
+export function fluxTenantStatusFromContainerPair(
+  db: ContainerLifecycleState,
+  api: ContainerLifecycleState,
+): FluxProjectSummary["status"] {
+  const hasDb = db !== "missing";
+  const hasApi = api !== "missing";
+  if (!hasDb && !hasApi) return "missing";
+  if (hasDb !== hasApi) return "corrupted";
+  if (db === "running" && api === "running") return "running";
+  if (db === "stopped" && api === "stopped") return "stopped";
+  return "partial";
+}
+
+async function inspectContainerLifecycleState(
+  docker: Docker,
+  name: string,
+): Promise<ContainerLifecycleState> {
+  try {
+    const inspect = await docker.getContainer(name).inspect();
+    return inspect.State.Running ? "running" : "stopped";
+  } catch (err: unknown) {
+    if (getHttpStatus(err) === 404) return "missing";
+    throw err;
+  }
 }
 
 /** Sensitive tenant credentials — use {@link ProjectManager.getProjectCredentials} only when needed. */
@@ -610,8 +646,8 @@ export interface FluxSystemProjectActivity {
   id: string;
   name: string;
   slug: string;
-  lastActiveAt: Date;
-  /** `true` when {@link FluxSystemProjectActivity.lastActiveAt} is older than `maxAgeDays` passed to {@link ProjectManager.stopInactiveProjects}. */
+  lastAccessedAt: Date;
+  /** `true` when {@link FluxSystemProjectActivity.lastAccessedAt} is older than `maxAgeDays` passed to {@link ProjectManager.stopInactiveProjects}. */
   inactiveByPolicy: boolean;
 }
 
@@ -1448,19 +1484,19 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
     const rows: FluxProjectSummary[] = [];
     for (const [slug, e] of bySlug) {
-      const hasDb = e.dbState !== undefined;
-      const hasApi = e.apiState !== undefined;
-      const dr = e.dbState === "running";
-      const ar = e.apiState === "running";
-
-      let status: FluxProjectSummary["status"];
-      if (hasDb && hasApi) {
-        if (dr && ar) status = "running";
-        else if (!dr && !ar) status = "stopped";
-        else status = "partial";
-      } else {
-        status = "partial";
-      }
+      const db: ContainerLifecycleState =
+        e.dbState === undefined
+          ? "missing"
+          : e.dbState === "running"
+            ? "running"
+            : "stopped";
+      const api: ContainerLifecycleState =
+        e.apiState === undefined
+          ? "missing"
+          : e.apiState === "running"
+            ? "running"
+            : "stopped";
+      const status = fluxTenantStatusFromContainerPair(db, api);
 
       rows.push({
         slug,
@@ -1473,9 +1509,34 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   }
 
   /**
-   * Stub for a future “reaper” that auto-pauses idle free-tier tenant stacks.
-   * Loads every row from the flux-system `projects` table with `last_active_at` and flags rows
-   * older than `maxAgeDays`. Does not stop containers yet.
+   * Resolves status for specific slugs by **direct container inspect** (two Engine calls per slug),
+   * without scanning every container on the host. Intended for **catalog-driven** UIs (e.g. flux-system
+   * `projects` rows).
+   */
+  async getProjectSummariesForSlugs(slugs: string[]): Promise<FluxProjectSummary[]> {
+    if (slugs.length === 0) return [];
+    const normalized = [...new Set(slugs.map((s) => slugifyProjectName(s)))];
+    const rows = await Promise.all(
+      normalized.map(async (slug) => {
+        const dbName = postgresContainerName(slug);
+        const apiName = postgrestContainerName(slug);
+        const [db, api] = await Promise.all([
+          inspectContainerLifecycleState(this.docker, dbName),
+          inspectContainerLifecycleState(this.docker, apiName),
+        ]);
+        return {
+          slug,
+          status: fluxTenantStatusFromContainerPair(db, api),
+          apiUrl: fluxApiUrlForSlug(slug),
+        };
+      }),
+    );
+    return rows.sort((a, b) => a.slug.localeCompare(b.slug));
+  }
+
+  /**
+   * Lists catalog projects with `last_accessed_at` and flags rows older than `maxAgeDays`
+   * (for reporting; does not stop containers).
    */
   async stopInactiveProjects(
     maxAgeDays: number,
@@ -1494,25 +1555,73 @@ COMMENT ON SCHEMA public IS 'standard public schema';
         id: string;
         name: string;
         slug: string;
-        last_active_at: Date;
+        last_accessed_at: Date;
       }>(
-        `SELECT id::text AS id, name, slug, last_active_at
+        `SELECT id::text AS id, name, slug, last_accessed_at
          FROM projects
          ORDER BY slug`,
       );
       return res.rows.map((row) => {
-        const lastActiveAt = new Date(row.last_active_at);
+        const lastAccessedAt = new Date(row.last_accessed_at);
         return {
           id: row.id,
           name: row.name,
           slug: row.slug,
-          lastActiveAt,
-          inactiveByPolicy: lastActiveAt.getTime() < cutoff,
+          lastAccessedAt,
+          inactiveByPolicy: lastAccessedAt.getTime() < cutoff,
         };
       });
     } finally {
       await client.end();
     }
+  }
+
+  /**
+   * **Flux reaper:** stops tenant Docker stacks whose catalog `last_accessed_at` is older than
+   * `maxIdleHours`. Skips **`flux-system`**. Idempotent for already-stopped containers.
+   */
+  async reapIdleProjects(maxIdleHours: number): Promise<{
+    stopped: string[];
+    errors: Array<{ slug: string; message: string }>;
+  }> {
+    if (!Number.isFinite(maxIdleHours) || maxIdleHours <= 0) {
+      throw new Error("maxIdleHours must be a positive number.");
+    }
+    const uri = await this.getPostgresHostConnectionString("flux-system");
+    const cutoff = new Date(Date.now() - maxIdleHours * 60 * 60 * 1000);
+
+    const client = new pg.Client({
+      connectionString: uri,
+      connectionTimeoutMillis: 8000,
+    });
+    await client.connect();
+    let slugs: string[];
+    try {
+      const res = await client.query<{ slug: string }>(
+        `SELECT slug FROM projects
+         WHERE slug <> 'flux-system' AND last_accessed_at < $1
+         ORDER BY slug`,
+        [cutoff],
+      );
+      slugs = res.rows.map((r) => r.slug);
+    } finally {
+      await client.end();
+    }
+
+    const stopped: string[] = [];
+    const errors: Array<{ slug: string; message: string }> = [];
+    for (const slug of slugs) {
+      try {
+        await this.stopProject(slug);
+        stopped.push(slug);
+      } catch (err: unknown) {
+        errors.push({
+          slug,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return { stopped, errors };
   }
 
   /**

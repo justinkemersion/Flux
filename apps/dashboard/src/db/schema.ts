@@ -91,8 +91,8 @@ export const projects = pgTable("projects", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  /** Last API / usage touch — used for idle reaper (auto-pause) policy. */
-  lastActiveAt: timestamp("last_active_at", { mode: "date" })
+  /** Last successful tenant API touch (PostgREST) — used by the Flux reaper for idle stop. */
+  lastAccessedAt: timestamp("last_accessed_at", { mode: "date" })
     .notNull()
     .defaultNow(),
 });

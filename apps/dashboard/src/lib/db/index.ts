@@ -120,15 +120,33 @@ async function _init(): Promise<void> {
       slug TEXT NOT NULL UNIQUE,
       "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      last_active_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      last_accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await pool.query(`
-    ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ;
-    UPDATE projects SET last_active_at = created_at WHERE last_active_at IS NULL;
-    ALTER TABLE projects ALTER COLUMN last_active_at SET DEFAULT NOW();
-    ALTER TABLE projects ALTER COLUMN last_active_at SET NOT NULL;
+    DO $rename$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'projects'
+          AND column_name = 'last_active_at'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'projects'
+          AND column_name = 'last_accessed_at'
+      ) THEN
+        ALTER TABLE projects RENAME COLUMN last_active_at TO last_accessed_at;
+      END IF;
+    END
+    $rename$;
+  `);
+
+  await pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_accessed_at TIMESTAMPTZ;
+    UPDATE projects SET last_accessed_at = created_at WHERE last_accessed_at IS NULL;
+    ALTER TABLE projects ALTER COLUMN last_accessed_at SET DEFAULT NOW();
+    ALTER TABLE projects ALTER COLUMN last_accessed_at SET NOT NULL;
   `);
 
   await pool.query(`

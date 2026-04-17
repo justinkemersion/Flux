@@ -12,6 +12,7 @@ import {
   Settings,
   Square,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import {
@@ -20,7 +21,12 @@ import {
   useState,
 } from "react";
 
-type ServerStatus = "running" | "stopped" | "partial";
+type ServerStatus =
+  | "running"
+  | "stopped"
+  | "partial"
+  | "missing"
+  | "corrupted";
 
 type ProjectRow = {
   id: string;
@@ -79,7 +85,31 @@ function StatusBadge({ status }: { status: DisplayStatus }) {
           Transitioning
         </span>
       );
-    default:
+    case "missing":
+      return (
+        <span
+          className={`${base} bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200`}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-red-500"
+            aria-hidden
+          />
+          Missing
+        </span>
+      );
+    case "corrupted":
+      return (
+        <span
+          className={`${base} bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200`}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-orange-500"
+            aria-hidden
+          />
+          Drift
+        </span>
+      );
+    case "partial":
       return (
         <span
           className={`${base} bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100`}
@@ -88,6 +118,10 @@ function StatusBadge({ status }: { status: DisplayStatus }) {
           Partial
         </span>
       );
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
   }
 }
 
@@ -191,6 +225,8 @@ type ProjectCardProps = {
       postgresConnectionString: string;
     },
   ) => void;
+  /** After destructive repair reprovisions the stack. */
+  onRepaired?: () => void;
 };
 
 function ProjectCard({
@@ -198,6 +234,7 @@ function ProjectCard({
   onDelete,
   onSettingsSaved,
   onCredentialsRevealed,
+  onRepaired,
 }: ProjectCardProps) {
   const [isBusy, setIsBusy] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<DisplayStatus>(p.status);
@@ -217,6 +254,13 @@ function ProjectCard({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [revealBusy, setRevealBusy] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [repairError, setRepairError] = useState<string | null>(null);
+
+  const canRevealCredentials =
+    p.status === "running" ||
+    p.status === "stopped" ||
+    p.status === "partial";
 
   const credentialsLoaded =
     (p.anonKey?.length ?? 0) > 0 &&
@@ -350,7 +394,34 @@ function ProjectCard({
     setDeleteOpen(false);
   }
 
+  async function runRepair(): Promise<void> {
+    if (
+      !window.confirm(
+        "Repair removes any Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?",
+      )
+    ) {
+      return;
+    }
+    setRepairBusy(true);
+    setRepairError(null);
+    try {
+      const res = await fetch(`/api/projects/${p.slug}/repair`, {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Repair failed (${String(res.status)})`);
+      }
+      onRepaired?.();
+    } catch (err) {
+      setRepairError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRepairBusy(false);
+    }
+  }
+
   async function revealKeys(): Promise<void> {
+    if (!canRevealCredentials) return;
     setRevealBusy(true);
     setRevealError(null);
     try {
@@ -406,7 +477,9 @@ function ProjectCard({
   const canToggle =
     !isBusy &&
     currentStatus !== "transitioning" &&
-    currentStatus !== "partial";
+    currentStatus !== "partial" &&
+    currentStatus !== "missing" &&
+    currentStatus !== "corrupted";
 
   return (
     <>
@@ -429,7 +502,7 @@ function ProjectCard({
               <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 Connection details
               </h3>
-              {!credentialsLoaded ? (
+              {!credentialsLoaded && canRevealCredentials ? (
                 <button
                   type="button"
                   onClick={() => void revealKeys()}
@@ -460,7 +533,15 @@ function ProjectCard({
                 isSecret={false}
                 visuallyTruncate
               />
-              {!credentialsLoaded ? (
+              {!credentialsLoaded && !canRevealCredentials ? (
+                <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                  Keys are unavailable until the stack is healthy. Use{" "}
+                  <strong className="font-medium">Repair</strong> if Docker is
+                  out of sync, or <strong className="font-medium">Delete</strong>{" "}
+                  to remove this catalog entry.
+                </p>
+              ) : null}
+              {!credentialsLoaded && canRevealCredentials ? (
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   API keys and Postgres connection string are not loaded. Use{" "}
                   <strong className="font-medium text-zinc-700 dark:text-zinc-300">
@@ -468,7 +549,8 @@ function ProjectCard({
                   </strong>{" "}
                   to fetch them from the server.
                 </p>
-              ) : (
+              ) : null}
+              {credentialsLoaded ? (
                 <>
                   <CopyableField
                     label="Anon key"
@@ -487,7 +569,7 @@ function ProjectCard({
                     isSecret
                   />
                 </>
-              )}
+              ) : null}
             </div>
           </div>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -502,6 +584,15 @@ function ProjectCard({
           </p>
         </div>
 
+        {repairError ? (
+          <p
+            className="mt-3 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-400"
+            role="alert"
+          >
+            {repairError}
+          </p>
+        ) : null}
+
         {actionError ? (
           <p
             className="mt-3 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-400"
@@ -511,25 +602,44 @@ function ProjectCard({
           </p>
         ) : null}
 
-        <footer className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
-          <button
-            type="button"
-            onClick={() => void togglePower()}
-            disabled={!canToggle}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label={
-              currentStatus === "running" ? `Stop ${p.name}` : `Start ${p.name}`
-            }
-            title={currentStatus === "running" ? "Stop project" : "Start project"}
-          >
-            {isBusy || currentStatus === "transitioning" ? (
-              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-            ) : currentStatus === "running" ? (
-              <Square className="h-5 w-5" aria-hidden />
-            ) : (
-              <Play className="h-5 w-5" aria-hidden />
-            )}
-          </button>
+        <footer className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+          <div className="flex flex-wrap items-center gap-2">
+            {currentStatus === "missing" || currentStatus === "corrupted" ? (
+              <button
+                type="button"
+                onClick={() => void runRepair()}
+                disabled={repairBusy}
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3 text-sm font-medium text-orange-950 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100 dark:hover:bg-orange-900/50"
+              >
+                {repairBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Wrench className="h-4 w-4" aria-hidden />
+                )}
+                Repair stack
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void togglePower()}
+              disabled={!canToggle}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              aria-label={
+                currentStatus === "running" ? `Stop ${p.name}` : `Start ${p.name}`
+              }
+              title={
+                currentStatus === "running" ? "Stop project" : "Start project"
+              }
+            >
+              {isBusy || currentStatus === "transitioning" ? (
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+              ) : currentStatus === "running" ? (
+                <Square className="h-5 w-5" aria-hidden />
+              ) : (
+                <Play className="h-5 w-5" aria-hidden />
+              )}
+            </button>
+          </div>
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -849,6 +959,22 @@ export default function ProjectsPage() {
     );
   }
 
+  function handleProjectRepaired(slug: string): void {
+    setProjectList((prev) =>
+      prev.map((p) =>
+        p.slug === slug
+          ? {
+              ...p,
+              anonKey: undefined,
+              serviceRoleKey: undefined,
+              postgresConnectionString: undefined,
+            }
+          : p,
+      ),
+    );
+    void load();
+  }
+
   function handleSettingsSavedClearCredentials(slug: string): void {
     setProjectList((prev) =>
       prev.map((p) =>
@@ -1048,6 +1174,7 @@ export default function ProjectsPage() {
               onDelete={() => handleProjectDeleted(p.slug)}
               onSettingsSaved={handleSettingsSavedClearCredentials}
               onCredentialsRevealed={handleCredentialsRevealed}
+              onRepaired={() => handleProjectRepaired(p.slug)}
             />
           ))}
         </div>

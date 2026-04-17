@@ -6,9 +6,21 @@ This document records the **Senior Architect** audit themes and the **implemente
 
 1. **Docker socket** — Traefik uses the Engine API via a mounted socket. Treat socket access as **host-equivalent**; isolate the daemon, restrict operators, consider rootless or remote TLS with strict ACLs.
 2. **Control plane trust** — Anyone who can call the dashboard/API with a valid session can provision and manage tenants. Harden Auth.js, rate limits, and deployment network boundaries.
-3. **State sync** — Docker state and the `flux-system` catalog can drift (manual `docker rm`, failed inserts). A future **reconcile job** should align DB rows with Engine state.
+3. **State sync** — Residual gaps: CLI `flux list` still discovers stacks from Docker only; orphan containers without a catalog row are not shown in the dashboard.
+
+### Idle RAM (Flux reaper)
+
+- **`projects.last_accessed_at`** in **`flux-system`** (renamed from **`last_active_at`** on upgrade) tracks the last successful tenant API touch.
+- **`@flux/sdk`** can **`POST`** to **`/api/projects/[slug]/activity`** (Bearer **`FLUX_ACTIVITY_SECRET`**) after each successful PostgREST response.
+- **`ProjectManager.reapIdleProjects(maxIdleHours)`** stops stacks past the threshold; **`flux reap --hours <n>`** is the operator entrypoint (schedule on the host, e.g. Hetzner).
 
 ## Implemented mitigations
+
+### Catalog-first project list (dashboard)
+
+- **`GET /api/projects`** reads **`flux-system.projects`** for the signed-in user, then calls **`ProjectManager.getProjectSummariesForSlugs(slugs)`**, which uses **two container inspects per slug** (no full `docker ps` scan).
+- Tenant **status** uses **`fluxTenantStatusFromContainerPair`**: **missing** (no DB or API container), **corrupted** (only one of the two), plus **running** / **stopped** / **partial** when both exist.
+- **`POST /api/projects/[slug]/repair`** runs **`nukeProject`** then **`provisionProject`** to rebuild a fresh stack when the catalog row exists but Docker is wrong (destructive).
 
 ### Localhost-only Postgres host port
 
@@ -27,5 +39,5 @@ Tenant Postgres `PortBindings` use **`127.0.0.1`** (not `0.0.0.0`) so the publis
 
 ## Related code
 
-- `@flux/core` — `provisionProject`, `FLUX_DOCKER_IMAGES`, `getProjectCredentials`, `listProjects`.
-- `apps/dashboard` — `app/api/projects/route.ts`, `app/api/projects/[slug]/credentials/route.ts`, projects UI.
+- `@flux/core` — `provisionProject`, `FLUX_DOCKER_IMAGES`, `getProjectCredentials`, `getProjectSummariesForSlugs`, `fluxTenantStatusFromContainerPair`, `listProjects`.
+- `apps/dashboard` — `app/api/projects/route.ts`, `app/api/projects/[slug]/credentials/route.ts`, `app/api/projects/[slug]/repair/route.ts`, projects UI.

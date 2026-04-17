@@ -38,8 +38,17 @@ export async function GET(): Promise<Response> {
     .from(projects)
     .where(eq(projects.userId, session.user.id));
 
-  const dockerProjects = await pm.listProjects().catch(() => []);
-  const dockerBySlug = new Map(dockerProjects.map((dp) => [dp.slug, dp]));
+  const slugs = userProjects.map((p) => p.slug);
+  let dockerSummaries: Awaited<
+    ReturnType<typeof pm.getProjectSummariesForSlugs>
+  >;
+  try {
+    dockerSummaries = await pm.getProjectSummariesForSlugs(slugs);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return jsonError(`Docker status unavailable: ${msg}`, 503);
+  }
+  const dockerBySlug = new Map(dockerSummaries.map((d) => [d.slug, d]));
 
   const projectsPayload = userProjects.map((p) => {
     const docker = dockerBySlug.get(p.slug);
@@ -47,7 +56,7 @@ export async function GET(): Promise<Response> {
       id: p.id,
       name: p.name,
       slug: p.slug,
-      status: docker?.status ?? "stopped",
+      status: docker?.status ?? "missing",
       apiUrl: docker?.apiUrl ?? `http://${p.slug}.flux.localhost`,
       createdAt: p.createdAt,
     };

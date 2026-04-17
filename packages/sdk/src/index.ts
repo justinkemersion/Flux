@@ -1,6 +1,23 @@
+export type FluxActivityOptions = {
+  /**
+   * Control plane origin (no trailing slash), e.g. `https://dashboard.example.com`.
+   * The SDK will `POST` to `{controlPlaneUrl}/api/projects/{slug}/activity`.
+   */
+  controlPlaneUrl: string;
+  /** Must match dashboard `FLUX_ACTIVITY_SECRET`. Prefer server-side env only. */
+  secret: string;
+  /**
+   * Tenant slug. If omitted, inferred from {@link FluxClientOptions.url} when the host is
+   * `{slug}.flux.localhost`.
+   */
+  slug?: string;
+};
+
 export type FluxClientOptions = {
   url: string;
   anonKey?: string;
+  /** Optional: bump `last_accessed_at` in flux-system after each successful PostgREST response. */
+  activity?: FluxActivityOptions;
 };
 
 export type FluxResult<T> = {
@@ -8,8 +25,36 @@ export type FluxResult<T> = {
   error: unknown | null;
 };
 
-export function createClient(url: string, anonKey?: string): FluxClient {
-  return anonKey === undefined ? new FluxClient({ url }) : new FluxClient({ url, anonKey });
+/** Infer tenant slug from PostgREST base URL (`{slug}.flux.localhost`). */
+export function inferFluxTenantSlugFromPostgrestUrl(baseUrl: string): string | null {
+  let s = baseUrl.trim();
+  if (!/^[a-z]+:/i.test(s)) {
+    s = `http://${s}`;
+  }
+  try {
+    const { hostname } = new URL(s);
+    const suffix = ".flux.localhost";
+    if (hostname.endsWith(suffix) && hostname.length > suffix.length) {
+      return hostname.slice(0, -suffix.length);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function createClient(url: string, anonKey?: string): FluxClient;
+export function createClient(options: FluxClientOptions): FluxClient;
+export function createClient(
+  urlOrOptions: string | FluxClientOptions,
+  anonKey?: string,
+): FluxClient {
+  if (typeof urlOrOptions === "string") {
+    return anonKey === undefined
+      ? new FluxClient({ url: urlOrOptions })
+      : new FluxClient({ url: urlOrOptions, anonKey });
+  }
+  return new FluxClient(urlOrOptions);
 }
 
 export class FluxClient {
@@ -71,6 +116,22 @@ class QueryBuilder<Row = unknown> implements PromiseLike<FluxResult<Row | Row[]>
     return this.execute().then(onfulfilled, onrejected);
   }
 
+  private touchActivityAfterSuccess(): void {
+    const act = this.options.activity;
+    if (!act) return;
+    const slug =
+      act.slug?.trim() || inferFluxTenantSlugFromPostgrestUrl(this.options.url);
+    if (!slug) return;
+    const base = act.controlPlaneUrl.replace(/\/$/, "");
+    const url = `${base}/api/projects/${encodeURIComponent(slug)}/activity`;
+    void fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${act.secret}` },
+    }).catch(() => {
+      /* ignore — best-effort bump */
+    });
+  }
+
   private async execute(): Promise<FluxResult<Row | Row[]>> {
     const base = this.options.url.replace(/\/$/, "");
     const url = new URL(`${base}/${encodeURIComponent(this.tableName)}`);
@@ -115,6 +176,7 @@ class QueryBuilder<Row = unknown> implements PromiseLike<FluxResult<Row | Row[]>
         return { data: null, error: payload ?? res.statusText };
       }
 
+      this.touchActivityAfterSuccess();
       return { data: payload as Row | Row[], error: null };
     } catch (e) {
       return { data: null, error: e };

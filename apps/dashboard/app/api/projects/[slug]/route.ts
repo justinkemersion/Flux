@@ -42,15 +42,23 @@ export async function GET(
   if (!project) return jsonError("Project not found", 404);
 
   const pm = getProjectManager();
-  const dockerList = await pm.listProjects().catch(() => []);
-  const docker = dockerList.find((p) => p.slug === slug);
+  let summary: Awaited<
+    ReturnType<typeof pm.getProjectSummariesForSlugs>
+  >[number] | undefined;
+  try {
+    const rows = await pm.getProjectSummariesForSlugs([slug]);
+    summary = rows[0];
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return jsonError(`Docker status unavailable: ${msg}`, 503);
+  }
 
   return Response.json({
     id: project.id,
     name: project.name,
     slug: project.slug,
-    status: docker?.status ?? "stopped",
-    apiUrl: docker?.apiUrl ?? `http://${slug}.flux.localhost`,
+    status: summary?.status ?? "missing",
+    apiUrl: summary?.apiUrl ?? `http://${slug}.flux.localhost`,
     createdAt: project.createdAt,
   });
 }

@@ -147,7 +147,7 @@ flux push ./dump.sql -p myapp -s --disable-api-rls
 
 - **Exports** — `ProjectManager`, `FLUX_NETWORK_NAME`, `FLUX_GATEWAY_CONTAINER_NAME`, `FLUX_DOCKER_IMAGES`, `fluxApiUrlForSlug`, `BOOTSTRAP_SQL`, **`API_SCHEMA_PRIVILEGES_SQL`**, **`DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL`**, dump helpers (`preparePlainSqlDumpForFlux`, `sanitizePlainSqlDumpForPostgresMajor`, `applySupabaseCompatibilityTransforms`, `queryPostgresMajorVersion`), `isFluxSensitiveEnvKey`, types (`FluxProject`, `FluxProjectSummary`, `FluxProjectEnvEntry`, `ImportSqlFileOptions`, …).
 - **Docker** — `dockerode`; pulls with stall detection; idempotent network/gateway provisioning.
-- **Typical flows** — `provisionProject`, `listProjects`, `stopProject` / `startProject`, `nukeProject`, `getPostgresHostConnectionString`, **`getProjectCredentials`**, `executeSql`, **`importSqlFile`** (optional Supabase compat + **`moveFromPublic`**, post-import grants + optional RLS disable), **`resetTenantDatabaseForImport`**, `updatePostgrestJwtSecret`, **`setPostgrestSupabaseRestPrefix`**, `setProjectEnv`, `listProjectEnv`, **`getProjectKeys`** (JWTs from container **`PGRST_JWT_SECRET` only**).
+- **Typical flows** — `provisionProject`, `listProjects`, **`getProjectSummariesForSlugs`**, `stopProject` / `startProject`, `nukeProject`, **`reapIdleProjects`**, `stopInactiveProjects` (reporting), `getPostgresHostConnectionString`, **`getProjectCredentials`**, `executeSql`, **`importSqlFile`** (optional Supabase compat + **`moveFromPublic`**, post-import grants + optional RLS disable), **`resetTenantDatabaseForImport`**, `updatePostgrestJwtSecret`, **`setPostgrestSupabaseRestPrefix`**, `setProjectEnv`, `listProjectEnv`, **`getProjectKeys`** (JWTs from container **`PGRST_JWT_SECRET` only**).
 
 ### `@flux/cli` (`packages/cli`)
 
@@ -157,6 +157,7 @@ flux push ./dump.sql -p myapp -s --disable-api-rls
 ### `@flux/sdk` (`packages/sdk`)
 
 - Minimal **PostgREST client**: base URL + optional anon JWT as `apikey` / `Authorization` bearer.
+- Optional **`activity`** options: after each **successful** PostgREST response, fire-and-forget `POST` to the dashboard **`/api/projects/{slug}/activity`** (Bearer **`FLUX_ACTIVITY_SECRET`**) to refresh catalog **`last_accessed_at`** (used by **`reapIdleProjects`**). Slug is inferred from **`{slug}.flux.localhost`** or set explicitly.
 - **Not** a full query builder—enough for app code to hit tables in the `api` schema with filters like `eq`.
 
 ---
@@ -182,6 +183,7 @@ Typical **`apps/dashboard/.env.local`** (never commit; root `.gitignore` covers 
 - **`AUTH_SECRET`** (or **`NEXTAUTH_SECRET`**) — session signing.
 - **`GITHUB_ID`** / **`GITHUB_SECRET`** (or **`AUTH_GITHUB_ID`** / **`AUTH_GITHUB_SECRET`**) — GitHub OAuth.
 - **`AUTH_URL`** or **`NEXTAUTH_URL`** — public base URL (e.g. `http://localhost:3000`) for OAuth redirects.
+- **`FLUX_ACTIVITY_SECRET`** — shared secret for **`POST /api/projects/[slug]/activity`** (SDK idle bumps). Generate a long random string; must match the secret configured in apps that use **`@flux/sdk`** `activity` options.
 
 See [Auth.js deployment env](https://authjs.dev/getting-started/deployment#environment-variables) for the full set.
 
@@ -277,6 +279,7 @@ Implementation: **`packages/cli/src/index.ts`**. Orchestration: **`ProjectManage
 | **`supabase-rest-path -p, --project <name> [--off]`** | Recreate the API container with updated Traefik strip (**`/rest/v1`**) labels; **`--off`** removes strip from the chain (CORS remains). |
 | **`env set <key=value...> -p, --project <name>`** | Merge variables into the **PostgREST** container env and recreate the container. |
 | **`env list -p, --project <name>`** | Show env keys; **values omitted** for keys classified as sensitive. |
+| **`reap --hours <n>`** | Stop tenant stacks whose **`flux-system.projects.last_accessed_at`** is older than **`n`** hours (**`flux-system`** slug excluded). Run on a schedule (e.g. systemd timer) on the host. |
 
 ### Examples
 
@@ -289,6 +292,7 @@ pnpm run flux -- list
 pnpm run flux -- stop "ACME Corp"
 pnpm run flux -- start "ACME Corp"
 pnpm run flux -- nuke "ACME Corp" --yes
+pnpm run flux -- reap --hours 72
 ```
 
 ---
@@ -296,7 +300,8 @@ pnpm run flux -- nuke "ACME Corp" --yes
 ## Security and operations
 
 - **Secrets** — Postgres password and `PGRST_JWT_SECRET` are generated at provision time (unless overridden for JWT). Treat shell history and logs as sensitive.
-- **Dashboard credentials** — `GET /api/projects` lists projects without DB URIs or API keys; use `GET /api/projects/[slug]/credentials` (authenticated) when the UI needs to reveal them. See **`docs/production-security-audit.md`**.
+- **Dashboard projects** — `GET /api/projects` reads **`flux-system.projects`** first, then resolves Docker status with **`getProjectSummariesForSlugs`** (per-slug inspects, not a full container list). It does not return DB URIs or API keys; use `GET /api/projects/[slug]/credentials` to reveal them. **Repair** uses `POST /api/projects/[slug]/repair`. See **`docs/production-security-audit.md`**.
+- **Idle RAM (reaper)** — Catalog column **`last_accessed_at`** is updated by **`POST /api/projects/[slug]/activity`** (SDK **`activity`** option). Schedule **`flux reap --hours …`** on the server to **`stopProject`** for rows past the threshold.
 - **`.gitignore`** — excludes `.env*`, `node_modules`, and build artifacts; do not commit tenant credentials.
 - **Docker socket** — access to the socket is effectively **root on the host**; restrict who runs the control plane and where.
 - **Tenant env listing** — `flux env list` intentionally hides values for keys matching common secret patterns; do not rely on it as a full secret scanner.
