@@ -38,47 +38,22 @@ export async function GET(): Promise<Response> {
     .from(projects)
     .where(eq(projects.userId, session.user.id));
 
-  // Enrich with live Docker status in parallel
-  const [dockerProjects] = await Promise.all([pm.listProjects().catch(() => [])]);
-  const dockerBySlug = new Map(dockerProjects.map((p) => [p.slug, p]));
+  const dockerProjects = await pm.listProjects().catch(() => []);
+  const dockerBySlug = new Map(dockerProjects.map((dp) => [dp.slug, dp]));
 
-  const enriched = await Promise.all(
-    userProjects.map(async (p) => {
-      const docker = dockerBySlug.get(p.slug);
-      let postgresConnectionString: string | null = null;
-      let anonKey: string | null = null;
-      let serviceRoleKey: string | null = null;
-      if (docker?.status === "running") {
-        try {
-          postgresConnectionString = await pm.getPostgresHostConnectionString(
-            p.slug,
-          );
-        } catch {
-          // DB stopped or unavailable — surface null
-        }
-      }
-      try {
-        const keys = await pm.getProjectKeys(p.slug);
-        anonKey = keys.anonKey;
-        serviceRoleKey = keys.serviceRoleKey;
-      } catch {
-        /* PostgREST container missing or env unreadable */
-      }
-      return {
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        status: docker?.status ?? "stopped",
-        apiUrl: docker?.apiUrl ?? `http://${p.slug}.flux.localhost`,
-        anonKey,
-        serviceRoleKey,
-        postgresConnectionString,
-        createdAt: p.createdAt,
-      };
-    }),
-  );
+  const projectsPayload = userProjects.map((p) => {
+    const docker = dockerBySlug.get(p.slug);
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      status: docker?.status ?? "stopped",
+      apiUrl: docker?.apiUrl ?? `http://${p.slug}.flux.localhost`,
+      createdAt: p.createdAt,
+    };
+  });
 
-  return Response.json({ projects: enriched, plan });
+  return Response.json({ projects: projectsPayload, plan });
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -154,8 +129,6 @@ export async function POST(req: Request): Promise<Response> {
         ? { stripSupabaseRestPrefix }
         : {}),
     });
-    const postgresHostConnectionString =
-      await pm.getPostgresHostConnectionString(project.name);
 
     const [dbProject] = await db
       .insert(projects)
@@ -174,7 +147,6 @@ export async function POST(req: Request): Promise<Response> {
         slug: dbProject.slug,
         apiUrl: project.apiUrl,
         stripSupabaseRestPrefix: project.stripSupabaseRestPrefix,
-        postgresHostConnectionString,
         createdAt: dbProject.createdAt,
       },
     });

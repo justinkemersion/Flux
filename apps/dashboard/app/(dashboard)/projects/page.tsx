@@ -28,10 +28,11 @@ type ProjectRow = {
   slug: string;
   status: ServerStatus;
   apiUrl: string;
-  anonKey: string | null;
-  serviceRoleKey: string | null;
-  postgresConnectionString: string | null;
   createdAt: string;
+  /** Loaded only after "Reveal keys" — not returned by list API. */
+  anonKey?: string | null;
+  serviceRoleKey?: string | null;
+  postgresConnectionString?: string | null;
 };
 
 type DisplayStatus = ServerStatus | "transitioning";
@@ -180,10 +181,24 @@ function CopyableField({
 type ProjectCardProps = {
   project: ProjectRow;
   onDelete: () => void;
-  onSettingsSaved?: () => void;
+  /** Called after JWT settings save so parents can drop cached credentials (keys change). */
+  onSettingsSaved?: (slug: string) => void;
+  onCredentialsRevealed: (
+    slug: string,
+    creds: {
+      anonKey: string;
+      serviceRoleKey: string;
+      postgresConnectionString: string;
+    },
+  ) => void;
 };
 
-function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps) {
+function ProjectCard({
+  project: p,
+  onDelete,
+  onSettingsSaved,
+  onCredentialsRevealed,
+}: ProjectCardProps) {
   const [isBusy, setIsBusy] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<DisplayStatus>(p.status);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -200,6 +215,13 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
+
+  const credentialsLoaded =
+    (p.anonKey?.length ?? 0) > 0 &&
+    (p.serviceRoleKey?.length ?? 0) > 0 &&
+    (p.postgresConnectionString?.length ?? 0) > 0;
 
   useEffect(() => {
     if (!isBusy) {
@@ -308,7 +330,7 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
       setSettingsSuccess(true);
       setLastSavedJwtSecret(trimmed);
       setJwtSecretInput("");
-      onSettingsSaved?.();
+      onSettingsSaved?.(p.slug);
       window.setTimeout(() => setSettingsSuccess(false), 4000);
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : String(err));
@@ -326,6 +348,39 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
   function closeDeleteModal(): void {
     if (isDeleting) return;
     setDeleteOpen(false);
+  }
+
+  async function revealKeys(): Promise<void> {
+    setRevealBusy(true);
+    setRevealError(null);
+    try {
+      const res = await fetch(`/api/projects/${p.slug}/credentials`);
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        anonKey?: string;
+        serviceRoleKey?: string;
+        postgresConnectionString?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Reveal failed (${String(res.status)})`);
+      }
+      if (
+        typeof data.anonKey !== "string" ||
+        typeof data.serviceRoleKey !== "string" ||
+        typeof data.postgresConnectionString !== "string"
+      ) {
+        throw new Error("Invalid credentials response");
+      }
+      onCredentialsRevealed(p.slug, {
+        anonKey: data.anonKey,
+        serviceRoleKey: data.serviceRoleKey,
+        postgresConnectionString: data.postgresConnectionString,
+      });
+    } catch (err) {
+      setRevealError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRevealBusy(false);
+    }
   }
 
   async function handleDelete(e: React.FormEvent): Promise<void> {
@@ -370,9 +425,34 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
 
         <div className="mt-4 flex flex-col gap-3">
           <div className="rounded-lg border border-zinc-200/70 bg-zinc-50/40 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Connection details
-            </h3>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Connection details
+              </h3>
+              {!credentialsLoaded ? (
+                <button
+                  type="button"
+                  onClick={() => void revealKeys()}
+                  disabled={revealBusy}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  {revealBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  Reveal keys
+                </button>
+              ) : null}
+            </div>
+            {revealError ? (
+              <p
+                className="mb-3 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-400"
+                role="alert"
+              >
+                {revealError}
+              </p>
+            ) : null}
             <div className="flex flex-col gap-3">
               <CopyableField
                 label="API URL"
@@ -380,22 +460,34 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
                 isSecret={false}
                 visuallyTruncate
               />
-              <CopyableField
-                label="Anon key"
-                value={p.anonKey}
-                isSecret={false}
-                visuallyTruncate
-              />
-              <CopyableField
-                label="Service role key"
-                value={p.serviceRoleKey}
-                isSecret
-              />
-              <CopyableField
-                label="Postgres connection string"
-                value={p.postgresConnectionString}
-                isSecret
-              />
+              {!credentialsLoaded ? (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  API keys and Postgres connection string are not loaded. Use{" "}
+                  <strong className="font-medium text-zinc-700 dark:text-zinc-300">
+                    Reveal keys
+                  </strong>{" "}
+                  to fetch them from the server.
+                </p>
+              ) : (
+                <>
+                  <CopyableField
+                    label="Anon key"
+                    value={p.anonKey ?? null}
+                    isSecret={false}
+                    visuallyTruncate
+                  />
+                  <CopyableField
+                    label="Service role key"
+                    value={p.serviceRoleKey ?? null}
+                    isSecret
+                  />
+                  <CopyableField
+                    label="Postgres connection string"
+                    value={p.postgresConnectionString ?? null}
+                    isSecret
+                  />
+                </>
+              )}
             </div>
           </div>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -493,8 +585,12 @@ function ProjectCard({ project: p, onDelete, onSettingsSaved }: ProjectCardProps
               </h2>
               <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                 Use the same signing secret as your auth provider (e.g. Clerk JWT
-                template or NextAuth) so PostgREST can verify user tokens. Anon and
-                service-role keys in the card above update after you save.
+                template or NextAuth) so PostgREST can verify user tokens. After you
+                save, use{" "}
+                <strong className="font-medium text-zinc-800 dark:text-zinc-200">
+                  Reveal keys
+                </strong>{" "}
+                on the project card to refresh anon and service-role JWTs.
               </p>
 
               <form onSubmit={(e) => void saveJwtSettings(e)} className="mt-6">
@@ -711,7 +807,18 @@ export default function ProjectsPage() {
         projects: ProjectRow[];
         plan?: "hobby" | "pro";
       };
-      setProjectList(data.projects);
+      setProjectList((prev) => {
+        const prevBySlug = new Map(prev.map((x) => [x.slug, x]));
+        return data.projects.map((p) => {
+          const old = prevBySlug.get(p.slug);
+          return {
+            ...p,
+            anonKey: old?.anonKey,
+            serviceRoleKey: old?.serviceRoleKey,
+            postgresConnectionString: old?.postgresConnectionString,
+          };
+        });
+      });
       setUserPlan(data.plan === "pro" ? "pro" : "hobby");
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
@@ -719,6 +826,44 @@ export default function ProjectsPage() {
       setFetching(false);
     }
   }, []);
+
+  function handleCredentialsRevealed(
+    slug: string,
+    creds: {
+      anonKey: string;
+      serviceRoleKey: string;
+      postgresConnectionString: string;
+    },
+  ): void {
+    setProjectList((prev) =>
+      prev.map((p) =>
+        p.slug === slug
+          ? {
+              ...p,
+              anonKey: creds.anonKey,
+              serviceRoleKey: creds.serviceRoleKey,
+              postgresConnectionString: creds.postgresConnectionString,
+            }
+          : p,
+      ),
+    );
+  }
+
+  function handleSettingsSavedClearCredentials(slug: string): void {
+    setProjectList((prev) =>
+      prev.map((p) =>
+        p.slug === slug
+          ? {
+              ...p,
+              anonKey: undefined,
+              serviceRoleKey: undefined,
+              postgresConnectionString: undefined,
+            }
+          : p,
+      ),
+    );
+    void load();
+  }
 
   useEffect(() => {
     void load();
@@ -901,7 +1046,8 @@ export default function ProjectsPage() {
               key={p.id}
               project={p}
               onDelete={() => handleProjectDeleted(p.slug)}
-              onSettingsSaved={() => void load()}
+              onSettingsSaved={handleSettingsSavedClearCredentials}
+              onCredentialsRevealed={handleCredentialsRevealed}
             />
           ))}
         </div>

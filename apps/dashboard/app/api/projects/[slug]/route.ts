@@ -25,7 +25,8 @@ async function resolveOwnedProject(slug: string, userId: string) {
 
 /**
  * GET /api/projects/[slug]
- * Returns live status for a single project — used by the status-polling badge.
+ * Returns live status and API URL for a single project (no DB URI or JWT keys — use
+ * GET /api/projects/[slug]/credentials).
  */
 export async function GET(
   _req: NextRequest,
@@ -44,35 +45,12 @@ export async function GET(
   const dockerList = await pm.listProjects().catch(() => []);
   const docker = dockerList.find((p) => p.slug === slug);
 
-  let anonKey: string | null = null;
-  let serviceRoleKey: string | null = null;
-  let postgresConnectionString: string | null = null;
-
-  try {
-    const keys = await pm.getProjectKeys(slug);
-    anonKey = keys.anonKey;
-    serviceRoleKey = keys.serviceRoleKey;
-  } catch {
-    /* API container missing or env unreadable */
-  }
-
-  if (docker?.status === "running") {
-    try {
-      postgresConnectionString = await pm.getPostgresHostConnectionString(slug);
-    } catch {
-      /* Postgres unavailable */
-    }
-  }
-
   return Response.json({
     id: project.id,
     name: project.name,
     slug: project.slug,
     status: docker?.status ?? "stopped",
     apiUrl: docker?.apiUrl ?? `http://${slug}.flux.localhost`,
-    anonKey,
-    serviceRoleKey,
-    postgresConnectionString,
     createdAt: project.createdAt,
   });
 }

@@ -42,10 +42,9 @@ export const FLUX_GATEWAY_CONTAINER_NAME = "flux-gateway";
 
 /** Pinned images for Flux project stacks (Postgres + PostgREST + Traefik). */
 export const FLUX_DOCKER_IMAGES = {
-  postgres: "postgres:16-alpine",
-  postgrest: "postgrest/postgrest:latest",
-  /** v3.6+ negotiates Docker API version (v3.0 used API 1.24 and breaks on modern Engine). */
-  traefik: "traefik:v3.6",
+  postgres: "postgres:16.2-alpine",
+  postgrest: "postgrest/postgrest:v12.0.2",
+  traefik: "traefik:v3.0.0",
 } as const;
 
 const POSTGRES_IMAGE = FLUX_DOCKER_IMAGES.postgres;
@@ -599,6 +598,13 @@ export interface FluxProjectSummary {
   apiUrl: string;
 }
 
+/** Sensitive tenant credentials — use {@link ProjectManager.getProjectCredentials} only when needed. */
+export type FluxProjectCredentials = {
+  postgresConnectionString: string;
+  anonKey: string;
+  serviceRoleKey: string;
+};
+
 /** Catalog row from the flux-system `projects` table (control-plane metadata DB). */
 export interface FluxSystemProjectActivity {
   id: string;
@@ -668,7 +674,7 @@ export async function createProjectBucket(
       ExposedPorts: { "5432/tcp": {} },
       HostConfig: {
         PortBindings: {
-          "5432/tcp": [{ HostIp: "0.0.0.0", HostPort: "0" }],
+          "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
         },
         Memory: 512 * 1024 * 1024,
       },
@@ -942,7 +948,7 @@ export class ProjectManager {
           NetworkMode: FLUX_NETWORK_NAME,
           Binds: [`${volumeName}:/var/lib/postgresql/data`],
           PortBindings: {
-            "5432/tcp": [{ HostIp: "0.0.0.0", HostPort: "0" }],
+            "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
           },
           Memory: 512 * 1024 * 1024,
           RestartPolicy: { Name: "unless-stopped" },
@@ -1230,6 +1236,26 @@ export class ProjectManager {
   }
 
   /**
+   * Loads Postgres host URI and JWT-backed API keys for a project. Prefer this over pairing
+   * {@link getPostgresHostConnectionString} + {@link getProjectKeys} when exposing secrets to a UI,
+   * so list endpoints stay non-sensitive.
+   */
+  async getProjectCredentials(
+    projectName: string,
+  ): Promise<FluxProjectCredentials> {
+    const slug = slugifyProjectName(projectName);
+    const [postgresConnectionString, keys] = await Promise.all([
+      this.getPostgresHostConnectionString(slug),
+      this.getProjectKeys(slug),
+    ]);
+    return {
+      postgresConnectionString,
+      anonKey: keys.anonKey,
+      serviceRoleKey: keys.serviceRoleKey,
+    };
+  }
+
+  /**
    * Runs arbitrary SQL against an existing Flux project's Postgres instance.
    *
    * Retrieves connection details (host port, password) from the running container's
@@ -1397,6 +1423,9 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
   /**
    * Lists Flux tenant projects by scanning Docker for `flux-*-db` / `flux-*-api` containers.
+   *
+   * Returns only **slug**, **status**, and **apiUrl** — never Postgres passwords, connection URIs,
+   * or JWT keys. Use {@link getProjectCredentials} when those values are required.
    */
   async listProjects(): Promise<FluxProjectSummary[]> {
     const containers = await this.docker.listContainers({ all: true });
@@ -1588,8 +1617,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
    * Ensures {@link FLUX_GATEWAY_CONTAINER_NAME} runs Traefik with the Docker provider, socket
    * access (read-only), `web` on host port 80, and attachment to {@link FLUX_NETWORK_NAME}.
    *
-   * Uses {@link FLUX_DOCKER_IMAGES.traefik} **v3.6+** so the Docker client negotiates API version with
-   * the Engine (older Traefik builds pinned API 1.24 and fail on recent Docker). The gateway also sets
+   * Uses a pinned {@link FLUX_DOCKER_IMAGES.traefik} image. The gateway also sets
    * `DOCKER_API_VERSION=1.41` and `--providers.docker.httpClientTimeout=300s` for the socket client.
    *
    * Idempotent: **start** if stopped, **create** if missing, **attach** to `flux-network` if needed.

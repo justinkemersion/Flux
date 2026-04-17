@@ -54,8 +54,8 @@ Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **p
 |----------|---------|
 | **`flux-network`** | User-defined bridge (`FLUX_NETWORK_NAME`). Tenant DB + API containers attach here; the **Traefik** gateway uses the same network so it can route to backends by container labels. |
 | **`flux-gateway`** | Traefik (`FLUX_GATEWAY_CONTAINER_NAME`) — Docker provider, read-only socket mount, listens on **host :80**, discovers routers from **labels** on the PostgREST containers. |
-| **`flux-<slug>-db`** | **PostgreSQL 16** (Alpine image from `FLUX_DOCKER_IMAGES.postgres`), named volume **`flux-<slug>-db-data`**, published random host port **`5432`** for host-side tools and migrations. |
-| **`flux-<slug>-api`** | **PostgREST** (`postgrest/postgrest:latest`) — **no** random public port; **Traefik v3.6** (`traefik:v3.6` gateway) sends **`http://<slug>.flux.localhost`** to port **3000** inside the network. |
+| **`flux-<slug>-db`** | **PostgreSQL 16.2** (Alpine image from `FLUX_DOCKER_IMAGES.postgres`), named volume **`flux-<slug>-db-data`**, published random host port **`5432`** bound to **`127.0.0.1` only** (host-side tools / SSH tunnel; not LAN-wide). |
+| **`flux-<slug>-api`** | **PostgREST** (pinned tag in `FLUX_DOCKER_IMAGES.postgrest`) — **no** random public port; **Traefik** (`FLUX_DOCKER_IMAGES.traefik`) sends **`http://<slug>.flux.localhost`** to port **3000** inside the network. |
 
 Provisioning (`ProjectManager.provisionProject`) ensures the network exists, ensures the gateway image is present and running, creates the volume and Postgres container, runs **`BOOTSTRAP_SQL`**, then creates the PostgREST container with Traefik labels so **`http://<slug>.flux.localhost`** resolves (with `/etc/hosts` or DNS for `*.flux.localhost`).
 
@@ -66,7 +66,7 @@ Provisioning (`ProjectManager.provisionProject`) ensures the network exists, ens
 3. **Traefik** forwards to **`flux-myapp-api:3000`**.
 4. **PostgREST** connects to **`flux-myapp-db:5432`** using **`PGRST_DB_URI`** (internal Docker DNS).
 
-Tenant PostgREST is configured with **`PGRST_DB_SCHEMAS=api,public`** (`api` first for the default schema). **`PGRST_JWT_SECRET`** is generated at provision time (or taken from dashboard **`customJwtSecret`**). **`getProjectKeys`** reads that secret **only** from the running API container’s **`inspect().Config.Env`**—it never mints a substitute secret.
+Tenant PostgREST is configured with **`PGRST_DB_SCHEMAS=api,public`** (`api` first for the default schema). **`PGRST_JWT_SECRET`** is generated at provision time (or taken from dashboard **`customJwtSecret`**). **`getProjectKeys`** / **`getProjectCredentials`** read that secret **only** from the running API container’s **`inspect().Config.Env`**—they never mint a substitute secret.
 
 ### Schema changes and cache reload
 
@@ -147,7 +147,7 @@ flux push ./dump.sql -p myapp -s --disable-api-rls
 
 - **Exports** — `ProjectManager`, `FLUX_NETWORK_NAME`, `FLUX_GATEWAY_CONTAINER_NAME`, `FLUX_DOCKER_IMAGES`, `fluxApiUrlForSlug`, `BOOTSTRAP_SQL`, **`API_SCHEMA_PRIVILEGES_SQL`**, **`DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL`**, dump helpers (`preparePlainSqlDumpForFlux`, `sanitizePlainSqlDumpForPostgresMajor`, `applySupabaseCompatibilityTransforms`, `queryPostgresMajorVersion`), `isFluxSensitiveEnvKey`, types (`FluxProject`, `FluxProjectSummary`, `FluxProjectEnvEntry`, `ImportSqlFileOptions`, …).
 - **Docker** — `dockerode`; pulls with stall detection; idempotent network/gateway provisioning.
-- **Typical flows** — `provisionProject`, `listProjects`, `stopProject` / `startProject`, `nukeProject`, `getPostgresHostConnectionString`, `executeSql`, **`importSqlFile`** (optional Supabase compat + **`moveFromPublic`**, post-import grants + optional RLS disable), **`resetTenantDatabaseForImport`**, `updatePostgrestJwtSecret`, **`setPostgrestSupabaseRestPrefix`**, `setProjectEnv`, `listProjectEnv`, **`getProjectKeys`** (JWTs from container **`PGRST_JWT_SECRET` only**).
+- **Typical flows** — `provisionProject`, `listProjects`, `stopProject` / `startProject`, `nukeProject`, `getPostgresHostConnectionString`, **`getProjectCredentials`**, `executeSql`, **`importSqlFile`** (optional Supabase compat + **`moveFromPublic`**, post-import grants + optional RLS disable), **`resetTenantDatabaseForImport`**, `updatePostgrestJwtSecret`, **`setPostgrestSupabaseRestPrefix`**, `setProjectEnv`, `listProjectEnv`, **`getProjectKeys`** (JWTs from container **`PGRST_JWT_SECRET` only**).
 
 ### `@flux/cli` (`packages/cli`)
 
@@ -296,6 +296,7 @@ pnpm run flux -- nuke "ACME Corp" --yes
 ## Security and operations
 
 - **Secrets** — Postgres password and `PGRST_JWT_SECRET` are generated at provision time (unless overridden for JWT). Treat shell history and logs as sensitive.
+- **Dashboard credentials** — `GET /api/projects` lists projects without DB URIs or API keys; use `GET /api/projects/[slug]/credentials` (authenticated) when the UI needs to reveal them. See **`docs/production-security-audit.md`**.
 - **`.gitignore`** — excludes `.env*`, `node_modules`, and build artifacts; do not commit tenant credentials.
 - **Docker socket** — access to the socket is effectively **root on the host**; restrict who runs the control plane and where.
 - **Tenant env listing** — `flux env list` intentionally hides values for keys matching common secret patterns; do not rely on it as a full secret scanner.
@@ -304,6 +305,7 @@ pnpm run flux -- nuke "ACME Corp" --yes
 
 ## Docs and guides
 
+- **`docs/production-security-audit.md`** — Production security posture, pinned images, and credential API behavior.
 - **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
 - **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
 
