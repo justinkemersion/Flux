@@ -768,6 +768,7 @@ export interface ProjectManagerConnectOptions {
   /**
    * Extra ssh2 connect options merged with modem defaults (`SSH_AUTH_SOCK` agent when set).
    * See ssh2 `ConnectConfig` — common keys include `agent`, `privateKey`, `tryKeyboard`, etc.
+   * For file-based keys without an agent, **`FLUX_DOCKER_SSH_IDENTITY`** is also supported.
    */
   sshOptions?: Record<string, unknown>;
 }
@@ -792,10 +793,31 @@ function defaultSshAgentOptions(): Record<string, unknown> {
   return agent ? { agent } : {};
 }
 
-/** Default SSH key when none is passed (fixes common “Authentication failed” with DOCKER_HOST=ssh://…). */
-function maybeEd25519PrivateKeyOption(): { privateKey: Buffer } | Record<string, never> {
+function expandUserPath(p: string): string {
+  if (p === "~" || p.startsWith("~/")) {
+    return path.join(homedir(), p === "~" ? "" : p.slice(2));
+  }
+  return p;
+}
+
+/**
+ * Loads a private key file for Docker-over-SSH when **no ssh-agent** is in use.
+ *
+ * If **`SSH_AUTH_SOCK`** is set, returns nothing so **ssh-agent** (e.g. after `ssh-add`) is used
+ * alone — avoids ssh2 trying to parse an **encrypted** `~/.ssh/id_ed25519` while your real identity
+ * lives in the agent.
+ *
+ * Otherwise: **`FLUX_DOCKER_SSH_IDENTITY`** (path, `~` allowed) if set, else `~/.ssh/id_ed25519`.
+ */
+function maybeAutoSshPrivateKeyFileOption(): { privateKey: Buffer } | Record<string, never> {
+  if (process.env.SSH_AUTH_SOCK?.trim()) {
+    return {};
+  }
   try {
-    const keyPath = path.join(homedir(), ".ssh", "id_ed25519");
+    const raw = process.env.FLUX_DOCKER_SSH_IDENTITY?.trim();
+    const keyPath = raw
+      ? expandUserPath(raw)
+      : path.join(homedir(), ".ssh", "id_ed25519");
     if (!existsSync(keyPath)) return {};
     return { privateKey: readFileSync(keyPath) };
   } catch {
@@ -806,13 +828,14 @@ function maybeEd25519PrivateKeyOption(): { privateKey: Buffer } | Record<string,
 function mergeSshOptionsForSshProtocol(user?: Record<string, unknown>): Record<string, unknown> {
   const agentPart = defaultSshAgentOptions();
   const keyPart =
-    user?.privateKey !== undefined ? {} : maybeEd25519PrivateKeyOption();
+    user?.privateKey !== undefined ? {} : maybeAutoSshPrivateKeyFileOption();
   return { ...agentPart, ...keyPart, ...user };
 }
 
 /**
- * If this client uses SSH to reach the Engine and no `privateKey` was configured, load
- * `~/.ssh/id_ed25519` when present (same merge order as explicit SSH options).
+ * If this client uses SSH to reach the Engine and no `privateKey` was configured, may merge a
+ * key file — skipped when an **agent** is already configured or **`SSH_AUTH_SOCK`** is set (see
+ * {@link maybeAutoSshPrivateKeyFileOption}).
  */
 function augmentDockerSshClientIfNeeded(docker: Docker): void {
   const m = docker.modem as {
@@ -822,7 +845,8 @@ function augmentDockerSshClientIfNeeded(docker: Docker): void {
   if (m.protocol !== "ssh") return;
   const cur = m.sshOptions ?? {};
   if (cur.privateKey !== undefined) return;
-  const extra = maybeEd25519PrivateKeyOption();
+  if (cur.agent != null && String(cur.agent).length > 0) return;
+  const extra = maybeAutoSshPrivateKeyFileOption();
   if (!("privateKey" in extra)) return;
   m.sshOptions = mergeSshOptionsForSshProtocol({ ...cur, ...extra });
 }
@@ -866,8 +890,9 @@ function buildExplicitModemOptions(
  * With no options (or no `host` / `docker`), uses `new Docker()` so **`DOCKER_HOST`** and the
  * default local socket behave like the Docker CLI.
  *
- * For **`protocol: 'ssh'`** or **`DOCKER_HOST=ssh://…`**, merges `~/.ssh/id_ed25519` as
- * `sshOptions.privateKey` when the file exists and no key was supplied (see {@link augmentDockerSshClientIfNeeded}).
+ * For **`protocol: 'ssh'`** or **`DOCKER_HOST=ssh://…`**: when **`SSH_AUTH_SOCK`** is unset, may
+ * merge **`FLUX_DOCKER_SSH_IDENTITY`** or `~/.ssh/id_ed25519` as `sshOptions.privateKey`. When the
+ * agent is in use, only the agent is used (encrypted default keys are not loaded from disk).
  */
 export function createFluxDocker(
   options?: ProjectManagerConnectOptions,
@@ -1008,9 +1033,12 @@ export class ProjectManager {
     options?: ProvisionOptions,
   ): Promise<FluxProject> {
     const log = options?.onStatus;
-    const targetMsg = `▸ Targeting Docker Engine: ${formatDockerEngineTarget(this.docker)}`;
-    console.log(targetMsg);
-    log?.(targetMsg);
+    const targetBody = `Targeting Docker Engine: ${formatDockerEngineTarget(this.docker)}`;
+    if (log) {
+      log(targetBody);
+    } else {
+      console.log(`▸ ${targetBody}`);
+    }
     await assertFluxDockerEngineReachableOrThrow(this.docker);
     await this.ensureFluxNetwork(log);
     await this.ensureFluxGateway(log);
