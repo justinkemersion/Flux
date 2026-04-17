@@ -157,6 +157,15 @@ async function waitForApiReachable(
   }
 }
 
+async function startFluxContainerIfStopped(
+  container: Docker.Container,
+): Promise<void> {
+  const i = await container.inspect();
+  if (!i.State.Running) {
+    await container.start();
+  }
+}
+
 function getHttpStatus(err: unknown): number | undefined {
   if (err && typeof err === "object" && "statusCode" in err) {
     const code = (err as { statusCode?: number }).statusCode;
@@ -825,11 +834,29 @@ function maybeAutoSshPrivateKeyFileOption(): { privateKey: Buffer } | Record<str
   }
 }
 
+/** Default ssh2 keepalive so idle SSH (e.g. Hetzner) does not drop long pg_isready waits. */
+const FLUX_SSH_KEEPALIVE_INTERVAL_MS = 10_000;
+
 function mergeSshOptionsForSshProtocol(user?: Record<string, unknown>): Record<string, unknown> {
+  const keepaliveBase = { keepaliveInterval: FLUX_SSH_KEEPALIVE_INTERVAL_MS };
   const agentPart = defaultSshAgentOptions();
   const keyPart =
     user?.privateKey !== undefined ? {} : maybeAutoSshPrivateKeyFileOption();
-  return { ...agentPart, ...keyPart, ...user };
+  return { ...keepaliveBase, ...agentPart, ...keyPart, ...user };
+}
+
+/** Ensures Docker-over-SSH clients send periodic channel keepalives (ssh2 `keepaliveInterval`). */
+function applySshEngineKeepalives(docker: Docker): void {
+  const m = docker.modem as {
+    protocol?: string;
+    sshOptions?: Record<string, unknown>;
+  };
+  if (m.protocol !== "ssh") return;
+  const cur = m.sshOptions ?? {};
+  if (cur.keepaliveInterval !== undefined && cur.keepaliveInterval !== null) {
+    return;
+  }
+  m.sshOptions = { ...cur, keepaliveInterval: FLUX_SSH_KEEPALIVE_INTERVAL_MS };
 }
 
 /**
@@ -893,12 +920,15 @@ function buildExplicitModemOptions(
  * For **`protocol: 'ssh'`** or **`DOCKER_HOST=ssh://…`**: when **`SSH_AUTH_SOCK`** is unset, may
  * merge **`FLUX_DOCKER_SSH_IDENTITY`** or `~/.ssh/id_ed25519` as `sshOptions.privateKey`. When the
  * agent is in use, only the agent is used (encrypted default keys are not loaded from disk).
+ * SSH clients get **`keepaliveInterval: 10000`** (10s) unless already set, to reduce idle drops
+ * through firewalls during long operations.
  */
 export function createFluxDocker(
   options?: ProjectManagerConnectOptions,
 ): Docker {
   if (options?.docker) {
     augmentDockerSshClientIfNeeded(options.docker);
+    applySshEngineKeepalives(options.docker);
     return options.docker;
   }
   assertNoRemoteFieldsWithoutHost(options ?? {});
@@ -908,10 +938,12 @@ export function createFluxDocker(
       buildExplicitModemOptions({ ...options, host: trimmed }),
     );
     augmentDockerSshClientIfNeeded(d);
+    applySshEngineKeepalives(d);
     return d;
   }
   const d = new Docker();
   augmentDockerSshClientIfNeeded(d);
+  applySshEngineKeepalives(d);
   return d;
 }
 
@@ -968,6 +1000,8 @@ function resolveProjectManagerDocker(
   arg?: Docker | ProjectManagerConnectOptions,
 ): Docker {
   if (arg instanceof Docker) {
+    augmentDockerSshClientIfNeeded(arg);
+    applySshEngineKeepalives(arg);
     return arg;
   }
   return createFluxDocker(arg);
@@ -1027,6 +1061,9 @@ export class ProjectManager {
    *
    * PostgREST is started with RestartPolicy `on-failure` (with a retry cap) so it survives Postgres
    * startup races; internal readiness uses `pg_isready` in-container before applying {@link BOOTSTRAP_SQL}.
+   *
+   * **Resume:** If the Postgres or PostgREST container name already exists (HTTP 409), Flux **adopts**
+   * it (reads secrets from inspect, starts if stopped) and continues bootstrap instead of failing.
    */
   async provisionProject(
     name: string,
@@ -1043,9 +1080,9 @@ export class ProjectManager {
     await this.ensureFluxNetwork(log);
     await this.ensureFluxGateway(log);
     const slug = slugifyProjectName(name);
-    const postgresPassword = randomHexChars(16);
+    let postgresPassword = randomHexChars(16);
     const trimmedCustomJwt = options?.customJwtSecret?.trim();
-    const jwtSecret =
+    let jwtSecret =
       trimmedCustomJwt && trimmedCustomJwt.length > 0
         ? trimmedCustomJwt
         : randomHexChars(32);
@@ -1077,15 +1114,28 @@ export class ProjectManager {
       });
     } catch (err: unknown) {
       if (getHttpStatus(err) === 409) {
-        throw new Error(
-          `A Flux project already exists for this name (container "${pgContainerName}").`,
+        log?.(
+          `Postgres container "${pgContainerName}" already exists; adopting for resume…`,
         );
+        pgContainer = this.docker.getContainer(pgContainerName);
+        const adoptInsp = await pgContainer.inspect();
+        const pwLine = adoptInsp.Config?.Env?.find((e) =>
+          e.startsWith("POSTGRES_PASSWORD="),
+        );
+        const pw = pwLine?.slice("POSTGRES_PASSWORD=".length);
+        if (!pw) {
+          throw new Error(
+            `Cannot adopt "${pgContainerName}": POSTGRES_PASSWORD missing from container env.`,
+          );
+        }
+        postgresPassword = pw;
+      } else {
+        throw err;
       }
-      throw err;
     }
 
-    log?.("Starting Postgres…");
-    await pgContainer.start();
+    log?.("Starting Postgres (if stopped)…");
+    await startFluxContainerIfStopped(pgContainer);
     const pgInspect = await pgContainer.inspect();
 
     await waitPostgresReadyInsideContainer(
@@ -1132,15 +1182,22 @@ export class ProjectManager {
       });
     } catch (err: unknown) {
       if (getHttpStatus(err) === 409) {
-        throw new Error(
-          `A Flux project already exists for this name (container "${apiContainerName}").`,
+        log?.(
+          `PostgREST container "${apiContainerName}" already exists; adopting for resume…`,
         );
+        apiContainer = this.docker.getContainer(apiContainerName);
+        const adoptApiInsp = await apiContainer.inspect();
+        jwtSecret = readPgrstJwtSecretFromContainerEnv(
+          adoptApiInsp,
+          apiContainerName,
+        );
+      } else {
+        throw err;
       }
-      throw err;
     }
 
-    log?.("Starting PostgREST…");
-    await apiContainer.start();
+    log?.("Starting PostgREST (if stopped)…");
+    await startFluxContainerIfStopped(apiContainer);
     const apiInspect = await apiContainer.inspect();
     await this.ensureContainerAttachedToFluxNetwork(apiInspect.Id);
     log?.(

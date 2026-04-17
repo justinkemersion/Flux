@@ -30,6 +30,25 @@ export type ContainerExecResult = {
   stderr: string;
 };
 
+function isRecoverableDockerExecTransportError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("ERR_STREAM_PREMATURE_CLOSE")) return true;
+  const code =
+    err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
+  if (
+    code === "ERR_STREAM_PREMATURE_CLOSE" ||
+    code === "ECONNRESET" ||
+    code === "EPIPE"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function execTransportErrorSummary(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Runs a one-shot exec in a container and collects stdout/stderr (Docker multiplex stream).
  */
@@ -94,9 +113,24 @@ export async function waitPostgresReadyInsideContainer(
   );
   while (true) {
     attempt++;
-    const r = await dockerContainerExec(docker, containerId, {
-      Cmd: ["pg_isready", "-U", "postgres"],
-    });
+    let r: ContainerExecResult;
+    try {
+      r = await dockerContainerExec(docker, containerId, {
+        Cmd: ["pg_isready", "-U", "postgres"],
+      });
+    } catch (err: unknown) {
+      if (
+        isRecoverableDockerExecTransportError(err) &&
+        attempt < maxAttempts
+      ) {
+        onStatus?.(
+          `pg_isready transport error (${execTransportErrorSummary(err)}); waiting 2s before retry (${String(attempt)}/${String(maxAttempts)})…`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        continue;
+      }
+      throw err;
+    }
     if (r.exitCode === 0) {
       onStatus?.("Postgres is accepting connections.");
       return;
