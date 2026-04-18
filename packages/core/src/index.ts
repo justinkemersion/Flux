@@ -46,8 +46,8 @@ export const FLUX_NETWORK_NAME = "flux-network";
 
 /**
  * Traefik gateway container (Docker provider: `web` on :80; optional `websecure` on :443 with ACME).
- * Set `FLUX_TRAEFIK_CERTRESOLVER` on the control plane to match this Traefik’s ACME resolver name
- * (e.g. `myresolver`) so tenant PostgREST routers register on `web,websecure` with TLS.
+ * Set `FLUX_TRAEFIK_CERTRESOLVER` (or `FLUX_DOMAIN` / remote `DOCKER_HOST`) on the control plane
+ * to match this Traefik’s ACME resolver; tenant PostgREST routers use `websecure` + that resolver.
  */
 export const FLUX_GATEWAY_CONTAINER_NAME = "flux-gateway";
 
@@ -304,26 +304,65 @@ export function fluxApiHttpsForTenantUrls(): boolean {
 }
 
 /**
- * When **non-`null`**, PostgREST gets Traefik labels for `websecure` + TLS (resolver value is
- * always {@link FLUX_TRAEFIK_ACME_RESOLVER} / `myresolver`, matching the stock edge compose).
- * **Non-`null`** when `FLUX_TRAEFIK_CERTRESOLVER` is set, or `FLUX_DOMAIN` is set. **`null`** means
- * `web` only (local / plain HTTP). The returned string is the logical resolver name; labels use the
- * fixed constant to avoid default-certificate issues.
+ * `true` if `DOCKER_HOST` targets a non-default Engine (SSH, remote `tcp`/`https`). Enables edge
+ * PostgREST labels on the **remote** host. `FLUX_TRAEFIK_NO_EDGE=1` keeps `web`-only over SSH.
+ */
+function fluxControlPlaneTargetIsRemoteEngine(): boolean {
+  const o = process.env.FLUX_TRAEFIK_NO_EDGE?.trim().toLowerCase();
+  if (o === "1" || o === "true" || o === "yes") {
+    return false;
+  }
+  const dh = (process.env.DOCKER_HOST ?? "").trim();
+  if (dh.length === 0) {
+    return false;
+  }
+  const l = dh.toLowerCase();
+  if (l.startsWith("unix://") || l === "unix:") {
+    return false;
+  }
+  if (l.startsWith("npipe://") || dh.includes("\\\\.\\pipe\\")) {
+    return false;
+  }
+  if (l.startsWith("ssh://")) {
+    return true;
+  }
+  if (l.startsWith("http://") || l.startsWith("https://")) {
+    return true;
+  }
+  if (l.startsWith("tcp://")) {
+    if (
+      /\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])[:/]/i.test(dh) ||
+      /:\/\/localhost[:\/]/i.test(dh)
+    ) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * When **non-`null`**, PostgREST gets Traefik labels for `websecure` + myresolver. **Non-`null`** for
+ * `FLUX_TRAEFIK_CERTRESOLVER`, `FLUX_DOMAIN`, or remote `DOCKER_HOST` (typical: `ssh://` from the
+ * `flux` CLI on a dev machine). **Null** for local `docker` (no `DOCKER_HOST` / `unix` socket). Use
+ * `FLUX_TRAEFIK_NO_EDGE=1` to turn off over SSH. Labels use {@link FLUX_TRAEFIK_ACME_RESOLVER}.
  */
 export function fluxTraefikCertResolverName(): string | null {
   const r = process.env.FLUX_TRAEFIK_CERTRESOLVER?.trim();
   if (r) return r;
   if (fluxApiHttpsForTenantUrls()) return FLUX_TRAEFIK_ACME_RESOLVER;
+  if (fluxControlPlaneTargetIsRemoteEngine()) return FLUX_TRAEFIK_ACME_RESOLVER;
   return null;
 }
 
 /**
  * HTTP(S) origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik).
- * Uses `https://` when {@link fluxApiHttpsForTenantUrls} is true (production: `FLUX_DOMAIN` set) or
- * when `isProduction` is true; otherwise `http://` (typical local dev).
+ * Uses `https://` when `FLUX_DOMAIN` is set, `isProduction`, or a **remote** `DOCKER_HOST` (SSH) —
+ * the same case where edge Traefik labels apply. Otherwise `http://` (local `docker` on Unix).
  */
 export function fluxApiUrlForSlug(slug: string, isProduction = false): string {
-  const useHttps = fluxApiHttpsForTenantUrls() || isProduction;
+  const useHttps =
+    fluxApiHttpsForTenantUrls() || isProduction || fluxControlPlaneTargetIsRemoteEngine();
   const scheme = useHttps ? "https" : "http";
   return `${scheme}://${slug}.${fluxTenantDomain()}`;
 }
