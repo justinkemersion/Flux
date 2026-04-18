@@ -43,9 +43,33 @@ function delay(ms: number): Promise<void> {
 /** Transient stream / transport failures over SSH to the Docker host (Hetzner, long RTT, etc.). */
 function isSshOrStreamBlip(err: unknown): boolean {
   const s = err instanceof Error ? err.message : String(err);
-  return /premature close|ECONNRESET|ETIMEDOUT|EPIPE|hijack|socket|TLS|aborted|reset/i.test(
+  return /premature close|ECONNRESET|ETIMEDOUT|EPIPE|hijack|socket|TLS|aborted|reset|broken pipe/i.test(
     s,
   );
+}
+
+/** One logical pg_isready: quick sub-retries on stream blips so one bad packet does not burn an outer attempt. */
+const PG_ISREADY_INNER_BLIP_RETRIES = 10;
+
+async function execPgIsreadyResilient(
+  docker: Docker,
+  containerId: string,
+): Promise<ContainerExecResult> {
+  for (let inner = 0; inner < PG_ISREADY_INNER_BLIP_RETRIES; inner++) {
+    try {
+      return await dockerContainerExec(docker, containerId, {
+        Cmd: ["pg_isready", "-U", "postgres"],
+      });
+    } catch (err: unknown) {
+      const isBlip = isSshOrStreamBlip(err);
+      if (!isBlip || inner === PG_ISREADY_INNER_BLIP_RETRIES - 1) {
+        throw err;
+      }
+      await delay(Math.min(200 + inner * 150, 2_000));
+    }
+  }
+  /* Unreachable: each iteration returns or throws. */
+  throw new Error("pg_isready: inner retry loop exhausted");
 }
 
 /**
@@ -96,7 +120,8 @@ export async function dockerContainerExec(
 /**
  * Polls `pg_isready` inside the Postgres container until it succeeds or `maxAttempts` is exceeded.
  * **`docker exec`** or stream failures over SSH (e.g. "Premature close") are retried; each loop ends
- * with a **5s** pause. **`maxAttempts` defaults to 40**.
+ * with a **5s** pause. **`maxAttempts` defaults to 80** (outer rounds; each round also does up to
+ * 10 quick sub-retries on stream blips per outer round (see `PG_ISREADY_INNER_BLIP_RETRIES`).
  */
 export async function waitPostgresReadyInsideContainer(
   docker: Docker,
@@ -106,7 +131,7 @@ export async function waitPostgresReadyInsideContainer(
     onStatus?: (message: string) => void;
   },
 ): Promise<void> {
-  const maxAttempts = options?.maxAttempts ?? 40;
+  const maxAttempts = options?.maxAttempts ?? 80;
   const onStatus = options?.onStatus;
   let attempt = 0;
   onStatus?.(
@@ -116,13 +141,13 @@ export async function waitPostgresReadyInsideContainer(
     attempt++;
     let r: ContainerExecResult;
     try {
-      r = await dockerContainerExec(docker, containerId, {
-        Cmd: ["pg_isready", "-U", "postgres"],
-      });
+      r = await execPgIsreadyResilient(docker, containerId);
     } catch (err: unknown) {
       if (attempt < maxAttempts) {
         if (isSshOrStreamBlip(err)) {
-          onStatus?.("▸ SSH connection blipped; retrying health check in 5s…");
+          onStatus?.(
+            `SSH connection blipped; retrying health check in 5s… (outer ${String(attempt)}/${String(maxAttempts)})`,
+          );
         } else {
           onStatus?.(
             `pg_isready error (${execErrorSummary(err)}); waiting 5s before retry (${String(attempt)}/${String(maxAttempts)})…`,

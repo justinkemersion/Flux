@@ -936,8 +936,8 @@ function maybeAutoSshPrivateKeyFileOption(): { privateKey: Buffer } | Record<str
   }
 }
 
-/** Default ssh2 keepalive so idle SSH (e.g. Hetzner) does not drop long pg_isready waits. */
-const FLUX_SSH_KEEPALIVE_INTERVAL_MS = 10_000;
+/** Default ssh2 keepalive so idle SSH (e.g. Hetzner) does not drop between docker execs. Tighter than 10s. */
+const FLUX_SSH_KEEPALIVE_INTERVAL_MS = 5_000;
 
 function mergeSshOptionsForSshProtocol(user?: Record<string, unknown>): Record<string, unknown> {
   const keepaliveBase = { keepaliveInterval: FLUX_SSH_KEEPALIVE_INTERVAL_MS };
@@ -1022,7 +1022,7 @@ function buildExplicitModemOptions(
  * For **`protocol: 'ssh'`** or **`DOCKER_HOST=ssh://…`**: when **`SSH_AUTH_SOCK`** is unset, may
  * merge **`FLUX_DOCKER_SSH_IDENTITY`** or `~/.ssh/id_ed25519` as `sshOptions.privateKey`. When the
  * agent is in use, only the agent is used (encrypted default keys are not loaded from disk).
- * SSH clients get **`keepaliveInterval: 10000`** (10s) unless already set, to reduce idle drops
+ * SSH clients get **`keepaliveInterval: 5000`** (5s) unless already set, to reduce idle drops
  * through firewalls during long operations.
  */
 export function createFluxDocker(
@@ -1244,8 +1244,8 @@ export class ProjectManager {
       this.docker,
       pgInspect.Id,
       log
-        ? { onStatus: log, maxAttempts: 40 }
-        : { maxAttempts: 40 },
+        ? { onStatus: log, maxAttempts: 80 }
+        : { maxAttempts: 80 },
     );
     await runPsqlSqlInsideContainer(
       this.docker,
