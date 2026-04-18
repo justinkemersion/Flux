@@ -280,6 +280,13 @@ function postgrestContainerName(slug: string): string {
 export const FLUX_DEFAULT_DOMAIN = "vsl-base.com";
 
 /**
+ * Default Traefik ACME `certificatesresolvers.<name>`; must match the edge gateway compose
+ * (e.g. `scratch/docker-compose.yml` uses `myresolver`). Overridden by `FLUX_TRAEFIK_CERTRESOLVER`, or
+ * set implicitly when `FLUX_DOMAIN` enables HTTPS edge routing.
+ */
+export const FLUX_TRAEFIK_ACME_RESOLVER = "myresolver" as const;
+
+/**
  * Parent domain for tenant API hostnames: `FLUX_DOMAIN` when set, otherwise {@link FLUX_DEFAULT_DOMAIN}.
  */
 export function fluxTenantDomain(): string {
@@ -297,14 +304,16 @@ export function fluxApiHttpsForTenantUrls(): boolean {
 }
 
 /**
- * When the control plane sets `FLUX_TRAEFIK_CERTRESOLVER` to the name of a Traefik ACME resolver
- * (must match e.g. `--certificatesresolvers.<name>.acme.*` on the gateway), PostgREST containers
- * receive Traefik labels for `web` and `websecure` plus `tls.certresolver` so tenant APIs work over
- * HTTPS (Let's Encrypt). When unset, only entrypoint `web` is used (typical local dev / plain HTTP).
+ * Resolver for `traefik.http.routers.flux-&lt;slug&gt;-api.tls.certresolver` (e.g. `myresolver`).
+ * **Non-`null`** when `FLUX_TRAEFIK_CERTRESOLVER` is set, or when `FLUX_DOMAIN` is set (uses
+ * {@link FLUX_TRAEFIK_ACME_RESOLVER} by default to match the stock Hetzner gateway). **`null`**
+ * means `web` only (local / plain HTTP).
  */
 export function fluxTraefikCertResolverName(): string | null {
   const r = process.env.FLUX_TRAEFIK_CERTRESOLVER?.trim();
-  return r && r.length > 0 ? r : null;
+  if (r) return r;
+  if (fluxApiHttpsForTenantUrls()) return FLUX_TRAEFIK_ACME_RESOLVER;
+  return null;
 }
 
 /**
@@ -1193,7 +1202,9 @@ export class ProjectManager {
     await waitPostgresReadyInsideContainer(
       this.docker,
       pgInspect.Id,
-      log ? { onStatus: log } : undefined,
+      log
+        ? { onStatus: log, maxAttempts: 40 }
+        : { maxAttempts: 40 },
     );
     await runPsqlSqlInsideContainer(
       this.docker,
@@ -1211,6 +1222,9 @@ export class ProjectManager {
       slug,
       stripSupabaseRestPrefix,
     );
+
+    log?.("Post-Postgres stabilization (5s) before starting PostgREST on remote engines…");
+    await sleep(5000);
 
     let apiContainer: Docker.Container;
     const apiExisting = await fluxInspectContainerOrNull(

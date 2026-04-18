@@ -34,6 +34,20 @@ function execErrorSummary(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/** Transient stream / transport failures over SSH to the Docker host (Hetzner, long RTT, etc.). */
+function isSshOrStreamBlip(err: unknown): boolean {
+  const s = err instanceof Error ? err.message : String(err);
+  return /premature close|ECONNRESET|ETIMEDOUT|EPIPE|hijack|socket|TLS|aborted|reset/i.test(
+    s,
+  );
+}
+
 /**
  * Runs a one-shot exec in a container and collects stdout/stderr (Docker multiplex stream).
  */
@@ -81,8 +95,8 @@ export async function dockerContainerExec(
 
 /**
  * Polls `pg_isready` inside the Postgres container until it succeeds or `maxAttempts` is exceeded.
- * Any **`docker exec`** failure (e.g. premature close over SSH) waits **3s** and retries up to
- * **`maxAttempts`** (default 30).
+ * **`docker exec`** or stream failures over SSH (e.g. "Premature close") are retried; each loop ends
+ * with a **5s** pause. **`maxAttempts` defaults to 40**.
  */
 export async function waitPostgresReadyInsideContainer(
   docker: Docker,
@@ -92,7 +106,7 @@ export async function waitPostgresReadyInsideContainer(
     onStatus?: (message: string) => void;
   },
 ): Promise<void> {
-  const maxAttempts = options?.maxAttempts ?? 30;
+  const maxAttempts = options?.maxAttempts ?? 40;
   const onStatus = options?.onStatus;
   let attempt = 0;
   onStatus?.(
@@ -107,10 +121,14 @@ export async function waitPostgresReadyInsideContainer(
       });
     } catch (err: unknown) {
       if (attempt < maxAttempts) {
-        onStatus?.(
-          `pg_isready error (${execErrorSummary(err)}); waiting 3s before retry (${String(attempt)}/${String(maxAttempts)})…`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        if (isSshOrStreamBlip(err)) {
+          onStatus?.("▸ SSH connection blipped; retrying health check in 5s…");
+        } else {
+          onStatus?.(
+            `pg_isready error (${execErrorSummary(err)}); waiting 5s before retry (${String(attempt)}/${String(maxAttempts)})…`,
+          );
+        }
+        await delay(5000);
         continue;
       }
       throw err;
@@ -126,10 +144,10 @@ export async function waitPostgresReadyInsideContainer(
     }
     if (attempt === 1 || attempt % 5 === 0) {
       onStatus?.(
-        `Postgres not ready (attempt ${String(attempt)}/${String(maxAttempts)}); retrying…`,
+        `Postgres not ready (attempt ${String(attempt)}/${String(maxAttempts)}); retrying in 5s…`,
       );
     }
-    await new Promise((resolve) => setTimeout(resolve, Math.min(500 * attempt, 5000)));
+    await delay(5000);
   }
 }
 

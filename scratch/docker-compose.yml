@@ -1,6 +1,7 @@
 # Traefik for Flux: attach to the same bridge the control plane / tenants use.
 # Requires `flux-network` to already exist (Flux creates it on first provision, or: docker network create flux-network).
-# Control plane: set FLUX_TRAEFIK_CERTRESOLVER=myresolver to match `certificatesresolvers.myresolver` below.
+# Control plane: `FLUX_DOMAIN` enables ACME labels using resolver `myresolver` (see @flux/core FLUX_TRAEFIK_ACME_RESOLVER);
+#    override with `FLUX_TRAEFIK_CERTRESOLVER` to match `certificatesresolvers.<name>` below.
 #
 # Image: use Traefik >= v3.6.1. Older lines (e.g. v3.1) use Docker API 1.24; modern Engine rejects that.
 # The DOCKER_API_VERSION env is ignored for Traefik’s built-in client — upgrading Traefik is the real fix
