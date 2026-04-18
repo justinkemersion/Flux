@@ -304,10 +304,11 @@ export function fluxApiHttpsForTenantUrls(): boolean {
 }
 
 /**
- * Resolver for `traefik.http.routers.flux-&lt;slug&gt;-api.tls.certresolver` (e.g. `myresolver`).
- * **Non-`null`** when `FLUX_TRAEFIK_CERTRESOLVER` is set, or when `FLUX_DOMAIN` is set (uses
- * {@link FLUX_TRAEFIK_ACME_RESOLVER} by default to match the stock Hetzner gateway). **`null`**
- * means `web` only (local / plain HTTP).
+ * When **non-`null`**, PostgREST gets Traefik labels for `websecure` + TLS (resolver value is
+ * always {@link FLUX_TRAEFIK_ACME_RESOLVER} / `myresolver`, matching the stock edge compose).
+ * **Non-`null`** when `FLUX_TRAEFIK_CERTRESOLVER` is set, or `FLUX_DOMAIN` is set. **`null`** means
+ * `web` only (local / plain HTTP). The returned string is the logical resolver name; labels use the
+ * fixed constant to avoid default-certificate issues.
  */
 export function fluxTraefikCertResolverName(): string | null {
   const r = process.env.FLUX_TRAEFIK_CERTRESOLVER?.trim();
@@ -358,21 +359,22 @@ function postgrestTraefikDockerLabels(
   stripSupabaseRestPrefix: boolean,
 ): Record<string, string> {
   const traefikSvc = `flux-${slug}-api`;
-  const certResolver = fluxTraefikCertResolverName();
-  const useEdgeTls = certResolver != null;
+  const useEdgeTls = fluxTraefikCertResolverName() != null;
   const labels: Record<string, string> = {
     "traefik.enable": "true",
     "traefik.docker.network": FLUX_NETWORK_NAME,
     [`traefik.http.routers.${traefikSvc}.rule`]: traefikHostRule(slug),
     [`traefik.http.routers.${traefikSvc}.entrypoints`]: useEdgeTls
-      ? "web,websecure"
+      ? "websecure"
       : "web",
     [`traefik.http.routers.${traefikSvc}.service`]: traefikSvc,
     [`traefik.http.services.${traefikSvc}.loadbalancer.server.port`]: "3000",
   };
   if (useEdgeTls) {
+    // Router only on `websecure` with explicit ACME resolver — avoids Traefik "default" cert.
     labels[`traefik.http.routers.${traefikSvc}.tls`] = "true";
-    labels[`traefik.http.routers.${traefikSvc}.tls.certresolver`] = certResolver;
+    labels[`traefik.http.routers.${traefikSvc}.tls.certresolver`] =
+      FLUX_TRAEFIK_ACME_RESOLVER;
   }
 
   labels[`traefik.http.middlewares.${TRAEFIK_MW_STRIP_PREFIX}.stripprefix.prefixes`] =
@@ -1345,6 +1347,36 @@ export class ProjectManager {
     await this.replacePostgrestApiContainer(slug, existing, merged, {
       labels,
     });
+  }
+
+  /**
+   * Recreates the PostgREST container if the current per-tenant Traefik label set (TLS, entrypoints,
+   * CORS, strip) does not match Docker, so a second `flux create` can sync the gateway. Idempotent.
+   */
+  async reconcilePostgrestTraefikLabels(
+    projectName: string,
+    options?: {
+      stripSupabaseRestPrefix?: boolean;
+      onStatus?: (message: string) => void;
+    },
+  ): Promise<void> {
+    const slug = slugifyProjectName(projectName);
+    const log = options?.onStatus;
+    const strip = options?.stripSupabaseRestPrefix !== false;
+    const existing = await this.getPostgrestInspectOrThrow(slug);
+    const merged = mergedPostgrestTraefikDockerLabels(
+      existing.Config?.Labels ?? {},
+      slug,
+      strip,
+    );
+    if (dockerLabelsSatisfy(merged, existing.Config?.Labels)) {
+      log?.("PostgREST Traefik labels are already up to date.");
+      return;
+    }
+    log?.("Syncing PostgREST Traefik labels and recreating API container…");
+    const env = envRecordFromDockerEnv(existing.Config?.Env);
+    await this.replacePostgrestApiContainer(slug, existing, env, { labels: merged });
+    log?.("PostgREST API container updated with new Traefik labels.");
   }
 
   /**

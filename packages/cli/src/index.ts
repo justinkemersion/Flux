@@ -1,3 +1,4 @@
+#!/usr/bin/env npx tsx
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import type {
@@ -44,12 +45,20 @@ async function cmdCreate(
       "  (First run may pull Docker images and initialize Postgres — this can take a few minutes.)",
     ),
   );
+  const onStatus = (msg: string) => console.log(chalk.dim(`  ▸ ${msg}`));
+  const stripSupabaseRestPrefix = options.noSupabaseRestPath !== true;
+
   const project = await pm.provisionProject(name, {
-    onStatus: (msg) => console.log(chalk.dim(`  ▸ ${msg}`)),
+    onStatus,
     ...(options.noSupabaseRestPath === true
       ? { stripSupabaseRestPrefix: false }
       : {}),
     isProduction: process.env.NODE_ENV === "production",
+  });
+
+  await pm.reconcilePostgrestTraefikLabels(name, {
+    onStatus,
+    stripSupabaseRestPrefix,
   });
 
   const pgUrl = postgresConnectionUrl(
@@ -400,7 +409,9 @@ async function main(): Promise<void> {
 
   const createCmd = program
     .command("create")
-    .description("Provision Postgres + PostgREST for a new project")
+    .description(
+      "Provision Postgres + PostgREST, or on an existing project resync PostgREST Traefik labels and recreate the API container if they drifted",
+    )
     .argument("<name>", "project name")
     .option(
       "--no-supabase-rest-path",
