@@ -398,6 +398,19 @@ async function cmdNuke(name: string, yes: boolean): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  process.on("uncaughtException", (err) => {
+    process.stderr.write(`\nFatal (uncaught): ${err.stack ?? String(err)}\n`);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    const msg =
+      reason instanceof Error
+        ? (reason.stack ?? reason.message)
+        : String(reason);
+    process.stderr.write(`\nFatal (unhandled rejection): ${msg}\n`);
+    process.exit(1);
+  });
+
   const program = new Command();
 
   program

@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { PassThrough } from "node:stream";
-import { finished } from "node:stream/promises";
 import * as tar from "tar-stream";
 import type Docker from "dockerode";
 
@@ -72,8 +71,22 @@ async function execPgIsreadyResilient(
   throw new Error("pg_isready: inner retry loop exhausted");
 }
 
+/** Default timeout for a single exec operation — covers even large psql imports. */
+const DOCKER_EXEC_DEFAULT_TIMEOUT_MS = 900_000;
+
 /**
- * Runs a one-shot exec in a container and collects stdout/stderr (Docker multiplex stream).
+ * Runs a one-shot exec in a container and collects stdout/stderr.
+ *
+ * Completion is detected by polling `exec.inspect()` until `Running === false` rather than
+ * waiting for the stream to emit `end`. This is required because:
+ * - Over a local Unix socket with `hijack: true`, the raw socket often never emits `end`
+ *   (https://github.com/apocas/dockerode/issues/534).
+ * - Over SSH (`docker system dial-stdio`), the HTTP IncomingMessage can emit `close` before
+ *   `end`, causing `stream.finished()` to reject or hang.
+ *
+ * The PassThrough streams are ended explicitly (`.end()`) after the exec is confirmed
+ * finished, which is the correct way to signal end-of-stream to the `for await` loop in
+ * `streamToString` — calling `.destroy()` on the mux does NOT end them.
  */
 export async function dockerContainerExec(
   docker: Docker,
@@ -82,8 +95,11 @@ export async function dockerContainerExec(
     Cmd: string[];
     Env?: string[];
     User?: string;
+    /** Milliseconds before the exec is considered hung and an error is thrown. */
+    timeoutMs?: number;
   },
 ): Promise<ContainerExecResult> {
+  const timeoutMs = options.timeoutMs ?? DOCKER_EXEC_DEFAULT_TIMEOUT_MS;
   const container = docker.getContainer(containerId);
   const exec = await container.exec({
     AttachStdout: true,
@@ -94,10 +110,11 @@ export async function dockerContainerExec(
     Tty: false,
   });
 
-  const raw = (await exec.start({
-    hijack: true,
-    stdin: false,
-  })) as NodeJS.ReadableStream;
+  const raw = (await exec.start({ stdin: false })) as NodeJS.ReadableStream;
+
+  // Absorb raw stream errors — an SSH channel error here would otherwise become an uncaught
+  // exception because docker-modem's ssh.js can throw synchronously from agent.createConnection.
+  raw.on("error", () => { /* completion is owned by inspect polling below */ });
 
   const stdout = new PassThrough();
   const stderr = new PassThrough();
@@ -105,10 +122,33 @@ export async function dockerContainerExec(
 
   const outP = streamToString(stdout);
   const errP = streamToString(stderr);
-  await finished(raw);
-  const inspect = await exec.inspect();
-  const exitCode =
-    typeof inspect.ExitCode === "number" ? inspect.ExitCode : 0;
+
+  // Poll inspect until Running === false.  This is reliable regardless of whether the
+  // underlying stream ends cleanly — each inspect() is an independent lightweight GET.
+  const deadline = Date.now() + timeoutMs;
+  let exitCode = 0;
+  while (true) {
+    const info = await exec.inspect();
+    if (!info.Running) {
+      exitCode = typeof info.ExitCode === "number" ? info.ExitCode : 0;
+      break;
+    }
+    if (Date.now() > deadline) {
+      stdout.end();
+      stderr.end();
+      throw new Error(
+        `docker exec timed out after ${String(timeoutMs)}ms: ${options.Cmd.join(" ")}`,
+      );
+    }
+    await delay(100);
+  }
+
+  // Allow demuxStream's readable events ~50 ms to flush any buffered data into the PassThrough
+  // streams before ending them.  For typical short-output commands (pg_isready, psql bootstrap)
+  // all output arrives well before inspect() reports Running=false, so this is just insurance.
+  await delay(50);
+  stdout.end();
+  stderr.end();
 
   return {
     exitCode,
