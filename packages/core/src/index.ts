@@ -44,14 +44,18 @@ export {
 
 export const FLUX_NETWORK_NAME = "flux-network";
 
-/** Traefik gateway container (Docker provider, host :80 → entrypoint `web`). */
+/**
+ * Traefik gateway container (Docker provider: `web` on :80; optional `websecure` on :443 with ACME).
+ * Set `FLUX_TRAEFIK_CERTRESOLVER` on the control plane to match this Traefik’s ACME resolver name
+ * (e.g. `myresolver`) so tenant PostgREST routers register on `web,websecure` with TLS.
+ */
 export const FLUX_GATEWAY_CONTAINER_NAME = "flux-gateway";
 
 /** Pinned images for Flux project stacks (Postgres + PostgREST + Traefik). */
 export const FLUX_DOCKER_IMAGES = {
   postgres: "postgres:16.2-alpine",
   postgrest: "postgrest/postgrest:v12.0.2",
-  traefik: "traefik:v3.0.0",
+  traefik: "traefik:v3.1",
 } as const;
 
 const POSTGRES_IMAGE = FLUX_DOCKER_IMAGES.postgres;
@@ -293,6 +297,17 @@ export function fluxApiHttpsForTenantUrls(): boolean {
 }
 
 /**
+ * When the control plane sets `FLUX_TRAEFIK_CERTRESOLVER` to the name of a Traefik ACME resolver
+ * (must match e.g. `--certificatesresolvers.<name>.acme.*` on the gateway), PostgREST containers
+ * receive Traefik labels for `web` and `websecure` plus `tls.certresolver` so tenant APIs work over
+ * HTTPS (Let's Encrypt). When unset, only entrypoint `web` is used (typical local dev / plain HTTP).
+ */
+export function fluxTraefikCertResolverName(): string | null {
+  const r = process.env.FLUX_TRAEFIK_CERTRESOLVER?.trim();
+  return r && r.length > 0 ? r : null;
+}
+
+/**
  * HTTP(S) origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik).
  * Uses `https://` when {@link fluxApiHttpsForTenantUrls} is true (production: `FLUX_DOMAIN` set) or
  * when `isProduction` is true; otherwise `http://` (typical local dev).
@@ -334,14 +349,22 @@ function postgrestTraefikDockerLabels(
   stripSupabaseRestPrefix: boolean,
 ): Record<string, string> {
   const traefikSvc = `flux-${slug}-api`;
+  const certResolver = fluxTraefikCertResolverName();
+  const useEdgeTls = certResolver != null;
   const labels: Record<string, string> = {
     "traefik.enable": "true",
     "traefik.docker.network": FLUX_NETWORK_NAME,
     [`traefik.http.routers.${traefikSvc}.rule`]: traefikHostRule(slug),
-    [`traefik.http.routers.${traefikSvc}.entrypoints`]: "web",
+    [`traefik.http.routers.${traefikSvc}.entrypoints`]: useEdgeTls
+      ? "web,websecure"
+      : "web",
     [`traefik.http.routers.${traefikSvc}.service`]: traefikSvc,
     [`traefik.http.services.${traefikSvc}.loadbalancer.server.port`]: "3000",
   };
+  if (useEdgeTls) {
+    labels[`traefik.http.routers.${traefikSvc}.tls`] = "true";
+    labels[`traefik.http.routers.${traefikSvc}.tls.certresolver`] = certResolver;
+  }
 
   labels[`traefik.http.middlewares.${TRAEFIK_MW_STRIP_PREFIX}.stripprefix.prefixes`] =
     "/rest/v1";

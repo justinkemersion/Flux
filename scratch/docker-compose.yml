@@ -1,0 +1,39 @@
+# Traefik for Flux: attach to the same bridge the control plane / tenants use.
+# Requires `flux-network` to already exist (Flux creates it on first provision, or: docker network create flux-network).
+# Control plane: set FLUX_TRAEFIK_CERTRESOLVER=myresolver to match `certificatesresolvers.myresolver` below.
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: flux-gateway
+    restart: unless-stopped
+    environment:
+      # Required on modern Engine: no trailing space; else Traefik falls back to API 1.24 and the Docker provider fails.
+      DOCKER_API_VERSION: "1.41"
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=flux-network"
+      - "--providers.docker.httpClientTimeout=300s"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Auto-redirect HTTP to HTTPS
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      # ACME
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=justin@vsl-base.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
+    networks:
+      - flux-network
+
+networks:
+  flux-network:
+    external: true
