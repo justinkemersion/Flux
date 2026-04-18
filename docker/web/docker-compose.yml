@@ -1,0 +1,36 @@
+# Flux Next.js web app (dashboard). Requires Traefik on `flux-network` (see scratch/docker-compose.yml).
+# Build from repo root: docker compose -f docker/web/docker-compose.yml build
+# Run: docker compose -f docker/web/docker-compose.yml up -d
+#
+# Routes:
+#   https://flux.vsl-base.com       — UI
+#   https://api.flux.vsl-base.com — same app (App Router /api/*); set AUTH_URL / NEXTAUTH_URL to the primary UI origin.
+
+services:
+  flux-web:
+    build:
+      context: ../..
+      dockerfile: apps/dashboard/Dockerfile
+    image: flux-web:latest
+    container_name: flux-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      AUTH_TRUST_HOST: "true"
+      # Primary canonical URL for Auth.js / billing redirects (use the UI host).
+      AUTH_URL: ${AUTH_URL:-https://flux.vsl-base.com}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://flux.vsl-base.com}
+    networks:
+      - flux-network
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: flux-network
+      traefik.http.routers.flux-web.rule: Host(`flux.vsl-base.com`) || Host(`api.flux.vsl-base.com`)
+      traefik.http.routers.flux-web.entrypoints: websecure
+      traefik.http.routers.flux-web.tls: "true"
+      traefik.http.routers.flux-web.tls.certresolver: myresolver
+      traefik.http.services.flux-web.loadbalancer.server.port: "3000"
+
+networks:
+  flux-network:
+    external: true
