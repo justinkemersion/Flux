@@ -56,7 +56,6 @@ export const FLUX_DOCKER_IMAGES = {
 
 const POSTGRES_IMAGE = FLUX_DOCKER_IMAGES.postgres;
 const POSTGREST_IMAGE = FLUX_DOCKER_IMAGES.postgrest;
-const TRAEFIK_IMAGE = FLUX_DOCKER_IMAGES.traefik;
 
 /** Default superuser when only `POSTGRES_PASSWORD` is set on official images. */
 const POSTGRES_USER = "postgres";
@@ -285,17 +284,23 @@ export function fluxTenantDomain(): string {
 }
 
 /**
- * HTTP(S) origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik).
- * When `isProduction` is true, uses `https://`; otherwise `http://` (local / TLS-terminated elsewhere).
+ * When `FLUX_DOMAIN` is set (non-empty), public tenant API URLs use `https://` (TLS at the edge).
+ * {@link fluxApiUrlForSlug} also treats the optional `isProduction` flag as a request for `https://`.
  */
-export function fluxApiUrlForSlug(slug: string, isProduction = false): string {
-  const scheme = isProduction ? "https" : "http";
-  return `${scheme}://${slug}.${fluxTenantDomain()}`;
+export function fluxApiHttpsForTenantUrls(): boolean {
+  const d = process.env.FLUX_DOMAIN?.trim();
+  return Boolean(d);
 }
 
-/** Used when synthesizing `apiUrl` for {@link ProjectManager.listProjects} / {@link ProjectManager.getProjectSummariesForSlugs}. */
-function fluxApiProductionForListedUrls(): boolean {
-  return process.env.NODE_ENV === "production";
+/**
+ * HTTP(S) origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik).
+ * Uses `https://` when {@link fluxApiHttpsForTenantUrls} is true (production: `FLUX_DOMAIN` set) or
+ * when `isProduction` is true; otherwise `http://` (typical local dev).
+ */
+export function fluxApiUrlForSlug(slug: string, isProduction = false): string {
+  const useHttps = fluxApiHttpsForTenantUrls() || isProduction;
+  const scheme = useHttps ? "https" : "http";
+  return `${scheme}://${slug}.${fluxTenantDomain()}`;
 }
 
 /**
@@ -400,6 +405,16 @@ function mergedPostgrestTraefikDockerLabels(
     ...removeFluxPostgrestTraefikDockerLabels(existing, slug),
     ...postgrestTraefikDockerLabels(slug, stripSupabaseRestPrefix),
   };
+}
+
+function dockerLabelsSatisfy(
+  required: Record<string, string>,
+  current: Record<string, string> | undefined,
+): boolean {
+  for (const [k, v] of Object.entries(required)) {
+    if (current?.[k] !== v) return false;
+  }
+  return true;
 }
 
 function containerNameForProject(projectName: string): string {
@@ -757,7 +772,8 @@ export interface ProvisionOptions {
   stripSupabaseRestPrefix?: boolean;
   /**
    * When true, {@link ProjectManager.provisionProject} returns an `https://` {@link FluxProject.apiUrl}
-   * (public TLS at the edge). When false (default), returns `http://` (local dev or plain HTTP).
+   * (alongside `https://` when `FLUX_DOMAIN` is set). When false and `FLUX_DOMAIN` is unset, returns
+   * `http://` (typical local dev).
    */
   isProduction?: boolean;
 }
@@ -1062,8 +1078,8 @@ export class ProjectManager {
   /**
    * Provisions Postgres + PostgREST on {@link FLUX_NETWORK_NAME}, with internal DNS between services.
    *
-   * The shared {@link FLUX_GATEWAY_CONTAINER_NAME} Traefik instance (started with the Flux network)
-   * routes `{slug}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
+   * A Traefik instance named {@link FLUX_GATEWAY_CONTAINER_NAME} (managed outside this API, e.g. Compose)
+   * on {@link FLUX_NETWORK_NAME} routes `{slug}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
    * on a random host port. By default, Traefik chains a Headers (CORS) middleware for
    * `http://localhost:3001` and `https://app.<domain>` and the shared `flux-stripprefix` middleware for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
@@ -1187,6 +1203,23 @@ export class ProjectManager {
         apiExisting,
         apiContainerName,
       );
+      const mergedTraefik = mergedPostgrestTraefikDockerLabels(
+        apiExisting.Config?.Labels ?? {},
+        slug,
+        stripSupabaseRestPrefix,
+      );
+      if (!dockerLabelsSatisfy(mergedTraefik, apiExisting.Config?.Labels)) {
+        log?.(
+          "PostgREST Traefik labels out of date; recreating API container to refresh gateway routing…",
+        );
+        await this.replacePostgrestApiContainer(
+          slug,
+          apiExisting,
+          envRecordFromDockerEnv(apiExisting.Config?.Env),
+          { labels: mergedTraefik },
+        );
+        apiContainer = this.docker.getContainer(apiContainerName);
+      }
     } else {
       log?.(`Creating PostgREST container ${apiContainerName}…`);
       apiContainer = await this.docker.createContainer({
@@ -1701,7 +1734,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       rows.push({
         slug,
         status,
-        apiUrl: fluxApiUrlForSlug(slug, fluxApiProductionForListedUrls()),
+        apiUrl: fluxApiUrlForSlug(slug),
       });
     }
 
@@ -1727,7 +1760,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
         return {
           slug,
           status: fluxTenantStatusFromContainerPair(db, api),
-          apiUrl: fluxApiUrlForSlug(slug, fluxApiProductionForListedUrls()),
+          apiUrl: fluxApiUrlForSlug(slug),
         };
       }),
     );
@@ -1916,77 +1949,24 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   }
 
   /**
-   * Ensures {@link FLUX_GATEWAY_CONTAINER_NAME} runs Traefik with the Docker provider, socket
-   * access (read-only), `web` on host port 80, and attachment to {@link FLUX_NETWORK_NAME}.
-   *
-   * Uses a pinned {@link FLUX_DOCKER_IMAGES.traefik} image. The gateway also sets
-   * `DOCKER_API_VERSION=1.41` and `--providers.docker.httpClientTimeout=300s` for the socket client.
-   *
-   * Idempotent: **start** if stopped, **create** if missing, **attach** to `flux-network` if needed.
-   * Invoked on every {@link ProjectManager.provisionProject} so a stopped gateway is revived even
-   * when the bridge network already existed.
+   * Verifies a container named {@link FLUX_GATEWAY_CONTAINER_NAME} is **running** on the Engine.
+   * The Traefik gateway is expected to be started by external tooling (e.g. a standalone Compose
+   * stack); this method does not create, pull, or start that container.
    */
   private async ensureFluxGateway(
     onStatus?: (message: string) => void,
   ): Promise<void> {
     const name = FLUX_GATEWAY_CONTAINER_NAME;
-    onStatus?.(`Ensuring Traefik gateway ${name}…`);
-
-    try {
-      const existing = this.docker.getContainer(name);
-      const inspect = await existing.inspect();
-      if (!inspect.State.Running) {
-        onStatus?.(`Starting existing gateway container ${name}…`);
-        await existing.start();
-      } else {
-        onStatus?.(`Gateway ${name} is already running.`);
-      }
-      await this.ensureContainerAttachedToFluxNetwork(inspect.Id);
+    onStatus?.(`Checking Traefik gateway ${name}…`);
+    const inspect = await fluxInspectContainerOrNull(this.docker, name);
+    if (inspect?.State.Running) {
+      onStatus?.(`Gateway ${name} is running.`);
       return;
-    } catch (err: unknown) {
-      if (getHttpStatus(err) !== 404) throw err;
     }
-
-    onStatus?.(`Creating gateway ${name} (image ${TRAEFIK_IMAGE})…`);
-    await ensureImage(this.docker, TRAEFIK_IMAGE, onStatus);
-
-    try {
-      const gateway = await this.docker.createContainer({
-        name,
-        Image: TRAEFIK_IMAGE,
-        Env: ["DOCKER_API_VERSION=1.41"],
-        Cmd: [
-          "--providers.docker=true",
-          "--providers.docker.exposedbydefault=false",
-          `--providers.docker.network=${FLUX_NETWORK_NAME}`,
-          "--providers.docker.httpClientTimeout=300s",
-          "--entrypoints.web.address=:80",
-        ],
-        ExposedPorts: { "80/tcp": {} },
-        HostConfig: {
-          Binds: ["/var/run/docker.sock:/var/run/docker.sock:ro"],
-          PortBindings: {
-            "80/tcp": [{ HostIp: "0.0.0.0", HostPort: "80" }],
-          },
-          NetworkMode: FLUX_NETWORK_NAME,
-          Memory: 256 * 1024 * 1024,
-          RestartPolicy: { Name: "unless-stopped" },
-        },
-      });
-      await gateway.start();
-    } catch (err: unknown) {
-      if (getHttpStatus(err) === 409) {
-        const existing = this.docker.getContainer(name);
-        const inspect = await existing.inspect();
-        if (!inspect.State.Running) {
-          onStatus?.(`Gateway ${name} already exists but was stopped; starting…`);
-          await existing.start();
-        }
-        await this.ensureContainerAttachedToFluxNetwork(inspect.Id);
-        return;
-      }
-      throw err;
-    }
+    const text =
+      "Infrastructure Gateway is missing (no running container named flux-gateway; manage Traefik with external compose on flux-network if needed).";
+    if (onStatus) onStatus(`⚠ ${text}`);
+    else console.warn(`⚠ ${text}`);
   }
 
   private async ensureContainerAttachedToFluxNetwork(
