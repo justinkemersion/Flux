@@ -55,7 +55,7 @@ export const FLUX_GATEWAY_CONTAINER_NAME = "flux-gateway";
 export const FLUX_DOCKER_IMAGES = {
   postgres: "postgres:16.2-alpine",
   postgrest: "postgrest/postgrest:v12.0.2",
-  traefik: "traefik:v3.1",
+  traefik: "traefik:v3.6.7",
 } as const;
 
 const POSTGRES_IMAGE = FLUX_DOCKER_IMAGES.postgres;

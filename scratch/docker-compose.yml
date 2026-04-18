@@ -1,15 +1,16 @@
 # Traefik for Flux: attach to the same bridge the control plane / tenants use.
 # Requires `flux-network` to already exist (Flux creates it on first provision, or: docker network create flux-network).
 # Control plane: set FLUX_TRAEFIK_CERTRESOLVER=myresolver to match `certificatesresolvers.myresolver` below.
+#
+# Image: use Traefik >= v3.6.1. Older lines (e.g. v3.1) use Docker API 1.24; modern Engine rejects that.
+# The DOCKER_API_VERSION env is ignored for Traefik’s built-in client — upgrading Traefik is the real fix
+# (see https://github.com/traefik/traefik/issues/12253 ).
 
 services:
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.6.7
     container_name: flux-gateway
     restart: unless-stopped
-    environment:
-      # Required on modern Engine: no trailing space; else Traefik falls back to API 1.24 and the Docker provider fails.
-      DOCKER_API_VERSION: "1.41"
     command:
       - "--api.dashboard=true"
       - "--providers.docker=true"
