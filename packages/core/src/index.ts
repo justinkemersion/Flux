@@ -356,23 +356,42 @@ export function fluxTraefikCertResolverName(): string | null {
 }
 
 /**
+ * Hostname for tenant PostgREST (Traefik `Host()`), e.g. `api.acme.example.com`.
+ * Omit or pass an empty `hostnamePrefix` for legacy `{slug}.{domain}` only.
+ */
+function fluxTenantPostgrestHostname(slug: string, hostnamePrefix = "api"): string {
+  const domain = fluxTenantDomain();
+  if (!hostnamePrefix || hostnamePrefix.length === 0) {
+    return `${slug}.${domain}`;
+  }
+  return `${hostnamePrefix}.${slug}.${domain}`;
+}
+
+/**
  * HTTP(S) origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik).
  * Uses `https://` when `FLUX_DOMAIN` is set, `isProduction`, or a **remote** `DOCKER_HOST` (SSH) —
  * the same case where edge Traefik labels apply. Otherwise `http://` (local `docker` on Unix).
+ *
+ * Defaults to `https://api.{slug}.{domain}` (or `http://` when TLS is off). Pass `hostnamePrefix`
+ * (e.g. `""`) only if you must match a legacy `{slug}.{domain}` host.
  */
-export function fluxApiUrlForSlug(slug: string, isProduction = false): string {
+export function fluxApiUrlForSlug(
+  slug: string,
+  isProduction = false,
+  hostnamePrefix = "api",
+): string {
   const useHttps =
     fluxApiHttpsForTenantUrls() || isProduction || fluxControlPlaneTargetIsRemoteEngine();
   const scheme = useHttps ? "https" : "http";
-  return `${scheme}://${slug}.${fluxTenantDomain()}`;
+  return `${scheme}://${fluxTenantPostgrestHostname(slug, hostnamePrefix)}`;
 }
 
 /**
  * Traefik v3 `Host()` matcher: backticks wrap the literal hostname (required syntax).
- * Example for slug `acme`: `Host(\`acme.vsl-base.com\`)` (or `FLUX_DOMAIN`).
+ * Example for slug `acme`: `Host(\`api.acme.vsl-base.com\`)` (or `FLUX_DOMAIN`).
  */
 function traefikHostRule(slug: string): string {
-  return `Host(\`${slug}.${fluxTenantDomain()}\`)`;
+  return `Host(\`${fluxTenantPostgrestHostname(slug)}\`)`;
 }
 
 function traefikCorsAllowOriginList(): string {
@@ -659,7 +678,7 @@ export interface FluxProjectSummary {
    * **corrupted** — exactly one of the two containers exists.
    */
   status: "running" | "stopped" | "partial" | "missing" | "corrupted";
-  /** Public API URL via the Flux Traefik gateway (`Host: {slug}.<FLUX_DOMAIN|vsl-base.com>`). */
+  /** Public API URL via the Flux Traefik gateway (`Host: api.{slug}.<FLUX_DOMAIN|vsl-base.com>`). */
   apiUrl: string;
 }
 
@@ -1152,7 +1171,7 @@ export class ProjectManager {
    * Provisions Postgres + PostgREST on {@link FLUX_NETWORK_NAME}, with internal DNS between services.
    *
    * A Traefik instance named {@link FLUX_GATEWAY_CONTAINER_NAME} (managed outside this API, e.g. Compose)
-   * on {@link FLUX_NETWORK_NAME} routes `{slug}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
+   * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
    * on a random host port. By default, Traefik chains a Headers (CORS) middleware for
    * `http://localhost:3001` and `https://app.<domain>` and the shared `flux-stripprefix` middleware for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.

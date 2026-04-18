@@ -8,7 +8,7 @@ export type FluxActivityOptions = {
   secret: string;
   /**
    * Tenant slug. If omitted, inferred from {@link FluxClientOptions.url} when the host matches
-   * `{slug}.vsl-base.com` or `{slug}.flux.localhost`.
+   * `api.{slug}.vsl-base.com` / `api.{slug}.flux.localhost` (or legacy `{slug}.…` without `api.`).
    */
   slug?: string;
 };
@@ -25,7 +25,7 @@ export type FluxResult<T> = {
   error: unknown | null;
 };
 
-/** Infer tenant slug from PostgREST base URL (`{slug}.<domain>`). */
+/** Infer tenant slug from PostgREST base URL (`api.{slug}.<domain>` or legacy `{slug}.<domain>`). */
 export function inferFluxTenantSlugFromPostgrestUrl(baseUrl: string): string | null {
   let s = baseUrl.trim();
   if (!/^[a-z]+:/i.test(s)) {
@@ -36,7 +36,11 @@ export function inferFluxTenantSlugFromPostgrestUrl(baseUrl: string): string | n
     const suffixes = [".vsl-base.com", ".flux.localhost"];
     for (const suffix of suffixes) {
       if (hostname.endsWith(suffix) && hostname.length > suffix.length) {
-        return hostname.slice(0, -suffix.length);
+        let sub = hostname.slice(0, -suffix.length);
+        if (sub.startsWith("api.")) {
+          sub = sub.slice(4);
+        }
+        return sub.length > 0 ? sub : null;
       }
     }
   } catch {
