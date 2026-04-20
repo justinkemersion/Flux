@@ -31,6 +31,10 @@ services:
     volumes:
       # Control plane needs Docker to provision flux-system + tenant projects.
       - /var/run/docker.sock:/var/run/docker.sock
+    # The image runs as `nextjs` (non-root). The host socket is root:docker mode 660 — add that
+    # group so dockerode can connect. Set DOCKER_GID in `.env` if yours differs (see `.env.example`).
+    group_add:
+      - "${DOCKER_GID:-996}"
     networks:
       - flux-network
     labels:
