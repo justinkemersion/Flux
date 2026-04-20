@@ -5,6 +5,9 @@
 # Routes:
 #   https://flux.vsl-base.com       — UI
 #   https://api.flux.vsl-base.com — same app (App Router /api/*); set AUTH_URL / NEXTAUTH_URL to the primary UI origin.
+#
+# Required: place a `.env` next to this file (see `.env.example`) with NEXTAUTH_SECRET,
+# GITHUB_ID, GITHUB_SECRET, FLUX_ACTIVITY_SECRET (and optional STRIPE_*).
 
 services:
   flux-web:
@@ -14,12 +17,20 @@ services:
     image: flux-web:latest
     container_name: flux-web
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       AUTH_TRUST_HOST: "true"
       # Primary canonical URL for Auth.js / billing redirects (use the UI host).
       AUTH_URL: ${AUTH_URL:-https://flux.vsl-base.com}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-https://flux.vsl-base.com}
+      # Drives Traefik labels on tenants provisioned by the dashboard
+      # (websecure + myresolver via fluxTraefikCertResolverName).
+      FLUX_DOMAIN: ${FLUX_DOMAIN:-vsl-base.com}
+    volumes:
+      # Control plane needs Docker to provision flux-system + tenant projects.
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - flux-network
     labels:
