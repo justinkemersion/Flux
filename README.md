@@ -102,6 +102,7 @@ On first connection to a new tenant DB, Flux runs SQL that:
 
 - Creates schema **`api`** and grants **`anon` / `authenticated`** usage on **`api`** and **`public`** (so **`PGRST_DB_SCHEMAS=api,public`** can resolve both).
 - Creates roles **`authenticator`**, **`anon`**, **`authenticated`** and applies **`API_SCHEMA_PRIVILEGES_SQL`** (table/sequence grants + default privileges) so PostgREST’s JWT role model works.
+- Creates schema **`auth`** and function **`auth.uid()`** (**`text`**, JWT **`sub`** via **`request.jwt.claims`**) for Supabase-style RLS with Clerk / NextAuth string IDs.
 
 ### JWTs and keys
 
@@ -119,7 +120,7 @@ Flux can ingest **plain `pg_dump` SQL** from Supabase-style apps and land tables
 
 | Capability | Where it lives |
 |------------|----------------|
-| **Dump transforms** | `preparePlainSqlDumpForFlux`, `applySupabaseCompatibilityTransforms` — optional `auth` stubs, `auth.uid()`, seed rows before `auth.users` FKs. |
+| **Dump transforms** | `preparePlainSqlDumpForFlux`, `applySupabaseCompatibilityTransforms` — optional `auth` stubs, `auth.uid()` (**text**), seed rows before `auth.users` FKs. |
 | **`public` → `api`** | After import with **`moveFromPublic`**, `movePublicSchemaObjectsToApi` moves tables / sequences / views; if **`api.<name>`** already exists (dump created both), the **`public`** duplicate is **`DROP … CASCADE`**’d instead of failing. |
 | **Grants after import** | Every **`importSqlFile`** ends by re-running **`API_SCHEMA_PRIVILEGES_SQL`** so **`anon` / `authenticated`** keep DML on all **`api`** objects. |
 | **RLS (local / porting)** | Optional **`disableRowLevelSecurityInApi`** / CLI **`--disable-api-rls`**: disables RLS on **`api`** tables that still have it enabled (Supabase policies often block **`anon`** until rewritten). |
@@ -145,7 +146,7 @@ flux push ./dump.sql -p myapp -s --disable-api-rls
 
 ### `@flux/core` (`packages/core`)
 
-- **Exports** — `ProjectManager`, `FLUX_NETWORK_NAME`, `FLUX_GATEWAY_CONTAINER_NAME`, `FLUX_DOCKER_IMAGES`, `fluxApiUrlForSlug`, `BOOTSTRAP_SQL`, **`API_SCHEMA_PRIVILEGES_SQL`**, **`DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL`**, dump helpers (`preparePlainSqlDumpForFlux`, `sanitizePlainSqlDumpForPostgresMajor`, `applySupabaseCompatibilityTransforms`, `queryPostgresMajorVersion`), `isFluxSensitiveEnvKey`, types (`FluxProject`, `FluxProjectSummary`, `FluxProjectEnvEntry`, `ImportSqlFileOptions`, …).
+- **Exports** — `ProjectManager`, `FLUX_NETWORK_NAME`, `FLUX_GATEWAY_CONTAINER_NAME`, `FLUX_DOCKER_IMAGES`, `fluxApiUrlForSlug`, `BOOTSTRAP_SQL`, **`FLUX_AUTH_SCHEMA_AND_UID_SQL`**, **`API_SCHEMA_PRIVILEGES_SQL`**, **`DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL`**, dump helpers (`preparePlainSqlDumpForFlux`, `sanitizePlainSqlDumpForPostgresMajor`, `applySupabaseCompatibilityTransforms`, `queryPostgresMajorVersion`), `isFluxSensitiveEnvKey`, types (`FluxProject`, `FluxProjectSummary`, `FluxProjectEnvEntry`, `ImportSqlFileOptions`, …).
 - **Docker** — `dockerode`; pulls with stall detection; idempotent network/gateway provisioning.
 - **Typical flows** — `provisionProject`, `listProjects`, **`getProjectSummariesForSlugs`**, `stopProject` / `startProject`, `nukeProject`, **`reapIdleProjects`**, `stopInactiveProjects` (reporting), `getPostgresHostConnectionString`, **`getProjectCredentials`**, `executeSql`, **`importSqlFile`** (optional Supabase compat + **`moveFromPublic`**, post-import grants + optional RLS disable), **`resetTenantDatabaseForImport`**, `updatePostgrestJwtSecret`, **`setPostgrestSupabaseRestPrefix`**, `setProjectEnv`, `listProjectEnv`, **`getProjectKeys`** (JWTs from container **`PGRST_JWT_SECRET` only**).
 

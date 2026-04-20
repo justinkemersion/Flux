@@ -93,6 +93,11 @@ async function cmdCreate(
       ),
     );
   }
+  console.log(
+    chalk.dim(
+      `  Allow extra origins: flux cors --add https://example.com -p ${project.slug}`,
+    ),
+  );
   console.log();
   console.log(
     chalk.dim("  Store the connection string securely; it includes credentials."),
@@ -195,6 +200,83 @@ async function cmdSupabaseRestPath(project: string, enable: boolean): Promise<vo
       "PostgREST container recreated with updated labels. If the app still fails, confirm NEXT_PUBLIC_SUPABASE_URL is the project API URL (no /rest/v1 suffix) and keys match the dashboard.",
     ),
   );
+}
+
+/**
+ * `flux cors -p <project>` — manage per-project CORS extra allow-origins (persisted via the
+ * `flux.cors.extra_origins` Docker label on the PostgREST container). Dashboard origins and
+ * `FLUX_EXTRA_ALLOWED_ORIGINS` are always merged on top, so this command only touches extras.
+ *
+ * Actions are mutually exclusive and applied in a single reconcile:
+ * - `--list` (default): print current extras, one per line.
+ * - `--add <origin>` (repeatable): add origins (union with current).
+ * - `--remove <origin>` (repeatable): remove origins (set difference).
+ * - `--clear`: remove **all** per-project extras.
+ */
+async function cmdCors(options: {
+  project: string;
+  add?: readonly string[];
+  remove?: readonly string[];
+  clear?: boolean;
+  list?: boolean;
+}): Promise<void> {
+  const pm = new ProjectManager();
+  const project = options.project;
+  const add = options.add ?? [];
+  const remove = options.remove ?? [];
+  const clear = options.clear === true;
+
+  const mutating = clear || add.length > 0 || remove.length > 0;
+
+  if (mutating && clear && (add.length > 0 || remove.length > 0)) {
+    throw new Error("flux cors: --clear cannot be combined with --add/--remove.");
+  }
+
+  if (!mutating) {
+    const current = await pm.getProjectAllowedOrigins(project);
+    if (current.length === 0) {
+      console.log(
+        chalk.dim(
+          `No per-project CORS extras for "${project}". Dashboard origins (+ FLUX_EXTRA_ALLOWED_ORIGINS) still apply.`,
+        ),
+      );
+      return;
+    }
+    console.log(
+      chalk.blue.bold(`Per-project CORS extras for "${project}":`),
+    );
+    for (const origin of current) console.log(`  ${origin}`);
+    return;
+  }
+
+  let next: readonly string[];
+  if (clear) {
+    next = [];
+  } else {
+    const current = await pm.getProjectAllowedOrigins(project);
+    const set = new Set(current);
+    for (const o of add) set.add(o.trim());
+    for (const o of remove) set.delete(o.trim());
+    set.delete("");
+    next = Array.from(set);
+  }
+
+  console.log(
+    chalk.blue(`Updating CORS allow-origins for "${project}"…`),
+  );
+  await pm.setProjectAllowedOrigins(project, next, {
+    onStatus: (m) => console.log(chalk.dim(`  ${m}`)),
+  });
+  console.log(chalk.green.bold("✓"), chalk.white("CORS allow-origins updated."));
+  if (next.length === 0) {
+    console.log(
+      chalk.dim(
+        "  (Per-project extras cleared. Dashboard origins + FLUX_EXTRA_ALLOWED_ORIGINS still apply.)",
+      ),
+    );
+  } else {
+    for (const origin of next) console.log(`  ${origin}`);
+  }
 }
 
 async function cmdDbReset(project: string, yes: boolean): Promise<void> {
@@ -524,6 +606,55 @@ async function main(): Promise<void> {
         off?: boolean;
       }>();
       await cmdSupabaseRestPath(opts.project, opts.off !== true);
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
+
+  const collectOriginOption = (value: string, prev: string[] = []): string[] => {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) prev.push(trimmed);
+    return prev;
+  };
+
+  const corsCmd = program
+    .command("cors")
+    .description(
+      "Manage per-project CORS allow-origins (extras; dashboard origins + FLUX_EXTRA_ALLOWED_ORIGINS always apply)",
+    )
+    .requiredOption("-p, --project <name>", "Flux project slug or name")
+    .option(
+      "--add <origin>",
+      "Origin to add (e.g. https://app.example.com). May be repeated.",
+      collectOriginOption,
+      [] as string[],
+    )
+    .option(
+      "--remove <origin>",
+      "Origin to remove. May be repeated.",
+      collectOriginOption,
+      [] as string[],
+    )
+    .option("--clear", "Remove all per-project CORS extras")
+    .option("--list", "List current per-project CORS extras (default when no action flags)");
+
+  corsCmd.action(async () => {
+    try {
+      const opts = corsCmd.opts<{
+        project: string;
+        add?: string[];
+        remove?: string[];
+        clear?: boolean;
+        list?: boolean;
+      }>();
+      const actionOpts: Parameters<typeof cmdCors>[0] = { project: opts.project };
+      if (opts.add && opts.add.length > 0) actionOpts.add = opts.add;
+      if (opts.remove && opts.remove.length > 0) actionOpts.remove = opts.remove;
+      if (opts.clear) actionOpts.clear = true;
+      if (opts.list) actionOpts.list = true;
+      await cmdCors(actionOpts);
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
       console.error(formatCliError(err));

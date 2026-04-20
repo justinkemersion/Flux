@@ -6,6 +6,7 @@ import { Readable } from "node:stream";
 import Docker from "dockerode";
 import jwt from "jsonwebtoken";
 
+import { FLUX_AUTH_SCHEMA_AND_UID_SQL } from "./auth-compat-sql.ts";
 import {
   API_SCHEMA_PRIVILEGES_SQL,
   DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
@@ -41,6 +42,7 @@ export {
   API_SCHEMA_PRIVILEGES_SQL,
   DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
 } from "./api-schema-privileges.ts";
+export { FLUX_AUTH_SCHEMA_AND_UID_SQL } from "./auth-compat-sql.ts";
 
 export const FLUX_NETWORK_NAME = "flux-network";
 
@@ -72,6 +74,9 @@ const POSTGRES_USER = "postgres";
  *   anon          — privileges for unauthenticated requests
  *   authenticated — privileges for JWT-verified requests
  *
+ * Installs Supabase-compatible **`auth`** schema and **`auth.uid()`** (returns **text**, JWT `sub`
+ * from `request.jwt.claims`) for RLS with Clerk / NextAuth string IDs.
+ *
  * Also grants on existing tables/sequences and sets ALTER DEFAULT PRIVILEGES so future objects in
  * `api` automatically grant DML to `anon` / `authenticated`, plus sequence USAGE for serial IDs.
  * Default privileges for objects created by `postgres` (typical migration role) ensure new tables
@@ -98,6 +103,8 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- Allow authenticator to switch to request roles
 GRANT anon          TO authenticator;
 GRANT authenticated TO authenticator;
+
+${FLUX_AUTH_SCHEMA_AND_UID_SQL}
 
 ${API_SCHEMA_PRIVILEGES_SQL}
 `.trim();
@@ -394,14 +401,84 @@ function traefikHostRule(slug: string): string {
   return `Host(\`${fluxTenantPostgrestHostname(slug)}\`)`;
 }
 
-function traefikCorsAllowOriginList(): string {
-  const dashboard = `https://app.${fluxTenantDomain()}`;
-  return `http://localhost:3001,${dashboard}`;
+/**
+ * Built-in CORS allow-list: Flux dashboard (`http://localhost:3001` for dev,
+ * `https://app.<FLUX_DOMAIN|vsl-base.com>` for prod). Tenant apps add their
+ * own origins via {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} or the global
+ * {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV} env var (see {@link resolveCorsAllowOriginList}).
+ */
+function traefikDashboardOrigins(): readonly string[] {
+  return ["http://localhost:3001", `https://app.${fluxTenantDomain()}`];
+}
+
+/**
+ * Per-tenant Docker label that persists the extra CORS allow-origins list across container
+ * recreates. Comma-separated, trimmed origins. Empty / missing means "no extras".
+ */
+const FLUX_CORS_EXTRA_ORIGINS_LABEL = "flux.cors.extra_origins";
+
+/**
+ * Control-plane env var: comma-separated origins applied as extras to **every** tenant's
+ * CORS allow-list. Useful when you operate the whole fleet (e.g. `https://app.example.com`,
+ * `http://localhost:3000`) and want one place to allow them. Per-project label is unioned on top.
+ */
+const FLUX_EXTRA_ALLOWED_ORIGINS_ENV = "FLUX_EXTRA_ALLOWED_ORIGINS";
+
+/**
+ * Splits a comma-separated origin list into a deduped, trimmed array. Drops empty entries; does
+ * **not** validate URL shape (Traefik tolerates `http://localhost:3001` and `https://a.example`).
+ */
+export function parseAllowedOriginsList(
+  raw: string | null | undefined,
+): readonly string[] {
+  if (raw == null) return [];
+  const seen = new Set<string>();
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.length > 0) seen.add(trimmed);
+  }
+  return Array.from(seen);
+}
+
+/** Inverse of {@link parseAllowedOriginsList}. Stable order = first-seen. */
+export function serializeAllowedOriginsList(
+  origins: readonly string[],
+): string {
+  return Array.from(new Set(origins.map((o) => o.trim()).filter(Boolean))).join(
+    ",",
+  );
+}
+
+/**
+ * Resolves the full CORS `Access-Control-Allow-Origin` allow-list for a tenant's PostgREST router:
+ * built-in dashboard origins ∪ control-plane {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV} ∪ per-project
+ * extras (from the {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} label or an explicit override). Order
+ * follows insertion (dashboard first), deduped.
+ */
+function resolveCorsAllowOriginList(
+  perProjectExtras: readonly string[],
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (origin: string) => {
+    const trimmed = origin.trim();
+    if (trimmed.length === 0 || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    out.push(trimmed);
+  };
+  for (const o of traefikDashboardOrigins()) push(o);
+  for (const o of parseAllowedOriginsList(
+    process.env[FLUX_EXTRA_ALLOWED_ORIGINS_ENV],
+  )) {
+    push(o);
+  }
+  for (const o of perProjectExtras) push(o);
+  return out;
 }
 
 /** Shared Traefik middleware names (repeated on each PostgREST container; Traefik merges identical defs). */
 const TRAEFIK_MW_STRIP_PREFIX = "flux-stripprefix";
-/** CORS: local dashboard (port 3001) + `https://app.<FLUX_DOMAIN|vsl-base.com>`. */
+/** CORS: dashboard origins + tenant extras (per-project label + control-plane env var). */
 const TRAEFIK_MW_CORS_LOCALHOST_3001 = "flux-cors-localhost-3001";
 
 /** Supabase JS + PostgREST (explicit list; no wildcard). */
@@ -411,10 +488,18 @@ const TRAEFIK_CORS_ALLOW_HEADERS =
 /** PostgREST `db-schemas`: default `api`; include `public` for Supabase-style dumps. */
 const PGRST_DB_SCHEMAS_VALUE = "api,public";
 
-/** Traefik labels for the tenant PostgREST router (shared by provision and label updates). */
+/**
+ * Traefik labels for the tenant PostgREST router (shared by provision and label updates).
+ *
+ * `perProjectExtraOrigins` is layered on top of the built-in dashboard origins and
+ * {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV}; the resolved list is stamped both into the Traefik
+ * `accesscontrolalloworiginlist` middleware **and** the {@link FLUX_CORS_EXTRA_ORIGINS_LABEL}
+ * label so the next reconcile/recreate can read it back without callers re-passing it.
+ */
 function postgrestTraefikDockerLabels(
   slug: string,
   stripSupabaseRestPrefix: boolean,
+  perProjectExtraOrigins: readonly string[] = [],
 ): Record<string, string> {
   const traefikSvc = `flux-${slug}-api`;
   const useEdgeTls = fluxTraefikCertResolverName() != null;
@@ -438,9 +523,10 @@ function postgrestTraefikDockerLabels(
   labels[`traefik.http.middlewares.${TRAEFIK_MW_STRIP_PREFIX}.stripprefix.prefixes`] =
     "/rest/v1";
 
+  const allowOriginList = resolveCorsAllowOriginList(perProjectExtraOrigins);
   labels[
     `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolalloworiginlist`
-  ] = traefikCorsAllowOriginList();
+  ] = allowOriginList.join(",");
   labels[
     `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolallowmethods`
   ] = "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD";
@@ -454,6 +540,12 @@ function postgrestTraefikDockerLabels(
     `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.addvaryheader`
   ] = "true";
 
+  // Persist the per-project extras (NOT the dashboard / env-var origins — those are recomputed
+  // on every label rebuild). Empty string when no extras so the label is still present and
+  // contributes to the config hash deterministically.
+  labels[FLUX_CORS_EXTRA_ORIGINS_LABEL] =
+    serializeAllowedOriginsList(perProjectExtraOrigins);
+
   const middlewares = stripSupabaseRestPrefix
     ? `${TRAEFIK_MW_CORS_LOCALHOST_3001},${TRAEFIK_MW_STRIP_PREFIX}`
     : TRAEFIK_MW_CORS_LOCALHOST_3001;
@@ -464,7 +556,8 @@ function postgrestTraefikDockerLabels(
 
 /**
  * Strips Flux’s Traefik routing labels for this tenant’s API so they can be replaced (toggle strip).
- * Preserves unrelated Docker labels on the same container.
+ * Preserves unrelated Docker labels on the same container, including the persisted
+ * {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} (read back by {@link mergedPostgrestTraefikDockerLabels}).
  */
 function removeFluxPostgrestTraefikDockerLabels(
   existing: Record<string, string>,
@@ -480,6 +573,7 @@ function removeFluxPostgrestTraefikDockerLabels(
   for (const [k, v] of Object.entries(existing)) {
     if (k === "traefik.enable") continue;
     if (k === "traefik.docker.network") continue;
+    if (k === FLUX_CORS_EXTRA_ORIGINS_LABEL) continue;
     if (k.startsWith(`traefik.http.routers.${traefikSvc}.`)) continue;
     if (k.startsWith(`traefik.http.services.${traefikSvc}.`)) continue;
     if (sharedMwPrefixes.some((p) => k.startsWith(p))) continue;
@@ -488,14 +582,24 @@ function removeFluxPostgrestTraefikDockerLabels(
   return out;
 }
 
+/**
+ * Rebuilds the tenant PostgREST router labels, preserving the **per-project** CORS extras across
+ * recreates by reading them back from the {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} on the existing
+ * container. Pass `extraOriginsOverride` (e.g. from the `flux cors` CLI) to **replace** the
+ * persisted list with the new one; omit it to carry the existing list forward unchanged.
+ */
 function mergedPostgrestTraefikDockerLabels(
   existing: Record<string, string>,
   slug: string,
   stripSupabaseRestPrefix: boolean,
+  extraOriginsOverride?: readonly string[],
 ): Record<string, string> {
+  const extras =
+    extraOriginsOverride ??
+    parseAllowedOriginsList(existing[FLUX_CORS_EXTRA_ORIGINS_LABEL]);
   return {
     ...removeFluxPostgrestTraefikDockerLabels(existing, slug),
-    ...postgrestTraefikDockerLabels(slug, stripSupabaseRestPrefix),
+    ...postgrestTraefikDockerLabels(slug, stripSupabaseRestPrefix, extras),
   };
 }
 
@@ -868,6 +972,16 @@ export interface ProvisionOptions {
    * `http://` (typical local dev).
    */
   isProduction?: boolean;
+  /**
+   * Per-project CORS extra allow-origins (e.g. `["https://app.example.com", "http://localhost:3000"]`)
+   * unioned on top of the built-in dashboard origins and the global
+   * `FLUX_EXTRA_ALLOWED_ORIGINS` env var. Persisted on the PostgREST container via the
+   * {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} label so subsequent reconciles preserve them.
+   *
+   * Pass `[]` (empty array) to **clear** previously persisted per-project extras. Omit to
+   * carry the persisted list forward unchanged.
+   */
+  additionalAllowedOrigins?: readonly string[];
 }
 
 /** Required for {@link ProjectManager.nukeProject} — confirms permanent data loss. */
@@ -1278,9 +1392,11 @@ export class ProjectManager {
     const dbUri = postgresJdbcUri(slug, postgresPassword);
 
     const stripSupabaseRestPrefix = options?.stripSupabaseRestPrefix !== false;
+    const additionalAllowedOrigins = options?.additionalAllowedOrigins;
     const traefikLabels = postgrestTraefikDockerLabels(
       slug,
       stripSupabaseRestPrefix,
+      additionalAllowedOrigins ?? [],
     );
 
     log?.("Post-Postgres stabilization (5s) before starting PostgREST on remote engines…");
@@ -1304,6 +1420,7 @@ export class ProjectManager {
         apiExisting.Config?.Labels ?? {},
         slug,
         stripSupabaseRestPrefix,
+        additionalAllowedOrigins,
       );
       if (!dockerLabelsSatisfy(mergedTraefik, apiExisting.Config?.Labels)) {
         log?.(
@@ -1415,6 +1532,12 @@ export class ProjectManager {
     projectName: string,
     options?: {
       stripSupabaseRestPrefix?: boolean;
+      /**
+       * When provided, **replaces** the persisted per-project CORS extras (see
+       * {@link ProvisionOptions.additionalAllowedOrigins}) with this list. Pass `[]` to clear.
+       * Omit to carry the current persisted extras forward unchanged.
+       */
+      additionalAllowedOrigins?: readonly string[];
       onStatus?: (message: string) => void;
     },
   ): Promise<void> {
@@ -1426,6 +1549,7 @@ export class ProjectManager {
       existing.Config?.Labels ?? {},
       slug,
       strip,
+      options?.additionalAllowedOrigins,
     );
     if (dockerLabelsSatisfy(merged, existing.Config?.Labels)) {
       log?.("PostgREST Traefik labels are already up to date.");
@@ -1435,6 +1559,40 @@ export class ProjectManager {
     const env = envRecordFromDockerEnv(existing.Config?.Env);
     await this.replacePostgrestApiContainer(slug, existing, env, { labels: merged });
     log?.("PostgREST API container updated with new Traefik labels.");
+  }
+
+  /**
+   * Returns the per-project CORS extra allow-origins persisted on the PostgREST container via
+   * the {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} Docker label. Does **not** include the built-in
+   * dashboard origins or {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV} extras — those are recomputed
+   * on every reconcile from live config. Returns `[]` when nothing is persisted.
+   */
+  async getProjectAllowedOrigins(
+    projectName: string,
+  ): Promise<readonly string[]> {
+    const slug = slugifyProjectName(projectName);
+    const existing = await this.getPostgrestInspectOrThrow(slug);
+    return parseAllowedOriginsList(
+      existing.Config?.Labels?.[FLUX_CORS_EXTRA_ORIGINS_LABEL],
+    );
+  }
+
+  /**
+   * Replaces the project's persisted CORS extras with `origins` and recreates the PostgREST
+   * container so Traefik picks up the new `accesscontrolalloworiginlist`. Pass `[]` to clear
+   * per-project extras (the dashboard + env-var origins still apply). Idempotent: no restart
+   * when the label set already matches.
+   */
+  async setProjectAllowedOrigins(
+    projectName: string,
+    origins: readonly string[],
+    options?: { onStatus?: (message: string) => void },
+  ): Promise<void> {
+    const reconcileOpts: Parameters<
+      ProjectManager["reconcilePostgrestTraefikLabels"]
+    >[1] = { additionalAllowedOrigins: origins };
+    if (options?.onStatus) reconcileOpts.onStatus = options.onStatus;
+    await this.reconcilePostgrestTraefikLabels(projectName, reconcileOpts);
   }
 
   /**

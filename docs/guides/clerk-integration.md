@@ -34,7 +34,7 @@ PostgREST validates the JWT with the shared secret and runs queries using the ro
 
 ## 4. Row Level Security (RLS) with Clerk’s `sub` claim
 
-Clerk JWTs include a `sub` claim (stable user id). PostgREST exposes JWT claims to PostgreSQL via settings such as `request.jwt.claim.sub`.
+Clerk JWTs include a `sub` claim (stable user id). PostgREST exposes the full JWT payload to PostgreSQL as **`request.jwt.claims`** (JSON). Flux’s bootstrap defines **`auth.uid()`** to return that claim’s **`sub` as `text`**, matching Supabase-style policies and supporting Clerk / NextAuth string IDs (not only UUIDs).
 
 Run the following with the Flux CLI (replace `your-slug` and table/column names to match your schema):
 
@@ -46,18 +46,66 @@ ALTER TABLE api.posts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can only see their own posts"
 ON api.posts
 FOR SELECT
-USING (
-  user_id::text = current_setting('request.jwt.claim.sub', true)
-);
+USING (user_id = auth.uid());
 ```
 
 Notes:
 
-- Adjust `user_id` type/casts if your column is `uuid` or `text`; the important part is comparing to `request.jwt.claim.sub`.
-- PostgREST does not ship Supabase’s `auth.uid()` helper; `current_setting('request.jwt.claim.sub', true)` is the standard way to read the subject claim in SQL.
+- Prefer **`auth.uid()`** for comparisons when `user_id` is `text` (typical for Clerk). If a column is still `uuid`, use `user_id::text = auth.uid()` or migrate IDs to `text` (see `packages/cli/migrations/alter-user-id-to-text.sql`).
+- You can still read claims directly, e.g. `current_setting('request.jwt.claim.sub', true)`, but **`auth.uid()`** stays aligned with the JSON `sub` from **`request.jwt.claims`**.
 - Apply policies for `INSERT` / `UPDATE` / `DELETE` as needed, and grant table privileges to `anon` / `authenticated` per your threat model.
 
-Push the SQL file:
+## 5. Profiles row on first use (upsert template)
+
+Many apps expect a row in **`api.profiles`** (or `public.profiles`) keyed by the authenticated user id the first time they touch the API. Without Supabase Auth triggers, use one of these patterns.
+
+**Option A — RPC the client calls once after login** (simplest with PostgREST):
+
+```sql
+CREATE OR REPLACE FUNCTION api.ensure_user_profile()
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = api, pg_temp
+AS $flux$
+  INSERT INTO api.profiles (id, updated_at)
+  VALUES (auth.uid(), now())
+  ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at;
+$flux$;
+
+REVOKE ALL ON FUNCTION api.ensure_user_profile() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.ensure_user_profile() TO authenticated;
+```
+
+Call it from the app (e.g. `POST /rpc/ensure_user_profile` with a valid JWT). Adjust column lists to match your `profiles` table.
+
+**Option B — trigger on first write to another table** (e.g. ensure profile exists before inserting a post):
+
+```sql
+CREATE OR REPLACE FUNCTION api.ensure_profile_before_post()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = api
+AS $flux$
+BEGIN
+  INSERT INTO api.profiles (id)
+  VALUES (auth.uid())
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$flux$;
+
+DROP TRIGGER IF EXISTS ensure_profile_before_post ON api.posts;
+CREATE TRIGGER ensure_profile_before_post
+  BEFORE INSERT ON api.posts
+  FOR EACH ROW
+  EXECUTE FUNCTION api.ensure_profile_before_post();
+```
+
+Replace **`api.posts`** with your real table; add **`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`** and policies as needed.
+
+## 6. Push SQL with the Flux CLI
 
 ```bash
 flux push ./rls-posts.sql -p your-slug

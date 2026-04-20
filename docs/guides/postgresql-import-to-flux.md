@@ -26,7 +26,7 @@ Flux tenants run a **pinned Postgres image** (see `FLUX_DOCKER_IMAGES.postgres` 
 
 Supabase dumps commonly:
 
-- Reference **`auth.users`** and use **`auth.uid()`** in RLS policies. Plain Postgres has no `auth` schema unless you add it.
+- Reference **`auth.users`** and use **`auth.uid()`** in RLS policies. Plain Postgres has no `auth` schema unless you add it. Flux bootstrap already defines **`auth.uid()`** returning **`text`** (JWT `sub` from **`request.jwt.claims`**), so policies can use **`auth.uid()`** like Supabase while supporting Clerk / NextAuth string IDs.
 - Omit `auth` data if you dumped only `public`.
 
 Use:
@@ -37,7 +37,9 @@ flux push ./dump.sql -p myproject --supabase-compat
 # or: flux push ./dump.sql -p myproject -s
 ```
 
-`--supabase-compat` (`-s`) turns on **Supabase compatibility**: dump transforms (minimal `auth` schema, `auth.users`, `auth.uid()`, seed before `auth.users` FKs), then **moves** tables, sequences, views, and materialized views from `public` into `api`, and reapplies grants on `api`. A short **post-migration report** lists how many objects moved. If your dump layout differs, adjust manually or extend `applySupabaseCompatibilityTransforms` in `@flux/core`.
+`--supabase-compat` (`-s`) turns on **Supabase compatibility**: dump transforms (minimal `auth` schema, `auth.users`, `auth.uid()` as **text**, seed before `auth.users` FKs), then **moves** tables, sequences, views, and materialized views from `public` into `api`, and reapplies grants on `api`. A short **post-migration report** lists how many objects moved. If your dump layout differs, adjust manually or extend `applySupabaseCompatibilityTransforms` in `@flux/core`.
+
+For **profiles** auto-provisioning without Supabase Auth triggers, see **Profiles row on first use** in [`docs/guides/clerk-integration.md`](clerk-integration.md) (RPC or trigger templates).
 
 ### Supabase JS `createClient` (schema)
 

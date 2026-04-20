@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Docker from "dockerode";
 
+import { FLUX_AUTH_SCHEMA_AND_UID_SQL } from "./auth-compat-sql.ts";
 import { queryPsqlScalar } from "./postgres-internal-exec.ts";
 
 const PG_SUPERUSER = "postgres";
@@ -41,16 +42,9 @@ export type ImportSqlFileOptions = {
 
 const AUTH_PRELUDE = `
 -- Flux: minimal Supabase auth stubs (schema + auth.users + auth.uid for RLS)
-CREATE SCHEMA IF NOT EXISTS auth;
+${FLUX_AUTH_SCHEMA_AND_UID_SQL}
+
 CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
-CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path TO ''
-AS $flux$
-SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
-$flux$;
 
 `;
 
