@@ -97,13 +97,13 @@ async function cmdCreate(
   if (project.stripSupabaseRestPrefix) {
     console.log(
       chalk.dim(
-        "  Gateway: CORS (localhost:3001 + dashboard) + strip /rest/v1 (Supabase client path).",
+        "  Gateway: CORS (localhost:3001 + dashboard + per-slug app when FLUX_DOMAIN is set) + strip /rest/v1 (Supabase client path).",
       ),
     );
   } else {
     console.log(
       chalk.dim(
-        "  Gateway: CORS (localhost:3001 + dashboard) only (no /rest/v1 strip).",
+        "  Gateway: CORS (localhost:3001 + dashboard + per-slug app when FLUX_DOMAIN is set) only (no /rest/v1 strip).",
       ),
     );
   }

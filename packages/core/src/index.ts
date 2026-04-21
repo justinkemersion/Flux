@@ -519,8 +519,9 @@ function traefikHostRule(slug: string, tenantSuffix: string): string {
 
 /**
  * Built-in CORS allow-list: Flux dashboard (`http://localhost:3001` for dev,
- * `https://app.<FLUX_DOMAIN|vsl-base.com>` for prod). Tenant apps add their
- * own origins via {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} or the global
+ * `https://app.<FLUX_DOMAIN|vsl-base.com>` for prod). When `FLUX_DOMAIN` is set,
+ * each tenant’s production app UI at `https://<slug>.<FLUX_DOMAIN>` is also allowed.
+ * Tenant apps add more origins via {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} or the global
  * {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV} env var (see {@link resolveCorsAllowOriginList}).
  */
 function traefikDashboardOrigins(): readonly string[] {
@@ -567,12 +568,14 @@ export function serializeAllowedOriginsList(
 
 /**
  * Resolves the full CORS `Access-Control-Allow-Origin` allow-list for a tenant's PostgREST router:
- * built-in dashboard origins ∪ control-plane {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV} ∪ per-project
- * extras (from the {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} label or an explicit override). Order
- * follows insertion (dashboard first), deduped.
+ * built-in dashboard origins ∪ (when `FLUX_DOMAIN` is set) `https://<slug>.<FLUX_DOMAIN>` ∪
+ * control-plane {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV} ∪ per-project extras (from the
+ * {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} label or an explicit override). Order follows insertion
+ * (dashboard first), deduped.
  */
 function resolveCorsAllowOriginList(
   perProjectExtras: readonly string[],
+  slug: string,
 ): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -583,6 +586,9 @@ function resolveCorsAllowOriginList(
     out.push(trimmed);
   };
   for (const o of traefikDashboardOrigins()) push(o);
+  if (fluxApiHttpsForTenantUrls()) {
+    push(`https://${slug}.${fluxTenantDomain()}`);
+  }
   for (const o of parseAllowedOriginsList(
     process.env[FLUX_EXTRA_ALLOWED_ORIGINS_ENV],
   )) {
@@ -656,7 +662,7 @@ function postgrestTraefikDockerLabels(
 
   labels[`traefik.http.middlewares.${stripMw}.stripprefix.prefixes`] = "/rest/v1";
 
-  const allowOriginList = resolveCorsAllowOriginList(perProjectExtraOrigins);
+  const allowOriginList = resolveCorsAllowOriginList(perProjectExtraOrigins, slug);
   labels[`traefik.http.middlewares.${corsMw}.headers.accesscontrolalloworiginlist`] =
     allowOriginList.join(",");
   labels[`traefik.http.middlewares.${corsMw}.headers.accesscontrolalloworiginlistregex`] =
@@ -1126,8 +1132,9 @@ export interface ProvisionOptions {
    */
   customJwtSecret?: string;
   /**
-   * When true (default), the tenant router chains per-tenant CORS (dashboard + env extras + HTTPS `*.domain` regex)
-   * and `flux-<slug>-stripprefix` so the Supabase JS client’s `/rest/v1` path reaches PostgREST.
+   * When true (default), the tenant router chains per-tenant CORS (dashboard + when `FLUX_DOMAIN` is set
+   * `https://<slug>.<FLUX_DOMAIN>` + env extras + HTTPS `*.domain` regex) and `flux-<slug>-stripprefix`
+   * so the Supabase JS client’s `/rest/v1` path reaches PostgREST.
    * Set to false only if clients call PostgREST at the URL root with no `/rest/v1` prefix.
    */
   stripSupabaseRestPrefix?: boolean;
@@ -1140,7 +1147,8 @@ export interface ProvisionOptions {
   /**
    * Per-project CORS extra allow-origins (e.g. `["https://app.example.com", "http://localhost:3000"]`)
    * unioned on top of the built-in dashboard origins and the global
-   * `FLUX_EXTRA_ALLOWED_ORIGINS` env var. Persisted on the PostgREST container via the
+   * `FLUX_EXTRA_ALLOWED_ORIGINS` env var, and the automatic `https://<slug>.<FLUX_DOMAIN>` origin when
+   * `FLUX_DOMAIN` is set. Persisted extras only (not the built-ins) on the PostgREST container via the
    * {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} label so subsequent reconciles preserve them.
    *
    * Pass `[]` (empty array) to **clear** previously persisted per-project extras. Omit to
@@ -1462,7 +1470,8 @@ export class ProjectManager {
    * A Traefik instance named {@link FLUX_GATEWAY_CONTAINER_NAME} (managed outside this API, e.g. Compose)
    * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.{tenantSuffix}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
    * on a random host port. By default, Traefik chains per-tenant Headers (CORS) middleware for
-   * `http://localhost:3001`, `https://app.<domain>`, HTTPS apps matching `*.domain`, extras, and `flux-<slug>-stripprefix` for `/rest/v1` (Supabase JS).
+   * `http://localhost:3001`, `https://app.<domain>`, when `FLUX_DOMAIN` is set `https://<slug>.<domain>`,
+   * HTTPS apps matching `*.domain`, extras, and `flux-<slug>-stripprefix` for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
    *
    * Postgres is **not** published on the Docker host: bootstrap SQL and health checks use
