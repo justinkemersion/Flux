@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 
@@ -25,10 +25,14 @@ export async function OPTIONS(): Promise<Response> {
 }
 
 /**
- * POST /api/projects/[slug]/activity
- * Updates `last_accessed_at` for the catalog row. Secured with
- * `Authorization: Bearer <FLUX_ACTIVITY_SECRET>` (same secret the SDK sends).
- * Not for end-user session auth — use a shared secret between app server and dashboard.
+ * POST /api/projects/[slug]/activity?hash=<7hex>
+ *
+ * Updates `last_accessed_at` for the `(slug, hash)` catalog row. Secured with
+ * `Authorization: Bearer <FLUX_ACTIVITY_SECRET>` (the same secret the SDK sends).
+ * The `hash` query param is required because under global hash namespacing the
+ * `slug` alone is no longer unique across users — it's only unique **per user**
+ * thanks to the `(userId, slug)` composite index. The SDK infers `hash` from the
+ * tenant URL (`api.{slug}.{hash}.{domain}`), so this is transparent to callers.
  */
 export async function POST(
   _req: NextRequest,
@@ -56,13 +60,23 @@ export async function POST(
     return jsonError("Cannot bump flux-system via this endpoint.", 400);
   }
 
+  const url = new URL(_req.url);
+  const hash = url.searchParams.get("hash")?.trim() ?? "";
+  if (!/^[a-f0-9]{7}$/i.test(hash)) {
+    return jsonError(
+      "Missing or invalid hash query param. Expected ?hash=<7-hex>. " +
+        "Upgrade to an SDK that infers the hash from the tenant URL.",
+      400,
+    );
+  }
+
   await initSystemDb();
   const db = getDb();
 
   const updated = await db
     .update(projects)
     .set({ lastAccessedAt: new Date() })
-    .where(eq(projects.slug, slug))
+    .where(and(eq(projects.slug, slug), eq(projects.hash, hash)))
     .returning({ id: projects.id });
 
   if (updated.length === 0) {

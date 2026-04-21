@@ -1,7 +1,7 @@
 export type FluxActivityOptions = {
   /**
    * Control plane origin (no trailing slash), e.g. `https://dashboard.example.com`.
-   * The SDK will `POST` to `{controlPlaneUrl}/api/projects/{slug}/activity`.
+   * The SDK will `POST` to `{controlPlaneUrl}/api/projects/{slug}/activity?hash={hash}`.
    */
   controlPlaneUrl: string;
   /** Must match dashboard `FLUX_ACTIVITY_SECRET`. Prefer server-side env only. */
@@ -12,6 +12,13 @@ export type FluxActivityOptions = {
    * `api.{slug}.…` / `{slug}.…` without the tenant hash segment.
    */
   slug?: string;
+  /**
+   * Per-project 7-hex tenant hash. Required by the dashboard activity endpoint under global
+   * hash namespacing (slug is only unique per user). If omitted, inferred from
+   * {@link FluxClientOptions.url} (`api.{slug}.{7hex}.<domain>`). Without a hash, the SDK
+   * silently skips the activity ping rather than bumping the wrong row.
+   */
+  hash?: string;
 };
 
 export type FluxClientOptions = {
@@ -26,30 +33,20 @@ export type FluxResult<T> = {
   error: unknown | null;
 };
 
-/**
- * Infer tenant slug from PostgREST base URL (`api.{slug}.{tenantHash}.<domain>`,
- * legacy `api.{slug}.<domain>`, or `{slug}.<domain>`).
- */
-export function inferFluxTenantSlugFromPostgrestUrl(baseUrl: string): string | null {
+const FLUX_TENANT_HOST_SUFFIXES = [".vsl-base.com", ".flux.localhost"] as const;
+
+function extractFluxTenantHostSubdomain(baseUrl: string): string | null {
   let s = baseUrl.trim();
   if (!/^[a-z]+:/i.test(s)) {
     s = `http://${s}`;
   }
   try {
     const { hostname } = new URL(s);
-    const suffixes = [".vsl-base.com", ".flux.localhost"];
-    for (const suffix of suffixes) {
+    for (const suffix of FLUX_TENANT_HOST_SUFFIXES) {
       if (hostname.endsWith(suffix) && hostname.length > suffix.length) {
         let sub = hostname.slice(0, -suffix.length);
         if (sub.startsWith("api.")) {
           sub = sub.slice(4);
-        }
-        const segs = sub.split(".");
-        if (segs.length >= 2) {
-          const last = segs[segs.length - 1] ?? "";
-          if (/^[a-f0-9]{7}$/i.test(last)) {
-            return segs.slice(0, -1).join(".") || null;
-          }
         }
         return sub.length > 0 ? sub : null;
       }
@@ -58,6 +55,38 @@ export function inferFluxTenantSlugFromPostgrestUrl(baseUrl: string): string | n
     return null;
   }
   return null;
+}
+
+/**
+ * Infer tenant slug from PostgREST base URL (`api.{slug}.{tenantHash}.<domain>`,
+ * legacy `api.{slug}.<domain>`, or `{slug}.<domain>`).
+ */
+export function inferFluxTenantSlugFromPostgrestUrl(baseUrl: string): string | null {
+  const sub = extractFluxTenantHostSubdomain(baseUrl);
+  if (sub === null) return null;
+  const segs = sub.split(".");
+  if (segs.length >= 2) {
+    const last = segs[segs.length - 1] ?? "";
+    if (/^[a-f0-9]{7}$/i.test(last)) {
+      return segs.slice(0, -1).join(".") || null;
+    }
+  }
+  return sub.length > 0 ? sub : null;
+}
+
+/**
+ * Infer the per-project 7-hex tenant hash from a PostgREST base URL shaped like
+ * `api.{slug}.{7hex}.<domain>`. Returns `null` for legacy hashless URLs so callers can decide
+ * whether to skip the activity bump (under global hash namespacing the server requires the hash
+ * to disambiguate slugs across users).
+ */
+export function inferFluxTenantHashFromPostgrestUrl(baseUrl: string): string | null {
+  const sub = extractFluxTenantHostSubdomain(baseUrl);
+  if (sub === null) return null;
+  const segs = sub.split(".");
+  if (segs.length < 2) return null;
+  const last = segs[segs.length - 1] ?? "";
+  return /^[a-f0-9]{7}$/i.test(last) ? last.toLowerCase() : null;
 }
 
 export function createClient(url: string, anonKey?: string): FluxClient;
@@ -139,8 +168,15 @@ class QueryBuilder<Row = unknown> implements PromiseLike<FluxResult<Row | Row[]>
     const slug =
       act.slug?.trim() || inferFluxTenantSlugFromPostgrestUrl(this.options.url);
     if (!slug) return;
+    const hash =
+      act.hash?.trim() || inferFluxTenantHashFromPostgrestUrl(this.options.url);
+    // Dashboard requires `?hash=<7hex>` to disambiguate (slug is only unique per user).
+    // Skip the bump rather than risk updating the wrong row on legacy hashless URLs.
+    if (!hash) return;
     const base = act.controlPlaneUrl.replace(/\/$/, "");
-    const url = `${base}/api/projects/${encodeURIComponent(slug)}/activity`;
+    const url =
+      `${base}/api/projects/${encodeURIComponent(slug)}/activity` +
+      `?hash=${encodeURIComponent(hash)}`;
     void fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${act.secret}` },
