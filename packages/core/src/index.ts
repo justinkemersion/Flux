@@ -227,6 +227,14 @@ function dockerEnvFromRecord(record: Record<string, string>): string[] {
     .map((k) => `${k}=${record[k] ?? ""}`);
 }
 
+/** Ensures `PGRST_DB_URI` matches the current Postgres Docker DNS name (e.g. after tenant-hash renames). */
+function mergePostgrestEnvWithDbUri(
+  existing: Record<string, string>,
+  dbUri: string,
+): Record<string, string> {
+  return { ...existing, PGRST_DB_URI: dbUri };
+}
+
 /**
  * Reads `PGRST_JWT_SECRET` from `inspect.Config.Env` only — never generates or substitutes a secret.
  */
@@ -1535,7 +1543,15 @@ export class ProjectManager {
         stripSupabaseRestPrefix,
         additionalAllowedOrigins,
       );
-      if (!dockerLabelsSatisfy(mergedTraefik, apiExisting.Config?.Labels)) {
+      const apiEnv = envRecordFromDockerEnv(apiExisting.Config?.Env);
+      const envWithDbUri = mergePostgrestEnvWithDbUri(apiEnv, dbUri);
+      const labelsOutOfDate = !dockerLabelsSatisfy(
+        mergedTraefik,
+        apiExisting.Config?.Labels,
+      );
+      const dbUriOutOfDate = apiEnv.PGRST_DB_URI !== dbUri;
+
+      if (labelsOutOfDate) {
         log?.(
           "PostgREST Traefik labels out of date; recreating API container to refresh gateway routing…",
         );
@@ -1543,7 +1559,19 @@ export class ProjectManager {
           slug,
           tenantSuffix,
           apiExisting,
-          envRecordFromDockerEnv(apiExisting.Config?.Env),
+          envWithDbUri,
+          { labels: mergedTraefik },
+        );
+        apiContainer = this.docker.getContainer(apiContainerName);
+      } else if (dbUriOutOfDate) {
+        log?.(
+          "PostgREST PGRST_DB_URI does not match Postgres container hostname; recreating API container…",
+        );
+        await this.replacePostgrestApiContainer(
+          slug,
+          tenantSuffix,
+          apiExisting,
+          envWithDbUri,
           { labels: mergedTraefik },
         );
         apiContainer = this.docker.getContainer(apiContainerName);
