@@ -333,7 +333,7 @@ export type FluxProjectEnvEntry =
   | { key: string; sensitive: true }
   | { key: string; value: string; sensitive: false };
 
-function slugifyProjectName(name: string): string {
+export function slugifyProjectName(name: string): string {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")

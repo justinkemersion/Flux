@@ -6,7 +6,7 @@ import type {
   FluxProjectSummary,
   ImportSqlFileResult,
 } from "@flux/core";
-import { ProjectManager } from "@flux/core";
+import { ProjectManager, slugifyProjectName } from "@flux/core";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
@@ -379,6 +379,28 @@ async function cmdReap(hours: number): Promise<void> {
   console.log();
 }
 
+async function cmdKeys(name: string): Promise<void> {
+  const pm = new ProjectManager();
+  const ownerKey = fluxCliOwnerKey();
+  const slug = slugifyProjectName(name);
+  const { anonKey, serviceRoleKey } = await pm.getProjectKeys(slug, ownerKey);
+
+  printBanner(`JWT keys — ${slug}`);
+  console.log();
+  console.log(chalk.bold.cyan("  Anon key"));
+  console.log(chalk.white(`  ${anonKey}`));
+  console.log();
+  console.log(chalk.bold.magenta("  Service role key"));
+  console.log(chalk.white(`  ${serviceRoleKey}`));
+  console.log();
+  console.log(
+    chalk.dim(
+      "  Copy each line above as a single token. Keep the service role secret; it bypasses RLS.",
+    ),
+  );
+  console.log();
+}
+
 async function cmdList(): Promise<void> {
   const pm = new ProjectManager();
   const rows = await pm.listProjects();
@@ -703,6 +725,22 @@ async function main(): Promise<void> {
     .action(async () => {
       try {
         await cmdList();
+      } catch (err: unknown) {
+        console.error(chalk.red.bold("Error"));
+        console.error(formatCliError(err));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("keys")
+    .description(
+      "Print anon and service_role JWTs signed with the project PostgREST PGRST_JWT_SECRET",
+    )
+    .argument("<name>", "project name or slug")
+    .action(async (name: string) => {
+      try {
+        await cmdKeys(name);
       } catch (err: unknown) {
         console.error(chalk.red.bold("Error"));
         console.error(formatCliError(err));
