@@ -10,6 +10,7 @@ import { ProjectManager, slugifyProjectName } from "@flux/core";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
+import { resolveProjectHash } from "./resolve-hash.ts";
 
 function postgresConnectionUrl(containerName: string, password: string): string {
   const user = encodeURIComponent("postgres");
@@ -34,20 +35,9 @@ function formatCliError(err: unknown): string {
   }
 }
 
-/** When set, scopes Docker/Traefik resource names (same as dashboard `ownerKey`). */
-function fluxCliOwnerKey(): string | undefined {
-  const v = process.env.FLUX_OWNER_KEY?.trim();
-  return v && v.length > 0 ? v : undefined;
-}
-
-function fluxCliOwnerOpts(): { ownerKey: string } | Record<string, never> {
-  const k = fluxCliOwnerKey();
-  return k ? { ownerKey: k } : {};
-}
-
 async function cmdCreate(
   name: string,
-  options: { noSupabaseRestPath?: boolean },
+  options: { noSupabaseRestPath?: boolean; hash?: string },
 ): Promise<void> {
   const pm = new ProjectManager();
   console.log(chalk.blue("Provisioning project…"));
@@ -58,21 +48,22 @@ async function cmdCreate(
   );
   const onStatus = (msg: string) => console.log(chalk.dim(`  ▸ ${msg}`));
   const stripSupabaseRestPrefix = options.noSupabaseRestPath !== true;
-  const ownerOpts = fluxCliOwnerOpts();
 
-  const project = await pm.provisionProject(name, {
-    onStatus,
-    ...ownerOpts,
-    ...(options.noSupabaseRestPath === true
-      ? { stripSupabaseRestPrefix: false }
-      : {}),
-    isProduction: process.env.NODE_ENV === "production",
-  });
+  const project = await pm.provisionProject(
+    name,
+    {
+      onStatus,
+      ...(options.noSupabaseRestPath === true
+        ? { stripSupabaseRestPrefix: false }
+        : {}),
+      isProduction: process.env.NODE_ENV === "production",
+    },
+    options.hash?.trim() || undefined,
+  );
 
-  await pm.reconcilePostgrestTraefikLabels(name, {
+  await pm.reconcilePostgrestTraefikLabels(name, project.hash, {
     onStatus,
     stripSupabaseRestPrefix,
-    ...ownerOpts,
   });
 
   const pgUrl = postgresConnectionUrl(
@@ -86,7 +77,7 @@ async function cmdCreate(
     chalk.green.bold("  ✓"),
     chalk.white("Created"),
     chalk.yellow(project.name),
-    chalk.dim(`(${project.slug})`),
+    chalk.dim(`(${project.slug} · hash=${project.hash})`),
   );
   console.log();
   console.log(chalk.blue.bold("  Postgres"));
@@ -126,7 +117,7 @@ async function cmdPush(
     supabaseCompat: boolean;
     noSanitize: boolean;
     disableApiRls: boolean;
-    ownerKey?: string;
+    hash?: string;
   },
 ): Promise<void> {
   const abs = resolve(process.cwd(), file);
@@ -139,6 +130,7 @@ async function cmdPush(
   }
 
   const pm = new ProjectManager();
+  const hash = await resolveProjectHash(pm, project, options.hash);
   console.log(
     chalk.blue(
       `Applying ${chalk.bold(file)} to project ${chalk.bold(project)}…`,
@@ -166,14 +158,13 @@ async function cmdPush(
   };
   let result: ImportSqlFileResult = emptyReport;
   try {
-    result = await pm.importSqlFile(project, abs, {
+    result = await pm.importSqlFile(project, abs, hash, {
       supabaseCompat: options.supabaseCompat,
       sanitizeForTarget: !options.noSanitize,
       moveFromPublic: options.supabaseCompat,
       ...(options.disableApiRls
         ? { disableRowLevelSecurityInApi: true }
         : {}),
-      ...(options.ownerKey ? { ownerKey: options.ownerKey } : {}),
     });
   } finally {
     spinner.stop();
@@ -200,9 +191,13 @@ async function cmdPush(
   }
 }
 
-async function cmdSupabaseRestPath(project: string, enable: boolean): Promise<void> {
+async function cmdSupabaseRestPath(
+  project: string,
+  enable: boolean,
+  cliHash: string | undefined,
+): Promise<void> {
   const pm = new ProjectManager();
-  const ownerKey = fluxCliOwnerKey();
+  const hash = await resolveProjectHash(pm, project, cliHash);
   console.log(
     chalk.blue(
       enable
@@ -210,7 +205,7 @@ async function cmdSupabaseRestPath(project: string, enable: boolean): Promise<vo
         : "Removing /rest/v1 strip (PostgREST served at gateway URL root only)…",
     ),
   );
-  await pm.setPostgrestSupabaseRestPrefix(project, enable, ownerKey);
+  await pm.setPostgrestSupabaseRestPrefix(project, enable, hash);
   console.log(
     chalk.green.bold("✓"),
     chalk.white(
@@ -232,6 +227,7 @@ async function cmdSupabaseRestPath(project: string, enable: boolean): Promise<vo
  */
 async function cmdCors(options: {
   project: string;
+  hash?: string;
   add?: readonly string[];
   remove?: readonly string[];
   clear?: boolean;
@@ -239,7 +235,7 @@ async function cmdCors(options: {
 }): Promise<void> {
   const pm = new ProjectManager();
   const project = options.project;
-  const ownerOpts = fluxCliOwnerOpts();
+  const hash = await resolveProjectHash(pm, project, options.hash);
   const add = options.add ?? [];
   const remove = options.remove ?? [];
   const clear = options.clear === true;
@@ -251,10 +247,7 @@ async function cmdCors(options: {
   }
 
   if (!mutating) {
-    const current = await pm.getProjectAllowedOrigins(
-      project,
-      fluxCliOwnerKey(),
-    );
+    const current = await pm.getProjectAllowedOrigins(project, hash);
     if (current.length === 0) {
       console.log(
         chalk.dim(
@@ -274,10 +267,7 @@ async function cmdCors(options: {
   if (clear) {
     next = [];
   } else {
-    const current = await pm.getProjectAllowedOrigins(
-      project,
-      fluxCliOwnerKey(),
-    );
+    const current = await pm.getProjectAllowedOrigins(project, hash);
     const set = new Set(current);
     for (const o of add) set.add(o.trim());
     for (const o of remove) set.delete(o.trim());
@@ -288,9 +278,8 @@ async function cmdCors(options: {
   console.log(
     chalk.blue(`Updating CORS allow-origins for "${project}"…`),
   );
-  await pm.setProjectAllowedOrigins(project, next, {
+  await pm.setProjectAllowedOrigins(project, next, hash, {
     onStatus: (m) => console.log(chalk.dim(`  ${m}`)),
-    ...ownerOpts,
   });
   console.log(chalk.green.bold("✓"), chalk.white("CORS allow-origins updated."));
   if (next.length === 0) {
@@ -304,7 +293,11 @@ async function cmdCors(options: {
   }
 }
 
-async function cmdDbReset(project: string, yes: boolean): Promise<void> {
+async function cmdDbReset(
+  project: string,
+  yes: boolean,
+  cliHash: string | undefined,
+): Promise<void> {
   if (!yes) {
     console.error(
       chalk.red.bold(
@@ -320,13 +313,13 @@ async function cmdDbReset(project: string, yes: boolean): Promise<void> {
     return;
   }
   const pm = new ProjectManager();
-  const ownerKey = fluxCliOwnerKey();
+  const hash = await resolveProjectHash(pm, project, cliHash);
   console.log(
     chalk.blue(
       `Resetting database for project ${chalk.bold(project)} (drop public + auth, reapply Flux bootstrap)…`,
     ),
   );
-  await pm.resetTenantDatabaseForImport(project, ownerKey);
+  await pm.resetTenantDatabaseForImport(project, hash);
   console.log(
     chalk.green.bold("✓"),
     chalk.white("Database reset; you can run"),
@@ -379,11 +372,11 @@ async function cmdReap(hours: number): Promise<void> {
   console.log();
 }
 
-async function cmdKeys(name: string): Promise<void> {
+async function cmdKeys(name: string, cliHash: string | undefined): Promise<void> {
   const pm = new ProjectManager();
-  const ownerKey = fluxCliOwnerKey();
   const slug = slugifyProjectName(name);
-  const { anonKey, serviceRoleKey } = await pm.getProjectKeys(slug, ownerKey);
+  const hash = await resolveProjectHash(pm, slug, cliHash);
+  const { anonKey, serviceRoleKey } = await pm.getProjectKeys(slug, hash);
 
   printBanner(`JWT keys — ${slug}`);
   console.log();
@@ -416,31 +409,34 @@ async function cmdList(): Promise<void> {
 
   printBanner("Flux projects");
   const wProject = 26;
+  const wHash = 10;
   const wStatus = 12;
   console.log(
-    chalk.dim(`  ${"PROJECT".padEnd(wProject)}${"STATUS".padEnd(wStatus)}API URL`),
+    chalk.dim(
+      `  ${"PROJECT".padEnd(wProject)}${"HASH".padEnd(wHash)}${"STATUS".padEnd(wStatus)}API URL`,
+    ),
   );
   for (const r of rows) {
     console.log(
-      `  ${chalk.cyan.bold(r.slug.padEnd(wProject))}${statusCell(r.status)}${chalk.white(r.apiUrl)}`,
+      `  ${chalk.cyan.bold(r.slug.padEnd(wProject))}${chalk.yellow(r.hash.padEnd(wHash))}${statusCell(r.status)}${chalk.white(r.apiUrl)}`,
     );
   }
   console.log();
 }
 
-async function cmdStop(name: string): Promise<void> {
+async function cmdStop(name: string, cliHash: string | undefined): Promise<void> {
   const pm = new ProjectManager();
-  const ownerKey = fluxCliOwnerKey();
+  const hash = await resolveProjectHash(pm, name, cliHash);
   console.log(chalk.blue(`Stopping project ${chalk.bold(name)}…`));
-  await pm.stopProject(name, ownerKey);
+  await pm.stopProject(name, hash);
   console.log(chalk.green.bold("✓"), chalk.white("Containers stopped."));
 }
 
-async function cmdStart(name: string): Promise<void> {
+async function cmdStart(name: string, cliHash: string | undefined): Promise<void> {
   const pm = new ProjectManager();
-  const ownerKey = fluxCliOwnerKey();
+  const hash = await resolveProjectHash(pm, name, cliHash);
   console.log(chalk.blue(`Starting project ${chalk.bold(name)}…`));
-  await pm.startProject(name, ownerKey);
+  await pm.startProject(name, hash);
   console.log(chalk.green.bold("✓"), chalk.white("Containers started."));
 }
 
@@ -469,29 +465,36 @@ function formatEnvListRow(entry: FluxProjectEnvEntry): string {
   return `${chalk.cyan(entry.key)}=${chalk.white(entry.value)}`;
 }
 
-async function cmdEnvSet(project: string, pairs: string[]): Promise<void> {
+async function cmdEnvSet(
+  project: string,
+  pairs: string[],
+  cliHash: string | undefined,
+): Promise<void> {
   if (pairs.length === 0) {
     throw new Error("Provide at least one KEY=value pair.");
   }
   const envs = parseEnvPairs(pairs);
   const pm = new ProjectManager();
-  const ownerKey = fluxCliOwnerKey();
+  const hash = await resolveProjectHash(pm, project, cliHash);
   console.log(
     chalk.blue(
       `Updating API container environment for project ${chalk.bold(project)}…`,
     ),
   );
-  await pm.setProjectEnv(project, envs, ownerKey);
+  await pm.setProjectEnv(project, envs, hash);
   console.log(
     chalk.green.bold("✓"),
     chalk.white("Environment updated; PostgREST container was recreated."),
   );
 }
 
-async function cmdEnvList(project: string): Promise<void> {
+async function cmdEnvList(
+  project: string,
+  cliHash: string | undefined,
+): Promise<void> {
   const pm = new ProjectManager();
-  const ownerKey = fluxCliOwnerKey();
-  const rows = await pm.listProjectEnv(project, ownerKey);
+  const hash = await resolveProjectHash(pm, project, cliHash);
+  const rows = await pm.listProjectEnv(project, hash);
   if (rows.length === 0) {
     console.log(chalk.dim("No environment variables on the API container."));
     return;
@@ -509,7 +512,11 @@ async function cmdEnvList(project: string): Promise<void> {
   console.log();
 }
 
-async function cmdNuke(name: string, yes: boolean): Promise<void> {
+async function cmdNuke(
+  name: string,
+  yes: boolean,
+  cliHash: string | undefined,
+): Promise<void> {
   if (!yes) {
     console.error(
       chalk.red.bold("Refusing to nuke without confirmation: this deletes all database data."),
@@ -523,9 +530,9 @@ async function cmdNuke(name: string, yes: boolean): Promise<void> {
     return;
   }
   const pm = new ProjectManager();
-  const ownerOpts = fluxCliOwnerOpts();
+  const hash = await resolveProjectHash(pm, name, cliHash);
   console.log(chalk.red.bold(`Nuking project ${name} — removing containers and volume…`));
-  await pm.nukeProject(name, { acknowledgeDataLoss: true, ...ownerOpts });
+  await pm.nukeProject(name, { acknowledgeDataLoss: true, hash });
   console.log(
     chalk.green.bold("✓"),
     chalk.white("Project removed and data volume destroyed."),
@@ -555,6 +562,9 @@ async function main(): Promise<void> {
     )
     .version("1.0.0", "-V, --version");
 
+  const hashFlagDesc =
+    "Override the slug→hash lookup from flux-system (use when the catalog is offline)";
+
   const createCmd = program
     .command("create")
     .description(
@@ -566,11 +576,16 @@ async function main(): Promise<void> {
       "Omit flux-<slug>-stripprefix on the tenant router (PostgREST at URL root; default is strip + CORS)",
       false,
     )
+    .option(
+      "--hash <hex>",
+      "Deterministic 7-hex hash to reuse for this project (default: random)",
+    )
     .action(async (name: string) => {
       try {
-        const opts = createCmd.opts<{ noSupabaseRestPath?: boolean }>();
+        const opts = createCmd.opts<{ noSupabaseRestPath?: boolean; hash?: string }>();
         await cmdCreate(name, {
           noSupabaseRestPath: opts.noSupabaseRestPath === true,
+          ...(opts.hash ? { hash: opts.hash } : {}),
         });
       } catch (err: unknown) {
         console.error(chalk.red.bold("Error"));
@@ -599,7 +614,8 @@ async function main(): Promise<void> {
       "--disable-api-rls",
       "After import: disable RLS on api tables that have it (typical Supabase port / local testing)",
       false,
-    );
+    )
+    .option("--hash <hex>", hashFlagDesc);
 
   push.action(async (file: string) => {
     try {
@@ -608,13 +624,13 @@ async function main(): Promise<void> {
         supabaseCompat: boolean;
         noSanitize?: boolean;
         disableApiRls?: boolean;
+        hash?: string;
       }>();
-      const ownerK = fluxCliOwnerKey();
       await cmdPush(file, opts.project, {
         supabaseCompat: opts.supabaseCompat,
         noSanitize: opts.noSanitize === true,
         disableApiRls: opts.disableApiRls === true,
-        ...(ownerK ? { ownerKey: ownerK } : {}),
+        ...(opts.hash ? { hash: opts.hash } : {}),
       });
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
@@ -629,12 +645,13 @@ async function main(): Promise<void> {
       "Drop public and auth schemas and reapply Flux bootstrap (for a clean import; irreversible data loss in those schemas)",
     )
     .requiredOption("-p, --project <name>", "Flux project name")
-    .option("-y, --yes", "confirm", false);
+    .option("-y, --yes", "confirm", false)
+    .option("--hash <hex>", hashFlagDesc);
 
   dbReset.action(async () => {
     try {
-      const opts = dbReset.opts<{ project: string; yes: boolean }>();
-      await cmdDbReset(opts.project, opts.yes);
+      const opts = dbReset.opts<{ project: string; yes: boolean; hash?: string }>();
+      await cmdDbReset(opts.project, opts.yes, opts.hash);
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
       console.error(formatCliError(err));
@@ -652,15 +669,17 @@ async function main(): Promise<void> {
       "--off",
       "Remove the strip middleware instead of enabling it",
       false,
-    );
+    )
+    .option("--hash <hex>", hashFlagDesc);
 
   supabaseRestPathCmd.action(async () => {
     try {
       const opts = supabaseRestPathCmd.opts<{
         project: string;
         off?: boolean;
+        hash?: string;
       }>();
-      await cmdSupabaseRestPath(opts.project, opts.off !== true);
+      await cmdSupabaseRestPath(opts.project, opts.off !== true, opts.hash);
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
       console.error(formatCliError(err));
@@ -693,7 +712,8 @@ async function main(): Promise<void> {
       [] as string[],
     )
     .option("--clear", "Remove all per-project CORS extras")
-    .option("--list", "List current per-project CORS extras (default when no action flags)");
+    .option("--list", "List current per-project CORS extras (default when no action flags)")
+    .option("--hash <hex>", hashFlagDesc);
 
   corsCmd.action(async () => {
     try {
@@ -703,12 +723,14 @@ async function main(): Promise<void> {
         remove?: string[];
         clear?: boolean;
         list?: boolean;
+        hash?: string;
       }>();
       const actionOpts: Parameters<typeof cmdCors>[0] = { project: opts.project };
       if (opts.add && opts.add.length > 0) actionOpts.add = opts.add;
       if (opts.remove && opts.remove.length > 0) actionOpts.remove = opts.remove;
       if (opts.clear) actionOpts.clear = true;
       if (opts.list) actionOpts.list = true;
+      if (opts.hash) actionOpts.hash = opts.hash;
       await cmdCors(actionOpts);
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
@@ -732,66 +754,78 @@ async function main(): Promise<void> {
       }
     });
 
-  program
+  const keysCmd = program
     .command("keys")
     .description(
       "Print anon and service_role JWTs signed with the project PostgREST PGRST_JWT_SECRET",
     )
     .argument("<name>", "project name or slug")
-    .action(async (name: string) => {
-      try {
-        await cmdKeys(name);
-      } catch (err: unknown) {
-        console.error(chalk.red.bold("Error"));
-        console.error(formatCliError(err));
-        process.exit(1);
-      }
-    });
+    .option("--hash <hex>", hashFlagDesc);
 
-  program
+  keysCmd.action(async (name: string) => {
+    try {
+      const opts = keysCmd.opts<{ hash?: string }>();
+      await cmdKeys(name, opts.hash);
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
+
+  const stopCmd = program
     .command("stop")
     .description("Stop Postgres and PostgREST for a project")
     .argument("<name>", "project name")
-    .action(async (name: string) => {
-      try {
-        await cmdStop(name);
-      } catch (err: unknown) {
-        console.error(chalk.red.bold("Error"));
-        console.error(formatCliError(err));
-        process.exit(1);
-      }
-    });
+    .option("--hash <hex>", hashFlagDesc);
 
-  program
+  stopCmd.action(async (name: string) => {
+    try {
+      const opts = stopCmd.opts<{ hash?: string }>();
+      await cmdStop(name, opts.hash);
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
+
+  const startCmd = program
     .command("start")
     .description("Start Postgres and PostgREST for a project")
     .argument("<name>", "project name")
-    .action(async (name: string) => {
-      try {
-        await cmdStart(name);
-      } catch (err: unknown) {
-        console.error(chalk.red.bold("Error"));
-        console.error(formatCliError(err));
-        process.exit(1);
-      }
-    });
+    .option("--hash <hex>", hashFlagDesc);
 
-  program
+  startCmd.action(async (name: string) => {
+    try {
+      const opts = startCmd.opts<{ hash?: string }>();
+      await cmdStart(name, opts.hash);
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
+
+  const nukeCmd = program
     .command("nuke")
     .description(
       "Remove tenant containers and delete the Postgres volume (permanent data loss)",
     )
     .argument("<name>", "project name")
     .option("-y, --yes", "confirm irreversible deletion of all project data", false)
-    .action(async (name: string, opts: { yes: boolean }) => {
-      try {
-        await cmdNuke(name, opts.yes);
-      } catch (err: unknown) {
-        console.error(chalk.red.bold("Error"));
-        console.error(formatCliError(err));
-        process.exit(1);
-      }
-    });
+    .option("--hash <hex>", hashFlagDesc);
+
+  nukeCmd.action(async (name: string) => {
+    try {
+      const opts = nukeCmd.opts<{ yes: boolean; hash?: string }>();
+      await cmdNuke(name, opts.yes, opts.hash);
+    } catch (err: unknown) {
+      console.error(chalk.red.bold("Error"));
+      console.error(formatCliError(err));
+      process.exit(1);
+    }
+  });
 
   program
     .command("reap")
@@ -828,12 +862,13 @@ async function main(): Promise<void> {
       "Merge KEY=value pairs into the API container env and recreate it so changes apply",
     )
     .argument("<pairs...>", "one or more KEY=value entries")
-    .requiredOption("-p, --project <name>", "Flux project name");
+    .requiredOption("-p, --project <name>", "Flux project name")
+    .option("--hash <hex>", hashFlagDesc);
 
   envSet.action(async (pairs: string[]) => {
     try {
-      const opts = envSet.opts<{ project: string }>();
-      await cmdEnvSet(opts.project, pairs);
+      const opts = envSet.opts<{ project: string; hash?: string }>();
+      await cmdEnvSet(opts.project, pairs, opts.hash);
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
       console.error(formatCliError(err));
@@ -846,12 +881,13 @@ async function main(): Promise<void> {
     .description(
       "List env keys on the API container (values omitted for sensitive keys)",
     )
-    .requiredOption("-p, --project <name>", "Flux project name");
+    .requiredOption("-p, --project <name>", "Flux project name")
+    .option("--hash <hex>", hashFlagDesc);
 
   envList.action(async () => {
     try {
-      const opts = envList.opts<{ project: string }>();
-      await cmdEnvList(opts.project);
+      const opts = envList.opts<{ project: string; hash?: string }>();
+      await cmdEnvList(opts.project, opts.hash);
     } catch (err: unknown) {
       console.error(chalk.red.bold("Error"));
       console.error(formatCliError(err));

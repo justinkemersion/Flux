@@ -1,35 +1,26 @@
-import { createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
-/** MD5 hex slice length used in Docker / Traefik resource names and hostnames. */
-export const FLUX_TENANT_SUFFIX_HEX_LEN = 7;
+/** Hex length of the per-project `hash` segment embedded in Docker / Traefik resource names. */
+export const FLUX_PROJECT_HASH_HEX_LEN = 7;
 
 /**
- * Stable owner-scoped id for Docker container names, Traefik router/middleware/service names,
- * and the DNS label under `api.{slug}.{suffix}.{domain}`.
+ * Fixed, well-known hash for the platform `flux-system` stack so its containers / hostnames are
+ * always locatable without a DB round-trip. Tenant projects use random per-project hashes (see
+ * {@link generateProjectHash}). Must be exactly {@link FLUX_PROJECT_HASH_HEX_LEN} hex chars so it
+ * also matches the tenant-container regex used by `listProjects`.
+ */
+export const FLUX_SYSTEM_HASH = "5y57e70";
+
+/**
+ * Generates a random 7-char hex id for a new project. Used as the `hash` segment in
+ * `flux-${hash}-${slug}-{db,api}` Docker names, the tenant volume, Traefik middleware names,
+ * and the public hostname `api.${slug}.${hash}.${domain}`.
  *
- * @param clerkUserId — Stable opaque user id (e.g. Clerk `sub`, Auth.js `users.id`).
+ * Entropy: `crypto.randomBytes(4)` → 8 hex chars, sliced to 7 → 2^28 ≈ 268M ids. Collisions
+ * within a single user's namespace are rejected by the `(userId, slug)` unique index in the
+ * flux-system `projects` table, so retries are only needed on the extremely rare name clash at
+ * the Docker layer.
  */
-export function getTenantSuffix(clerkUserId: string): string {
-  return createHash("md5")
-    .update(clerkUserId, "utf8")
-    .digest("hex")
-    .slice(0, FLUX_TENANT_SUFFIX_HEX_LEN);
-}
-
-/** Synthetic owner key for the platform `flux-system` Postgres stack (deterministic suffix). */
-export const FLUX_SYSTEM_OWNER_KEY = "__flux_system__";
-
-/** Default owner key when no user / `FLUX_OWNER_KEY` is provided (single-operator CLI). */
-export const FLUX_DEFAULT_OWNER_KEY = "__flux_default_owner__";
-
-/**
- * Resolves the owner key used for tenant-scoped Docker and Traefik naming.
- * Precedence: explicit `ownerKey` → `FLUX_OWNER_KEY` env → {@link FLUX_DEFAULT_OWNER_KEY}.
- */
-export function resolveProvisionOwnerKey(ownerKey?: string): string {
-  const o = ownerKey?.trim();
-  if (o) return o;
-  const e = process.env.FLUX_OWNER_KEY?.trim();
-  if (e) return e;
-  return FLUX_DEFAULT_OWNER_KEY;
+export function generateProjectHash(): string {
+  return randomBytes(4).toString("hex").slice(0, FLUX_PROJECT_HASH_HEX_LEN);
 }

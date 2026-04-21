@@ -37,7 +37,7 @@ export async function GET(
 
   const pm = getProjectManager();
   try {
-    const credentials = await pm.getProjectCredentials(slug, session.user.id);
+    const credentials = await pm.getProjectCredentials(slug, project.hash);
     return Response.json(credentials);
   } catch (err: unknown) {
     return jsonError(err instanceof Error ? err.message : String(err), 500);

@@ -6,6 +6,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -83,16 +84,22 @@ export const authenticators = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.credentialID] })],
 );
 
-export const projects = pgTable("projects", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  userId: text("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
-  /** Last successful tenant API touch (PostgREST) — used by the Flux reaper for idle stop. */
-  lastAccessedAt: timestamp("last_accessed_at", { mode: "date" })
-    .notNull()
-    .defaultNow(),
-});
+export const projects = pgTable(
+  "projects",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    /** Per-project random 7-hex id stamped into Docker names, Traefik labels, and the public hostname. */
+    hash: text("hash").notNull(),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    /** Last successful tenant API touch (PostgREST) — used by the Flux reaper for idle stop. */
+    lastAccessedAt: timestamp("last_accessed_at", { mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug)],
+);

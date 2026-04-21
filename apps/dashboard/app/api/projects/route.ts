@@ -1,7 +1,7 @@
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
 import { projects, users } from "@/src/db/schema";
-import { fluxApiUrlForSlug, getTenantSuffix } from "@flux/core";
+import { fluxApiUrlForSlug, slugifyProjectName } from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
@@ -41,7 +41,7 @@ export async function GET(): Promise<Response> {
 
   const slugRefs = userProjects.map((p) => ({
     slug: p.slug,
-    ownerKey: p.userId,
+    hash: p.hash,
   }));
   let dockerSummaries: Awaited<
     ReturnType<typeof pm.getProjectSummariesForSlugs>
@@ -65,12 +65,7 @@ export async function GET(): Promise<Response> {
       status: docker?.status ?? "missing",
       apiUrl:
         docker?.apiUrl ??
-        fluxApiUrlForSlug(
-          p.slug,
-          process.env.NODE_ENV === "production",
-          "api",
-          getTenantSuffix(p.userId),
-        ),
+        fluxApiUrlForSlug(p.slug, p.hash, process.env.NODE_ENV === "production"),
       createdAt: p.createdAt,
     };
   });
@@ -124,6 +119,23 @@ export async function POST(req: Request): Promise<Response> {
   const db = getDb();
   const pm = getProjectManager();
 
+  let slug: string;
+  try {
+    slug = slugifyProjectName(rawName);
+  } catch (err) {
+    return jsonError(err instanceof Error ? err.message : String(err), 400);
+  }
+
+  const existing = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(eq(projects.userId, session.user.id), eq(projects.slug, slug)),
+    );
+  if (existing.length > 0) {
+    return jsonError("You already have a project with this name.", 409);
+  }
+
   const [{ n: projectCount }] = await db
     .select({ n: count() })
     .from(projects)
@@ -144,21 +156,30 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(PRO_LIMIT_ERROR, 403);
   }
 
+  let project: Awaited<ReturnType<typeof pm.provisionProject>>;
   try {
-    const project = await pm.provisionProject(rawName, {
-      ownerKey: session.user.id,
+    project = await pm.provisionProject(rawName, {
       ...(customJwtSecret ? { customJwtSecret } : {}),
       ...(stripSupabaseRestPrefix !== undefined
         ? { stripSupabaseRestPrefix }
         : {}),
       isProduction: process.env.NODE_ENV === "production",
     });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("Invalid project name")) {
+      return jsonError(message, 400);
+    }
+    return jsonError(message, 500);
+  }
 
+  try {
     const [dbProject] = await db
       .insert(projects)
       .values({
         name: project.name,
         slug: project.slug,
+        hash: project.hash,
         userId: session.user.id,
       })
       .returning();
@@ -175,13 +196,12 @@ export async function POST(req: Request): Promise<Response> {
       },
     });
   } catch (err: unknown) {
+    // Ghost-container rollback: the Docker stack came up but the catalog insert failed.
+    // Tear down the just-provisioned containers + volume so they do not leak.
+    await pm
+      .nukeContainersOnly(project.slug, project.hash)
+      .catch(() => undefined);
     const message = err instanceof Error ? err.message : String(err);
-    if (
-      message.includes("already exists") ||
-      message.includes("Invalid project name")
-    ) {
-      return jsonError(message, 409);
-    }
     return jsonError(message, 500);
   }
 }

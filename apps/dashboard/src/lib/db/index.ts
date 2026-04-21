@@ -1,4 +1,4 @@
-import { FLUX_SYSTEM_OWNER_KEY } from "@flux/core";
+import { FLUX_SYSTEM_HASH } from "@flux/core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../../db/schema";
@@ -28,15 +28,16 @@ async function _init(): Promise<void> {
   const pm = getProjectManager();
 
   try {
-    await pm.provisionProject("flux-system", {
-      ownerKey: FLUX_SYSTEM_OWNER_KEY,
-      isProduction: process.env.NODE_ENV === "production",
-    });
+    await pm.provisionProject(
+      "flux-system",
+      { isProduction: process.env.NODE_ENV === "production" },
+      FLUX_SYSTEM_HASH,
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!msg.includes("already exists")) throw err;
     try {
-      await pm.startProject("flux-system");
+      await pm.startProject("flux-system", FLUX_SYSTEM_HASH);
     } catch {
       // 304: already running — safe to ignore
     }
@@ -44,7 +45,7 @@ async function _init(): Promise<void> {
 
   const connectionString =
     process.env.FLUX_SYSTEM_DATABASE_URL?.trim() ||
-    (await pm.getPostgresHostConnectionString("flux-system"));
+    (await pm.getPostgresHostConnectionString("flux-system", FLUX_SYSTEM_HASH));
   const pool = new Pool({ connectionString });
 
   // One-time upgrade from the pre–Auth.js v5 UUID user model to Auth.js string ids.
@@ -65,6 +66,25 @@ async function _init(): Promise<void> {
       END IF;
     END
     $migrate$;
+  `);
+
+  // Clean-cutover migration for global hash namespacing: pre-production only.
+  // If the legacy projects table exists without the `hash` column, drop it so the CREATE TABLE
+  // below installs the new shape (no backfill — rows would have no Docker/Traefik names).
+  await pool.query(`
+    DO $cutover$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'projects'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'hash'
+      ) THEN
+        DROP TABLE projects CASCADE;
+      END IF;
+    END
+    $cutover$;
   `);
 
   await pool.query(`
@@ -122,11 +142,13 @@ async function _init(): Promise<void> {
     CREATE TABLE IF NOT EXISTS projects (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       name TEXT NOT NULL,
-      slug TEXT NOT NULL UNIQUE,
+      slug TEXT NOT NULL,
+      hash TEXT NOT NULL,
       "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS projects_user_slug_uniq ON projects ("userId", slug);
   `);
 
   await pool.query(`
