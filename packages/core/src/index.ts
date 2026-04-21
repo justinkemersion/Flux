@@ -476,10 +476,24 @@ function resolveCorsAllowOriginList(
   return out;
 }
 
-/** Shared Traefik middleware names (repeated on each PostgREST container; Traefik merges identical defs). */
-const TRAEFIK_MW_STRIP_PREFIX = "flux-stripprefix";
-/** CORS: dashboard origins + tenant extras (per-project label + control-plane env var). */
-const TRAEFIK_MW_CORS_LOCALHOST_3001 = "flux-cors-localhost-3001";
+/**
+ * Per-tenant Traefik middleware names. A single shared name (e.g. `flux-cors-localhost-3001`) caused
+ * Docker/Traefik to merge definitions from multiple PostgREST containers — last writer wins — and
+ * allowed the edge catchall to steal traffic when routers tied; slug-scoped names avoid both.
+ */
+function traefikCorsMiddlewareName(slug: string): string {
+  return `flux-${slug}-cors`;
+}
+
+function traefikStripMiddlewareName(slug: string): string {
+  return `flux-${slug}-stripprefix`;
+}
+
+/** HTTPS origins for deployed apps under {@link fluxTenantDomain} (e.g. YeastCoast at `https://slug.domain`). */
+function fleetHttpsOriginsRegex(domain: string): string {
+  const escaped = domain.replace(/\\/g, "\\\\").replace(/\./g, "\\.");
+  return `^https://.+\\.${escaped}$`;
+}
 
 /** Supabase JS + PostgREST (explicit list; no wildcard). */
 const TRAEFIK_CORS_ALLOW_HEADERS =
@@ -502,6 +516,8 @@ function postgrestTraefikDockerLabels(
   perProjectExtraOrigins: readonly string[] = [],
 ): Record<string, string> {
   const traefikSvc = `flux-${slug}-api`;
+  const corsMw = traefikCorsMiddlewareName(slug);
+  const stripMw = traefikStripMiddlewareName(slug);
   const useEdgeTls = fluxTraefikCertResolverName() != null;
   const labels: Record<string, string> = {
     "traefik.enable": "true",
@@ -512,6 +528,8 @@ function postgrestTraefikDockerLabels(
       : "web",
     [`traefik.http.routers.${traefikSvc}.service`]: traefikSvc,
     [`traefik.http.services.${traefikSvc}.loadbalancer.server.port`]: "3000",
+    // Beat low-priority edge catch-alls (e.g. static nginx on `*.domain`) regardless of rule-length defaults.
+    [`traefik.http.routers.${traefikSvc}.priority`]: "100",
   };
   if (useEdgeTls) {
     // Router only on `websecure` with explicit ACME resolver — avoids Traefik "default" cert.
@@ -520,25 +538,19 @@ function postgrestTraefikDockerLabels(
       FLUX_TRAEFIK_ACME_RESOLVER;
   }
 
-  labels[`traefik.http.middlewares.${TRAEFIK_MW_STRIP_PREFIX}.stripprefix.prefixes`] =
-    "/rest/v1";
+  labels[`traefik.http.middlewares.${stripMw}.stripprefix.prefixes`] = "/rest/v1";
 
   const allowOriginList = resolveCorsAllowOriginList(perProjectExtraOrigins);
-  labels[
-    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolalloworiginlist`
-  ] = allowOriginList.join(",");
-  labels[
-    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolallowmethods`
-  ] = "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD";
-  labels[
-    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolallowheaders`
-  ] = TRAEFIK_CORS_ALLOW_HEADERS;
-  labels[
-    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.accesscontrolmaxage`
-  ] = "86400";
-  labels[
-    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}.headers.addvaryheader`
-  ] = "true";
+  labels[`traefik.http.middlewares.${corsMw}.headers.accesscontrolalloworiginlist`] =
+    allowOriginList.join(",");
+  labels[`traefik.http.middlewares.${corsMw}.headers.accesscontrolalloworiginlistregex`] =
+    fleetHttpsOriginsRegex(fluxTenantDomain());
+  labels[`traefik.http.middlewares.${corsMw}.headers.accesscontrolallowmethods`] =
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD";
+  labels[`traefik.http.middlewares.${corsMw}.headers.accesscontrolallowheaders`] =
+    TRAEFIK_CORS_ALLOW_HEADERS;
+  labels[`traefik.http.middlewares.${corsMw}.headers.accesscontrolmaxage`] = "86400";
+  labels[`traefik.http.middlewares.${corsMw}.headers.addvaryheader`] = "true";
 
   // Persist the per-project extras (NOT the dashboard / env-var origins — those are recomputed
   // on every label rebuild). Empty string when no extras so the label is still present and
@@ -547,8 +559,8 @@ function postgrestTraefikDockerLabels(
     serializeAllowedOriginsList(perProjectExtraOrigins);
 
   const middlewares = stripSupabaseRestPrefix
-    ? `${TRAEFIK_MW_CORS_LOCALHOST_3001},${TRAEFIK_MW_STRIP_PREFIX}`
-    : TRAEFIK_MW_CORS_LOCALHOST_3001;
+    ? `${corsMw},${stripMw}`
+    : corsMw;
   labels[`traefik.http.routers.${traefikSvc}.middlewares`] = middlewares;
 
   return labels;
@@ -565,8 +577,10 @@ function removeFluxPostgrestTraefikDockerLabels(
 ): Record<string, string> {
   const traefikSvc = `flux-${slug}-api`;
   const sharedMwPrefixes = [
-    `traefik.http.middlewares.${TRAEFIK_MW_STRIP_PREFIX}`,
-    `traefik.http.middlewares.${TRAEFIK_MW_CORS_LOCALHOST_3001}`,
+    "traefik.http.middlewares.flux-stripprefix",
+    "traefik.http.middlewares.flux-cors-localhost-3001",
+    `traefik.http.middlewares.${traefikCorsMiddlewareName(slug)}`,
+    `traefik.http.middlewares.${traefikStripMiddlewareName(slug)}`,
     `traefik.http.middlewares.flux-${slug}-supabase-rest-strip`,
   ];
   const out: Record<string, string> = {};
@@ -947,7 +961,7 @@ export interface FluxProject {
   /** Generated Postgres superuser password — treat as sensitive. */
   postgresPassword: string;
   /**
-   * When true, the gateway chains CORS + `flux-stripprefix` for `/rest/v1` (see {@link ProvisionOptions.stripSupabaseRestPrefix}).
+   * When true, the gateway chains per-tenant CORS + `flux-<slug>-stripprefix` for `/rest/v1` (see {@link ProvisionOptions.stripSupabaseRestPrefix}).
    */
   stripSupabaseRestPrefix: boolean;
 }
@@ -961,8 +975,8 @@ export interface ProvisionOptions {
    */
   customJwtSecret?: string;
   /**
-   * When true (default), the tenant router chains CORS (localhost:3001 + dashboard `https://app.<domain>`)
-   * and the shared `flux-stripprefix` middleware so the Supabase JS client’s `/rest/v1` path reaches PostgREST.
+   * When true (default), the tenant router chains per-tenant CORS (dashboard + env extras + HTTPS `*.domain` regex)
+   * and `flux-<slug>-stripprefix` so the Supabase JS client’s `/rest/v1` path reaches PostgREST.
    * Set to false only if clients call PostgREST at the URL root with no `/rest/v1` prefix.
    */
   stripSupabaseRestPrefix?: boolean;
@@ -1286,8 +1300,8 @@ export class ProjectManager {
    *
    * A Traefik instance named {@link FLUX_GATEWAY_CONTAINER_NAME} (managed outside this API, e.g. Compose)
    * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
-   * on a random host port. By default, Traefik chains a Headers (CORS) middleware for
-   * `http://localhost:3001` and `https://app.<domain>` and the shared `flux-stripprefix` middleware for `/rest/v1` (Supabase JS).
+   * on a random host port. By default, Traefik chains per-tenant Headers (CORS) middleware for
+   * `http://localhost:3001`, `https://app.<domain>`, HTTPS apps matching `*.domain`, extras, and `flux-<slug>-stripprefix` for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
    *
    * Postgres is **not** published on the Docker host: bootstrap SQL and health checks use

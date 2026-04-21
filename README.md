@@ -62,7 +62,7 @@ Provisioning (`ProjectManager.provisionProject`) ensures the network exists, ens
 ### HTTP path to a tenant API
 
 1. Client requests **`http://myapp.flux.localhost/...`** (Host header matches Traefik router rule **`Host(\`myapp.flux.localhost\`)`**).
-2. **Traefik** applies a **Headers** CORS middleware (`flux-cors-localhost-3001`, `http://localhost:3001` by default) and, when enabled, the shared **`flux-stripprefix`** middleware so paths under **`/rest/v1`** match **Supabase JS** (PostgREST itself serves resources at **`/`**).
+2. **Traefik** applies a **per-tenant Headers** CORS middleware (`flux-<slug>-cors`: dashboard + env extras + HTTPS `*.domain` regex) and, when enabled, **`flux-<slug>-stripprefix`** so paths under **`/rest/v1`** match **Supabase JS** (PostgREST itself serves resources at **`/`**).
 3. **Traefik** forwards to **`flux-myapp-api:3000`**.
 4. **PostgREST** connects to **`flux-myapp-db:5432`** using **`PGRST_DB_URI`** (internal Docker DNS).
 
@@ -124,7 +124,7 @@ Flux can ingest **plain `pg_dump` SQL** from Supabase-style apps and land tables
 | **`public` → `api`** | After import with **`moveFromPublic`**, `movePublicSchemaObjectsToApi` moves tables / sequences / views; if **`api.<name>`** already exists (dump created both), the **`public`** duplicate is **`DROP … CASCADE`**’d instead of failing. |
 | **Grants after import** | Every **`importSqlFile`** ends by re-running **`API_SCHEMA_PRIVILEGES_SQL`** so **`anon` / `authenticated`** keep DML on all **`api`** objects. |
 | **RLS (local / porting)** | Optional **`disableRowLevelSecurityInApi`** / CLI **`--disable-api-rls`**: disables RLS on **`api`** tables that still have it enabled (Supabase policies often block **`anon`** until rewritten). |
-| **Gateway + browser** | Default Traefik labels: **CORS** for **`http://localhost:3001`** + **`flux-stripprefix`** for **`/rest/v1`**. New projects default to strip on; **`flux create --no-supabase-rest-path`** opts out. **`flux supabase-rest-path -p <name>`** updates an existing API container; pass **`--off`** to remove strip from the middleware chain. |
+| **Gateway + browser** | Default Traefik labels: **CORS** (`flux-<slug>-cors`) for **`http://localhost:3001`**, dashboard, **`https://*.<FLUX_DOMAIN>`** via regex, plus **`flux-<slug>-stripprefix`** for **`/rest/v1`**. New projects default to strip on; **`flux create --no-supabase-rest-path`** opts out. **`flux supabase-rest-path -p <name>`** updates an existing API container; pass **`--off`** to remove strip from the middleware chain. |
 | **Dashboard create** | `POST /api/projects` accepts optional **`stripSupabaseRestPrefix`** (boolean) and **`customJwtSecret`**. |
 
 **Typical CLI flow**
