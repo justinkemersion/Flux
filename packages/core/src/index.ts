@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -124,6 +124,56 @@ ${API_SCHEMA_PRIVILEGES_SQL}
 
 function randomHexChars(byteLength: number): string {
   return randomBytes(byteLength).toString("hex");
+}
+
+/**
+ * When `FLUX_RESET_TENANT_VOLUME` is truthy (`1`, `true`, `yes`), {@link ProjectManager.provisionProject}
+ * removes the tenant PostgREST + Postgres containers and the named volume before recreating Postgres
+ * (fresh `PGDATA` with the password used in `PGRST_DB_URI`).
+ */
+function fluxResetTenantVolumeEnabled(): boolean {
+  const v = process.env.FLUX_RESET_TENANT_VOLUME?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/**
+ * Dev/test only: non-empty `FLUX_DEV_POSTGRES_PASSWORD` derives a stable Postgres password from the
+ * tenant volume name so `POSTGRES_PASSWORD` and `PGRST_DB_URI` never drift. **Do not use in production.**
+ */
+function fluxDevPostgresPasswordSecret(): string | undefined {
+  const s = process.env.FLUX_DEV_POSTGRES_PASSWORD?.trim();
+  return s && s.length > 0 ? s : undefined;
+}
+
+function deterministicPostgresPasswordFromDevSecret(
+  secret: string,
+  volumeName: string,
+): string {
+  return createHmac("sha256", secret)
+    .update(volumeName, "utf8")
+    .digest("hex")
+    .slice(0, 32);
+}
+
+/** Removes API + DB containers and the data volume (404-safe). */
+async function removeApiPgAndVolumeForProvision(
+  docker: Docker,
+  apiContainerName: string,
+  pgContainerName: string,
+  volumeName: string,
+): Promise<void> {
+  for (const name of [apiContainerName, pgContainerName]) {
+    try {
+      await docker.getContainer(name).remove({ force: true });
+    } catch (err: unknown) {
+      if (getHttpStatus(err) !== 404) throw err;
+    }
+  }
+  try {
+    await docker.getVolume(volumeName).remove({ force: true });
+  } catch (err: unknown) {
+    if (getHttpStatus(err) !== 404) throw err;
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1053,7 +1103,15 @@ export interface FluxProject {
   stripSupabaseRestPrefix: boolean;
 }
 
-/** Optional hooks for long-running {@link ProjectManager.provisionProject} work (CLIs, logs). */
+/**
+ * Optional hooks for long-running {@link ProjectManager.provisionProject} work (CLIs, logs).
+ *
+ * **Control-plane env (read during provision, not fields here):**
+ * - **`FLUX_DEV_POSTGRES_PASSWORD`** — when non-empty, derives a stable Postgres password from this
+ *   secret and the tenant volume name so `POSTGRES_PASSWORD` and `PGRST_DB_URI` always match (dev/test only).
+ * - **`FLUX_RESET_TENANT_VOLUME`** — when truthy (`1` / `true` / `yes`), removes the tenant PostgREST +
+ *   Postgres containers and the data volume before creating a fresh `PGDATA` (ignored for `flux-system`).
+ */
 export interface ProvisionOptions {
   onStatus?: (message: string) => void;
   /**
@@ -1435,7 +1493,6 @@ export class ProjectManager {
     const slug = slugifyProjectName(name);
     const ownerKey = inferOwnerKeyForProjectName(name, options?.ownerKey);
     const tenantSuffix = getTenantSuffix(ownerKey);
-    let postgresPassword = randomHexChars(16);
     const trimmedCustomJwt = options?.customJwtSecret?.trim();
     let jwtSecret =
       trimmedCustomJwt && trimmedCustomJwt.length > 0
@@ -1445,6 +1502,22 @@ export class ProjectManager {
     const volumeName = tenantVolumeName(tenantSuffix, slug);
     const pgContainerName = postgresContainerName(tenantSuffix, slug);
     const apiContainerName = postgrestContainerName(tenantSuffix, slug);
+
+    if (fluxResetTenantVolumeEnabled() && slug !== "flux-system") {
+      log?.(
+        `FLUX_RESET_TENANT_VOLUME: removing ${apiContainerName}, ${pgContainerName}, and volume ${volumeName} for a fresh Postgres data directory…`,
+      );
+      await removeApiPgAndVolumeForProvision(
+        this.docker,
+        apiContainerName,
+        pgContainerName,
+        volumeName,
+      );
+    } else if (fluxResetTenantVolumeEnabled() && slug === "flux-system") {
+      log?.(
+        "FLUX_RESET_TENANT_VOLUME is ignored for the flux-system platform stack (would destroy the control-plane catalog).",
+      );
+    }
 
     log?.(`Ensuring volume ${volumeName}…`);
     await ensureNamedVolume(this.docker, volumeName);
@@ -1457,7 +1530,48 @@ export class ProjectManager {
       this.docker,
       pgContainerName,
     );
-    if (pgExisting) {
+    const devPgSecret = fluxDevPostgresPasswordSecret();
+    let postgresPassword: string;
+    if (devPgSecret) {
+      postgresPassword = deterministicPostgresPasswordFromDevSecret(
+        devPgSecret,
+        volumeName,
+      );
+      if (pgExisting) {
+        const pwLine = pgExisting.Config?.Env?.find((e) =>
+          e.startsWith("POSTGRES_PASSWORD="),
+        );
+        const existingPw = pwLine?.slice("POSTGRES_PASSWORD=".length);
+        if (!existingPw) {
+          throw new Error(
+            `Cannot adopt "${pgContainerName}": POSTGRES_PASSWORD missing from container env.`,
+          );
+        }
+        if (existingPw !== postgresPassword) {
+          throw new Error(
+            `Postgres container "${pgContainerName}" uses a different password than FLUX_DEV_POSTGRES_PASSWORD derives for volume "${volumeName}". Set FLUX_RESET_TENANT_VOLUME=1 (or nuke the project) to wipe the volume and reprovision.`,
+          );
+        }
+        log?.(
+          `Postgres container "${pgContainerName}" already exists; resuming (start if stopped, then bootstrap)…`,
+        );
+        pgContainer = this.docker.getContainer(pgContainerName);
+      } else {
+        log?.(`Creating Postgres container ${pgContainerName}…`);
+        pgContainer = await this.docker.createContainer({
+          name: pgContainerName,
+          Image: POSTGRES_IMAGE,
+          Env: [`POSTGRES_PASSWORD=${postgresPassword}`],
+          HostConfig: {
+            NetworkMode: FLUX_NETWORK_NAME,
+            Binds: [`${volumeName}:/var/lib/postgresql/data`],
+            Memory: 512 * 1024 * 1024,
+            RestartPolicy: { Name: "unless-stopped" },
+            /* Intentionally no PortBindings: health + SQL use docker exec inside the container. */
+          },
+        });
+      }
+    } else if (pgExisting) {
       log?.(
         `Postgres container "${pgContainerName}" already exists; resuming (start if stopped, then bootstrap)…`,
       );
@@ -1473,6 +1587,7 @@ export class ProjectManager {
       }
       postgresPassword = pw;
     } else {
+      postgresPassword = randomHexChars(16);
       log?.(`Creating Postgres container ${pgContainerName}…`);
       pgContainer = await this.docker.createContainer({
         name: pgContainerName,
