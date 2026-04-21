@@ -1,3 +1,4 @@
+import { FLUX_SYSTEM_OWNER_KEY } from "@flux/core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../../db/schema";
@@ -28,6 +29,7 @@ async function _init(): Promise<void> {
 
   try {
     await pm.provisionProject("flux-system", {
+      ownerKey: FLUX_SYSTEM_OWNER_KEY,
       isProduction: process.env.NODE_ENV === "production",
     });
   } catch (err) {

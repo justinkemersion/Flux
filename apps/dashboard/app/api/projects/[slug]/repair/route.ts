@@ -38,8 +38,12 @@ export async function POST(
 
   const pm = getProjectManager();
   try {
-    await pm.nukeProject(slug, { acknowledgeDataLoss: true });
+    await pm.nukeProject(slug, {
+      acknowledgeDataLoss: true,
+      ownerKey: session.user.id,
+    });
     const provisioned = await pm.provisionProject(project.name, {
+      ownerKey: session.user.id,
       isProduction: process.env.NODE_ENV === "production",
     });
     return Response.json({

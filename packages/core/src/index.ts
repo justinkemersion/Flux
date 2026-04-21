@@ -23,6 +23,12 @@ import {
   waitPostgresReadyInsideContainer,
 } from "./postgres-internal-exec.ts";
 import { runMovePublicToApiWithDockerExec } from "./schema-move-public-to-api.ts";
+import {
+  FLUX_SYSTEM_OWNER_KEY,
+  FLUX_TENANT_SUFFIX_HEX_LEN,
+  getTenantSuffix,
+  resolveProvisionOwnerKey,
+} from "./tenant-suffix.ts";
 
 export type { ImportSqlFileOptions } from "./import-dump.ts";
 export type { MovePublicToApiResult } from "./schema-move-public-to-api.ts";
@@ -43,6 +49,13 @@ export {
   DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
 } from "./api-schema-privileges.ts";
 export { FLUX_AUTH_SCHEMA_AND_UID_SQL } from "./auth-compat-sql.ts";
+export {
+  FLUX_DEFAULT_OWNER_KEY,
+  FLUX_SYSTEM_OWNER_KEY,
+  FLUX_TENANT_SUFFIX_HEX_LEN,
+  getTenantSuffix,
+  resolveProvisionOwnerKey,
+} from "./tenant-suffix.ts";
 
 export const FLUX_NETWORK_NAME = "flux-network";
 
@@ -275,12 +288,45 @@ function slugifyProjectName(name: string): string {
   return slug;
 }
 
-function postgresContainerName(slug: string): string {
-  return `flux-${slug}-db`;
+/**
+ * Owner key for Docker/Traefik scoping: explicit wins; `flux-system` slug uses
+ * {@link FLUX_SYSTEM_OWNER_KEY}; otherwise {@link resolveProvisionOwnerKey}().
+ */
+function inferOwnerKeyForProjectName(
+  projectName: string,
+  explicitOwnerKey?: string,
+): string {
+  const o = explicitOwnerKey?.trim();
+  if (o) return o;
+  const slug = slugifyProjectName(projectName);
+  if (slug === "flux-system") return FLUX_SYSTEM_OWNER_KEY;
+  return resolveProvisionOwnerKey(undefined);
 }
 
-function postgrestContainerName(slug: string): string {
-  return `flux-${slug}-api`;
+function tenantSuffixForProjectName(
+  projectName: string,
+  explicitOwnerKey?: string,
+): string {
+  return getTenantSuffix(
+    inferOwnerKeyForProjectName(projectName, explicitOwnerKey),
+  );
+}
+
+/** `flux-{tenantSuffix}-{slug}` — base for `-db`, `-api`, Traefik router id, etc. */
+function fluxTenantStackBaseId(tenantSuffix: string, slug: string): string {
+  return `flux-${tenantSuffix}-${slug}`;
+}
+
+function postgresContainerName(tenantSuffix: string, slug: string): string {
+  return `${fluxTenantStackBaseId(tenantSuffix, slug)}-db`;
+}
+
+function postgrestContainerName(tenantSuffix: string, slug: string): string {
+  return `${fluxTenantStackBaseId(tenantSuffix, slug)}-api`;
+}
+
+function tenantVolumeName(tenantSuffix: string, slug: string): string {
+  return `${fluxTenantStackBaseId(tenantSuffix, slug)}-db-data`;
 }
 
 /** Default public parent domain for tenant hostnames (`{slug}.<domain>`). Override with `FLUX_DOMAIN`. */
@@ -363,15 +409,19 @@ export function fluxTraefikCertResolverName(): string | null {
 }
 
 /**
- * Hostname for tenant PostgREST (Traefik `Host()`), e.g. `api.acme.example.com`.
- * Omit or pass an empty `hostnamePrefix` for legacy `{slug}.{domain}` only.
+ * Hostname for tenant PostgREST (Traefik `Host()`), e.g. `api.acme.{suffix}.example.com`.
+ * Omit or pass an empty `hostnamePrefix` for legacy `{slug}.{domain}` only (no tenant suffix).
  */
-function fluxTenantPostgrestHostname(slug: string, hostnamePrefix = "api"): string {
+export function fluxTenantPostgrestHostname(
+  slug: string,
+  tenantSuffix: string,
+  hostnamePrefix = "api",
+): string {
   const domain = fluxTenantDomain();
   if (!hostnamePrefix || hostnamePrefix.length === 0) {
     return `${slug}.${domain}`;
   }
-  return `${hostnamePrefix}.${slug}.${domain}`;
+  return `${hostnamePrefix}.${slug}.${tenantSuffix}.${domain}`;
 }
 
 /**
@@ -379,26 +429,34 @@ function fluxTenantPostgrestHostname(slug: string, hostnamePrefix = "api"): stri
  * Uses `https://` when `FLUX_DOMAIN` is set, `isProduction`, or a **remote** `DOCKER_HOST` (SSH) —
  * the same case where edge Traefik labels apply. Otherwise `http://` (local `docker` on Unix).
  *
- * Defaults to `https://api.{slug}.{domain}` (or `http://` when TLS is off). Pass `hostnamePrefix`
- * (e.g. `""`) only if you must match a legacy `{slug}.{domain}` host.
+ * Defaults to `https://api.{slug}.{tenantSuffix}.{domain}` (or `http://` when TLS is off).
+ * When `tenantSuffix` is omitted, uses {@link getTenantSuffix}({@link resolveProvisionOwnerKey}())
+ * (CLI / default owner). Dashboard callers should pass each project owner’s suffix explicitly.
+ *
+ * **TLS:** A single wildcard like `*.example.com` does not cover the extra `.{tenantSuffix}` label;
+ * use per-host ACME, DNS-01, or a suitable wildcard depth for your edge.
  */
 export function fluxApiUrlForSlug(
   slug: string,
   isProduction = false,
   hostnamePrefix = "api",
+  tenantSuffix?: string,
 ): string {
+  const suffix =
+    tenantSuffix ??
+    getTenantSuffix(resolveProvisionOwnerKey(undefined));
   const useHttps =
     fluxApiHttpsForTenantUrls() || isProduction || fluxControlPlaneTargetIsRemoteEngine();
   const scheme = useHttps ? "https" : "http";
-  return `${scheme}://${fluxTenantPostgrestHostname(slug, hostnamePrefix)}`;
+  return `${scheme}://${fluxTenantPostgrestHostname(slug, suffix, hostnamePrefix)}`;
 }
 
 /**
  * Traefik v3 `Host()` matcher: backticks wrap the literal hostname (required syntax).
- * Example for slug `acme`: `Host(\`api.acme.vsl-base.com\`)` (or `FLUX_DOMAIN`).
+ * Example: `Host(\`api.acme.abc1234.vsl-base.com\`)`.
  */
-function traefikHostRule(slug: string): string {
-  return `Host(\`${fluxTenantPostgrestHostname(slug)}\`)`;
+function traefikHostRule(slug: string, tenantSuffix: string): string {
+  return `Host(\`${fluxTenantPostgrestHostname(slug, tenantSuffix)}\`)`;
 }
 
 /**
@@ -477,16 +535,15 @@ function resolveCorsAllowOriginList(
 }
 
 /**
- * Per-tenant Traefik middleware names. A single shared name (e.g. `flux-cors-localhost-3001`) caused
- * Docker/Traefik to merge definitions from multiple PostgREST containers — last writer wins — and
- * allowed the edge catchall to steal traffic when routers tied; slug-scoped names avoid both.
+ * Per-tenant Traefik middleware names scoped by owner hash + slug so multiple users on one
+ * Traefik instance never collide.
  */
-function traefikCorsMiddlewareName(slug: string): string {
-  return `flux-${slug}-cors`;
+function traefikCorsMiddlewareName(tenantSuffix: string, slug: string): string {
+  return `${fluxTenantStackBaseId(tenantSuffix, slug)}-cors`;
 }
 
-function traefikStripMiddlewareName(slug: string): string {
-  return `flux-${slug}-stripprefix`;
+function traefikStripMiddlewareName(tenantSuffix: string, slug: string): string {
+  return `${fluxTenantStackBaseId(tenantSuffix, slug)}-stripprefix`;
 }
 
 /** HTTPS origins for deployed apps under {@link fluxTenantDomain} (e.g. YeastCoast at `https://slug.domain`). */
@@ -512,17 +569,18 @@ const PGRST_DB_SCHEMAS_VALUE = "api,public";
  */
 function postgrestTraefikDockerLabels(
   slug: string,
+  tenantSuffix: string,
   stripSupabaseRestPrefix: boolean,
   perProjectExtraOrigins: readonly string[] = [],
 ): Record<string, string> {
-  const traefikSvc = `flux-${slug}-api`;
-  const corsMw = traefikCorsMiddlewareName(slug);
-  const stripMw = traefikStripMiddlewareName(slug);
+  const traefikSvc = `${fluxTenantStackBaseId(tenantSuffix, slug)}-api`;
+  const corsMw = traefikCorsMiddlewareName(tenantSuffix, slug);
+  const stripMw = traefikStripMiddlewareName(tenantSuffix, slug);
   const useEdgeTls = fluxTraefikCertResolverName() != null;
   const labels: Record<string, string> = {
     "traefik.enable": "true",
     "traefik.docker.network": FLUX_NETWORK_NAME,
-    [`traefik.http.routers.${traefikSvc}.rule`]: traefikHostRule(slug),
+    [`traefik.http.routers.${traefikSvc}.rule`]: traefikHostRule(slug, tenantSuffix),
     [`traefik.http.routers.${traefikSvc}.entrypoints`]: useEdgeTls
       ? "websecure"
       : "web",
@@ -574,15 +632,20 @@ function postgrestTraefikDockerLabels(
 function removeFluxPostgrestTraefikDockerLabels(
   existing: Record<string, string>,
   slug: string,
+  tenantSuffix: string,
 ): Record<string, string> {
-  const traefikSvc = `flux-${slug}-api`;
+  const traefikSvc = `${fluxTenantStackBaseId(tenantSuffix, slug)}-api`;
+  const legacySvc = `flux-${slug}-api`;
   const sharedMwPrefixes = [
     "traefik.http.middlewares.flux-stripprefix",
     "traefik.http.middlewares.flux-cors-localhost-3001",
-    `traefik.http.middlewares.${traefikCorsMiddlewareName(slug)}`,
-    `traefik.http.middlewares.${traefikStripMiddlewareName(slug)}`,
+    `traefik.http.middlewares.${traefikCorsMiddlewareName(tenantSuffix, slug)}`,
+    `traefik.http.middlewares.${traefikStripMiddlewareName(tenantSuffix, slug)}`,
+    `traefik.http.middlewares.flux-${slug}-cors`,
+    `traefik.http.middlewares.flux-${slug}-stripprefix`,
     `traefik.http.middlewares.flux-${slug}-supabase-rest-strip`,
   ];
+  const mwPrefixes = sharedMwPrefixes;
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(existing)) {
     if (k === "traefik.enable") continue;
@@ -590,7 +653,9 @@ function removeFluxPostgrestTraefikDockerLabels(
     if (k === FLUX_CORS_EXTRA_ORIGINS_LABEL) continue;
     if (k.startsWith(`traefik.http.routers.${traefikSvc}.`)) continue;
     if (k.startsWith(`traefik.http.services.${traefikSvc}.`)) continue;
-    if (sharedMwPrefixes.some((p) => k.startsWith(p))) continue;
+    if (k.startsWith(`traefik.http.routers.${legacySvc}.`)) continue;
+    if (k.startsWith(`traefik.http.services.${legacySvc}.`)) continue;
+    if (mwPrefixes.some((p) => k.startsWith(p))) continue;
     out[k] = v;
   }
   return out;
@@ -605,6 +670,7 @@ function removeFluxPostgrestTraefikDockerLabels(
 function mergedPostgrestTraefikDockerLabels(
   existing: Record<string, string>,
   slug: string,
+  tenantSuffix: string,
   stripSupabaseRestPrefix: boolean,
   extraOriginsOverride?: readonly string[],
 ): Record<string, string> {
@@ -612,8 +678,13 @@ function mergedPostgrestTraefikDockerLabels(
     extraOriginsOverride ??
     parseAllowedOriginsList(existing[FLUX_CORS_EXTRA_ORIGINS_LABEL]);
   return {
-    ...removeFluxPostgrestTraefikDockerLabels(existing, slug),
-    ...postgrestTraefikDockerLabels(slug, stripSupabaseRestPrefix, extras),
+    ...removeFluxPostgrestTraefikDockerLabels(existing, slug, tenantSuffix),
+    ...postgrestTraefikDockerLabels(
+      slug,
+      tenantSuffix,
+      stripSupabaseRestPrefix,
+      extras,
+    ),
   };
 }
 
@@ -628,15 +699,15 @@ function dockerLabelsSatisfy(
 }
 
 function containerNameForProject(projectName: string): string {
-  return postgresContainerName(slugifyProjectName(projectName));
+  const slug = slugifyProjectName(projectName);
+  const tenantSuffix = tenantSuffixForProjectName(projectName);
+  return postgresContainerName(tenantSuffix, slug);
 }
 
-function tenantVolumeName(slug: string): string {
-  return `flux-${slug}-db-data`;
-}
-
-/** Flux tenant container name pattern: flux-&lt;slug&gt;-db | flux-&lt;slug&gt;-api */
-const FLUX_TENANT_CONTAINER = /^flux-(.+)-(db|api)$/;
+/** Flux tenant containers: `flux-{7hexMD5}-{slug}-db|api` */
+const FLUX_TENANT_CONTAINER = new RegExp(
+  `^flux-([a-f0-9]{${String(FLUX_TENANT_SUFFIX_HEX_LEN)}})-(.+)-(db|api)$`,
+);
 
 /** If a pull emits no progress for this long, fail (slow or stuck network). */
 const DOCKER_PULL_STALL_MS = 120_000;
@@ -790,13 +861,15 @@ async function consumeDockerPullStream(
 export interface FluxProjectSummary {
   /** Normalized project slug (from container names). */
   slug: string;
+  /** Owner-scoped hash segment in Docker/Traefik names and hostname (`api.{slug}.{suffix}.…`). */
+  tenantSuffix: string;
   /**
    * Combined health of Postgres + PostgREST containers.
    * **missing** — neither container exists (e.g. catalog row without Docker).
    * **corrupted** — exactly one of the two containers exists.
    */
   status: "running" | "stopped" | "partial" | "missing" | "corrupted";
-  /** Public API URL via the Flux Traefik gateway (`Host: api.{slug}.<FLUX_DOMAIN|vsl-base.com>`). */
+  /** Public API URL via the Flux Traefik gateway (`Host: api.{slug}.{suffix}.<FLUX_DOMAIN|vsl-base.com>`). */
   apiUrl: string;
 }
 
@@ -877,8 +950,12 @@ async function ensureNamedVolume(docker: Docker, name: string): Promise<void> {
   }
 }
 
-function postgresJdbcUri(slug: string, password: string): string {
-  const host = postgresContainerName(slug);
+function postgresJdbcUri(
+  tenantSuffix: string,
+  slug: string,
+  password: string,
+): string {
+  const host = postgresContainerName(tenantSuffix, slug);
   const user = encodeURIComponent(POSTGRES_USER);
   const pass = encodeURIComponent(password);
   return `postgres://${user}:${pass}@${host}:5432/postgres`;
@@ -941,8 +1018,10 @@ export async function createProjectBucket(
 export interface FluxProject {
   /** Display name supplied to `provisionProject`. */
   name: string;
-  /** Normalized identifier used in container names (e.g. `my-app` → `flux-my-app-db`). */
+  /** Normalized identifier used in container names (e.g. `my-app` → `flux-{suffix}-my-app-db`). */
   slug: string;
+  /** {@link getTenantSuffix} of the resolved owner key for this stack. */
+  tenantSuffix: string;
   /** User-defined bridge all project containers attach to (e.g. `flux-network`). */
   networkName: string;
   postgres: {
@@ -969,6 +1048,12 @@ export interface FluxProject {
 /** Optional hooks for long-running {@link ProjectManager.provisionProject} work (CLIs, logs). */
 export interface ProvisionOptions {
   onStatus?: (message: string) => void;
+  /**
+   * Stable opaque id (Auth.js user id, Clerk `sub`, etc.) hashed into Docker/Traefik names and
+   * the public API hostname. Omit for CLI default ({@link FLUX_DEFAULT_OWNER_KEY} / `FLUX_OWNER_KEY`).
+   * Use {@link FLUX_SYSTEM_OWNER_KEY} for the platform `flux-system` stack.
+   */
+  ownerKey?: string;
   /**
    * When set (e.g. Clerk or NextAuth JWT signing secret), used as `PGRST_JWT_SECRET` for PostgREST
    * so the tenant API can verify tokens minted by your auth provider. If omitted, a random secret is generated.
@@ -1001,7 +1086,12 @@ export interface ProvisionOptions {
 /** Required for {@link ProjectManager.nukeProject} — confirms permanent data loss. */
 export interface NukeProjectOptions {
   acknowledgeDataLoss: true;
+  /** Same opaque id as {@link ProvisionOptions.ownerKey} for this stack; omit for CLI defaults. */
+  ownerKey?: string;
 }
+
+/** Catalog slug + owner id for Docker lookups (e.g. dashboard session user). */
+export type FluxProjectSlugRef = { slug: string; ownerKey: string };
 
 /**
  * How {@link ProjectManager} connects to the Docker Engine API.
@@ -1285,13 +1375,18 @@ export class ProjectManager {
   }
 
   /** Docker DNS names for Postgres and PostgREST on {@link FLUX_NETWORK_NAME} (internal connectivity). */
-  static containerNamesForSlug(slug: string): {
+  static containerNamesForSlug(
+    slug: string,
+    ownerKey?: string,
+  ): {
     postgres: string;
     postgrest: string;
   } {
+    const normalized = slugifyProjectName(slug);
+    const tenantSuffix = tenantSuffixForProjectName(normalized, ownerKey);
     return {
-      postgres: postgresContainerName(slug),
-      postgrest: postgrestContainerName(slug),
+      postgres: postgresContainerName(tenantSuffix, normalized),
+      postgrest: postgrestContainerName(tenantSuffix, normalized),
     };
   }
 
@@ -1299,7 +1394,7 @@ export class ProjectManager {
    * Provisions Postgres + PostgREST on {@link FLUX_NETWORK_NAME}, with internal DNS between services.
    *
    * A Traefik instance named {@link FLUX_GATEWAY_CONTAINER_NAME} (managed outside this API, e.g. Compose)
-   * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
+   * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.{tenantSuffix}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
    * on a random host port. By default, Traefik chains per-tenant Headers (CORS) middleware for
    * `http://localhost:3001`, `https://app.<domain>`, HTTPS apps matching `*.domain`, extras, and `flux-<slug>-stripprefix` for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
@@ -1330,6 +1425,8 @@ export class ProjectManager {
     await this.ensureFluxNetwork(log);
     await this.ensureFluxGateway(log);
     const slug = slugifyProjectName(name);
+    const ownerKey = inferOwnerKeyForProjectName(name, options?.ownerKey);
+    const tenantSuffix = getTenantSuffix(ownerKey);
     let postgresPassword = randomHexChars(16);
     const trimmedCustomJwt = options?.customJwtSecret?.trim();
     let jwtSecret =
@@ -1337,9 +1434,9 @@ export class ProjectManager {
         ? trimmedCustomJwt
         : randomHexChars(32);
 
-    const volumeName = tenantVolumeName(slug);
-    const pgContainerName = postgresContainerName(slug);
-    const apiContainerName = postgrestContainerName(slug);
+    const volumeName = tenantVolumeName(tenantSuffix, slug);
+    const pgContainerName = postgresContainerName(tenantSuffix, slug);
+    const apiContainerName = postgrestContainerName(tenantSuffix, slug);
 
     log?.(`Ensuring volume ${volumeName}…`);
     await ensureNamedVolume(this.docker, volumeName);
@@ -1403,12 +1500,13 @@ export class ProjectManager {
     );
     log?.("Postgres is up; bootstrap SQL applied.");
 
-    const dbUri = postgresJdbcUri(slug, postgresPassword);
+    const dbUri = postgresJdbcUri(tenantSuffix, slug, postgresPassword);
 
     const stripSupabaseRestPrefix = options?.stripSupabaseRestPrefix !== false;
     const additionalAllowedOrigins = options?.additionalAllowedOrigins;
     const traefikLabels = postgrestTraefikDockerLabels(
       slug,
+      tenantSuffix,
       stripSupabaseRestPrefix,
       additionalAllowedOrigins ?? [],
     );
@@ -1433,6 +1531,7 @@ export class ProjectManager {
       const mergedTraefik = mergedPostgrestTraefikDockerLabels(
         apiExisting.Config?.Labels ?? {},
         slug,
+        tenantSuffix,
         stripSupabaseRestPrefix,
         additionalAllowedOrigins,
       );
@@ -1442,6 +1541,7 @@ export class ProjectManager {
         );
         await this.replacePostgrestApiContainer(
           slug,
+          tenantSuffix,
           apiExisting,
           envRecordFromDockerEnv(apiExisting.Config?.Env),
           { labels: mergedTraefik },
@@ -1478,13 +1578,14 @@ export class ProjectManager {
     );
 
     const isProduction = options?.isProduction === true;
-    const apiUrl = fluxApiUrlForSlug(slug, isProduction);
+    const apiUrl = fluxApiUrlForSlug(slug, isProduction, "api", tenantSuffix);
     await waitForApiReachable(apiUrl, log ? { onStatus: log } : undefined);
 
     log?.("Provision complete.");
     return {
       name,
       slug,
+      tenantSuffix,
       networkName: FLUX_NETWORK_NAME,
       postgres: {
         containerId: pgInspect.Id,
@@ -1506,14 +1607,24 @@ export class ProjectManager {
    * container (same image, Traefik labels, network, limits), and starts it if it was running
    * so new variables (e.g. custom app config) take effect.
    */
-  async setProjectEnv(slug: string, envs: Record<string, string>): Promise<void> {
+  async setProjectEnv(
+    slug: string,
+    envs: Record<string, string>,
+    ownerKey?: string,
+  ): Promise<void> {
     const normalized = slugifyProjectName(slug);
-    const existing = await this.getPostgrestInspectOrThrow(normalized);
+    const tenantSuffix = tenantSuffixForProjectName(normalized, ownerKey);
+    const existing = await this.getPostgrestInspectOrThrow(normalized, ownerKey);
     const merged = {
       ...envRecordFromDockerEnv(existing.Config.Env),
       ...envs,
     };
-    await this.replacePostgrestApiContainer(normalized, existing, merged);
+    await this.replacePostgrestApiContainer(
+      normalized,
+      tenantSuffix,
+      existing,
+      merged,
+    );
   }
 
   /**
@@ -1524,16 +1635,19 @@ export class ProjectManager {
   async setPostgrestSupabaseRestPrefix(
     projectName: string,
     enabled: boolean,
+    ownerKey?: string,
   ): Promise<void> {
     const slug = slugifyProjectName(projectName);
-    const existing = await this.getPostgrestInspectOrThrow(slug);
+    const tenantSuffix = tenantSuffixForProjectName(slug, ownerKey);
+    const existing = await this.getPostgrestInspectOrThrow(slug, ownerKey);
     const merged = envRecordFromDockerEnv(existing.Config.Env);
     const labels = mergedPostgrestTraefikDockerLabels(
       existing.Config.Labels ?? {},
       slug,
+      tenantSuffix,
       enabled,
     );
-    await this.replacePostgrestApiContainer(slug, existing, merged, {
+    await this.replacePostgrestApiContainer(slug, tenantSuffix, existing, merged, {
       labels,
     });
   }
@@ -1553,15 +1667,18 @@ export class ProjectManager {
        */
       additionalAllowedOrigins?: readonly string[];
       onStatus?: (message: string) => void;
+      ownerKey?: string;
     },
   ): Promise<void> {
     const slug = slugifyProjectName(projectName);
+    const tenantSuffix = tenantSuffixForProjectName(slug, options?.ownerKey);
     const log = options?.onStatus;
     const strip = options?.stripSupabaseRestPrefix !== false;
-    const existing = await this.getPostgrestInspectOrThrow(slug);
+    const existing = await this.getPostgrestInspectOrThrow(slug, options?.ownerKey);
     const merged = mergedPostgrestTraefikDockerLabels(
       existing.Config?.Labels ?? {},
       slug,
+      tenantSuffix,
       strip,
       options?.additionalAllowedOrigins,
     );
@@ -1571,7 +1688,9 @@ export class ProjectManager {
     }
     log?.("Syncing PostgREST Traefik labels and recreating API container…");
     const env = envRecordFromDockerEnv(existing.Config?.Env);
-    await this.replacePostgrestApiContainer(slug, existing, env, { labels: merged });
+    await this.replacePostgrestApiContainer(slug, tenantSuffix, existing, env, {
+      labels: merged,
+    });
     log?.("PostgREST API container updated with new Traefik labels.");
   }
 
@@ -1583,9 +1702,10 @@ export class ProjectManager {
    */
   async getProjectAllowedOrigins(
     projectName: string,
+    ownerKey?: string,
   ): Promise<readonly string[]> {
     const slug = slugifyProjectName(projectName);
-    const existing = await this.getPostgrestInspectOrThrow(slug);
+    const existing = await this.getPostgrestInspectOrThrow(slug, ownerKey);
     return parseAllowedOriginsList(
       existing.Config?.Labels?.[FLUX_CORS_EXTRA_ORIGINS_LABEL],
     );
@@ -1600,12 +1720,13 @@ export class ProjectManager {
   async setProjectAllowedOrigins(
     projectName: string,
     origins: readonly string[],
-    options?: { onStatus?: (message: string) => void },
+    options?: { onStatus?: (message: string) => void; ownerKey?: string },
   ): Promise<void> {
     const reconcileOpts: Parameters<
       ProjectManager["reconcilePostgrestTraefikLabels"]
     >[1] = { additionalAllowedOrigins: origins };
     if (options?.onStatus) reconcileOpts.onStatus = options.onStatus;
+    if (options?.ownerKey) reconcileOpts.ownerKey = options.ownerKey;
     await this.reconcilePostgrestTraefikLabels(projectName, reconcileOpts);
   }
 
@@ -1613,9 +1734,9 @@ export class ProjectManager {
    * Returns env entries from the PostgREST container. Sensitive keys omit values; use
    * {@link isFluxSensitiveEnvKey} for the rule set.
    */
-  async listProjectEnv(slug: string): Promise<FluxProjectEnvEntry[]> {
+  async listProjectEnv(slug: string, ownerKey?: string): Promise<FluxProjectEnvEntry[]> {
     const normalized = slugifyProjectName(slug);
-    const inspect = await this.getPostgrestInspectOrThrow(normalized);
+    const inspect = await this.getPostgrestInspectOrThrow(normalized, ownerKey);
     const record = envRecordFromDockerEnv(inspect.Config.Env);
     const rows: FluxProjectEnvEntry[] = [];
     for (const key of Object.keys(record).sort((a, b) => a.localeCompare(b))) {
@@ -1635,19 +1756,23 @@ export class ProjectManager {
   async updatePostgrestJwtSecret(
     projectName: string,
     newJwtSecret: string,
+    ownerKey?: string,
   ): Promise<void> {
     const secret = newJwtSecret.trim();
     if (!secret) {
       throw new Error("JWT secret cannot be empty.");
     }
     const slug = slugifyProjectName(projectName);
-    await this.setProjectEnv(slug, { PGRST_JWT_SECRET: secret });
+    await this.setProjectEnv(slug, { PGRST_JWT_SECRET: secret }, ownerKey);
   }
 
   private async getPostgrestInspectOrThrow(
-    slug: string,
+    slugOrName: string,
+    ownerKey?: string,
   ): Promise<Awaited<ReturnType<Docker.Container["inspect"]>>> {
-    const apiName = postgrestContainerName(slug);
+    const slug = slugifyProjectName(slugOrName);
+    const tenantSuffix = tenantSuffixForProjectName(slug, ownerKey);
+    const apiName = postgrestContainerName(tenantSuffix, slug);
     try {
       return await this.docker.getContainer(apiName).inspect();
     } catch (err: unknown) {
@@ -1666,11 +1791,12 @@ export class ProjectManager {
    */
   private async replacePostgrestApiContainer(
     slug: string,
+    tenantSuffix: string,
     inspect: Awaited<ReturnType<Docker.Container["inspect"]>>,
     mergedEnv: Record<string, string>,
     replaceOptions?: { labels?: Record<string, string> },
   ): Promise<void> {
-    const apiName = postgrestContainerName(slug);
+    const apiName = postgrestContainerName(tenantSuffix, slug);
     const container = this.docker.getContainer(inspect.Id);
     const env = dockerEnvFromRecord(mergedEnv);
     const wasRunning = inspect.State.Running;
@@ -1731,9 +1857,12 @@ export class ProjectManager {
    * Connect from another container on that network, or set `FLUX_SYSTEM_DATABASE_URL` for the
    * dashboard when the control plane runs outside Docker.
    */
-  async getPostgresHostConnectionString(projectName: string): Promise<string> {
+  async getPostgresHostConnectionString(
+    projectName: string,
+    ownerKey?: string,
+  ): Promise<string> {
     const { password, containerName } =
-      await this.resolveRunningPostgresCredentials(projectName);
+      await this.resolveRunningPostgresCredentials(projectName, ownerKey);
     return postgresDockerInternalUri(containerName, password);
   }
 
@@ -1743,15 +1872,18 @@ export class ProjectManager {
    */
   async getProjectKeys(
     slug: string,
+    ownerKey?: string,
   ): Promise<{ anonKey: string; serviceRoleKey: string }> {
-    const apiName = postgrestContainerName(slug);
+    const normalized = slugifyProjectName(slug);
+    const tenantSuffix = tenantSuffixForProjectName(normalized, ownerKey);
+    const apiName = postgrestContainerName(tenantSuffix, normalized);
     let inspect: Awaited<ReturnType<Docker.Container["inspect"]>>;
     try {
       inspect = await this.docker.getContainer(apiName).inspect();
     } catch (err: unknown) {
       if (getHttpStatus(err) === 404) {
         throw new Error(
-          `No PostgREST container found for slug "${slug}" (expected "${apiName}").`,
+          `No PostgREST container found for slug "${normalized}" (expected "${apiName}").`,
         );
       }
       throw err;
@@ -1771,11 +1903,12 @@ export class ProjectManager {
    */
   async getProjectCredentials(
     projectName: string,
+    ownerKey?: string,
   ): Promise<FluxProjectCredentials> {
     const slug = slugifyProjectName(projectName);
     const [postgresConnectionString, keys] = await Promise.all([
-      this.getPostgresHostConnectionString(slug),
-      this.getProjectKeys(slug),
+      this.getPostgresHostConnectionString(slug, ownerKey),
+      this.getProjectKeys(slug, ownerKey),
     ]);
     return {
       postgresConnectionString,
@@ -1794,9 +1927,13 @@ export class ProjectManager {
    * **SIGUSR1** on the API container. PostgREST documents SIGUSR1 for schema reload; SIGHUP does
    * not reload the schema cache.
    */
-  async executeSql(projectName: string, sql: string): Promise<void> {
-    const { slug, containerId, password } =
-      await this.resolveRunningPostgresCredentials(projectName);
+  async executeSql(
+    projectName: string,
+    sql: string,
+    ownerKey?: string,
+  ): Promise<void> {
+    const { slug, tenantSuffix, containerId, password } =
+      await this.resolveRunningPostgresCredentials(projectName, ownerKey);
     await runPsqlSqlInsideContainer(
       this.docker,
       containerId,
@@ -1812,7 +1949,7 @@ export class ProjectManager {
       POSTGRES_USER,
     );
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const apiName = postgrestContainerName(slug);
+    const apiName = postgrestContainerName(tenantSuffix, slug);
     try {
       await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
     } catch (err: unknown) {
@@ -1847,8 +1984,8 @@ export class ProjectManager {
       viewsMoved: 0,
     };
 
-    const { slug: normalizedSlug, containerId, password } =
-      await this.resolveRunningPostgresCredentials(slug);
+    const { slug: normalizedSlug, tenantSuffix, containerId, password } =
+      await this.resolveRunningPostgresCredentials(slug, options?.ownerKey);
 
     const materialized = await materializePreparedSqlFile(
       filePath,
@@ -1900,7 +2037,7 @@ export class ProjectManager {
         POSTGRES_USER,
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
-      const apiName = postgrestContainerName(normalizedSlug);
+      const apiName = postgrestContainerName(tenantSuffix, normalizedSlug);
       try {
         await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
       } catch (err: unknown) {
@@ -1920,9 +2057,12 @@ export class ProjectManager {
    * {@link importSqlFile} runs against a clean slate. Does not remove the Docker volume (use
    * {@link nukeProject} for that).
    */
-  async resetTenantDatabaseForImport(projectName: string): Promise<void> {
+  async resetTenantDatabaseForImport(
+    projectName: string,
+    ownerKey?: string,
+  ): Promise<void> {
     const { containerId, password } =
-      await this.resolveRunningPostgresCredentials(projectName);
+      await this.resolveRunningPostgresCredentials(projectName, ownerKey);
     const resetSql = `
 DROP SCHEMA IF EXISTS auth CASCADE;
 DROP SCHEMA IF EXISTS public CASCADE;
@@ -1948,14 +2088,19 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     );
   }
 
-  private async resolveRunningPostgresCredentials(projectName: string): Promise<{
+  private async resolveRunningPostgresCredentials(
+    projectName: string,
+    ownerKey?: string,
+  ): Promise<{
     slug: string;
+    tenantSuffix: string;
     containerId: string;
     containerName: string;
     password: string;
   }> {
     const slug = slugifyProjectName(projectName);
-    const containerName = postgresContainerName(slug);
+    const tenantSuffix = tenantSuffixForProjectName(slug, ownerKey);
+    const containerName = postgresContainerName(tenantSuffix, slug);
 
     const containers = await this.docker.listContainers({
       all: true,
@@ -1986,7 +2131,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       );
     }
 
-    return { slug, containerId: inspect.Id, containerName, password };
+    return { slug, tenantSuffix, containerId: inspect.Id, containerName, password };
   }
 
   /**
@@ -1997,25 +2142,27 @@ COMMENT ON SCHEMA public IS 'standard public schema';
    */
   async listProjects(): Promise<FluxProjectSummary[]> {
     const containers = await this.docker.listContainers({ all: true });
-    const bySlug = new Map<
+    const byStack = new Map<
       string,
-      { dbState?: string; apiState?: string }
+      { tenantSuffix: string; slug: string; dbState?: string; apiState?: string }
     >();
 
     for (const c of containers) {
       const raw = c.Names?.[0]?.replace(/^\//, "") ?? "";
       const m = raw.match(FLUX_TENANT_CONTAINER);
-      if (!m?.[1] || !m[2]) continue;
-      const slug = m[1];
-      const kind = m[2] as "db" | "api";
-      const cur = bySlug.get(slug) ?? {};
+      if (!m?.[1] || !m[2] || !m[3]) continue;
+      const tenantSuffix = m[1];
+      const slug = m[2];
+      const kind = m[3] as "db" | "api";
+      const stackKey = `${tenantSuffix}\n${slug}`;
+      const cur = byStack.get(stackKey) ?? { tenantSuffix, slug };
       if (kind === "db") cur.dbState = c.State;
       else cur.apiState = c.State;
-      bySlug.set(slug, cur);
+      byStack.set(stackKey, cur);
     }
 
     const rows: FluxProjectSummary[] = [];
-    for (const [slug, e] of bySlug) {
+    for (const e of byStack.values()) {
       const db: ContainerLifecycleState =
         e.dbState === undefined
           ? "missing"
@@ -2031,9 +2178,10 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       const status = fluxTenantStatusFromContainerPair(db, api);
 
       rows.push({
-        slug,
+        slug: e.slug,
+        tenantSuffix: e.tenantSuffix,
         status,
-        apiUrl: fluxApiUrlForSlug(slug),
+        apiUrl: fluxApiUrlForSlug(e.slug, false, "api", e.tenantSuffix),
       });
     }
 
@@ -2045,21 +2193,35 @@ COMMENT ON SCHEMA public IS 'standard public schema';
    * without scanning every container on the host. Intended for **catalog-driven** UIs (e.g. flux-system
    * `projects` rows).
    */
-  async getProjectSummariesForSlugs(slugs: string[]): Promise<FluxProjectSummary[]> {
-    if (slugs.length === 0) return [];
-    const normalized = [...new Set(slugs.map((s) => slugifyProjectName(s)))];
+  async getProjectSummariesForSlugs(
+    refs: FluxProjectSlugRef[],
+    options?: { isProduction?: boolean },
+  ): Promise<FluxProjectSummary[]> {
+    if (refs.length === 0) return [];
+    const seen = new Set<string>();
+    const unique = refs.filter((r) => {
+      const slug = slugifyProjectName(r.slug);
+      const k = `${slug}\0${r.ownerKey}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    const isProduction = options?.isProduction === true;
     const rows = await Promise.all(
-      normalized.map(async (slug) => {
-        const dbName = postgresContainerName(slug);
-        const apiName = postgrestContainerName(slug);
+      unique.map(async ({ slug: rawSlug, ownerKey }) => {
+        const slug = slugifyProjectName(rawSlug);
+        const tenantSuffix = tenantSuffixForProjectName(slug, ownerKey);
+        const dbName = postgresContainerName(tenantSuffix, slug);
+        const apiName = postgrestContainerName(tenantSuffix, slug);
         const [db, api] = await Promise.all([
           inspectContainerLifecycleState(this.docker, dbName),
           inspectContainerLifecycleState(this.docker, apiName),
         ]);
         return {
           slug,
+          tenantSuffix,
           status: fluxTenantStatusFromContainerPair(db, api),
-          apiUrl: fluxApiUrlForSlug(slug),
+          apiUrl: fluxApiUrlForSlug(slug, isProduction, "api", tenantSuffix),
         };
       }),
     );
@@ -2073,8 +2235,10 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   async stopInactiveProjects(
     maxAgeDays: number,
   ): Promise<FluxSystemProjectActivity[]> {
-    const { containerId, password } =
-      await this.resolveRunningPostgresCredentials("flux-system");
+    const { containerId, password } = await this.resolveRunningPostgresCredentials(
+      "flux-system",
+      FLUX_SYSTEM_OWNER_KEY,
+    );
     const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
     const cutoff = Date.now() - maxAgeMs;
 
@@ -2117,8 +2281,10 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     if (!Number.isFinite(maxIdleHours) || maxIdleHours <= 0) {
       throw new Error("maxIdleHours must be a positive number.");
     }
-    const { containerId, password } =
-      await this.resolveRunningPostgresCredentials("flux-system");
+    const { containerId, password } = await this.resolveRunningPostgresCredentials(
+      "flux-system",
+      FLUX_SYSTEM_OWNER_KEY,
+    );
     const cutoff = new Date(Date.now() - maxIdleHours * 60 * 60 * 1000);
     const cutoffIso = cutoff.toISOString();
 
@@ -2126,22 +2292,22 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       this.docker,
       containerId,
       password,
-      `SELECT slug FROM projects
+      `SELECT slug, "userId" AS user_id FROM projects
        WHERE slug <> 'flux-system' AND last_accessed_at < '${cutoffIso}'::timestamptz
        ORDER BY slug`,
       POSTGRES_USER,
     );
-    const slugs = (rows as { slug: string }[]).map((r) => r.slug);
+    const entries = rows as { slug: string; user_id: string }[];
 
     const stopped: string[] = [];
     const errors: Array<{ slug: string; message: string }> = [];
-    for (const slug of slugs) {
+    for (const row of entries) {
       try {
-        await this.stopProject(slug);
-        stopped.push(slug);
+        await this.stopProject(row.slug, row.user_id);
+        stopped.push(row.slug);
       } catch (err: unknown) {
         errors.push({
-          slug,
+          slug: row.slug,
           message: err instanceof Error ? err.message : String(err),
         });
       }
@@ -2152,10 +2318,11 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   /**
    * Stops the Postgres and PostgREST containers for a project (API first, then DB).
    */
-  async stopProject(name: string): Promise<void> {
+  async stopProject(name: string, ownerKey?: string): Promise<void> {
     const slug = slugifyProjectName(name);
-    const apiName = postgrestContainerName(slug);
-    const dbName = postgresContainerName(slug);
+    const tenantSuffix = tenantSuffixForProjectName(slug, ownerKey);
+    const apiName = postgrestContainerName(tenantSuffix, slug);
+    const dbName = postgresContainerName(tenantSuffix, slug);
     await this.stopContainerOrThrow(apiName);
     await this.stopContainerOrThrow(dbName);
   }
@@ -2163,10 +2330,11 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   /**
    * Starts the Postgres and PostgREST containers (DB first, then API).
    */
-  async startProject(name: string): Promise<void> {
+  async startProject(name: string, ownerKey?: string): Promise<void> {
     const slug = slugifyProjectName(name);
-    const dbName = postgresContainerName(slug);
-    const apiName = postgrestContainerName(slug);
+    const tenantSuffix = tenantSuffixForProjectName(slug, ownerKey);
+    const dbName = postgresContainerName(tenantSuffix, slug);
+    const apiName = postgrestContainerName(tenantSuffix, slug);
     await this.startContainerOrThrow(dbName);
     await this.startContainerOrThrow(apiName);
   }
@@ -2180,9 +2348,10 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     options: NukeProjectOptions,
   ): Promise<void> {
     const slug = slugifyProjectName(name);
-    const vol = tenantVolumeName(slug);
-    const apiName = postgrestContainerName(slug);
-    const dbName = postgresContainerName(slug);
+    const tenantSuffix = tenantSuffixForProjectName(slug, options.ownerKey);
+    const vol = tenantVolumeName(tenantSuffix, slug);
+    const apiName = postgrestContainerName(tenantSuffix, slug);
+    const dbName = postgresContainerName(tenantSuffix, slug);
 
     for (const containerName of [apiName, dbName]) {
       try {

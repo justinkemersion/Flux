@@ -1,7 +1,7 @@
 import { count, eq } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
 import { projects, users } from "@/src/db/schema";
-import { fluxApiUrlForSlug } from "@flux/core";
+import { fluxApiUrlForSlug, getTenantSuffix } from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
@@ -39,12 +39,17 @@ export async function GET(): Promise<Response> {
     .from(projects)
     .where(eq(projects.userId, session.user.id));
 
-  const slugs = userProjects.map((p) => p.slug);
+  const slugRefs = userProjects.map((p) => ({
+    slug: p.slug,
+    ownerKey: p.userId,
+  }));
   let dockerSummaries: Awaited<
     ReturnType<typeof pm.getProjectSummariesForSlugs>
   >;
   try {
-    dockerSummaries = await pm.getProjectSummariesForSlugs(slugs);
+    dockerSummaries = await pm.getProjectSummariesForSlugs(slugRefs, {
+      isProduction: process.env.NODE_ENV === "production",
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return jsonError(`Docker status unavailable: ${msg}`, 503);
@@ -60,7 +65,12 @@ export async function GET(): Promise<Response> {
       status: docker?.status ?? "missing",
       apiUrl:
         docker?.apiUrl ??
-        fluxApiUrlForSlug(p.slug, process.env.NODE_ENV === "production"),
+        fluxApiUrlForSlug(
+          p.slug,
+          process.env.NODE_ENV === "production",
+          "api",
+          getTenantSuffix(p.userId),
+        ),
       createdAt: p.createdAt,
     };
   });
@@ -136,6 +146,7 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     const project = await pm.provisionProject(rawName, {
+      ownerKey: session.user.id,
       ...(customJwtSecret ? { customJwtSecret } : {}),
       ...(stripSupabaseRestPrefix !== undefined
         ? { stripSupabaseRestPrefix }

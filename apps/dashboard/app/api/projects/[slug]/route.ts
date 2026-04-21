@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { auth } from "@/src/lib/auth";
 import { projects } from "@/src/db/schema";
-import { fluxApiUrlForSlug } from "@flux/core";
+import { fluxApiUrlForSlug, getTenantSuffix } from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
@@ -47,7 +47,10 @@ export async function GET(
     ReturnType<typeof pm.getProjectSummariesForSlugs>
   >[number] | undefined;
   try {
-    const rows = await pm.getProjectSummariesForSlugs([slug]);
+    const rows = await pm.getProjectSummariesForSlugs(
+      [{ slug, ownerKey: session.user.id }],
+      { isProduction: process.env.NODE_ENV === "production" },
+    );
     summary = rows[0];
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -61,7 +64,12 @@ export async function GET(
     status: summary?.status ?? "missing",
     apiUrl:
       summary?.apiUrl ??
-      fluxApiUrlForSlug(slug, process.env.NODE_ENV === "production"),
+      fluxApiUrlForSlug(
+        slug,
+        process.env.NODE_ENV === "production",
+        "api",
+        getTenantSuffix(session.user.id),
+      ),
     createdAt: project.createdAt,
   });
 }
@@ -108,9 +116,9 @@ export async function PUT(
   const pm = getProjectManager();
   try {
     if (action === "start") {
-      await pm.startProject(slug);
+      await pm.startProject(slug, session.user.id);
     } else {
-      await pm.stopProject(slug);
+      await pm.stopProject(slug, session.user.id);
     }
     return Response.json({ ok: true, action });
   } catch (err: unknown) {
@@ -158,7 +166,7 @@ export async function PATCH(
 
   const pm = getProjectManager();
   try {
-    await pm.updatePostgrestJwtSecret(slug, jwtSecret);
+    await pm.updatePostgrestJwtSecret(slug, jwtSecret, session.user.id);
     return Response.json({ ok: true });
   } catch (err: unknown) {
     return jsonError(err instanceof Error ? err.message : String(err), 500);
@@ -186,7 +194,10 @@ export async function DELETE(
 
   const pm = getProjectManager();
   try {
-    await pm.nukeProject(slug, { acknowledgeDataLoss: true });
+    await pm.nukeProject(slug, {
+      acknowledgeDataLoss: true,
+      ownerKey: session.user.id,
+    });
     await db.delete(projects).where(eq(projects.id, project.id));
     return Response.json({ ok: true });
   } catch (err: unknown) {

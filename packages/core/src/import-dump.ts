@@ -38,6 +38,8 @@ export type ImportSqlFileOptions = {
    * and local testing.
    */
   disableRowLevelSecurityInApi?: boolean;
+  /** Opaque owner id for Docker-scoped container names (same as `provisionProject` `ownerKey`). */
+  ownerKey?: string;
 };
 
 const AUTH_PRELUDE = `
