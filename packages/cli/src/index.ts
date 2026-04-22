@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import type {
