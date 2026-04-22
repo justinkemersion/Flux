@@ -28,15 +28,19 @@ import {
   FLUX_SYSTEM_HASH,
   generateProjectHash,
 } from "./tenant-suffix.ts";
+import {
+  type FluxProjectEnvEntry,
+  type FluxProjectSummary,
+  type ImportSqlFileResult,
+  fluxTenantStatusFromContainerPair,
+  slugifyProjectName,
+} from "./standalone.ts";
 
 export type { ImportSqlFileOptions } from "./import-dump.ts";
 export type { MovePublicToApiResult } from "./schema-move-public-to-api.ts";
 
-export type ImportSqlFileResult = {
-  tablesMoved: number;
-  sequencesMoved: number;
-  viewsMoved: number;
-};
+export type { ImportSqlFileResult, FluxProjectEnvEntry, FluxProjectSummary } from "./standalone.ts";
+export { slugifyProjectName, fluxTenantStatusFromContainerPair } from "./standalone.ts";
 export {
   applySupabaseCompatibilityTransforms,
   preparePlainSqlDumpForFlux,
@@ -419,24 +423,6 @@ export function isFluxSensitiveEnvKey(key: string): boolean {
   if (lower.includes("private_key") || lower.includes("privatekey")) return true;
   if (/_api_key$/i.test(key) && !lower.includes("publishable")) return true;
   return false;
-}
-
-/** One row for {@link ProjectManager.listProjectEnv}. */
-export type FluxProjectEnvEntry =
-  | { key: string; sensitive: true }
-  | { key: string; value: string; sensitive: false };
-
-export function slugifyProjectName(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  if (!slug) {
-    throw new Error(
-      `Invalid project name "${name}": use letters, numbers, or separators`,
-    );
-  }
-  return slug;
 }
 
 /** `flux-{hash}-{slug}` — base for `-db`, `-api`, Traefik router id, etc. */
@@ -1062,40 +1048,7 @@ async function consumeDockerPullStream(
   });
 }
 
-/** Row returned by {@link ProjectManager.listProjects} and {@link ProjectManager.getProjectSummariesForSlugs}. */
-export interface FluxProjectSummary {
-  /** Normalized project slug (from container names). */
-  slug: string;
-  /** Per-project hash segment in Docker/Traefik names and hostname (`api.{slug}.{hash}.…`). */
-  hash: string;
-  /**
-   * Combined health of Postgres + PostgREST containers.
-   * **missing** — neither container exists (e.g. catalog row without Docker).
-   * **corrupted** — exactly one of the two containers exists.
-   */
-  status: "running" | "stopped" | "partial" | "missing" | "corrupted";
-  /** Public API URL via the Flux Traefik gateway (`Host: api.{slug}.{suffix}.<FLUX_DOMAIN|vsl-base.com>`). */
-  apiUrl: string;
-}
-
 type ContainerLifecycleState = "running" | "stopped" | "missing";
-
-/**
- * Maps Postgres + PostgREST container states to a single tenant status (shared by
- * {@link ProjectManager.listProjects} and {@link ProjectManager.getProjectSummariesForSlugs}).
- */
-export function fluxTenantStatusFromContainerPair(
-  db: ContainerLifecycleState,
-  api: ContainerLifecycleState,
-): FluxProjectSummary["status"] {
-  const hasDb = db !== "missing";
-  const hasApi = api !== "missing";
-  if (!hasDb && !hasApi) return "missing";
-  if (hasDb !== hasApi) return "corrupted";
-  if (db === "running" && api === "running") return "running";
-  if (db === "stopped" && api === "stopped") return "stopped";
-  return "partial";
-}
 
 async function inspectContainerLifecycleState(
   docker: Docker,
@@ -2560,6 +2513,29 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       }),
     );
     return rows.sort((a, b) => a.slug.localeCompare(b.slug));
+  }
+
+  /**
+   * Single enrichment path for **catalog-owned** projects (dashboard session, CLI API key):
+   * loads `{ slug, hash }` for the user from the host DB via {@link loadSlugRefsForUser}, then
+   * delegates to {@link getProjectSummariesForSlugs} (Docker inspect + {@link fluxApiUrlForSlug}).
+   * Keeps `apiUrl` / `status` rules aligned across Web and CLI when subdomain or inspect logic changes.
+   */
+  async getProjectSummariesForUser(
+    userId: string,
+    options: {
+      loadSlugRefsForUser: (
+        userId: string,
+      ) => Promise<readonly FluxProjectSlugRef[]>;
+      isProduction?: boolean;
+    },
+  ): Promise<FluxProjectSummary[]> {
+    const refs = await options.loadSlugRefsForUser(userId);
+    const isProduction = options.isProduction === true;
+    return this.getProjectSummariesForSlugs(
+      [...refs],
+      isProduction ? { isProduction: true } : {},
+    );
   }
 
   /**

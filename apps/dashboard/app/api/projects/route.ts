@@ -65,33 +65,32 @@ export async function GET(): Promise<Response> {
     .from(projects)
     .where(eq(projects.userId, session.user.id));
 
-  const slugRefs = userProjects.map((p) => ({
-    slug: p.slug,
-    hash: p.hash,
-  }));
-  let dockerSummaries: Awaited<
-    ReturnType<typeof pm.getProjectSummariesForSlugs>
-  >;
+  let summaries: Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>;
   try {
-    dockerSummaries = await pm.getProjectSummariesForSlugs(slugRefs, {
+    summaries = await pm.getProjectSummariesForUser(session.user.id, {
+      loadSlugRefsForUser: async (userId) =>
+        db
+          .select({ slug: projects.slug, hash: projects.hash })
+          .from(projects)
+          .where(eq(projects.userId, userId)),
       isProduction: process.env.NODE_ENV === "production",
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return jsonError(`Docker status unavailable: ${msg}`, 503);
   }
-  const dockerBySlug = new Map(dockerSummaries.map((d) => [d.slug, d]));
+  const summaryBySlug = new Map(summaries.map((s) => [s.slug, s]));
 
   const projectsPayload = userProjects.map((p) => {
-    const docker = dockerBySlug.get(p.slug);
+    const s = summaryBySlug.get(p.slug);
     return {
       id: p.id,
       name: p.name,
       slug: p.slug,
       hash: p.hash,
-      status: docker?.status ?? "missing",
+      status: s?.status ?? "missing",
       apiUrl:
-        docker?.apiUrl ??
+        s?.apiUrl ??
         fluxApiUrlForSlug(p.slug, p.hash, process.env.NODE_ENV === "production"),
       createdAt: p.createdAt,
     };

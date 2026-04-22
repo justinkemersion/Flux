@@ -182,6 +182,20 @@ async function _init(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS "stripeSubscriptionId" TEXT;
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS flux_api_keys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL DEFAULT 'Default Key',
+      key_prefix TEXT NOT NULL,
+      key_hash TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS flux_api_keys_user_id_idx ON flux_api_keys (user_id);
+  `);
+
   db = drizzle(pool, { schema });
 }
 

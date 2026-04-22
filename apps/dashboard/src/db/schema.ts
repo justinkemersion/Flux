@@ -1,6 +1,7 @@
 import type { AdapterAccountType } from "next-auth/adapters";
 import {
   boolean,
+  index,
   integer,
   pgTable,
   primaryKey,
@@ -102,4 +103,24 @@ export const projects = pgTable(
       .defaultNow(),
   },
   (t) => [uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug)],
+);
+
+/** Flux CLI / API keys — Bearer auth for `/api/cli/*` (raw secret never stored; only SHA-256 hash). */
+export const apiKeys = pgTable(
+  "flux_api_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull().default("Default Key"),
+    /** Constant segment for the current key family, e.g. `flx_live`. */
+    keyPrefix: text("key_prefix").notNull(),
+    /** SHA-256 hex digest of the full secret token (unique index for O(log n) lookup). */
+    keyHash: text("key_hash").notNull().unique(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { mode: "date" }),
+    revokedAt: timestamp("revoked_at", { mode: "date" }),
+  },
+  (t) => [index("flux_api_keys_user_id_idx").on(t.userId)],
 );
