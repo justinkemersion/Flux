@@ -4,6 +4,8 @@ export const runtime = "nodejs";
 
 const CLI_URL = "https://flux.vsl-base.com/api/install/cli";
 
+const DOCS_URL = "https://flux.vsl-base.com/docs";
+
 const FLUX_INSTALL_SCRIPT = [
   "#!/usr/bin/env bash",
   "set -euo pipefail",
@@ -14,6 +16,8 @@ const FLUX_INSTALL_SCRIPT = [
   'mkdir -p "$INSTALL_DIR"',
   `curl -fsSL ${JSON.stringify(CLI_URL)} -o "$BIN"`,
   'chmod +x "$BIN"',
+  'echo -e "\\033[0;32m✔\\033[0m Flux binary synchronized to $BIN"',
+  'echo -e "\\033[0;32m✔\\033[0m Permissions established (755)"',
   "if ! command -v node >/dev/null 2>&1; then",
   "  echo 'Warning: node not found. flux is an ESM CLI; use Node 20+.' >&2",
   "else",
@@ -24,10 +28,20 @@ const FLUX_INSTALL_SCRIPT = [
   "  fi",
   "  unset _mj _v",
   "fi",
-  "if [[ \":$PATH:\" != *\":$INSTALL_DIR:\"* ]]; then",
-  "  echo 'PATH does not include this install dir. Add:'",
+  "if [[ \":$PATH:\" == *\":$INSTALL_DIR:\"* ]]; then",
+  '  echo -e "\\033[0;32m✔\\033[0m Binary is in active PATH."',
+  "else",
+  '  echo -e "\\033[0;33m! Warning:\\033[0m $INSTALL_DIR not in PATH."',
+  "  echo 'Add to your shell profile, e.g.:'",
   "  echo \"  export PATH=\\\"\$INSTALL_DIR:\\$PATH\\\"\"",
   "fi",
+  "echo",
+  "echo -e \"\\033[1mNEXT STEPS:\\033[0m\"",
+  'echo "  1. flux login           # Authenticate your terminal"',
+  'echo "  2. flux create [name]   # Provision a new project"',
+  'echo "  3. flux --help          # View the command reference"',
+  "echo",
+  `echo -e \"\\033[0;90mCodex Reference: ${DOCS_URL}\\033[0m\"`,
   "",
 ].join("\n");
 
