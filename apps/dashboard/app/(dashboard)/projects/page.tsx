@@ -18,6 +18,8 @@ import {
   ProjectCard,
   type ProjectRow,
 } from "@/src/components/projects/project-card";
+import { FleetHealthGrid } from "@/src/components/fleet/fleet-health-grid";
+import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
 import { ProjectsFleetBar } from "@/src/components/projects/projects-fleet-bar";
 import { ProjectSummaryCard } from "@/src/components/projects/project-summary-card";
 
@@ -313,6 +315,7 @@ export default function ProjectsPage() {
       />
 
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-8 sm:px-8 sm:py-10 lg:px-10">
+        <FleetHealthGrid />
         <div className="mb-8 flex min-w-0 flex-wrap items-center justify-end gap-3">
           {userPlan === "hobby" ? (
             <button
@@ -387,17 +390,21 @@ export default function ProjectsPage() {
           onClick={closeProjectDetail}
         >
           <div
-            className="relative w-full max-w-2xl pb-20"
+            className="relative w-full max-w-4xl pb-20"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
               onClick={closeProjectDetail}
-              className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 bg-zinc-950 font-mono text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+              className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center border border-zinc-700 bg-zinc-950 font-mono text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-100"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
             </button>
+            <ProjectMeshReadout
+              slug={detailProject.slug}
+              hash={detailProject.hash}
+            />
             <ProjectCard
               key={detailProject.id}
               project={detailProject}

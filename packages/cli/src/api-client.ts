@@ -1,7 +1,8 @@
-import type {
-  FluxProjectEnvEntry,
-  FluxProjectSummary,
-  ImportSqlFileResult,
+import {
+  type FluxProjectEnvEntry,
+  type FluxProjectSummary,
+  type ImportSqlFileResult,
+  slugifyProjectName,
 } from "@flux/core/standalone";
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
@@ -445,10 +446,77 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------------
-  // DELETE /projects/{slug}?hash= (nuke: acknowledgeDataLoss)
+  // DELETE /cli/v1/projects/:hash — atomic nuke (see deploy catalog + orphan `force`)
   // ---------------------------------------------------------------------------
-  nukeProject(_project: string, _hash: string): Promise<void> {
-    return Promise.reject(this.notImplemented("nukeProject"));
+  async nukeProject(
+    project: string,
+    hash: string,
+    options?: { forceOrphan?: boolean },
+  ): Promise<{ mode: "catalog" | "orphan" }> {
+    const token = this.tokenOrThrow();
+    const slug = slugifyProjectName(project);
+    const u = new URL(
+      `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(hash)}`,
+    );
+    if (options?.forceOrphan) {
+      u.searchParams.set("force", "1");
+      u.searchParams.set("slug", slug);
+    }
+    const res = await fetch(u, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI nuke: response was not JSON (${String(res.status)}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (res.status === 404) {
+      const errMsg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : "No project in catalog for this hash";
+      const hint =
+        !options?.forceOrphan
+          ? " If infrastructure still exists without a DB row, run again with: flux nuke --force -y (same name/hash as flux.json)."
+          : "";
+      throw new Error(`${errMsg}${hint}`);
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = z
+      .object({
+        ok: z.literal(true),
+        mode: z.union([z.literal("catalog"), z.literal("orphan")]),
+      })
+      .safeParse(body);
+    if (!parsed.success) {
+      throw new Error("CLI nuke: success response had unexpected shape.");
+    }
+    return { mode: parsed.data.mode };
   }
 
   // ---------------------------------------------------------------------------

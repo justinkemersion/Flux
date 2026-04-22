@@ -22,6 +22,17 @@ export const FLUX_CODEX_JSON = {
       "Docker container names and related identifiers use a flux- prefix, a 7-character lowercase hex hash segment, and the URL-safe project slug, joined with hyphens.",
     examples: ["flux-a1b2c3d-myapp", "flux-0f1e2d3-demo"],
   },
+  /**
+   * Dashboard: operators use the same auth session. Point users to UI for at-a-glance and deep checks.
+   */
+  dashboard: {
+    controlRoom:
+      "The Dashboard Projects page includes a **Control Room** / fleet strip: per-project health dots, aggregate RUN/DEG/ERR, and a **Node Status** readout (Engine container count, host RAM %, 1m load) — server-rack style telemetry for the node running the control plane.",
+    fleetTelemetry:
+      "**Fleet** status comes from the catalog + Docker: mesh heartbeat history (telemetry sparkline), and project rows with health_status / last_heartbeat. Use the overview to spot degraded or error projects before the CLI.",
+    meshReadout:
+      "Opening a project in the UI shows the **Mesh Readout**: connection manifest (API URL, Postgres), live log stream, and the heartbeat block strip. For deep diagnosis (not just `flux logs`), direct users to the Dashboard project detail or `flux open <name>` to open the Mesh view in the browser when available.",
+  },
   commands: {
     authVerify:
       "GET /api/cli/v1/auth/verify — validate Bearer `flx_live_…` key; returns { ok: true, user } (used by `flux login`).",

@@ -109,6 +109,22 @@ export const projects = pgTable(
   (t) => [uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug)],
 );
 
+/** Sampled mesh probe results (fleet monitor; last N per project in UI). */
+export const projectHeartbeatLog = pgTable(
+  "project_heartbeat_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    recordedAt: timestamp("recorded_at", { mode: "date" })
+      .notNull()
+      .defaultNow(),
+    healthStatus: text("health_status").notNull(),
+  },
+  (t) => [index("project_heartbeat_log_project_time_idx").on(t.projectId, t.recordedAt)],
+);
+
 /** Flux CLI / API keys — Bearer auth for `/api/cli/*` (raw secret never stored; only SHA-256 hash). */
 export const apiKeys = pgTable(
   "flux_api_keys",

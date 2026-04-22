@@ -14,6 +14,26 @@ export type FluxProjectEnvEntry =
   | { key: string; sensitive: true }
   | { key: string; value: string; sensitive: false };
 
+/** Docker resource names for a tenant stack (matches control-plane naming in `@flux/core`). */
+export function fluxTenantDockerResourceNames(
+  nameOrSlug: string,
+  hash: string,
+): {
+  api: string;
+  db: string;
+  volume: string;
+  network: string;
+} {
+  const slug = slugifyProjectName(nameOrSlug);
+  const base = `flux-${hash}-${slug}`;
+  return {
+    api: `${base}-api`,
+    db: `${base}-db`,
+    volume: `${base}-db-data`,
+    network: `${base}-net`,
+  };
+}
+
 export function slugifyProjectName(name: string): string {
   const slug = name
     .toLowerCase()

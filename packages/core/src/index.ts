@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createHmac, randomBytes } from "node:crypto";
-import { homedir } from "node:os";
+import { freemem, homedir, loadavg, totalmem } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import Docker from "dockerode";
@@ -61,6 +61,19 @@ export {
   FLUX_SYSTEM_HASH,
   generateProjectHash,
 } from "./tenant-suffix.ts";
+
+/**
+ * Engine + host snapshot for control-plane dashboards (`ProjectManager.getNodeStats`).
+ * `memoryUsage` / `cpuLoad` reflect the Node `os` module (same process view as the control plane).
+ */
+export type FluxNodeStats = {
+  /** Total local containers on the Engine (from `docker info`). */
+  containerCount: number;
+  /** RAM use approx. % of host (0–100, one decimal) from `os` freemem/totalmem. */
+  memoryUsage: number;
+  /** 1-minute load average (Unix); `0` if unavailable. */
+  cpuLoad: number;
+};
 
 export const FLUX_NETWORK_NAME = "flux-network";
 
@@ -241,27 +254,34 @@ export function deriveTenantPostgresPasswordFromSecret(
   );
 }
 
-/** Removes API + DB containers, the data volume, and the per-tenant private network when `privateNetworkName` is set (404-safe). */
+/**
+ * Removes API + DB containers, the data volume, and the per-tenant private network when
+ * `privateNetworkName` is set (404-safe). `onPurge` is called **before** each remove (resource name).
+ */
 async function removeApiPgAndVolumeForProvision(
   docker: Docker,
   apiContainerName: string,
   pgContainerName: string,
   volumeName: string,
   privateNetworkName?: string,
+  onPurge?: (resourceName: string) => void,
 ): Promise<void> {
   for (const name of [apiContainerName, pgContainerName]) {
+    onPurge?.(name);
     try {
       await docker.getContainer(name).remove({ force: true });
     } catch (err: unknown) {
       if (getHttpStatus(err) !== 404) throw err;
     }
   }
+  onPurge?.(volumeName);
   try {
     await docker.getVolume(volumeName).remove({ force: true });
   } catch (err: unknown) {
     if (getHttpStatus(err) !== 404) throw err;
   }
   if (privateNetworkName && privateNetworkName.length > 0) {
+    onPurge?.(privateNetworkName);
     await removeDockerNetworkByNameAllowMissing(docker, privateNetworkName);
   }
 }
@@ -1252,6 +1272,20 @@ export interface NukeProjectOptions {
   hash: string;
 }
 
+/**
+ * Success from {@link ProjectManager.deleteProjectInfrastructure} — Docker API data volume is
+ * confirmed absent (404) after the delete attempt.
+ */
+export type DeleteProjectInfrastructureResult = {
+  ok: true;
+  removed: {
+    apiContainer: string;
+    dbContainer: string;
+    volume: string;
+    privateNetwork: string;
+  };
+};
+
 /** Catalog slug + per-project hash for Docker lookups (e.g. dashboard session user). */
 export type FluxProjectSlugRef = { slug: string; hash: string };
 
@@ -1534,6 +1568,26 @@ export class ProjectManager {
    */
   async assertDockerEngineReachableOrThrow(): Promise<void> {
     await assertFluxDockerEngineReachableOrThrow(this.docker);
+  }
+
+  /**
+   * **Control room** telemetry: `docker info` for container count, `os` for RAM % and 1m load.
+   */
+  async getNodeStats(): Promise<FluxNodeStats> {
+    const info = (await this.docker.info()) as { Containers?: number };
+    const containerCount: number =
+      typeof info.Containers === "number" && info.Containers >= 0
+        ? info.Containers
+        : (await this.docker.listContainers({ all: true })).length;
+    const total = totalmem();
+    const used = total - freemem();
+    const memoryUsage =
+      total > 0
+        ? Math.min(100, Math.round((1000 * used) / total) / 10)
+        : 0;
+    const oneMin = loadavg()[0] ?? 0;
+    const cpuLoad = Number.isFinite(oneMin) ? oneMin : 0;
+    return { containerCount, memoryUsage, cpuLoad };
   }
 
   /** Docker DNS names for Postgres and PostgREST (Postgres reachable on the tenant private network only). */
@@ -2504,6 +2558,22 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   }
 
   /**
+   * POSTGRES_PASSWORD from the running tenant Postgres container (must be running).
+   * For HMAC-only dev flows without a live container, use
+   * {@link deriveTenantPostgresPasswordFromSecret} instead.
+   */
+  async getPostgresSuperuserPassword(
+    projectName: string,
+    hash: string,
+  ): Promise<string> {
+    const { password } = await this.resolveRunningPostgresCredentials(
+      projectName,
+      hash,
+    );
+    return password;
+  }
+
+  /**
    * Lists Flux tenant projects by scanning Docker for `flux-*-db` / `flux-*-api` containers.
    *
    * Returns only **slug**, **status**, and **apiUrl** — never Postgres passwords, connection URIs,
@@ -2763,33 +2833,25 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
   /**
    * Stops and removes both tenant containers and deletes the Postgres data volume.
-   * Irreversible: all database files for the project are destroyed.
+   * Irreversible: all database files for the project are destroyed. Delegates to
+   * {@link deleteProjectInfrastructure} (atomic: data volume must be gone afterward).
    */
   async nukeProject(
     name: string,
     options: NukeProjectOptions,
   ): Promise<void> {
-    const slug = slugifyProjectName(name);
-    const apiName = postgrestContainerName(options.hash, slug);
-    const dbName = postgresContainerName(options.hash, slug);
-    const vol = tenantVolumeName(options.hash, slug);
-    const privateNet = projectPrivateNetworkName(options.hash, slug);
-    await removeApiPgAndVolumeForProvision(
-      this.docker,
-      apiName,
-      dbName,
-      vol,
-      privateNet,
-    );
+    await this.deleteProjectInfrastructure(name, options.hash);
   }
 
   /**
-   * Ghost-rollback helper: force-removes the API + DB containers and the Postgres data volume for
-   * a freshly provisioned stack whose catalog insert failed. Unlike {@link nukeProject}, no
-   * `acknowledgeDataLoss` gate — the stack was just created and holds nothing the caller expects
-   * to keep. 404-safe and idempotent.
+   * **Atomic nuke protocol:** remove PostgREST + Postgres containers, delete named volume
+   * `flux-{hash}-{slug}-db-data` (or confirm it was already missing), and remove the per-tenant
+   * bridge. Resolves only after verifying the data volume is absent from the Engine.
    */
-  async nukeContainersOnly(slug: string, hash: string): Promise<void> {
+  async deleteProjectInfrastructure(
+    slug: string,
+    hash: string,
+  ): Promise<DeleteProjectInfrastructureResult> {
     const normalized = slugifyProjectName(slug);
     const apiName = postgrestContainerName(hash, normalized);
     const dbName = postgresContainerName(hash, normalized);
@@ -2802,6 +2864,33 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       vol,
       privateNet,
     );
+    try {
+      await this.docker.getVolume(vol).inspect();
+    } catch (e: unknown) {
+      if (getHttpStatus(e) === 404) {
+        return {
+          ok: true,
+          removed: {
+            apiContainer: apiName,
+            dbContainer: dbName,
+            volume: vol,
+            privateNetwork: privateNet,
+          },
+        };
+      }
+      throw e;
+    }
+    throw new Error(
+      `Data volume "${vol}" still exists after deleteProjectInfrastructure; not returning success for atomic nuke.`,
+    );
+  }
+
+  /**
+   * Ghost-rollback helper: same as {@link deleteProjectInfrastructure} (API + DB + volume + net).
+   * For a fresh stack whose catalog insert failed. No `acknowledgeDataLoss` — caller-only API.
+   */
+  async nukeContainersOnly(slug: string, hash: string): Promise<void> {
+    await this.deleteProjectInfrastructure(slug, hash);
   }
 
   /**

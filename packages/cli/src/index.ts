@@ -7,8 +7,10 @@ import type {
   FluxProjectSummary,
   ImportSqlFileResult,
 } from "@flux/core/standalone";
+import { fluxTenantDockerResourceNames } from "@flux/core/standalone";
 import chalk from "chalk";
 import { Command } from "commander";
+import open from "open";
 import ora from "ora";
 import { type CreateProjectResult, getApiClient } from "./api-client";
 import { saveConfig } from "./config";
@@ -18,6 +20,9 @@ import {
   resolveOptionalName,
   resolveProjectSlug,
 } from "./project-resolve";
+
+/** Pinned in source; must match `packages/cli/package.json` and server `/api/install/cli/version` when published. */
+const CLI_VERSION = "1.0.0";
 
 // Re-export SDK for bundling and programmatic use of PostgREST client types.
 export {
@@ -59,6 +64,119 @@ function formatCliError(err: unknown): string {
 function printErrorAndExit(err: unknown): void {
   console.error(chalk.red("Error:"), formatCliError(err));
   process.exit(1);
+}
+
+const DEFAULT_API_BASE = "https://flux.vsl-base.com/api";
+
+/**
+ * Origin of the Next.js dashboard (Mesh Readout). Override with `FLUX_DASHBOARD_BASE`, or
+ * derived from `FLUX_API_BASE` by stripping a trailing `/api` segment.
+ */
+function resolveDashboardBase(): string {
+  const direct = process.env.FLUX_DASHBOARD_BASE?.trim();
+  if (direct) {
+    return direct.replace(/\/$/, "");
+  }
+  const raw = process.env.FLUX_API_BASE?.trim().replace(/\/$/, "");
+  const api = raw && raw.length > 0 ? raw : DEFAULT_API_BASE;
+  if (api.endsWith("/api")) {
+    return api.slice(0, -"/api".length);
+  }
+  try {
+    return new URL(api).origin;
+  } catch {
+    return "https://flux.vsl-base.com";
+  }
+}
+
+/** Same origin as the dashboard; used for install bundle and version checks. */
+const resolveInstallOrigin = resolveDashboardBase;
+
+function isRemoteVersionNewer(remote: string, local: string): boolean {
+  const pr = remote.split(/[.-]/u);
+  const pl = local.split(/[.-]/u);
+  const n = Math.max(pr.length, pl.length, 1);
+  for (let i = 0; i < n; i++) {
+    const a = parseInt(pr[i] ?? "0", 10);
+    const b = parseInt(pl[i] ?? "0", 10);
+    if (Number.isNaN(a) || Number.isNaN(b)) return false;
+    if (a > b) return true;
+    if (a < b) return false;
+  }
+  return false;
+}
+
+async function fetchRemoteCliVersion(): Promise<string | null> {
+  const base = resolveInstallOrigin();
+  const u = new URL(
+    "/api/install/cli/version",
+    base.endsWith("/") ? base : `${base}/`,
+  );
+  try {
+    const res = await fetch(u, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { version?: unknown };
+    return typeof j.version === "string" ? j.version.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runVersionOutput(): Promise<void> {
+  console.log(CLI_VERSION);
+  const remote = await fetchRemoteCliVersion();
+  if (remote && isRemoteVersionNewer(remote, CLI_VERSION)) {
+    console.log(
+      chalk.dim(`Update available: ${remote} (current ${CLI_VERSION})`),
+    );
+  }
+}
+
+async function cmdUpdate(): Promise<void> {
+  const origin = resolveInstallOrigin();
+  const bundle = new URL(
+    "/api/install/cli",
+    origin.endsWith("/") ? origin : `${origin}/`,
+  ).href;
+  const v = await fetchRemoteCliVersion();
+  console.log(
+    chalk.dim("flux update — pull latest bundle, then run with node (Node 20+):"),
+  );
+  console.log();
+  console.log(
+    `  curl -fsSL ${bundle} -o /tmp/flux.mjs && node /tmp/flux.mjs --help`,
+  );
+  console.log();
+  console.log(chalk.dim("Or copy to a dir on PATH:"));
+  console.log(
+    `  curl -fsSL ${bundle} -o flux && chmod +x flux && mv flux ~/.local/bin/`,
+  );
+  if (v) {
+    console.log();
+    console.log(chalk.dim(`Control plane version: ${v}`));
+  }
+}
+
+async function cmdOpen(
+  name: string | undefined,
+  projectOpt: string | undefined,
+  cliHash: string | undefined,
+  flux: FluxJson | null,
+): Promise<void> {
+  const fromCli = projectOpt?.trim() || name;
+  const slug = resolveProjectSlug(
+    fromCli,
+    flux,
+    "positional <name> or -p, --project",
+  );
+  resolveHash(cliHash, flux);
+  const base = resolveDashboardBase();
+  const url = new URL(
+    `/projects/${encodeURIComponent(slug)}`,
+    base,
+  ).href;
+  console.log(`Opening Mesh Readout for ${slug}...`);
+  await open(url);
 }
 
 function formatLogLineForTerminal(
@@ -574,22 +692,39 @@ async function cmdEnvList(
 async function cmdNuke(
   name: string | undefined,
   yes: boolean,
+  forceOrphan: boolean,
   cliHash: string | undefined,
   flux: FluxJson | null,
 ): Promise<void> {
-  if (!yes) {
-    throw new Error("Refusing to nuke: pass --yes (-y) to delete all project data.");
-  }
   const slug = resolveOptionalName(name, flux, "positional <name> argument");
-  const client = getApiClient();
   const hash = resolveHash(cliHash, flux);
+  if (!yes) {
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    try {
+      const line = (
+        await rl.question(
+          `Type the project slug "${slug}" to confirm purge: `,
+        )
+      ).trim();
+      if (line !== slug) {
+        throw new Error("Aborted: slug did not match; no changes made.");
+      }
+    } finally {
+      await rl.close();
+    }
+  }
+  const client = getApiClient();
+  const names = fluxTenantDockerResourceNames(slug, hash);
+  for (const r of [names.api, names.db, names.volume, names.network] as const) {
+    console.log(`PURGING: ${r}`);
+  }
+  await client.nukeProject(slug, hash, { forceOrphan: forceOrphan });
   console.log(
-    chalk.red(
-      `Nuking project ${chalk.bold(slug)} (removing containers and data volume when API is available)…`,
-    ),
+    `Cleanup Complete: ${hash} infrastructure erased.`,
   );
-  await client.nukeProject(slug, hash);
-  console.log(chalk.green("✓"), chalk.white("Project removed."));
 }
 
 function fatalString(err: unknown): string {
@@ -610,12 +745,37 @@ async function main(): Promise<void> {
     process.exit(1);
   });
 
+  const argv = process.argv.slice(2);
+  if (
+    argv.length === 1 &&
+    (argv[0] === "-V" || argv[0] === "--version" || argv[0] === "version")
+  ) {
+    try {
+      await runVersionOutput();
+    } catch (e) {
+      printErrorAndExit(e);
+    }
+    return;
+  }
+
   const program = new Command();
 
   program
     .name("flux")
-    .description("Flux — manage projects and tenant APIs via the control plane")
-    .version("1.0.0", "-V, --version");
+    .description(
+      "Flux — control plane for tenant Postgres/PostgREST. Version: `flux -V` | `flux version`",
+    );
+
+  program
+    .command("update")
+    .description("Print install commands to pull the latest CLI from the control plane")
+    .action(async () => {
+      try {
+        await cmdUpdate();
+      } catch (e) {
+        printErrorAndExit(e);
+      }
+    });
 
   program
     .command("login")
@@ -849,6 +1009,31 @@ async function main(): Promise<void> {
       }
     });
 
+  const openCmd = program
+    .command("open")
+    .description(
+      "Open the Dashboard Mesh Readout for a project in the default browser",
+    )
+    .argument(
+      "[name]",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option(
+      "-p, --project <name>",
+      "Project slug (overrides positional if set)",
+    )
+    .option("--hash <hex>", hashFlagDesc);
+
+  openCmd.action(async (name: string | undefined) => {
+    try {
+      const opts = openCmd.opts<{ project?: string; hash?: string }>();
+      const flux = await readFluxJson(process.cwd());
+      await cmdOpen(name, opts.project, opts.hash, flux);
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
   const logsCmd = program
     .command("logs")
     .description(
@@ -952,23 +1137,40 @@ async function main(): Promise<void> {
 
   const nukeCmd = program
     .command("nuke")
-    .description("Remove a project and destroy its database volume (when API is available)")
+    .description(
+      "Atomic nuke: remove project catalog row, telemetry, and Docker stack (API + DB + data volume + net)",
+    )
     .argument(
       "[name]",
       "Project slug (default: \"slug\" in flux.json)",
     )
     .option(
       "-y, --yes",
-      "Confirm irreversible deletion of all project data",
+      "Skip slug confirmation prompt (without -y, you must type the exact project slug)",
+      false,
+    )
+    .option(
+      "--force",
+      "No catalog row: still purge orphaned Docker resources for this slug+hash (same flux.json)",
       false,
     )
     .option("--hash <hex>", hashFlagDesc);
 
   nukeCmd.action(async (name: string | undefined) => {
     try {
-      const opts = nukeCmd.opts<{ yes: boolean; hash?: string }>();
+      const opts = nukeCmd.opts<{
+        yes: boolean;
+        force?: boolean;
+        hash?: string;
+      }>();
       const flux = await readFluxJson(process.cwd());
-      await cmdNuke(name, opts.yes, opts.hash, flux);
+      await cmdNuke(
+        name,
+        opts.yes,
+        opts.force === true,
+        opts.hash,
+        flux,
+      );
     } catch (err: unknown) {
       printErrorAndExit(err);
     }
