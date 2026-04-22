@@ -8,6 +8,7 @@ import {
   EyeOff,
   Loader2,
   Play,
+  RefreshCw,
   Settings,
   Square,
   Trash2,
@@ -129,12 +130,15 @@ function CopyableField({
   value,
   isSecret,
   visuallyTruncate = false,
+  prominent = false,
 }: {
   label: string;
   value: string | null;
   isSecret: boolean;
   /** Single-line ellipsis for long non-secret values (e.g. anon JWT). */
   visuallyTruncate?: boolean;
+  /** Larger type and padding for the “How to connect” section. */
+  prominent?: boolean;
 }) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -159,14 +163,24 @@ function CopyableField({
     }
   }
 
+  const labelCls = prominent
+    ? "mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100"
+    : "mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400";
+  const boxCls = prominent
+    ? "px-3 py-3 dark:bg-zinc-900/60"
+    : "px-2 py-1.5 dark:bg-zinc-900/50";
+  const valueCls = prominent
+    ? "text-sm leading-snug"
+    : "text-xs leading-relaxed";
+
   return (
     <div className="min-w-0">
-      <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-        {label}
-      </p>
-      <div className="flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50/90 px-2 py-1.5 dark:border-zinc-800 dark:bg-zinc-900/50">
+      <p className={labelCls}>{label}</p>
+      <div
+        className={`flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50/90 dark:border-zinc-800 ${boxCls}`}
+      >
         <span
-          className={`min-w-0 flex-1 font-mono text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 ${
+          className={`min-w-0 flex-1 font-mono ${valueCls} text-zinc-800 dark:text-zinc-200 ${
             visuallyTruncate && !masked
               ? "truncate"
               : unavailable
@@ -205,6 +219,50 @@ function CopyableField({
           ) : (
             <Clipboard className="h-4 w-4" aria-hidden />
           )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CliSnippetBlock({ slug }: { slug: string }) {
+  const line = `flux push ./migrations/schema.sql --project ${slug}`;
+  const [copied, setCopied] = useState(false);
+
+  async function copyLine(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(line);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard denied */
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/30">
+      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        CLI snippet
+      </h3>
+      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        Run the Flux CLI from your machine. Swap in your SQL file path; the
+        project flag targets this stack.
+      </p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+        <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-zinc-200 bg-white px-3 py-2.5 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+          {line}
+        </pre>
+        <button
+          type="button"
+          onClick={() => void copyLine()}
+          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          ) : (
+            <Clipboard className="h-4 w-4" aria-hidden />
+          )}
+          Copy
         </button>
       </div>
     </div>
@@ -255,6 +313,11 @@ export function ProjectCard({
   const [revealError, setRevealError] = useState<string | null>(null);
   const [repairBusy, setRepairBusy] = useState(false);
   const [repairError, setRepairError] = useState<string | null>(null);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logsService, setLogsService] = useState<"api" | "db">("api");
+  const [logsText, setLogsText] = useState("");
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
 
   const canRevealCredentials =
     p.status === "running" ||
@@ -324,6 +387,33 @@ export function ProjectCard({
       document.body.style.overflow = prev;
     };
   }, [settingsOpen]);
+
+  const fetchLogs = useCallback(async () => {
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(p.slug)}/logs?service=${logsService}`,
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        logs?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Request failed (${String(res.status)})`);
+      }
+      setLogsText(data.logs ?? "");
+    } catch (err) {
+      setLogsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [p.slug, logsService]);
+
+  useEffect(() => {
+    if (!logsOpen) return;
+    void fetchLogs();
+  }, [logsOpen, fetchLogs]);
 
   async function togglePower(): Promise<void> {
     if (isBusy || currentStatus === "partial") return;
@@ -480,108 +570,250 @@ export function ProjectCard({
     currentStatus !== "missing" &&
     currentStatus !== "corrupted";
 
+  const logSourceBtn =
+    "rounded px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50";
+  const logSourceActive =
+    "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900";
+  const logSourceIdle =
+    "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800";
+
   return (
     <>
-      <article className="flex flex-col rounded-md border border-zinc-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950">
-        <header className="flex items-start justify-between gap-3">
+      <article className="flex flex-col rounded-md border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-base font-bold text-zinc-900 dark:text-zinc-50">
+            <h2 className="truncate text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               {p.name}
             </h2>
             <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
               {p.slug}
             </p>
           </div>
-          <StatusBadge status={currentStatus} />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <StatusBadge status={currentStatus} />
+            {currentStatus === "missing" || currentStatus === "corrupted" ? (
+              <button
+                type="button"
+                onClick={() => void runRepair()}
+                disabled={repairBusy}
+                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-orange-300 bg-orange-50 px-2.5 text-xs font-medium text-orange-950 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100 dark:hover:bg-orange-900/50"
+              >
+                {repairBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <Wrench className="h-3.5 w-3.5" aria-hidden />
+                )}
+                Repair
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void togglePower()}
+              disabled={!canToggle}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              aria-label={
+                currentStatus === "running" ? `Stop ${p.name}` : `Start ${p.name}`
+              }
+              title={
+                currentStatus === "running" ? "Stop project" : "Start project"
+              }
+            >
+              {isBusy || currentStatus === "transitioning" ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : currentStatus === "running" ? (
+                <Square className="h-4 w-4" aria-hidden />
+              ) : (
+                <Play className="h-4 w-4" aria-hidden />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={openSettingsModal}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              aria-label={`Project settings for ${p.name}`}
+              title="Project settings"
+            >
+              <Settings className="h-4 w-4" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={openDeleteModal}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+              aria-label={`Delete project ${p.name}`}
+              title="Delete project"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
         </header>
 
-        <div className="mt-4 flex flex-col gap-3">
-          <div className="rounded-md border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Connection details
-              </h3>
-              {!credentialsLoaded && canRevealCredentials ? (
+        <section className="mt-6" aria-labelledby={`connect-heading-${p.id}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2
+                id={`connect-heading-${p.id}`}
+                className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+              >
+                How to connect
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
+                Everything you need to reach Postgres and the REST API. Load
+                secrets once; they are not stored in the project list.
+              </p>
+            </div>
+            {!credentialsLoaded && canRevealCredentials ? (
+              <button
+                type="button"
+                onClick={() => void revealKeys()}
+                disabled={revealBusy}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              >
+                {revealBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Eye className="h-4 w-4" aria-hidden />
+                )}
+                Load connection secrets
+              </button>
+            ) : null}
+          </div>
+
+          {revealError ? (
+            <p
+              className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-400"
+              role="alert"
+            >
+              {revealError}
+            </p>
+          ) : null}
+
+          <div className="mt-6 flex flex-col gap-6">
+            <CopyableField
+              label="Postgres connection string"
+              value={
+                credentialsLoaded ? (p.postgresConnectionString ?? null) : null
+              }
+              isSecret
+              prominent
+            />
+            <CopyableField
+              label="Anon key"
+              value={credentialsLoaded ? (p.anonKey ?? null) : null}
+              isSecret={false}
+              visuallyTruncate
+              prominent
+            />
+            <CopyableField
+              label="Service URL"
+              value={p.apiUrl}
+              isSecret={false}
+              visuallyTruncate
+              prominent
+            />
+            <CopyableField
+              label="Service role key"
+              value={credentialsLoaded ? (p.serviceRoleKey ?? null) : null}
+              isSecret
+              prominent
+            />
+          </div>
+
+          {!credentialsLoaded && !canRevealCredentials ? (
+            <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+              Secrets stay hidden until the stack is healthy. Use{" "}
+              <strong className="font-medium">Repair</strong> if Docker is out of
+              sync, or <strong className="font-medium">Delete</strong> to remove
+              this project.
+            </p>
+          ) : null}
+          {!credentialsLoaded && canRevealCredentials ? (
+            <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+              Postgres and anon values load when you choose{" "}
+              <strong className="font-medium text-zinc-700 dark:text-zinc-300">
+                Load connection secrets
+              </strong>
+              .
+            </p>
+          ) : null}
+          {credentialsLoaded ? (
+            <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+              Update the JWT signing secret or CORS from project settings when
+              your auth setup changes.
+            </p>
+          ) : null}
+        </section>
+
+        <div className="mt-8">
+          <CliSnippetBlock slug={p.slug} />
+        </div>
+
+        <div className="mt-6">
+          <button
+            type="button"
+            onClick={() => setLogsOpen((open) => !open)}
+            aria-expanded={logsOpen}
+            className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+          >
+            {logsOpen ? "Hide logs" : "Show logs"}
+          </button>
+
+          {logsOpen ? (
+            <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40">
+              <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  Source
+                </span>
+                <div className="flex rounded-md border border-zinc-200 bg-white p-0.5 dark:border-zinc-700 dark:bg-zinc-950">
+                  <button
+                    type="button"
+                    onClick={() => setLogsService("api")}
+                    className={`${logSourceBtn} ${logsService === "api" ? logSourceActive : logSourceIdle}`}
+                  >
+                    PostgREST
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogsService("db")}
+                    className={`${logSourceBtn} ${logsService === "db" ? logSourceActive : logSourceIdle}`}
+                  >
+                    Postgres
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => void revealKeys()}
-                  disabled={revealBusy}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  onClick={() => void fetchLogs()}
+                  disabled={logsLoading}
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 >
-                  {revealBusy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" aria-hidden />
-                  )}
-                  Reveal keys
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${logsLoading ? "animate-spin" : ""}`}
+                    aria-hidden
+                  />
+                  Refresh
                 </button>
-              ) : null}
-            </div>
-            {revealError ? (
-              <p
-                className="mb-3 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-400"
-                role="alert"
-              >
-                {revealError}
-              </p>
-            ) : null}
-            <div className="flex flex-col gap-3">
-              <CopyableField
-                label="API URL"
-                value={p.apiUrl}
-                isSecret={false}
-                visuallyTruncate
-              />
-              {!credentialsLoaded && !canRevealCredentials ? (
-                <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Keys are unavailable until the stack is healthy. Use{" "}
-                  <strong className="font-medium">Repair</strong> if Docker is
-                  out of sync, or <strong className="font-medium">Delete</strong>{" "}
-                  to remove this catalog entry.
+              </div>
+              {logsError ? (
+                <p className="border-b border-zinc-200 px-3 py-2 text-sm text-red-600 dark:border-zinc-800 dark:text-red-400">
+                  {logsError}
                 </p>
               ) : null}
-              {!credentialsLoaded && canRevealCredentials ? (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  API keys and Postgres connection string are not loaded. Use{" "}
-                  <strong className="font-medium text-zinc-700 dark:text-zinc-300">
-                    Reveal keys
-                  </strong>{" "}
-                  to fetch them from the server.
-                </p>
-              ) : null}
-              {credentialsLoaded ? (
-                <>
-                  <CopyableField
-                    label="Anon key"
-                    value={p.anonKey ?? null}
-                    isSecret={false}
-                    visuallyTruncate
-                  />
-                  <CopyableField
-                    label="Service role key"
-                    value={p.serviceRoleKey ?? null}
-                    isSecret
-                  />
-                  <CopyableField
-                    label="Postgres connection string"
-                    value={p.postgresConnectionString ?? null}
-                    isSecret
-                  />
-                </>
-              ) : null}
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all px-3 py-3 font-mono text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+                {logsLoading && !logsText ? "Loading…" : logsText}
+              </pre>
             </div>
-          </div>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Created{" "}
-            <time dateTime={p.createdAt}>
-              {new Date(p.createdAt).toLocaleDateString(undefined, {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })}
-            </time>
-          </p>
+          ) : null}
         </div>
+
+        <p className="mt-6 border-t border-zinc-200 pt-4 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          Created{" "}
+          <time dateTime={p.createdAt}>
+            {new Date(p.createdAt).toLocaleDateString(undefined, {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })}
+          </time>
+        </p>
 
         {repairError ? (
           <p
@@ -600,66 +832,6 @@ export function ProjectCard({
             {actionError}
           </p>
         ) : null}
-
-        <footer className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-          <div className="flex flex-wrap items-center gap-2">
-            {currentStatus === "missing" || currentStatus === "corrupted" ? (
-              <button
-                type="button"
-                onClick={() => void runRepair()}
-                disabled={repairBusy}
-                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-orange-300 bg-orange-50 px-3 text-sm font-medium text-orange-950 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100 dark:hover:bg-orange-900/50"
-              >
-                {repairBusy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                ) : (
-                  <Wrench className="h-4 w-4" aria-hidden />
-                )}
-                Repair stack
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => void togglePower()}
-              disabled={!canToggle}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              aria-label={
-                currentStatus === "running" ? `Stop ${p.name}` : `Start ${p.name}`
-              }
-              title={
-                currentStatus === "running" ? "Stop project" : "Start project"
-              }
-            >
-              {isBusy || currentStatus === "transitioning" ? (
-                <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-              ) : currentStatus === "running" ? (
-                <Square className="h-5 w-5" aria-hidden />
-              ) : (
-                <Play className="h-5 w-5" aria-hidden />
-              )}
-            </button>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={openSettingsModal}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              aria-label={`Project settings for ${p.name}`}
-              title="Project settings"
-            >
-              <Settings className="h-5 w-5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={openDeleteModal}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-              aria-label={`Delete project ${p.name}`}
-              title="Delete project"
-            >
-              <Trash2 className="h-5 w-5" aria-hidden />
-            </button>
-          </div>
-        </footer>
       </article>
 
       {settingsOpen ? (
@@ -697,7 +869,7 @@ export function ProjectCard({
                 template or NextAuth) so PostgREST can verify user tokens. After you
                 save, use{" "}
                 <strong className="font-medium text-zinc-800 dark:text-zinc-200">
-                  Reveal keys
+                  Load connection secrets
                 </strong>{" "}
                 on the project card to refresh anon and service-role JWTs.
               </p>

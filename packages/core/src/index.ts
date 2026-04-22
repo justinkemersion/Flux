@@ -2519,6 +2519,60 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     await removeApiPgAndVolumeForProvision(this.docker, apiName, dbName, vol);
   }
 
+  /**
+   * Recent Docker logs for the tenant PostgREST (`api`) or Postgres (`db`) container.
+   * Fetches stdout and stderr in separate Engine calls so responses are plain text (no stream demux).
+   */
+  async getTenantContainerLogs(
+    slug: string,
+    hash: string,
+    kind: "api" | "db",
+    options?: { tail?: number },
+  ): Promise<string> {
+    const normalized = slugifyProjectName(slug);
+    const containerName =
+      kind === "api"
+        ? postgrestContainerName(hash, normalized)
+        : postgresContainerName(hash, normalized);
+    const tail = options?.tail ?? 300;
+    const container = this.docker.getContainer(containerName);
+
+    try {
+      await container.inspect();
+    } catch (e: unknown) {
+      if (getHttpStatus(e) === 404) {
+        return `Container "${containerName}" does not exist on this Docker host.`;
+      }
+      throw e;
+    }
+
+    const readLog = async (stdout: boolean, stderr: boolean): Promise<string> => {
+      const raw = await container.logs({
+        stdout,
+        stderr,
+        tail,
+        timestamps: true,
+      });
+      if (Buffer.isBuffer(raw)) {
+        return raw.toString("utf8").trimEnd();
+      }
+      const chunks: Buffer[] = [];
+      for await (const chunk of raw as AsyncIterable<Uint8Array | Buffer>) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return Buffer.concat(chunks).toString("utf8").trimEnd();
+    };
+
+    const out = await readLog(true, false);
+    const errText = await readLog(false, true);
+
+    const parts: string[] = [];
+    if (out.length > 0) parts.push(out);
+    if (errText.length > 0) parts.push(`[stderr]\n${errText}`);
+    if (parts.length === 0) return "(no log lines yet)";
+    return parts.join("\n\n");
+  }
+
   private async stopContainerOrThrow(containerName: string): Promise<void> {
     try {
       await this.docker.getContainer(containerName).stop();
