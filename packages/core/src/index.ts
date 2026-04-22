@@ -22,6 +22,10 @@ import {
   runPsqlSqlInsideContainer,
   waitPostgresReadyInsideContainer,
 } from "./postgres-internal-exec.ts";
+import {
+  demuxDockerLogBufferIfMultiplexed,
+  demuxDockerLogStream,
+} from "./docker-log-stream.ts";
 import { runMovePublicToApiWithDockerExec } from "./schema-move-public-to-api.ts";
 import {
   FLUX_PROJECT_HASH_HEX_LEN,
@@ -2843,6 +2847,70 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     if (errText.length > 0) parts.push(`[stderr]\n${errText}`);
     if (parts.length === 0) return "(no log lines yet)";
     return parts.join("\n\n");
+  }
+
+  /**
+   * Live log stream for the tenant PostgREST (`api`) or Postgres (`db`) container. Multiplexed
+   * stdout/stderr from the Engine is demuxed into a single UTF-8 byte stream (no frame headers).
+   * Pass `signal` to cancel the follow request (e.g. when the HTTP client disconnects).
+   */
+  async getContainerLogs(
+    slug: string,
+    hash: string,
+    service: "api" | "db",
+    options?: { tail?: number; signal?: AbortSignal },
+  ): Promise<ReadableStream<Uint8Array>> {
+    const normalized = slugifyProjectName(slug);
+    const containerName =
+      service === "api"
+        ? postgrestContainerName(hash, normalized)
+        : postgresContainerName(hash, normalized);
+    const c = this.docker.getContainer(containerName);
+    try {
+      await c.inspect();
+    } catch (e: unknown) {
+      if (getHttpStatus(e) === 404) {
+        throw new Error(
+          `Container "${containerName}" does not exist on this Docker host.`,
+        );
+      }
+      throw e;
+    }
+    const logOpts = {
+      follow: true as const,
+      stdout: true,
+      stderr: true,
+      timestamps: true,
+      tail: options?.tail ?? 200,
+      ...(options?.signal ? { abortSignal: options.signal } : {}),
+    };
+    const raw = (await c.logs(logOpts)) as unknown;
+    if (Buffer.isBuffer(raw)) {
+      const body = demuxDockerLogBufferIfMultiplexed(raw);
+      return new ReadableStream<Uint8Array>({
+        start(ctrl) {
+          ctrl.enqueue(new Uint8Array(body));
+          ctrl.close();
+        },
+      });
+    }
+    let nodeIn: Readable;
+    if (
+      raw &&
+      typeof raw === "object" &&
+      "getReader" in raw &&
+      typeof (raw as { getReader?: () => unknown }).getReader === "function"
+    ) {
+      nodeIn = Readable.fromWeb(raw as import("node:stream/web").ReadableStream);
+    } else if (raw instanceof Readable) {
+      nodeIn = raw;
+    } else {
+      throw new Error("Unexpected value from container.logs (expected Buffer or stream).");
+    }
+    const demuxed = demuxDockerLogStream(nodeIn, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    return Readable.toWeb(demuxed) as ReadableStream<Uint8Array>;
   }
 
   private async stopContainerOrThrow(containerName: string): Promise<void> {

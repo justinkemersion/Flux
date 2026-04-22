@@ -58,6 +58,21 @@ function printErrorAndExit(err: unknown): void {
   process.exit(1);
 }
 
+function formatLogLineForTerminal(
+  line: string,
+  service: "api" | "db",
+): string {
+  const label = service === "api" ? "api" : "db";
+  const head = chalk.bold(`[${label}]`);
+  const m = line.match(
+    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)$/s,
+  );
+  if (m) {
+    return `${head} ${chalk.dim(m[1]!)} ${m[2]!}`;
+  }
+  return `${head} ${line}`;
+}
+
 function printProjectSummaryCard(
   result: CreateProjectResult,
   nameArg: string,
@@ -95,6 +110,54 @@ function printProjectSummaryCard(
     console.log(chalk.dim(`    ${line}`));
   }
   console.log();
+}
+
+async function cmdLogs(
+  name: string | undefined,
+  projectOpt: string | undefined,
+  service: "api" | "db",
+  hash: string | undefined,
+  flux: FluxJson | null,
+): Promise<void> {
+  const fromCli = projectOpt?.trim() || name;
+  const slug = resolveProjectSlug(
+    fromCli,
+    flux,
+    "positional [name] or -p, --project",
+  );
+  const h = resolveHash(hash, flux);
+  const client = getApiClient();
+  const ac = new AbortController();
+  const onSig = (): void => {
+    ac.abort();
+  };
+  process.on("SIGINT", onSig);
+  process.on("SIGTERM", onSig);
+  try {
+    try {
+      await client.streamContainerLogs(
+        { slug, hash: h, service },
+        (ev) => {
+          if (ev.line != null) {
+            console.log(formatLogLineForTerminal(ev.line, service));
+          }
+        },
+        { signal: ac.signal },
+      );
+    } catch (e: unknown) {
+      if (
+        e instanceof Error &&
+        (e.name === "AbortError" ||
+          /aborted|The operation was aborted/i.test(e.message))
+      ) {
+        return;
+      }
+      throw e;
+    }
+  } finally {
+    process.off("SIGINT", onSig);
+    process.off("SIGTERM", onSig);
+  }
 }
 
 async function cmdCreate(
@@ -755,6 +818,50 @@ async function main(): Promise<void> {
         printErrorAndExit(err);
       }
     });
+
+  const logsCmd = program
+    .command("logs")
+    .description(
+      "Stream tenant container logs from the control plane (live SSE, Docker follow)",
+    )
+    .argument(
+      "[name]",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option(
+      "-p, --project <name>",
+      "Project slug (overrides positional if set)",
+    )
+    .option(
+      "-s, --service <name>",
+      "api (PostgREST) or db (Postgres)",
+      "api",
+    )
+    .option("--hash <hex>", hashFlagDesc);
+
+  logsCmd.action(async (name: string | undefined) => {
+    try {
+      const opts = logsCmd.opts<{
+        project?: string;
+        service?: string;
+        hash?: string;
+      }>();
+      const s = (opts.service ?? "api").trim().toLowerCase();
+      if (s !== "api" && s !== "db") {
+        throw new Error('--service must be "api" or "db"');
+      }
+      const flux = await readFluxJson(process.cwd());
+      await cmdLogs(
+        name,
+        opts.project,
+        s as "api" | "db",
+        opts.hash,
+        flux,
+      );
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
 
   const keysCmd = program
     .command("keys")
