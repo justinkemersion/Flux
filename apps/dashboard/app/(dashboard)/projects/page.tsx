@@ -18,22 +18,7 @@ import {
   ProjectCard,
   type ProjectRow,
 } from "@/src/components/projects/project-card";
-import {
-  hashSegment,
-  projectApiInterface,
-  uptimeReadoutForStatus,
-} from "@/src/lib/routing-identity";
-
-const focusable =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-50 dark:focus-visible:ring-zinc-500/35 dark:focus-visible:ring-offset-zinc-950";
-
-const thSpec =
-  "border-b border-zinc-200 px-3 py-2.5 text-left text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400";
-
-const tdSpec =
-  "border-b border-zinc-200 px-3 py-3 align-middle text-sm text-zinc-700 dark:border-zinc-800 dark:text-zinc-300";
-
-const rowActionClass = `shrink-0 rounded-md bg-transparent px-2 py-1.5 text-xs font-medium text-zinc-600 transition-colors enabled:hover:bg-zinc-100 enabled:hover:text-zinc-900 enabled:focus-visible:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:enabled:hover:bg-zinc-800 dark:enabled:hover:text-zinc-100 dark:enabled:focus-visible:text-zinc-100 ${focusable}`;
+import { ProjectSummaryCard } from "@/src/components/projects/project-summary-card";
 
 export default function ProjectsPage() {
   const { data: session } = useSession();
@@ -53,7 +38,6 @@ export default function ProjectsPage() {
   const [billingError, setBillingError] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<"hobby" | "pro" | null>(null);
   const [detailSlug, setDetailSlug] = useState<string | null>(null);
-  const [rowActionBusy, setRowActionBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -263,55 +247,6 @@ export default function ProjectsPage() {
     if (detailSlug === slug) setDetailSlug(null);
   }
 
-  async function runRepairFromTable(slug: string): Promise<void> {
-    if (
-      !window.confirm(
-        "Repair removes any Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?",
-      )
-    ) {
-      return;
-    }
-    setRowActionBusy(slug);
-    try {
-      const res = await fetch(`/api/projects/${slug}/repair`, {
-        method: "POST",
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        throw new Error(data.error ?? `Repair failed (${String(res.status)})`);
-      }
-      setDetailSlug(null);
-      await load();
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRowActionBusy(null);
-    }
-  }
-
-  async function stopFromTable(slug: string): Promise<void> {
-    const p = projectList.find((x) => x.slug === slug);
-    if (!p) return;
-    if (p.status !== "running" && p.status !== "partial") return;
-    setRowActionBusy(slug);
-    try {
-      const res = await fetch(`/api/projects/${p.slug}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "stop" }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Stop failed (${String(res.status)})`);
-      }
-      await load();
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRowActionBusy(null);
-    }
-  }
-
   const detailProject = detailSlug
     ? projectList.find((p) => p.slug === detailSlug)
     : undefined;
@@ -382,117 +317,39 @@ export default function ProjectsPage() {
           <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
         </div>
       ) : loadError ? (
-        <p className="text-red-400">{loadError}</p>
+        <p className="text-red-600 dark:text-red-400">{loadError}</p>
       ) : projectList.length === 0 ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-500">
-          No projects yet. Create one with the plus button.
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
-          <table
-            className="w-full min-w-[58rem] border-collapse text-left text-sm"
-            aria-labelledby="fleet-spec"
+        <div className="flex flex-1 flex-col items-center justify-center py-12 sm:py-20">
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="flex w-full max-w-md flex-col items-center rounded-md border border-dashed border-zinc-300 bg-zinc-50/50 px-8 py-14 text-center shadow-sm transition-colors hover:border-zinc-400 hover:bg-zinc-100/80 dark:border-zinc-700 dark:bg-zinc-900/30 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/50"
           >
-            <thead>
-              <tr className="bg-zinc-50 dark:bg-zinc-900/40">
-                <th scope="col" className={thSpec}>
-                  #
-                </th>
-                <th scope="col" className={thSpec}>
-                  Project
-                </th>
-                <th scope="col" className={thSpec}>
-                  API
-                </th>
-                <th scope="col" className={thSpec}>
-                  Uptime
-                </th>
-                <th scope="col" className={`${thSpec} w-[1%] text-right`}>
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {projectList.map((p, i) => {
-                const hash = hashSegment(`${p.slug}:${p.id}`);
-                const specHost = projectApiInterface(p.slug, hash);
-                const busy = rowActionBusy === p.slug;
-                return (
-                  <tr key={p.id}>
-                    <td className={tdSpec}>
-                      <span className="text-[10px] text-zinc-500 sm:text-xs">
-                        {`#${String(i + 1).padStart(2, "0")}`}
-                      </span>
-                    </td>
-                    <td className={tdSpec}>
-                      <span className="text-zinc-900 dark:text-zinc-100">
-                        {p.slug}
-                      </span>
-                      <span className="text-zinc-400 dark:text-zinc-600">
-                        {" "}
-                        ·{" "}
-                      </span>
-                      <span className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
-                        {hash}
-                      </span>
-                    </td>
-                    <td className={tdSpec}>
-                      <code
-                        className="block max-w-[18rem] truncate rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 font-mono text-[10px] text-zinc-700 sm:max-w-[20rem] sm:text-[11px] dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-300"
-                        title={p.apiUrl}
-                      >
-                        {p.apiUrl || specHost}
-                      </code>
-                    </td>
-                    <td className={tdSpec}>
-                      <span
-                        className={`inline-block min-w-[4.5rem] rounded-md border px-2 py-1.5 text-center text-xs tabular-nums ${
-                          p.status === "running"
-                            ? "border-emerald-200/80 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
-                            : "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-500"
-                        }`}
-                      >
-                        {uptimeReadoutForStatus(p.status)}
-                      </span>
-                    </td>
-                    <td
-                      className={`${tdSpec} w-[1%] whitespace-nowrap text-right`}
-                    >
-                      <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setDetailSlug(p.slug)}
-                          className={rowActionClass}
-                        >
-                          Open
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void runRepairFromTable(p.slug)}
-                          className={rowActionClass}
-                        >
-                          Repair
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            busy ||
-                            (p.status !== "running" && p.status !== "partial")
-                          }
-                          onClick={() => void stopFromTable(p.slug)}
-                          className={rowActionClass}
-                        >
-                          Stop
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+            <span className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+              <Plus className="h-6 w-6 text-zinc-600 dark:text-zinc-400" aria-hidden />
+            </span>
+            <span className="mt-5 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              New Project
+            </span>
+            <span className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-500">
+              Add Postgres and PostgREST for a new app
+            </span>
+          </button>
         </div>
+      ) : (
+        <ul
+          className="grid list-none gap-4 sm:grid-cols-2 xl:grid-cols-3"
+          aria-labelledby="fleet-spec"
+        >
+          {projectList.map((p) => (
+            <li key={p.id}>
+              <ProjectSummaryCard
+                project={p}
+                onOpenDetail={() => setDetailSlug(p.slug)}
+              />
+            </li>
+          ))}
+        </ul>
       )}
 
       {detailSlug && detailProject ? (
