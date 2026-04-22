@@ -4,12 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "pnpm --filter @flux/cli run build",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",
+    "@flux/cli": "workspace:*",
     "@flux/core": "workspace:*",
     "ai": "^4.3.19",
     "drizzle-orm": "^0.45.2",

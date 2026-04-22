@@ -65,17 +65,22 @@ export {
 export const FLUX_NETWORK_NAME = "flux-network";
 
 /**
- * Docker label: Flux-managed Postgres / PostgREST stacks (filter from Traefik, dashboard, etc.).
- * Legacy `vessel.flux.managed` is stripped on Traefik label reconcile.
+ * Docker labels: Flux-managed Postgres / PostgREST (filter from Traefik, dashboard, etc.).
+ * Legacy `vessel.*` keys are stripped on label reconcile; new containers use the `flux.*` namespace.
  */
-export const FLUX_VESSEL_MANAGED_LABEL = "vessel.managed" as const;
-export const FLUX_VESSEL_MANAGED_VALUE = "true" as const;
-export const FLUX_VESSEL_PURPOSE_LABEL = "vessel.purpose" as const;
-export const FLUX_VESSEL_PROJECT_SLUG_LABEL = "vessel.project.slug" as const;
-export const FLUX_VESSEL_PURPOSE_TENANT = "tenant" as const;
-export const FLUX_VESSEL_PURPOSE_CONTROL_PLANE = "control-plane" as const;
+export const FLUX_MANAGED_LABEL = "flux.managed" as const;
+export const FLUX_MANAGED_VALUE = "true" as const;
+export const FLUX_PURPOSE_LABEL = "flux.purpose" as const;
+export const FLUX_PROJECT_SLUG_LABEL = "flux.project.slug" as const;
+export const FLUX_PURPOSE_TENANT = "tenant" as const;
+export const FLUX_PURPOSE_CONTROL_PLANE = "control-plane" as const;
 
-const FLUX_VESSEL_MANAGED_LABEL_LEGACY = "vessel.flux.managed" as const;
+const LEGACY_UMBRELLA_DOCKER_LABEL_KEYS: ReadonlySet<string> = new Set([
+  "vessel.managed",
+  "vessel.purpose",
+  "vessel.project.slug",
+  "vessel.flux.managed",
+]);
 
 const FLUX_TENANT_DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024;
 /** 0.5 vCPU for each of DB and API (tunable; stack uses ~1 core under full load on both). */
@@ -465,25 +470,29 @@ function isPlatformSystemStackSlug(slug: string): boolean {
   return slug === "flux-system";
 }
 
-/** Purpose + slug metadata for Flux-managed DB/API containers (see {@link FLUX_VESSEL_MANAGED_LABEL}). */
-function vesselContainerMetadataLabels(slug: string): Record<string, string> {
+/** Purpose + slug metadata for Flux-managed DB/API containers (see {@link FLUX_MANAGED_LABEL}). */
+function fluxContainerMetadataLabels(slug: string): Record<string, string> {
   const out: Record<string, string> = {
-    [FLUX_VESSEL_MANAGED_LABEL]: FLUX_VESSEL_MANAGED_VALUE,
+    [FLUX_MANAGED_LABEL]: FLUX_MANAGED_VALUE,
   };
   if (isPlatformSystemStackSlug(slug)) {
-    out[FLUX_VESSEL_PURPOSE_LABEL] = FLUX_VESSEL_PURPOSE_CONTROL_PLANE;
+    out[FLUX_PURPOSE_LABEL] = FLUX_PURPOSE_CONTROL_PLANE;
   } else {
-    out[FLUX_VESSEL_PURPOSE_LABEL] = FLUX_VESSEL_PURPOSE_TENANT;
-    out[FLUX_VESSEL_PROJECT_SLUG_LABEL] = slug;
+    out[FLUX_PURPOSE_LABEL] = FLUX_PURPOSE_TENANT;
+    out[FLUX_PROJECT_SLUG_LABEL] = slug;
   }
   return out;
 }
 
-function omitLegacyVesselManagedLabel(
+function stripLegacyUmbrellaMetadataFromLabels(
   labels: Record<string, string>,
 ): Record<string, string> {
-  const { [FLUX_VESSEL_MANAGED_LABEL_LEGACY]: _removed, ...rest } = labels;
-  return rest;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(labels)) {
+    if (LEGACY_UMBRELLA_DOCKER_LABEL_KEYS.has(k)) continue;
+    out[k] = v;
+  }
+  return out;
 }
 
 function postgresContainerName(hash: string, slug: string): string {
@@ -804,7 +813,7 @@ function postgrestTraefikDockerLabels(
     : corsMw;
   labels[`traefik.http.routers.${traefikSvc}.middlewares`] = middlewares;
 
-  return { ...labels, ...vesselContainerMetadataLabels(slug) };
+  return { ...labels, ...fluxContainerMetadataLabels(slug) };
 }
 
 /**
@@ -833,7 +842,7 @@ function stripAllTraefikLabelsPreservingFluxExtras(
     if (k === "traefik.enable") continue;
     if (k === "traefik.docker.network") continue;
     if (k.startsWith("traefik.")) continue;
-    if (k === FLUX_VESSEL_MANAGED_LABEL_LEGACY) continue;
+    if (LEGACY_UMBRELLA_DOCKER_LABEL_KEYS.has(k)) continue;
     out[k] = v;
   }
   return out;
@@ -1546,7 +1555,7 @@ export class ProjectManager {
    * Provisions Postgres on an **internal** per-tenant private bridge (`flux-{hash}-{slug}-net`) and
    * PostgREST on that private network **and** {@link FLUX_NETWORK_NAME} (Traefik). Prevents other
    * `flux-network` services from reaching tenant Postgres. Resource caps and
-   * {@link FLUX_VESSEL_MANAGED_LABEL} / purpose labels are applied to both containers.
+   * {@link FLUX_MANAGED_LABEL} / purpose labels are applied to both containers.
    *
    * A Traefik instance named {@link FLUX_GATEWAY_CONTAINER_NAME} (managed outside this API, e.g. Compose)
    * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.{hash}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
@@ -2058,7 +2067,7 @@ export class ProjectManager {
       return await this.docker.createContainer({
         name: opts.name,
         Image: POSTGRES_IMAGE,
-        Labels: vesselContainerMetadataLabels(opts.slug),
+        Labels: fluxContainerMetadataLabels(opts.slug),
         Env: [`POSTGRES_PASSWORD=${opts.password}`],
         HostConfig: hostBase,
         NetworkingConfig: {
@@ -2072,7 +2081,7 @@ export class ProjectManager {
     return await this.docker.createContainer({
       name: opts.name,
       Image: POSTGRES_IMAGE,
-      Labels: vesselContainerMetadataLabels(opts.slug),
+      Labels: fluxContainerMetadataLabels(opts.slug),
       Env: [`POSTGRES_PASSWORD=${opts.password}`],
       HostConfig: {
         ...hostBase,
@@ -2130,8 +2139,8 @@ export class ProjectManager {
     const labelMap =
       replaceOptions?.labels ??
       {
-        ...omitLegacyVesselManagedLabel(inspect.Config.Labels ?? {}),
-        ...vesselContainerMetadataLabels(slug),
+        ...stripLegacyUmbrellaMetadataFromLabels(inspect.Config.Labels ?? {}),
+        ...fluxContainerMetadataLabels(slug),
       };
 
     const created = await this.docker.createContainer({

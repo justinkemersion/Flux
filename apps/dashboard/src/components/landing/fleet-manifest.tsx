@@ -16,7 +16,7 @@ const showcase: FleetProject[] = [
     host: "yeastcoast.vsl-base.com",
     href: "https://yeastcoast.vsl-base.com",
     description:
-      "Share beer recipes, fork brews, track ingredients, track fermentation and simulate fermentation.",
+      "Flux infrastructure: dedicated PostgREST + Postgres for a production app — share beer recipes, fork brews, track ingredients, fermentation, and simulation.",
   },
 ];
 
@@ -30,8 +30,12 @@ export function FleetManifest() {
         id="fleet-heading"
         className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500"
       >
-        Projects Resting on Flux
+        Flux infrastructure
       </h2>
+      <p className="mt-2 max-w-2xl font-sans text-xs leading-relaxed text-zinc-500">
+        Live tenant stacks on the public mesh: isolated engines, one contract, deterministic
+        operations.
+      </p>
       <ul className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
         {showcase.map((p) => (
           <li key={p.name}>

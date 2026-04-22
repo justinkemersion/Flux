@@ -46,7 +46,7 @@ export type CreateProjectSecrets = z.infer<typeof createProjectSecretsSchema>;
 export type CreateProjectResult = z.infer<typeof createProjectResponseSchema>;
 
 /**
- * Base URL: `https://flux.vsl-base.com/api` by default, or `process.env.FLUX_API_BASE` (no trailing slash).
+ * Base URL: `https://flux.vsl-base.com/api` (Flux control plane) or `process.env.FLUX_API_BASE` (no trailing slash).
  * Auth: `Authorization: Bearer <FLUX_API_TOKEN>` when the env var is set (placeholder until routes exist).
  */
 export class ApiClient {

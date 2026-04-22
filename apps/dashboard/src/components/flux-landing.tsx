@@ -54,16 +54,18 @@ export function FluxLanding() {
             CLI install
           </h2>
           <p className="mt-3 max-w-2xl font-sans text-sm leading-relaxed text-zinc-400">
-            Configure the control plane URL and an API key from the dashboard
-            (Settings → API keys), then run the CLI from your machine.
+            Install the bundled CLI, then set the control plane URL and an API key
+            (Dashboard → API keys).
           </p>
           <div
             className="mt-6 overflow-x-auto border border-zinc-800 bg-black/50 p-4 font-mono text-sm leading-relaxed text-zinc-300"
             role="region"
-            aria-label="Environment variables for Flux CLI"
+            aria-label="Install Flux CLI"
           >
             <pre className="whitespace-pre text-[13px]">
-{`export FLUX_API_BASE="https://flux.vsl-base.com/api"
+{`curl -sL https://flux.vsl-base.com/install | bash
+
+export FLUX_API_BASE="https://flux.vsl-base.com/api"
 export FLUX_API_TOKEN="flx_live_…"
 
 flux create "My project"
@@ -75,10 +77,10 @@ flux list`}
               href="/docs"
               className={`text-zinc-300 underline-offset-2 transition-colors duration-200 ease-linear hover:text-white hover:underline ${focusLink} rounded-sm`}
             >
-              Open the Codex
-            </Link>{" "}
-            for core rules, or read the project README for full workspace
-            setup.
+              Codex
+            </Link>
+            {" · "}
+            same contract, deterministic reference.
           </p>
         </section>
 

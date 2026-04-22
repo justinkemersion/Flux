@@ -39,7 +39,7 @@ export interface FluxProjectSummary {
    * **corrupted** — exactly one of the two containers exists.
    */
   status: "running" | "stopped" | "partial" | "missing" | "corrupted";
-  /** Public API URL via the Flux Traefik gateway (`Host: api.{slug}.{suffix}.<FLUX_DOMAIN|vsl-base.com>`). */
+  /** Public API URL via the Flux Traefik gateway (`Host: api.{slug}.{suffix}.<FLUX_DOMAIN>`). */
   apiUrl: string;
 }
 
