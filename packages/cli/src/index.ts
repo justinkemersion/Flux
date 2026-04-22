@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { access } from "node:fs/promises";
+import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import type {
   FluxProjectEnvEntry,
@@ -10,6 +11,7 @@ import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
 import { type CreateProjectResult, getApiClient } from "./api-client";
+import { saveConfig } from "./config";
 import { type FluxJson, readFluxJson } from "./flux-config";
 import {
   resolveHash,
@@ -614,6 +616,33 @@ async function main(): Promise<void> {
     .name("flux")
     .description("Flux — manage projects and tenant APIs via the control plane")
     .version("1.0.0", "-V, --version");
+
+  program
+    .command("login")
+    .description("Authenticate with a Dashboard API key (stored in ~/.flux/config.json)")
+    .action(async () => {
+      try {
+        const rl = createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        const key = (
+          await rl.question(
+            "API key (Dashboard → Settings → API keys): ",
+          )
+        ).trim();
+        await rl.close();
+        if (!key) {
+          throw new Error("No API key entered.");
+        }
+        const client = getApiClient();
+        const { user } = await client.verifyToken(key);
+        saveConfig({ token: key });
+        console.log(`Flux authenticated as ${user}.`);
+      } catch (err: unknown) {
+        printErrorAndExit(err);
+      }
+    });
 
   const hashFlagDesc =
     '7-hex project hash (overrides "hash" in flux.json)';

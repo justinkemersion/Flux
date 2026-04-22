@@ -122,6 +122,7 @@ export FLUX_API_TOKEN="flx_live_…"`}</pre>
             <tbody className="text-zinc-400">
               {(
                 [
+                  ["login", cmds.authVerify],
                   ["create", cmds.create],
                   ["list", cmds.list],
                   ["push", cmds.push],

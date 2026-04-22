@@ -23,6 +23,8 @@ export const FLUX_CODEX_JSON = {
     examples: ["flux-a1b2c3d-myapp", "flux-0f1e2d3-demo"],
   },
   commands: {
+    authVerify:
+      "GET /api/cli/v1/auth/verify — validate Bearer `flx_live_…` key; returns { ok: true, user } (used by `flux login`).",
     create:
       "POST /api/cli/v1/create — provision a new tenant (Postgres + PostgREST) and return summary + secrets.",
     list: "GET /api/cli/v1/list — list projects for the authenticated account.",

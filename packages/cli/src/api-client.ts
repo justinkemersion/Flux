@@ -5,6 +5,7 @@ import type {
 } from "@flux/core/standalone";
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
+import { resolveFluxApiToken } from "./config";
 
 const DEFAULT_BASE = "https://flux.vsl-base.com/api";
 
@@ -47,7 +48,7 @@ export type CreateProjectResult = z.infer<typeof createProjectResponseSchema>;
 
 /**
  * Base URL: `https://flux.vsl-base.com/api` (Flux control plane) or `process.env.FLUX_API_BASE` (no trailing slash).
- * Auth: `Authorization: Bearer <FLUX_API_TOKEN>` when the env var is set (placeholder until routes exist).
+ * Auth: `Authorization: Bearer` from `FLUX_API_TOKEN` or `~/.flux/config.json` (from `flux login`).
  */
 export class ApiClient {
   readonly baseUrl: string;
@@ -56,12 +57,72 @@ export class ApiClient {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
+  private tokenOrThrow(): string {
+    const t = resolveFluxApiToken();
+    if (!t) {
+      throw new Error(
+        "Not authenticated. Set FLUX_API_TOKEN or run `flux login`.",
+      );
+    }
+    return t;
+  }
+
   /** Prepare headers for `fetch` once control-plane methods are implemented. */
   authHeaders(): Headers {
     const h = new Headers();
-    const t = process.env.FLUX_API_TOKEN?.trim();
+    const t = resolveFluxApiToken();
     if (t) h.set("Authorization", `Bearer ${t}`);
     return h;
+  }
+
+  /**
+   * GET /api/cli/v1/auth/verify — check a token (e.g. before persisting in `flux login`).
+   */
+  async verifyToken(token: string): Promise<{ ok: true; user: string }> {
+    const t = token.trim();
+    if (!t) {
+      throw new Error("Empty API token.");
+    }
+    const url = `${this.baseUrl}/cli/v1/auth/verify`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${t}`,
+        Accept: "application/json",
+      },
+    });
+    const text = await res.text();
+    let raw: unknown;
+    try {
+      raw = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI verify: response was not JSON (${res.status}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token.");
+    }
+    if (!res.ok) {
+      const msg =
+        raw &&
+        typeof raw === "object" &&
+        raw !== null &&
+        "error" in raw &&
+        typeof (raw as { error: unknown }).error === "string"
+          ? (raw as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const verifySchema = z.object({
+      ok: z.literal(true),
+      user: z.string(),
+    });
+    const parsed = verifySchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error("CLI verify: response did not match { ok, user }.");
+    }
+    return parsed.data;
   }
 
   private notImplemented(method: string): Error {
@@ -74,12 +135,7 @@ export class ApiClient {
   // GET /api/cli/v1/list — catalog + Docker summaries for the token owner
   // ---------------------------------------------------------------------------
   async listProjects(): Promise<FluxProjectSummary[]> {
-    const token = process.env.FLUX_API_TOKEN?.trim();
-    if (!token) {
-      throw new Error(
-        "Missing FLUX_API_TOKEN. Export it or run flux login (when available).",
-      );
-    }
+    const token = this.tokenOrThrow();
     const url = `${this.baseUrl}/cli/v1/list`;
     const res = await fetch(url, {
       method: "GET",
@@ -89,9 +145,7 @@ export class ApiClient {
       },
     });
     if (res.status === 401) {
-      throw new Error(
-        "Invalid or expired API token. Run flux login.",
-      );
+      throw new Error("Invalid or expired API token. Run `flux login`.");
     }
     const text = await res.text();
     let body: unknown;
@@ -129,12 +183,7 @@ export class ApiClient {
     name: string;
     stripSupabaseRestPrefix: boolean;
   }): Promise<CreateProjectResult> {
-    const token = process.env.FLUX_API_TOKEN?.trim();
-    if (!token) {
-      throw new Error(
-        "Missing FLUX_API_TOKEN. Export it or run flux login (when available).",
-      );
-    }
+    const token = this.tokenOrThrow();
     const url = `${this.baseUrl}/cli/v1/create`;
     const body: { name: string; stripSupabaseRestPrefix?: boolean } = {
       name: input.name.trim(),
@@ -152,9 +201,7 @@ export class ApiClient {
       body: JSON.stringify(body),
     });
     if (res.status === 401) {
-      throw new Error(
-        "Invalid or expired API token. Run flux login.",
-      );
+      throw new Error("Invalid or expired API token. Run `flux login`.");
     }
     const text = await res.text();
     let raw: unknown;
@@ -193,12 +240,7 @@ export class ApiClient {
     hash: string;
     sql: string;
   }): Promise<ImportSqlFileResult> {
-    const token = process.env.FLUX_API_TOKEN?.trim();
-    if (!token) {
-      throw new Error(
-        "Missing FLUX_API_TOKEN. Export it or run flux login (when available).",
-      );
-    }
+    const token = this.tokenOrThrow();
     const url = `${this.baseUrl}/cli/v1/push`;
     const res = await fetch(url, {
       method: "POST",
@@ -214,9 +256,7 @@ export class ApiClient {
       }),
     });
     if (res.status === 401) {
-      throw new Error(
-        "Invalid or expired API token. Run flux login.",
-      );
+      throw new Error("Invalid or expired API token. Run `flux login`.");
     }
     const text = await res.text();
     let raw: unknown;
@@ -288,12 +328,7 @@ export class ApiClient {
     onEvent: (ev: { line?: string; error?: string }) => void,
     init?: { signal?: AbortSignal },
   ): Promise<void> {
-    const token = process.env.FLUX_API_TOKEN?.trim();
-    if (!token) {
-      throw new Error(
-        "Missing FLUX_API_TOKEN. Export it or run flux login (when available).",
-      );
-    }
+    const token = this.tokenOrThrow();
     const u = new URL(`${this.baseUrl}/cli/v1/logs`);
     u.searchParams.set("slug", input.slug.trim());
     u.searchParams.set("hash", input.hash.trim().toLowerCase());
@@ -307,9 +342,7 @@ export class ApiClient {
       ...(init?.signal ? { signal: init.signal } : {}),
     });
     if (res.status === 401) {
-      throw new Error(
-        "Invalid or expired API token. Run flux login.",
-      );
+      throw new Error("Invalid or expired API token. Run `flux login`.");
     }
     if (!res.ok) {
       const t = await res.text();
