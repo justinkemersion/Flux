@@ -78,7 +78,7 @@ function StatusBadge({ status }: { status: DisplayStatus }) {
     case "transitioning":
       return (
         <span
-          className={`${base} bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200`}
+          className={`${base} bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200`}
         >
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
           Transitioning
@@ -111,9 +111,9 @@ function StatusBadge({ status }: { status: DisplayStatus }) {
     case "partial":
       return (
         <span
-          className={`${base} bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100`}
+          className={`${base} bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100`}
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" aria-hidden />
           Partial
         </span>
       );
@@ -164,7 +164,7 @@ function CopyableField({
       <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
         {label}
       </p>
-      <div className="flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-200/80 bg-zinc-50/80 px-2 py-1.5 dark:border-zinc-700/80 dark:bg-zinc-900/50">
+      <div className="flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50/90 px-2 py-1.5 dark:border-zinc-800 dark:bg-zinc-900/50">
         <span
           className={`min-w-0 flex-1 font-mono text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 ${
             visuallyTruncate && !masked
@@ -482,13 +482,13 @@ export function ProjectCard({
 
   return (
     <>
-      <article className="flex flex-col rounded-xl border border-zinc-200/80 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950">
+      <article className="flex flex-col rounded-md border border-zinc-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950">
         <header className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-base font-bold text-zinc-900 dark:text-zinc-50">
               {p.name}
             </h2>
-            <p className="mt-0.5 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
               {p.slug}
             </p>
           </div>
@@ -496,7 +496,7 @@ export function ProjectCard({
         </header>
 
         <div className="mt-4 flex flex-col gap-3">
-          <div className="rounded-lg border border-zinc-200/70 bg-zinc-50/40 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+          <div className="rounded-md border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 Connection details
@@ -533,7 +533,7 @@ export function ProjectCard({
                 visuallyTruncate
               />
               {!credentialsLoaded && !canRevealCredentials ? (
-                <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                <p className="text-xs text-zinc-600 dark:text-zinc-400">
                   Keys are unavailable until the stack is healthy. Use{" "}
                   <strong className="font-medium">Repair</strong> if Docker is
                   out of sync, or <strong className="font-medium">Delete</strong>{" "}
@@ -608,7 +608,7 @@ export function ProjectCard({
                 type="button"
                 onClick={() => void runRepair()}
                 disabled={repairBusy}
-                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3 text-sm font-medium text-orange-950 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100 dark:hover:bg-orange-900/50"
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-orange-300 bg-orange-50 px-3 text-sm font-medium text-orange-950 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100 dark:hover:bg-orange-900/50"
               >
                 {repairBusy ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -622,7 +622,7 @@ export function ProjectCard({
               type="button"
               onClick={() => void togglePower()}
               disabled={!canToggle}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
               aria-label={
                 currentStatus === "running" ? `Stop ${p.name}` : `Start ${p.name}`
               }
@@ -643,7 +643,7 @@ export function ProjectCard({
             <button
               type="button"
               onClick={openSettingsModal}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
               aria-label={`Project settings for ${p.name}`}
               title="Project settings"
             >
@@ -652,7 +652,7 @@ export function ProjectCard({
             <button
               type="button"
               onClick={openDeleteModal}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
               aria-label={`Delete project ${p.name}`}
               title="Delete project"
             >
@@ -669,7 +669,7 @@ export function ProjectCard({
           onClick={closeSettingsModal}
         >
           <div
-            className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900"
+            className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`settings-title-${p.id}`}
@@ -679,7 +679,7 @@ export function ProjectCard({
               type="button"
               onClick={closeSettingsModal}
               disabled={settingsSaving}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
               aria-label="Close"
             >
               <X className="h-5 w-5" aria-hidden />
@@ -743,7 +743,7 @@ export function ProjectCard({
                   autoComplete="off"
                   placeholder="Paste signing key"
                   disabled={settingsSaving}
-                  className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 font-mono text-sm outline-none transition-shadow focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-950"
+                  className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2.5 font-mono text-sm outline-none transition-shadow focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-600 dark:bg-zinc-950 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
                 />
 
                 {settingsError ? (
@@ -762,14 +762,14 @@ export function ProjectCard({
                     type="button"
                     onClick={closeSettingsModal}
                     disabled={settingsSaving}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >
                     Close
                   </button>
                   <button
                     type="submit"
                     disabled={settingsSaving}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    className="inline-flex items-center justify-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                   >
                     {settingsSaving ? (
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -790,7 +790,7 @@ export function ProjectCard({
           onClick={closeDeleteModal}
         >
           <div
-            className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900"
+            className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`delete-title-${p.id}`}
@@ -800,7 +800,7 @@ export function ProjectCard({
               type="button"
               onClick={closeDeleteModal}
               disabled={isDeleting}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
               aria-label="Close"
             >
               <X className="h-5 w-5" aria-hidden />
@@ -846,7 +846,7 @@ export function ProjectCard({
                   type="text"
                   value={deleteConfirm}
                   onChange={(e) => setDeleteConfirm(e.target.value)}
-                  className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none ring-zinc-200 transition-shadow focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-950 dark:ring-zinc-800"
+                  className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none ring-zinc-200 transition-shadow focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-600 dark:bg-zinc-950 dark:ring-zinc-800 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
                   placeholder={p.name}
                   autoComplete="off"
                   disabled={isDeleting}
@@ -863,14 +863,14 @@ export function ProjectCard({
                     type="button"
                     onClick={closeDeleteModal}
                     disabled={isDeleting}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={deleteConfirm !== p.name || isDeleting}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
+                    className="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
                   >
                     {isDeleting ? (
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

@@ -25,15 +25,15 @@ import {
 } from "@/src/lib/routing-identity";
 
 const focusable =
-  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-50 dark:focus-visible:ring-zinc-500/35 dark:focus-visible:ring-offset-zinc-950";
 
 const thSpec =
-  "border-b border-zinc-800 px-2 py-2.5 text-left text-[9px] font-normal uppercase tracking-[0.16em] text-zinc-500 sm:px-3 sm:text-[10px] sm:tracking-[0.2em]";
+  "border-b border-zinc-200 px-3 py-2.5 text-left text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400";
 
 const tdSpec =
-  "border-b border-zinc-800 px-2 py-3 align-middle text-sm text-zinc-400 sm:px-3";
+  "border-b border-zinc-200 px-3 py-3 align-middle text-sm text-zinc-700 dark:border-zinc-800 dark:text-zinc-300";
 
-const rowActionClass = `shrink-0 bg-transparent font-mono text-[9px] uppercase tracking-[0.12em] text-zinc-400 transition-colors enabled:hover:text-zinc-300 enabled:focus-visible:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40 sm:text-[10px] sm:tracking-[0.14em] ${focusable}`;
+const rowActionClass = `shrink-0 rounded-md bg-transparent px-2 py-1.5 text-xs font-medium text-zinc-600 transition-colors enabled:hover:bg-zinc-100 enabled:hover:text-zinc-900 enabled:focus-visible:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:enabled:hover:bg-zinc-800 dark:enabled:hover:text-zinc-100 dark:enabled:focus-visible:text-zinc-100 ${focusable}`;
 
 export default function ProjectsPage() {
   const { data: session } = useSession();
@@ -318,24 +318,25 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-10 sm:px-8 sm:py-14">
-      <div className="border-b border-zinc-800 pb-4">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 sm:text-[11px]">
-          <span className="text-zinc-400">fleet_directory</span>
-          <span className="text-zinc-600"> / </span>
-          <span className="break-all text-zinc-300 tabular-nums">user_{userId}</span>
+      <div className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
+        <p className="text-xs text-zinc-500 dark:text-zinc-500">
+          Signed in as{" "}
+          <span className="font-medium text-zinc-800 dark:text-zinc-300">
+            user_{userId}
+          </span>
         </p>
       </div>
 
       <div className="mb-0 flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0">
           <h1
-            className="font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-500"
+            className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 sm:text-2xl"
             id="fleet-spec"
           >
-            HORIZONTAL // SPEC
-          </h1>
-          <p className="mt-1 font-sans text-xl font-semibold tracking-tight text-zinc-300 sm:text-2xl">
             Projects
+          </h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+            Tenant databases and APIs
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -344,22 +345,22 @@ export default function ProjectsPage() {
               type="button"
               onClick={() => void startProCheckout()}
               disabled={upgradeLoading}
-              className="inline-flex h-10 items-center gap-2 border border-amber-500/40 bg-zinc-900/60 px-3 text-xs font-mono font-medium uppercase tracking-[0.12em] text-amber-500 transition-colors hover:border-amber-500/70 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
             >
               {upgradeLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
               ) : null}
-              {upgradeLoading ? "…" : "[ UPGRADE_PRO ]"}
+              {upgradeLoading ? "Redirecting…" : "Upgrade to Pro"}
             </button>
           ) : userPlan === "pro" ? (
-            <span className="inline-flex h-10 items-center border border-emerald-800/60 bg-zinc-900/40 px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-emerald-500">
-              PRO
+            <span className="inline-flex h-10 items-center rounded-md border border-zinc-200 bg-zinc-50 px-3 text-xs font-medium text-emerald-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-emerald-400">
+              Pro
             </span>
           ) : null}
           <button
             type="button"
             onClick={openCreateModal}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center border border-zinc-700 bg-zinc-900/50 text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label="Create project"
           >
             <Plus className="h-5 w-5" aria-hidden />
@@ -383,31 +384,31 @@ export default function ProjectsPage() {
       ) : loadError ? (
         <p className="text-red-400">{loadError}</p>
       ) : projectList.length === 0 ? (
-        <p className="font-mono text-sm text-zinc-500">
-          No projects yet. Use the plus control to create one.
+        <p className="text-sm text-zinc-500 dark:text-zinc-500">
+          No projects yet. Create one with the plus button.
         </p>
       ) : (
-        <div className="overflow-x-auto border border-zinc-800">
+        <div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
           <table
-            className="w-full min-w-[58rem] border-collapse text-left font-mono text-sm"
+            className="w-full min-w-[58rem] border-collapse text-left text-sm"
             aria-labelledby="fleet-spec"
           >
             <thead>
-              <tr>
+              <tr className="bg-zinc-50 dark:bg-zinc-900/40">
                 <th scope="col" className={thSpec}>
-                  COL 01 [INDEX]
+                  #
                 </th>
                 <th scope="col" className={thSpec}>
-                  COL 02 [IDENTITY]
+                  Project
                 </th>
                 <th scope="col" className={thSpec}>
-                  COL 03 [INTERFACE]
+                  API
                 </th>
                 <th scope="col" className={thSpec}>
-                  COL 04 [UPTIME]
+                  Uptime
                 </th>
                 <th scope="col" className={`${thSpec} w-[1%] text-right`}>
-                  CTL
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -424,13 +425,20 @@ export default function ProjectsPage() {
                       </span>
                     </td>
                     <td className={tdSpec}>
-                      <span className="text-zinc-100">{p.slug}</span>
-                      <span className="text-zinc-600"> / </span>
-                      <span className="text-amber-500">{hash}</span>
+                      <span className="text-zinc-900 dark:text-zinc-100">
+                        {p.slug}
+                      </span>
+                      <span className="text-zinc-400 dark:text-zinc-600">
+                        {" "}
+                        ·{" "}
+                      </span>
+                      <span className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
+                        {hash}
+                      </span>
                     </td>
                     <td className={tdSpec}>
                       <code
-                        className="block max-w-[18rem] truncate border border-zinc-800 bg-zinc-900/50 px-2 py-1.5 text-[10px] text-zinc-400 sm:max-w-[20rem] sm:text-[11px]"
+                        className="block max-w-[18rem] truncate rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 font-mono text-[10px] text-zinc-700 sm:max-w-[20rem] sm:text-[11px] dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-300"
                         title={p.apiUrl}
                       >
                         {p.apiUrl || specHost}
@@ -438,11 +446,11 @@ export default function ProjectsPage() {
                     </td>
                     <td className={tdSpec}>
                       <span
-                        className={`inline-block min-w-[4.5rem] border border-zinc-800 px-2 py-1.5 text-center text-[10px] tabular-nums ${
+                        className={`inline-block min-w-[4.5rem] rounded-md border px-2 py-1.5 text-center text-xs tabular-nums ${
                           p.status === "running"
-                            ? "bg-zinc-900/40 text-amber-500"
-                            : "bg-zinc-900/20 text-zinc-500"
-                        } sm:text-[11px]`}
+                            ? "border-emerald-200/80 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
+                            : "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-500"
+                        }`}
                       >
                         {uptimeReadoutForStatus(p.status)}
                       </span>
@@ -456,7 +464,7 @@ export default function ProjectsPage() {
                           onClick={() => setDetailSlug(p.slug)}
                           className={rowActionClass}
                         >
-                          [ CONSOLE ]
+                          Open
                         </button>
                         <button
                           type="button"
@@ -464,7 +472,7 @@ export default function ProjectsPage() {
                           onClick={() => void runRepairFromTable(p.slug)}
                           className={rowActionClass}
                         >
-                          [ REPAIR ]
+                          Repair
                         </button>
                         <button
                           type="button"
@@ -475,7 +483,7 @@ export default function ProjectsPage() {
                           onClick={() => void stopFromTable(p.slug)}
                           className={rowActionClass}
                         >
-                          [ STOP ]
+                          Stop
                         </button>
                       </div>
                     </td>
@@ -486,10 +494,6 @@ export default function ProjectsPage() {
           </table>
         </div>
       )}
-
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-600">
-        WIRE // FLUX ORCHESTRATION // API ROUTES LIVE
-      </p>
 
       {detailSlug && detailProject ? (
         <div
@@ -504,7 +508,7 @@ export default function ProjectsPage() {
             <button
               type="button"
               onClick={() => setDetailSlug(null)}
-              className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center border border-zinc-600 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+              className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-100"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -531,7 +535,7 @@ export default function ProjectsPage() {
           onClick={closeCreateModal}
         >
           <div
-            className="relative w-full max-w-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+            className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-project-title"
@@ -550,35 +554,35 @@ export default function ProjectsPage() {
             <div className="pr-10">
               <h2
                 id="create-project-title"
-                className="text-lg font-semibold text-zinc-100"
+                className="text-lg font-semibold text-zinc-900 dark:text-zinc-100"
               >
                 New project
               </h2>
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
                 Provisions Postgres and PostgREST (this may take a minute).
               </p>
 
               {createLimitBanner === "hobby" ? (
                 <div
-                  className="mt-5 flex flex-col gap-3 border border-amber-500/30 bg-amber-950/20 p-4"
+                  className="mt-5 flex flex-col gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40"
                   role="alert"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/20">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800">
                       <AlertTriangle
-                        className="h-5 w-5 text-amber-500"
+                        className="h-5 w-5 text-zinc-600 dark:text-zinc-400"
                         aria-hidden
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-amber-200">
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                         Free tier limit reached (2/2 projects).
                       </p>
-                      <p className="mt-1 text-sm text-amber-100/80">
+                      <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                         Delete a project or upgrade to create more.
                       </p>
                       {billingError ? (
-                        <p className="mt-2 text-sm text-red-400">
+                        <p className="mt-2 text-sm text-red-600 dark:text-red-400">
                           {billingError}
                         </p>
                       ) : null}
@@ -586,7 +590,7 @@ export default function ProjectsPage() {
                         type="button"
                         onClick={() => void startProCheckout()}
                         disabled={upgradeLoading}
-                        className="mt-3 inline-flex items-center justify-center gap-2 border border-amber-500/50 bg-amber-950/40 px-4 py-2 text-sm font-medium text-amber-200 transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="mt-3 inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
                       >
                         {upgradeLoading ? (
                           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -600,14 +604,14 @@ export default function ProjectsPage() {
 
               {createLimitBanner === "pro" ? (
                 <div
-                  className="mt-5 flex items-start gap-3 border border-amber-500/30 bg-amber-950/20 p-4"
+                  className="mt-5 flex items-start gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40"
                   role="alert"
                 >
                   <AlertTriangle
-                    className="mt-0.5 h-5 w-5 shrink-0 text-amber-500"
+                    className="mt-0.5 h-5 w-5 shrink-0 text-zinc-500 dark:text-zinc-400"
                     aria-hidden
                   />
-                  <p className="text-sm text-amber-100">
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
                     You&apos;ve reached the project limit for your Pro plan (10
                     projects).
                   </p>
@@ -617,7 +621,7 @@ export default function ProjectsPage() {
               <form onSubmit={(e) => void onCreate(e)} className="mt-6">
                 <label
                   htmlFor="project-name"
-                  className="block text-sm font-medium text-zinc-200"
+                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-200"
                 >
                   Name
                 </label>
@@ -626,7 +630,7 @@ export default function ProjectsPage() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="mt-2 w-full border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200 outline-none transition-shadow focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/30"
+                  className="mt-2 w-full rounded-md border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-shadow focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
                   placeholder="my-app"
                   required
                   disabled={creating}
@@ -639,14 +643,14 @@ export default function ProjectsPage() {
                     type="button"
                     onClick={closeCreateModal}
                     disabled={creating}
-                    className="px-4 py-2 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-60"
+                    className="rounded-md px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-60 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={creating}
-                    className="inline-flex items-center justify-center gap-2 border border-zinc-600 bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-white disabled:opacity-60"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                   >
                     {creating ? (
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

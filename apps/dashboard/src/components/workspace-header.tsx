@@ -6,10 +6,9 @@ import { signIn, signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 
 const focusable =
-  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-50 dark:focus-visible:ring-zinc-500/35 dark:focus-visible:ring-offset-zinc-950";
 
-const barText =
-  "font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-500 sm:text-[11px] sm:tracking-[0.16em]";
+const barMuted = "text-xs text-zinc-500 dark:text-zinc-500";
 
 function formatUtc(d: Date): string {
   const p = (n: number) => n.toString().padStart(2, "0");
@@ -22,24 +21,24 @@ function formatUtc(d: Date): string {
   return `${y}-${mo}-${day} ${h}:${m}:${s} UTC`;
 }
 
-export function TerminalStatusBar() {
+export function WorkspaceHeader() {
   const pathname = usePathname();
   const contentMaxClassName =
     pathname === "/projects" ? "max-w-6xl" : "max-w-3xl";
 
   return (
-    <header className="w-full border-b border-zinc-800 bg-zinc-950">
+    <header className="w-full border-b border-zinc-200 bg-zinc-50/90 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/90">
       <div
-        className={`mx-auto flex w-full items-center gap-3 px-4 py-2.5 sm:px-8 sm:py-2.5 ${contentMaxClassName}`}
+        className={`mx-auto flex w-full items-center gap-4 px-4 py-3 sm:px-8 ${contentMaxClassName}`}
         role="navigation"
-        aria-label="System status"
+        aria-label="Primary"
       >
         <div className="min-w-0 flex-1 text-left">
           <Link
             href="/"
-            className={`${barText} block truncate transition-colors hover:text-zinc-400 ${focusable}`}
+            className={`inline-flex items-center text-sm font-semibold tracking-tight text-zinc-900 transition-colors hover:text-zinc-700 dark:text-zinc-100 dark:hover:text-zinc-300 ${focusable} rounded-md`}
           >
-            VESSEL // CORE_SYSTEM // FLUX
+            Flux
           </Link>
         </div>
         <div className="shrink-0 text-center">
@@ -65,7 +64,7 @@ function UtcClock() {
 
   return (
     <time
-      className={`${barText} whitespace-nowrap tabular-nums`}
+      className={`${barMuted} whitespace-nowrap tabular-nums`}
       dateTime={now.toISOString()}
       suppressHydrationWarning
     >
@@ -79,11 +78,7 @@ function StatusBarSession() {
   const { data: session, status } = useSession();
 
   if (status === "loading") {
-    return (
-      <span className={`${barText} inline-block`}>
-        [ SCANNING_SESSION ]
-      </span>
-    );
+    return <span className={`${barMuted} inline-block`}>Loading session…</span>;
   }
 
   if (!session?.user) {
@@ -91,9 +86,9 @@ function StatusBarSession() {
       <button
         type="button"
         onClick={() => void signIn("github")}
-        className={`${barText} transition-colors hover:text-zinc-400 ${focusable}`}
+        className={`${barMuted} rounded-md transition-colors hover:text-zinc-800 dark:hover:text-zinc-300 ${focusable}`}
       >
-        [ SIGN_IN ]
+        Sign in with GitHub
       </button>
     );
   }
@@ -102,17 +97,17 @@ function StatusBarSession() {
     session.user.githubLogin?.trim() ||
     session.user.name?.trim() ||
     session.user.email?.trim() ||
-    "UNKNOWN";
+    "Unknown";
 
   return (
     <div
-      className={`${barText} flex flex-col items-end gap-1 sm:inline-flex sm:flex-row sm:items-baseline sm:gap-0 sm:pl-2`}
+      className={`${barMuted} flex flex-col items-end gap-1 sm:inline-flex sm:flex-row sm:items-baseline sm:gap-2`}
     >
       <span
         className="max-w-full truncate text-left sm:max-w-[min(100%,28rem)] sm:text-right"
         title={id}
       >
-        {`Show: GITHUB: ${id} // STATUS: ACTIVE // `}
+        {id}
       </span>
       <button
         type="button"
@@ -121,9 +116,9 @@ function StatusBarSession() {
             callbackUrl: pathname.startsWith("/projects") ? "/projects" : "/",
           });
         }}
-        className={`${barText} shrink-0 bg-transparent text-left sm:inline sm:text-right ${focusable} transition-colors hover:text-zinc-400`}
+        className={`shrink-0 rounded-md bg-transparent text-left sm:inline sm:text-right ${focusable} transition-colors hover:text-zinc-800 dark:hover:text-zinc-300`}
       >
-        [ TERMINATE_SESSION ]
+        Sign out
       </button>
     </div>
   );

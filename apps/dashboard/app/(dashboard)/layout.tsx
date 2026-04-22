@@ -14,7 +14,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-full flex-1 bg-zinc-950 text-zinc-400">
+    <div className="flex min-h-full flex-1 bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
       {children}
     </div>
   );

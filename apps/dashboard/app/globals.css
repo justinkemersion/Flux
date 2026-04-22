@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #09090b;
-  --foreground: #a1a1aa;
+  --background: #fafafa;
+  --foreground: #3f3f46;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #09090b;
+    --foreground: #a1a1aa;
+  }
 }
 
 @theme inline {
@@ -10,6 +17,10 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Shadcn-style md radius (~8px) */
+  --radius-md: 0.5rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.625rem;
 }
 
 body {
