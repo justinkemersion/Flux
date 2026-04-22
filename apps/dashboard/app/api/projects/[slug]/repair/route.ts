@@ -38,6 +38,8 @@ export async function POST(
 
   const pm = getProjectManager();
   try {
+    // Nuke already removes the private network; second call is an idempotent safety net
+    // if Docker left a stale user-defined network (disconnect-all + remove).
     await pm.nukeContainersOnly(slug, project.hash);
     await pm.removeTenantPrivateNetworkAllowMissing(slug, project.hash);
     const provisioned = await pm.provisionProject(

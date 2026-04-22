@@ -1154,8 +1154,9 @@ export interface FluxProject {
   /** Random per-project 7-hex id embedded in Docker names and the public API hostname. */
   hash: string;
   /**
-   * Traefik-facing user-defined bridge (e.g. `flux-network`). The PostgREST container attaches here
-   * and to {@link privateNetworkName}; Postgres attaches only to the private network.
+   * Traefik-facing user-defined bridge (e.g. `flux-network`). PostgREST attaches here and to
+   * {@link privateNetworkName}. Tenant Postgres is only on the private network; the **`flux-system`**
+   * Postgres is also on this bridge so the control plane can open a TCP `pg` `Pool` to the catalog.
    */
   networkName: string;
   /**

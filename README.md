@@ -45,32 +45,33 @@ Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **p
 
 ### Control plane vs data plane
 
-- **Control plane** — Node processes (CLI, Next.js server) that call the Docker API and, for the dashboard, talk to **`flux-system`** Postgres on a published host port. It decides *what* runs, not tenant query traffic at scale.
+- **Control plane** — Node processes (CLI, Next.js server) that call the Docker API and, for the dashboard, connect to **`flux-system`** Postgres over **`flux-network`** (see `getPostgresHostConnectionString` / Drizzle; typically no published 5432 on the public internet). It decides *what* runs, not tenant query traffic at scale.
 - **Data plane** — Each tenant’s **Postgres** (data) and **PostgREST** (HTTP API). App traffic hits PostgREST (via Traefik), not the Next.js app.
 
 ### Docker resources (names are stable conventions)
 
 | Resource | Purpose |
 |----------|---------|
-| **`flux-network`** | User-defined bridge (`FLUX_NETWORK_NAME`). Tenant DB + API containers attach here; the **Traefik** gateway uses the same network so it can route to backends by container labels. |
+| **`flux-network`** | User-defined bridge (`FLUX_NETWORK_NAME`). **Traefik** and all **PostgREST** (tenant) containers attach here. **Not** the primary network for customer tenant **Postgres** (those are on a per-tenant **internal** network `flux-<hash>-<slug>-net` for isolation; **`flux-system`** Postgres is a deliberate exception: private net **and** this bridge for the control plane). |
+| **`flux-<hash>-<slug>-net`** | **Internal** bridge per project: Postgres and PostgREST share it so `PGRST_DB_URI` resolves; no route to the public internet. Customer Postgres is **not** on `flux-network`. |
 | **`flux-gateway`** | Traefik (`FLUX_GATEWAY_CONTAINER_NAME`) — Docker provider, read-only socket mount, listens on **host :80**, discovers routers from **labels** on the PostgREST containers. |
-| **`flux-<slug>-db`** | **PostgreSQL 16.2** (Alpine image from `FLUX_DOCKER_IMAGES.postgres`), named volume **`flux-<slug>-db-data`**. **No host port publish** — bootstrap, health checks, and admin SQL use **`docker exec`** (`pg_isready`, `psql`) inside the container so the control plane works with remote engines without exposing Postgres on the internet. |
-| **`flux-<slug>-api`** | **PostgREST** (pinned tag in `FLUX_DOCKER_IMAGES.postgrest`) — **no** random public port; **Traefik** (`FLUX_DOCKER_IMAGES.traefik`) sends **`http://<slug>.flux.localhost`** to port **3000** inside the network. |
+| **`flux-<hash>-<slug>-db`** | **PostgreSQL 16.2** (Alpine), volume **`flux-<hash>-<slug>-db-data`**. **No host port** — bootstrap and admin SQL use **`docker exec`**. For tenants, the DB is only on the **private** network above. |
+| **`flux-<hash>-<slug>-api`** | **PostgREST** — on **`flux-network`** and the private net; **Traefik** routes the public host to **3000**. |
 
-Provisioning (`ProjectManager.provisionProject`) ensures the network exists, ensures the gateway image is present and running, creates the volume and Postgres container, runs **`BOOTSTRAP_SQL`**, then creates the PostgREST container with Traefik labels so **`http://<slug>.flux.localhost`** resolves (with `/etc/hosts` or DNS for `*.flux.localhost`).
+Provisioning (`ProjectManager.provisionProject`) ensures **`flux-network`** and the per-tenant private network, ensures the **Traefik** gateway is running, creates the volume and Postgres container, runs **`BOOTSTRAP_SQL`**, then creates the PostgREST container with Traefik labels so the tenant **HTTPS/HTTP** API URL resolves.
 
 ### HTTP path to a tenant API
 
 1. Client requests **`http://myapp.flux.localhost/...`** (Host header matches Traefik router rule **`Host(\`myapp.flux.localhost\`)`**).
 2. **Traefik** applies a **per-tenant Headers** CORS middleware (`flux-<slug>-cors`: dashboard + env extras + HTTPS `*.domain` regex) and, when enabled, **`flux-<slug>-stripprefix`** so paths under **`/rest/v1`** match **Supabase JS** (PostgREST itself serves resources at **`/`**).
 3. **Traefik** forwards to **`flux-myapp-api:3000`**.
-4. **PostgREST** connects to **`flux-myapp-db:5432`** using **`PGRST_DB_URI`** (internal Docker DNS).
+4. **PostgREST** connects to **`flux-<hash>-<slug>-db:5432`** on the **private** project network using **`PGRST_DB_URI`** (Docker DNS; not resolvable from unrelated containers on `flux-network`).
 
 Tenant PostgREST is configured with **`PGRST_DB_SCHEMAS=api,public`** (`api` first for the default schema). **`PGRST_JWT_SECRET`** is generated at provision time (or taken from dashboard **`customJwtSecret`**). **`getProjectKeys`** / **`getProjectCredentials`** read that secret **only** from the running API container’s **`inspect().Config.Env`**—they never mint a substitute secret.
 
 ### Schema changes and cache reload
 
-After SQL runs **inside the tenant Postgres container** via the Docker API (`executeSql`, `importSqlFile`, or `flux push`), Flux runs `NOTIFY pgrst, 'reload schema'` in Postgres, waits briefly, then sends **SIGUSR1** to the **`flux-<slug>-api`** container so PostgREST reloads its schema cache. (This matches PostgREST’s documented signal behavior; do not assume **SIGHUP** for schema cache.)
+After SQL runs **inside the tenant Postgres container** via the Docker API (`executeSql`, `importSqlFile`, or `flux push`), Flux runs `NOTIFY pgrst, 'reload schema'` in Postgres, waits briefly, then sends **SIGUSR1** to the **`flux-<hash>-<slug>-api`** container so PostgREST reloads its schema cache. (This matches PostgREST’s documented signal behavior; do not assume **SIGHUP** for schema cache.)
 
 ---
 

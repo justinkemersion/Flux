@@ -20,11 +20,11 @@ This document records the **Senior Architect** audit themes and the **implemente
 
 - **`GET /api/projects`** reads **`flux-system.projects`** for the signed-in user, then calls **`ProjectManager.getProjectSummariesForSlugs(slugs)`**, which uses **two container inspects per slug** (no full `docker ps` scan).
 - Tenant **status** uses **`fluxTenantStatusFromContainerPair`**: **missing** (no DB or API container), **corrupted** (only one of the two), plus **running** / **stopped** / **partial** when both exist.
-- **`POST /api/projects/[slug]/repair`** runs **`nukeProject`** then **`provisionProject`** to rebuild a fresh stack when the catalog row exists but Docker is wrong (destructive).
+- **`POST /api/projects/[slug]/repair`** runs **`nukeContainersOnly`**, then an idempotent **`removeTenantPrivateNetworkAllowMissing`**, then **`provisionProject`** to rebuild a fresh stack when the catalog row exists but Docker is wrong (destructive; same hash preserved). Nuke already removes the private network, but the extra pass avoids stale Docker network state and duplicate name errors on reprovision.
 
-### Localhost-only Postgres host port
+### Tiered networking (tenant isolation)
 
-Tenant Postgres `PortBindings` use **`127.0.0.1`** (not `0.0.0.0`) so the published port is only reachable from the Docker host (e.g. via SSH tunnel or local tools). Inter-container traffic uses **`flux-network`** and container DNS.
+Customer tenant **Postgres** is on a per-project **internal** bridge (`flux-<hash>-<slug>-net`); it is **not** attached to **`flux-network`**, so other `flux-network` services cannot open TCP to it. **PostgREST** attaches to **both** that private network and **`flux-network`** (Traefik). The **`flux-system`** catalog Postgres is a **known exception**: it stays on the private project network **and** `flux-network` so the Next.js / Drizzle control plane can use `getPostgresHostConnectionString` from a bridge-only container. Tenant Postgres has **no** host `PortBindings`; admin uses **`docker exec`**. Control-plane and operators should treat the connection string the dashboard shows for *tenant* projects as for apps co-located on the private link or for exec, not for arbitrary bridge clients.
 
 ### Pinned engine images
 
