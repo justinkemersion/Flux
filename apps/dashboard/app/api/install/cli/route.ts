@@ -1,49 +1,53 @@
-import { access, readFile } from "node:fs/promises";
+import { createReadStream, existsSync } from "node:fs";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-async function resolveCliBundlePath(): Promise<string> {
-  const fromNodeModules = join(
-    process.cwd(),
-    "node_modules",
-    "@flux/cli",
-    "dist",
-    "index.js",
-  );
-  try {
-    await access(fromNodeModules);
-    return fromNodeModules;
-  } catch {
-    return join(process.cwd(), "..", "..", "packages", "cli", "dist", "index.js");
-  }
-}
+const RELATIVE_BUNDLE = join("packages", "cli", "dist", "index.js");
 
 /**
- * GET /api/install/cli — bundled ESM entry for the `flux` CLI (Node 20+).
+ * `packages/cli/dist/index.js` from the monorepo root. Tries common process.cwd()
+ * layouts (monorepo root, apps/dashboard) without walking parent directories, so
+ * the path stays friendly to the bundler’s static analysis.
  */
-export async function GET(): Promise<Response> {
-  const path = await resolveCliBundlePath();
-  let buf: Buffer;
-  try {
-    buf = await readFile(path);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+function resolveCliPathFromMonorepoRoot(): string | null {
+  const candidates = [
+    join(/* turbopackIgnore: true */ process.cwd(), RELATIVE_BUNDLE),
+    join(/* turbopackIgnore: true */ process.cwd(), "..", "..", RELATIVE_BUNDLE),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) {
+      return c;
+    }
+  }
+  return null;
+}
+
+const BUILD_HINT =
+  "Build the CLI first: pnpm --filter @flux/cli run build (produces packages/cli/dist/index.js).";
+
+/**
+ * GET /api/install/cli — stream the bundled ESM `flux` CLI (Node 20+).
+ */
+export function GET() {
+  const filePath = resolveCliPathFromMonorepoRoot();
+  if (!filePath) {
     return NextResponse.json(
-      {
-        error:
-          "CLI bundle not found. Build the monorepo with `pnpm --filter @flux/cli run build` before serving.",
-        detail: msg,
-      },
-      { status: 503 },
+      { error: "CLI bundle not found at packages/cli/dist/index.js.", hint: BUILD_HINT },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
-  return new NextResponse(new Uint8Array(buf), {
+
+  const nodeStream = createReadStream(filePath);
+  const web = Readable.toWeb(nodeStream);
+  return new NextResponse(web as unknown as BodyInit, {
     status: 200,
     headers: {
-      "Content-Type": "application/javascript; charset=utf-8",
-      "Cache-Control": "public, max-age=60, s-maxage=300",
+      "Content-Type": "application/javascript",
+      "Content-Disposition": "attachment; filename=\"flux\"",
+      "Cache-Control": "no-store",
     },
   });
 }

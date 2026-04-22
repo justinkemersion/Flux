@@ -16,7 +16,7 @@ export default defineConfig({
   },
   treeshake: true,
   bundle: true,
-  banner: { js: "#!/usr/bin/env node" },
+  // Shebang comes from src/index.ts; avoid duplicating tsup banner (breaks tsup parse).
   outExtension: () => ({ js: ".js" }),
   // Bundle workspace packages into the artifact; keep Commander et al. external (CJS `require` breaks in ESM bundle).
   noExternal: ["@flux/core/standalone", "@flux/sdk"],
