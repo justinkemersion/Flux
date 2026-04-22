@@ -1,117 +1,201 @@
 "use client";
 
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
 
-const simplePath = [
+const pillars = [
   {
-    title: "Spin up",
-    body: "PostgreSQL 16 and PostgREST, ready the moment you create a project.",
+    title: "Dedicated logic",
+    body: "No shared clusters. Every project gets its own Postgres 16 + PostgREST v12 container pair.",
   },
   {
-    title: "Secure",
-    body: "Deterministic auth that actually works with your stack.",
+    title: "Isolated routing",
+    body: "Global hash namespacing and wildcard SSL. No routing collisions, ever.",
   },
   {
-    title: "Interact",
-    body: "A fast REST API over your database—no boilerplate.",
-  },
-  {
-    title: "Own",
-    body: "Full CLI support when you want to work locally.",
+    title: "Pure portability",
+    body: "Export your schema or connect via CLI. You own your data; we just orchestrate the hardware.",
   },
 ] as const;
 
-const focusable =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-50 dark:focus-visible:ring-zinc-500/35 dark:focus-visible:ring-offset-zinc-950";
+const easeOut = [0.22, 1, 0.36, 1] as const;
 
-const ctaClass = `inline-flex w-full items-center justify-center rounded-md bg-zinc-900 px-6 py-3.5 text-base font-semibold text-white shadow-sm transition-colors hover:bg-zinc-800 sm:w-auto dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 ${focusable}`;
+const heroContainer = {
+  hidden: {},
+  show: {
+    transition: {
+      staggerChildren: 0.09,
+      delayChildren: 0.06,
+    },
+  },
+};
+
+const heroItem = {
+  hidden: { opacity: 0, y: 16 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.45, ease: easeOut },
+  },
+};
+
+const focusPrimary =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
+
+const focusSecondary =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 
 export function FluxLanding() {
   return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col px-6 py-16 sm:px-8 sm:py-24">
-        <section aria-labelledby="flux-hero-heading">
-          <h1
-            id="flux-hero-heading"
-            className="text-3xl font-semibold leading-snug tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl sm:leading-snug"
-          >
-            Infrastructure that stays in your back pocket.
-          </h1>
-          <p className="mt-5 text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Flux gives each project its own Postgres database and a real REST API—so
-            you can ship without wiring servers by hand.
-          </p>
-        </section>
-
-        <section
-          className="mt-14 sm:mt-16"
-          aria-labelledby="simple-path-heading"
+    <div className="flex min-h-full flex-1 flex-col bg-zinc-950 text-zinc-100">
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 py-16 sm:px-10 sm:py-24">
+        <motion.section
+          aria-labelledby="flux-hero-heading"
+          variants={heroContainer}
+          initial="hidden"
+          animate="show"
+          className="flex flex-col"
         >
-          <h2
-            id="simple-path-heading"
-            className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-500"
+          <motion.h1
+            id="flux-hero-heading"
+            variants={heroItem}
+            className="font-sans text-4xl font-bold leading-[1.08] tracking-tight text-white sm:text-5xl sm:leading-[1.06] md:text-6xl"
           >
-            The simple path
-          </h2>
-          <ul className="mt-6 flex flex-col gap-8">
-            {simplePath.map(({ title, body }) => (
-              <li key={title} className="flex gap-4">
-                <span
-                  className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-zinc-400 dark:bg-zinc-500"
+            Infrastructure for the craft.
+          </motion.h1>
+          <motion.p
+            variants={heroItem}
+            className="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-500 sm:text-xl"
+          >
+            High-performance Postgres instances and PostgREST APIs. Isolated by
+            design, provisioned in seconds.
+          </motion.p>
+
+          <motion.div variants={heroItem} className="mt-10 w-full max-w-lg">
+            <div
+              className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-900/80 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.55)]"
+              role="img"
+              aria-label="Example Flux CLI command"
+            >
+              <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+                <span className="h-2 w-2 rounded-full bg-red-500/90" aria-hidden />
+                <span className="h-2 w-2 rounded-full bg-amber-500/90" aria-hidden />
+                <span className="h-2 w-2 rounded-full bg-emerald-500/80" aria-hidden />
+                <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+                  flux
+                </span>
+              </div>
+              <div className="px-4 py-3 font-mono text-sm text-zinc-300">
+                <span className="text-zinc-500">$ </span>
+                <span>flux create project-name</span>
+                <motion.span
+                  className="ml-0.5 inline-block h-4 w-2 translate-y-0.5 bg-zinc-400 align-middle"
+                  animate={{ opacity: [1, 0.2, 1] }}
+                  transition={{
+                    duration: 1.1,
+                    repeat: Number.POSITIVE_INFINITY,
+                    ease: "easeInOut",
+                  }}
                   aria-hidden
                 />
-                <div>
-                  <p className="font-semibold text-zinc-900 dark:text-zinc-100">
-                    {title}
-                  </p>
-                  <p className="mt-1 text-base leading-relaxed text-zinc-600 dark:text-zinc-400">
-                    {body}
+              </div>
+            </div>
+          </motion.div>
+        </motion.section>
+
+        <motion.section
+          id="pillars"
+          aria-labelledby="bones-heading"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.35, ease: easeOut }}
+          className="mt-20 sm:mt-28"
+        >
+          <h2
+            id="bones-heading"
+            className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500"
+          >
+            The bones
+          </h2>
+          <ul className="mt-8 grid gap-4 sm:grid-cols-3">
+            {pillars.map((item, i) => (
+              <motion.li
+                key={item.title}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.4,
+                  delay: 0.45 + i * 0.08,
+                  ease: easeOut,
+                }}
+              >
+                <div className="h-full rounded-md border border-zinc-800 bg-zinc-950 px-5 py-5 sm:px-6 sm:py-6">
+                  <h3 className="text-sm font-semibold text-white">
+                    {item.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                    {item.body}
                   </p>
                 </div>
-              </li>
+              </motion.li>
             ))}
           </ul>
-        </section>
+        </motion.section>
 
-        <div className="mt-14 sm:mt-16">
-          <DashboardCta />
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.72, ease: easeOut }}
+          className="mt-16 flex flex-col items-stretch gap-3 sm:mt-20 sm:flex-row sm:items-center sm:gap-4"
+        >
+          <LandingCtas />
+        </motion.div>
       </main>
     </div>
   );
 }
 
-function DashboardCta() {
+function LandingCtas() {
   const { status } = useSession();
 
   if (status === "loading") {
     return (
-      <p className="text-center text-sm text-zinc-500 dark:text-zinc-500">
+      <p className="text-sm text-zinc-500" aria-live="polite">
         Loading…
       </p>
     );
   }
 
+  const primaryClass = `inline-flex w-full items-center justify-center rounded-md bg-white px-6 py-3.5 text-base font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-zinc-100 sm:w-auto ${focusPrimary}`;
+
+  const secondaryClass = `inline-flex w-full items-center justify-center rounded-md border border-zinc-700 bg-transparent px-6 py-3.5 text-base font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:bg-zinc-900/50 sm:w-auto ${focusSecondary}`;
+
   if (status === "unauthenticated") {
     return (
-      <div className="flex justify-center sm:justify-start">
+      <>
         <button
           type="button"
           onClick={() => void signIn("github", { callbackUrl: "/projects" })}
-          className={ctaClass}
+          className={primaryClass}
         >
-          Enter Dashboard
+          Get Started
         </button>
-      </div>
+        <Link href="#pillars" className={secondaryClass} scroll>
+          Read the Docs
+        </Link>
+      </>
     );
   }
 
   return (
-    <div className="flex justify-center sm:justify-start">
-      <Link href="/projects" className={ctaClass}>
-        Enter Dashboard
+    <>
+      <Link href="/projects" className={primaryClass}>
+        Get Started
       </Link>
-    </div>
+      <Link href="#pillars" className={secondaryClass} scroll>
+        Read the Docs
+      </Link>
+    </>
   );
 }

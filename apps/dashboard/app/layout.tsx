@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://flux.vsl-base.com"),
-  title: "Flux — Postgres and API per project",
+  title: "Flux — Infrastructure for the craft",
   description:
-    "Spin up PostgreSQL 16 and PostgREST per project. Secure auth, instant REST API, CLI-friendly.",
+    "High-performance Postgres and PostgREST per project. Isolated by design, provisioned in seconds.",
 };
 
 export default function RootLayout({
