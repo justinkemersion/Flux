@@ -6,14 +6,17 @@ import { signIn, useSession } from "next-auth/react";
 
 const pillars = [
   {
+    label: "01_COMPUTE",
     title: "Dedicated logic",
     body: "No shared clusters. Every project gets its own Postgres 16 + PostgREST v12 container pair.",
   },
   {
+    label: "02_ROUTING",
     title: "Isolated routing",
     body: "Global hash namespacing and wildcard SSL. No routing collisions, ever.",
   },
   {
+    label: "03_LOCAL_WORKFLOW",
     title: "Pure portability",
     body: "Export your schema or connect via CLI. You own your data; we just orchestrate the hardware.",
   },
@@ -50,59 +53,73 @@ export function FluxLanding() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-zinc-950 text-zinc-100">
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 py-16 sm:px-10 sm:py-24">
-        <motion.section
-          aria-labelledby="flux-hero-heading"
-          variants={heroContainer}
-          initial="hidden"
-          animate="show"
-          className="flex flex-col"
-        >
-          <motion.h1
-            id="flux-hero-heading"
-            variants={heroItem}
-            className="font-sans text-4xl font-bold leading-[1.08] tracking-tight text-white sm:text-5xl sm:leading-[1.06] md:text-6xl"
-          >
-            Infrastructure for the craft.
-          </motion.h1>
-          <motion.p
-            variants={heroItem}
-            className="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-500 sm:text-xl"
-          >
-            High-performance Postgres instances and PostgREST APIs. Isolated by
-            design, provisioned in seconds.
-          </motion.p>
+        <div className="relative isolate">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -inset-x-16 -top-8 bottom-0 min-h-[min(100%,32rem)] bg-[radial-gradient(ellipse_100%_80%_at_50%_0%,rgb(99_102_241/0.1)_0%,rgb(0_0_0)_72%)] sm:-inset-x-24 sm:-top-12"
+          />
 
-          <motion.div variants={heroItem} className="mt-10 w-full max-w-lg">
-            <div
-              className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-900/80 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.55)]"
-              role="img"
-              aria-label="Example Flux CLI command"
+          <motion.section
+            aria-labelledby="flux-hero-heading"
+            variants={heroContainer}
+            initial="hidden"
+            animate="show"
+            className="relative flex flex-col"
+          >
+            <motion.h1
+              id="flux-hero-heading"
+              variants={heroItem}
+              className="relative font-sans text-4xl font-extrabold leading-[1.06] tracking-tighter text-white sm:text-5xl sm:leading-[1.05] md:text-6xl"
             >
-              <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
-                <span className="h-2 w-2 rounded-full bg-red-500/90" aria-hidden />
-                <span className="h-2 w-2 rounded-full bg-amber-500/90" aria-hidden />
-                <span className="h-2 w-2 rounded-full bg-emerald-500/80" aria-hidden />
-                <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
-                  flux
-                </span>
+              Infrastructure for the craft.
+            </motion.h1>
+            <motion.p
+              variants={heroItem}
+              className="relative mt-6 max-w-2xl text-lg leading-relaxed text-zinc-500 sm:text-xl"
+            >
+              High-performance Postgres instances and PostgREST APIs. Isolated by
+              design, provisioned in seconds.
+            </motion.p>
+
+            <motion.div variants={heroItem} className="relative mt-10 w-full max-w-lg">
+              <div
+                className="overflow-hidden rounded-md border border-white/5 bg-black"
+                role="img"
+                aria-label="Example Flux CLI command"
+              >
+                <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-3 py-2">
+                  <span
+                    className="size-2 rounded-full bg-zinc-600/70"
+                    aria-hidden
+                  />
+                  <span
+                    className="size-2 rounded-full bg-zinc-600/70"
+                    aria-hidden
+                  />
+                  <span
+                    className="size-2 rounded-full bg-zinc-600/70"
+                    aria-hidden
+                  />
+                </div>
+                <div className="px-4 py-3 font-mono text-sm">
+                  <span className="text-zinc-500">$ </span>
+                  <span className="text-zinc-100">flux</span>
+                  <span className="text-zinc-500"> create project-name</span>
+                  <motion.span
+                    className="ml-0.5 inline-block h-4 w-2 translate-y-0.5 bg-zinc-500 align-middle"
+                    animate={{ opacity: [1, 0.2, 1] }}
+                    transition={{
+                      duration: 1.1,
+                      repeat: Number.POSITIVE_INFINITY,
+                      ease: "easeInOut",
+                    }}
+                    aria-hidden
+                  />
+                </div>
               </div>
-              <div className="px-4 py-3 font-mono text-sm text-zinc-300">
-                <span className="text-zinc-500">$ </span>
-                <span>flux create project-name</span>
-                <motion.span
-                  className="ml-0.5 inline-block h-4 w-2 translate-y-0.5 bg-zinc-400 align-middle"
-                  animate={{ opacity: [1, 0.2, 1] }}
-                  transition={{
-                    duration: 1.1,
-                    repeat: Number.POSITIVE_INFINITY,
-                    ease: "easeInOut",
-                  }}
-                  aria-hidden
-                />
-              </div>
-            </div>
-          </motion.div>
-        </motion.section>
+            </motion.div>
+          </motion.section>
+        </div>
 
         <motion.section
           id="pillars"
@@ -110,7 +127,7 @@ export function FluxLanding() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.35, ease: easeOut }}
-          className="mt-20 sm:mt-28"
+          className="mt-32 sm:mt-40"
         >
           <h2
             id="bones-heading"
@@ -130,14 +147,21 @@ export function FluxLanding() {
                   ease: easeOut,
                 }}
               >
-                <div className="h-full rounded-md border border-zinc-800 bg-zinc-950 px-5 py-5 sm:px-6 sm:py-6">
-                  <h3 className="text-sm font-semibold text-white">
+                <motion.div
+                  whileHover={{ y: -3 }}
+                  transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                  className="group h-full rounded-md border border-zinc-800 px-5 py-5 transition-colors duration-200 hover:border-zinc-700 sm:px-6 sm:py-6"
+                >
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+                    {item.label}
+                  </p>
+                  <h3 className="mt-2 text-sm font-semibold text-white">
                     {item.title}
                   </h3>
                   <p className="mt-2 text-sm leading-relaxed text-zinc-500">
                     {item.body}
                   </p>
-                </div>
+                </motion.div>
               </motion.li>
             ))}
           </ul>
@@ -151,6 +175,13 @@ export function FluxLanding() {
         >
           <LandingCtas />
         </motion.div>
+
+        <p
+          className="mt-auto pt-24 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500/35 sm:pt-28"
+          aria-label="Platform credits"
+        >
+          ENGINEERED_ON_DEBIAN // POWERED_BY_DOCKER // ORCHESTRATED_BY_FLUX
+        </p>
       </main>
     </div>
   );
