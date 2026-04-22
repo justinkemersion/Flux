@@ -2,895 +2,43 @@
 
 import {
   AlertTriangle,
-  Check,
-  Clipboard,
-  Eye,
-  EyeOff,
   Loader2,
-  Play,
   Plus,
-  Settings,
-  Square,
-  Trash2,
-  Wrench,
   X,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import {
   useCallback,
   useEffect,
   useState,
 } from "react";
+import {
+  HOBBY_LIMIT_API_MESSAGE,
+  PRO_LIMIT_API_MESSAGE,
+  ProjectCard,
+  type ProjectRow,
+} from "@/src/components/projects/project-card";
+import {
+  hashSegment,
+  projectApiInterface,
+  uptimeReadoutForStatus,
+} from "@/src/lib/routing-identity";
 
-type ServerStatus =
-  | "running"
-  | "stopped"
-  | "partial"
-  | "missing"
-  | "corrupted";
+const focusable =
+  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500";
 
-type ProjectRow = {
-  id: string;
-  name: string;
-  slug: string;
-  status: ServerStatus;
-  apiUrl: string;
-  createdAt: string;
-  /** Loaded only after "Reveal keys" — not returned by list API. */
-  anonKey?: string | null;
-  serviceRoleKey?: string | null;
-  postgresConnectionString?: string | null;
-};
+const thSpec =
+  "border-b border-zinc-800 px-2 py-2.5 text-left text-[9px] font-normal uppercase tracking-[0.16em] text-zinc-500 sm:px-3 sm:text-[10px] sm:tracking-[0.2em]";
 
-type DisplayStatus = ServerStatus | "transitioning";
+const tdSpec =
+  "border-b border-zinc-800 px-2 py-3 align-middle text-sm text-zinc-400 sm:px-3";
 
-const HOBBY_LIMIT_API_MESSAGE =
-  "Project limit reached. Please upgrade to Pro.";
-const PRO_LIMIT_API_MESSAGE =
-  "Project limit reached (10 projects on Pro).";
-
-function StatusBadge({ status }: { status: DisplayStatus }) {
-  const base =
-    "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium";
-  switch (status) {
-    case "running":
-      return (
-        <span
-          className={`${base} bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200`}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-emerald-500"
-            aria-hidden
-          />
-          Online
-        </span>
-      );
-    case "stopped":
-      return (
-        <span
-          className={`${base} bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100`}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"
-            aria-hidden
-          />
-          Offline
-        </span>
-      );
-    case "transitioning":
-      return (
-        <span
-          className={`${base} bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200`}
-        >
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          Transitioning
-        </span>
-      );
-    case "missing":
-      return (
-        <span
-          className={`${base} bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200`}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-red-500"
-            aria-hidden
-          />
-          Missing
-        </span>
-      );
-    case "corrupted":
-      return (
-        <span
-          className={`${base} bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200`}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-orange-500"
-            aria-hidden
-          />
-          Drift
-        </span>
-      );
-    case "partial":
-      return (
-        <span
-          className={`${base} bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100`}
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
-          Partial
-        </span>
-      );
-    default: {
-      const _exhaustive: never = status;
-      return _exhaustive;
-    }
-  }
-}
-
-function CopyableField({
-  label,
-  value,
-  isSecret,
-  visuallyTruncate = false,
-}: {
-  label: string;
-  value: string | null;
-  isSecret: boolean;
-  /** Single-line ellipsis for long non-secret values (e.g. anon JWT). */
-  visuallyTruncate?: boolean;
-}) {
-  const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const raw = value ?? "";
-  const unavailable = raw.length === 0;
-  const masked = isSecret && !revealed && !unavailable;
-  const displayText = unavailable
-    ? "Unavailable"
-    : masked
-      ? "••••••••"
-      : raw;
-
-  async function copy(): Promise<void> {
-    if (unavailable) return;
-    try {
-      await navigator.clipboard.writeText(raw);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard denied */
-    }
-  }
-
-  return (
-    <div className="min-w-0">
-      <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-        {label}
-      </p>
-      <div className="flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-200/80 bg-zinc-50/80 px-2 py-1.5 dark:border-zinc-700/80 dark:bg-zinc-900/50">
-        <span
-          className={`min-w-0 flex-1 font-mono text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 ${
-            visuallyTruncate && !masked
-              ? "truncate"
-              : unavailable
-                ? "text-zinc-400 dark:text-zinc-500"
-                : "break-all"
-          }`}
-          title={unavailable || masked ? undefined : raw}
-        >
-          {displayText}
-        </span>
-        {isSecret && !unavailable ? (
-          <button
-            type="button"
-            onClick={() => setRevealed((v) => !v)}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-200/80 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label={revealed ? "Hide value" : "Reveal value"}
-            title={revealed ? "Hide" : "Reveal"}
-          >
-            {revealed ? (
-              <EyeOff className="h-4 w-4" aria-hidden />
-            ) : (
-              <Eye className="h-4 w-4" aria-hidden />
-            )}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => void copy()}
-          disabled={unavailable}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-200/80 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-          aria-label={`Copy ${label}`}
-          title="Copy"
-        >
-          {copied ? (
-            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
-          ) : (
-            <Clipboard className="h-4 w-4" aria-hidden />
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-type ProjectCardProps = {
-  project: ProjectRow;
-  onDelete: () => void;
-  /** Called after JWT settings save so parents can drop cached credentials (keys change). */
-  onSettingsSaved?: (slug: string) => void;
-  onCredentialsRevealed: (
-    slug: string,
-    creds: {
-      anonKey: string;
-      serviceRoleKey: string;
-      postgresConnectionString: string;
-    },
-  ) => void;
-  /** After destructive repair reprovisions the stack. */
-  onRepaired?: () => void;
-};
-
-function ProjectCard({
-  project: p,
-  onDelete,
-  onSettingsSaved,
-  onCredentialsRevealed,
-  onRepaired,
-}: ProjectCardProps) {
-  const [isBusy, setIsBusy] = useState(false);
-  const [currentStatus, setCurrentStatus] = useState<DisplayStatus>(p.status);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [jwtSecretInput, setJwtSecretInput] = useState("");
-  /** In-memory only: value just saved in this session so we can show reveal/copy (API never returns it). */
-  const [lastSavedJwtSecret, setLastSavedJwtSecret] = useState<string | null>(
-    null,
-  );
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [settingsSuccess, setSettingsSuccess] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [revealBusy, setRevealBusy] = useState(false);
-  const [revealError, setRevealError] = useState<string | null>(null);
-  const [repairBusy, setRepairBusy] = useState(false);
-  const [repairError, setRepairError] = useState<string | null>(null);
-
-  const canRevealCredentials =
-    p.status === "running" ||
-    p.status === "stopped" ||
-    p.status === "partial";
-
-  const credentialsLoaded =
-    (p.anonKey?.length ?? 0) > 0 &&
-    (p.serviceRoleKey?.length ?? 0) > 0 &&
-    (p.postgresConnectionString?.length ?? 0) > 0;
-
-  useEffect(() => {
-    if (!isBusy) {
-      setCurrentStatus(p.status);
-    }
-  }, [p.status, isBusy]);
-
-  useEffect(() => {
-    if (!deleteOpen) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === "Escape") setDeleteOpen(false);
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [deleteOpen]);
-
-  const closeSettingsModal = useCallback((): void => {
-    if (settingsSaving) return;
-    setSettingsOpen(false);
-    setLastSavedJwtSecret(null);
-    setJwtSecretInput("");
-    setSettingsError(null);
-    setSettingsSuccess(false);
-  }, [settingsSaving]);
-
-  const openSettingsModal = useCallback((): void => {
-    setJwtSecretInput("");
-    setLastSavedJwtSecret(null);
-    setSettingsError(null);
-    setSettingsSuccess(false);
-    setSettingsOpen(true);
-  }, []);
-
-  useEffect(() => {
-    if (!settingsOpen) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === "Escape") closeSettingsModal();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [settingsOpen, closeSettingsModal]);
-
-  useEffect(() => {
-    if (!deleteOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [deleteOpen]);
-
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [settingsOpen]);
-
-  async function togglePower(): Promise<void> {
-    if (isBusy || currentStatus === "partial") return;
-    const action = currentStatus === "running" ? "stop" : "start";
-    setIsBusy(true);
-    setActionError(null);
-    setCurrentStatus("transitioning");
-    try {
-      const res = await fetch(`/api/projects/${p.slug}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Action failed (${String(res.status)})`);
-      }
-      setCurrentStatus(action === "start" ? "running" : "stopped");
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-      setCurrentStatus(p.status);
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function saveJwtSettings(e: React.FormEvent): Promise<void> {
-    e.preventDefault();
-    const trimmed = jwtSecretInput.trim();
-    if (!trimmed) {
-      setSettingsError("Enter a JWT secret (or webhook signing key).");
-      return;
-    }
-    setSettingsSaving(true);
-    setSettingsError(null);
-    setSettingsSuccess(false);
-    try {
-      const res = await fetch(`/api/projects/${p.slug}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jwtSecret: trimmed }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        throw new Error(data.error ?? `Save failed (${String(res.status)})`);
-      }
-      setSettingsSuccess(true);
-      setLastSavedJwtSecret(trimmed);
-      setJwtSecretInput("");
-      onSettingsSaved?.(p.slug);
-      window.setTimeout(() => setSettingsSuccess(false), 4000);
-    } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSettingsSaving(false);
-    }
-  }
-
-  function openDeleteModal(): void {
-    setDeleteConfirm("");
-    setDeleteError(null);
-    setDeleteOpen(true);
-  }
-
-  function closeDeleteModal(): void {
-    if (isDeleting) return;
-    setDeleteOpen(false);
-  }
-
-  async function runRepair(): Promise<void> {
-    if (
-      !window.confirm(
-        "Repair removes any Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?",
-      )
-    ) {
-      return;
-    }
-    setRepairBusy(true);
-    setRepairError(null);
-    try {
-      const res = await fetch(`/api/projects/${p.slug}/repair`, {
-        method: "POST",
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        throw new Error(data.error ?? `Repair failed (${String(res.status)})`);
-      }
-      onRepaired?.();
-    } catch (err) {
-      setRepairError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRepairBusy(false);
-    }
-  }
-
-  async function revealKeys(): Promise<void> {
-    if (!canRevealCredentials) return;
-    setRevealBusy(true);
-    setRevealError(null);
-    try {
-      const res = await fetch(`/api/projects/${p.slug}/credentials`);
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        anonKey?: string;
-        serviceRoleKey?: string;
-        postgresConnectionString?: string;
-      };
-      if (!res.ok) {
-        throw new Error(data.error ?? `Reveal failed (${String(res.status)})`);
-      }
-      if (
-        typeof data.anonKey !== "string" ||
-        typeof data.serviceRoleKey !== "string" ||
-        typeof data.postgresConnectionString !== "string"
-      ) {
-        throw new Error("Invalid credentials response");
-      }
-      onCredentialsRevealed(p.slug, {
-        anonKey: data.anonKey,
-        serviceRoleKey: data.serviceRoleKey,
-        postgresConnectionString: data.postgresConnectionString,
-      });
-    } catch (err) {
-      setRevealError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRevealBusy(false);
-    }
-  }
-
-  async function handleDelete(e: React.FormEvent): Promise<void> {
-    e.preventDefault();
-    if (deleteConfirm !== p.name) return;
-    setIsDeleting(true);
-    setDeleteError(null);
-    try {
-      const res = await fetch(`/api/projects/${p.slug}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Delete failed (${String(res.status)})`);
-      }
-      setDeleteOpen(false);
-      onDelete();
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
-  const canToggle =
-    !isBusy &&
-    currentStatus !== "transitioning" &&
-    currentStatus !== "partial" &&
-    currentStatus !== "missing" &&
-    currentStatus !== "corrupted";
-
-  return (
-    <>
-      <article className="flex flex-col rounded-xl border border-zinc-200/80 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950">
-        <header className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-base font-bold text-zinc-900 dark:text-zinc-50">
-              {p.name}
-            </h2>
-            <p className="mt-0.5 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
-              {p.slug}
-            </p>
-          </div>
-          <StatusBadge status={currentStatus} />
-        </header>
-
-        <div className="mt-4 flex flex-col gap-3">
-          <div className="rounded-lg border border-zinc-200/70 bg-zinc-50/40 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Connection details
-              </h3>
-              {!credentialsLoaded && canRevealCredentials ? (
-                <button
-                  type="button"
-                  onClick={() => void revealKeys()}
-                  disabled={revealBusy}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                >
-                  {revealBusy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" aria-hidden />
-                  )}
-                  Reveal keys
-                </button>
-              ) : null}
-            </div>
-            {revealError ? (
-              <p
-                className="mb-3 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-400"
-                role="alert"
-              >
-                {revealError}
-              </p>
-            ) : null}
-            <div className="flex flex-col gap-3">
-              <CopyableField
-                label="API URL"
-                value={p.apiUrl}
-                isSecret={false}
-                visuallyTruncate
-              />
-              {!credentialsLoaded && !canRevealCredentials ? (
-                <p className="text-xs text-amber-800 dark:text-amber-200/90">
-                  Keys are unavailable until the stack is healthy. Use{" "}
-                  <strong className="font-medium">Repair</strong> if Docker is
-                  out of sync, or <strong className="font-medium">Delete</strong>{" "}
-                  to remove this catalog entry.
-                </p>
-              ) : null}
-              {!credentialsLoaded && canRevealCredentials ? (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  API keys and Postgres connection string are not loaded. Use{" "}
-                  <strong className="font-medium text-zinc-700 dark:text-zinc-300">
-                    Reveal keys
-                  </strong>{" "}
-                  to fetch them from the server.
-                </p>
-              ) : null}
-              {credentialsLoaded ? (
-                <>
-                  <CopyableField
-                    label="Anon key"
-                    value={p.anonKey ?? null}
-                    isSecret={false}
-                    visuallyTruncate
-                  />
-                  <CopyableField
-                    label="Service role key"
-                    value={p.serviceRoleKey ?? null}
-                    isSecret
-                  />
-                  <CopyableField
-                    label="Postgres connection string"
-                    value={p.postgresConnectionString ?? null}
-                    isSecret
-                  />
-                </>
-              ) : null}
-            </div>
-          </div>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Created{" "}
-            <time dateTime={p.createdAt}>
-              {new Date(p.createdAt).toLocaleDateString(undefined, {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })}
-            </time>
-          </p>
-        </div>
-
-        {repairError ? (
-          <p
-            className="mt-3 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-400"
-            role="alert"
-          >
-            {repairError}
-          </p>
-        ) : null}
-
-        {actionError ? (
-          <p
-            className="mt-3 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-400"
-            role="alert"
-          >
-            {actionError}
-          </p>
-        ) : null}
-
-        <footer className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-          <div className="flex flex-wrap items-center gap-2">
-            {currentStatus === "missing" || currentStatus === "corrupted" ? (
-              <button
-                type="button"
-                onClick={() => void runRepair()}
-                disabled={repairBusy}
-                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3 text-sm font-medium text-orange-950 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100 dark:hover:bg-orange-900/50"
-              >
-                {repairBusy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                ) : (
-                  <Wrench className="h-4 w-4" aria-hidden />
-                )}
-                Repair stack
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => void togglePower()}
-              disabled={!canToggle}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              aria-label={
-                currentStatus === "running" ? `Stop ${p.name}` : `Start ${p.name}`
-              }
-              title={
-                currentStatus === "running" ? "Stop project" : "Start project"
-              }
-            >
-              {isBusy || currentStatus === "transitioning" ? (
-                <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-              ) : currentStatus === "running" ? (
-                <Square className="h-5 w-5" aria-hidden />
-              ) : (
-                <Play className="h-5 w-5" aria-hidden />
-              )}
-            </button>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={openSettingsModal}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              aria-label={`Project settings for ${p.name}`}
-              title="Project settings"
-            >
-              <Settings className="h-5 w-5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={openDeleteModal}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-              aria-label={`Delete project ${p.name}`}
-              title="Delete project"
-            >
-              <Trash2 className="h-5 w-5" aria-hidden />
-            </button>
-          </div>
-        </footer>
-      </article>
-
-      {settingsOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-          role="presentation"
-          onClick={closeSettingsModal}
-        >
-          <div
-            className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`settings-title-${p.id}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={closeSettingsModal}
-              disabled={settingsSaving}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" aria-hidden />
-            </button>
-
-            <div className="pr-10">
-              <h2
-                id={`settings-title-${p.id}`}
-                className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
-              >
-                Project settings
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Use the same signing secret as your auth provider (e.g. Clerk JWT
-                template or NextAuth) so PostgREST can verify user tokens. After you
-                save, use{" "}
-                <strong className="font-medium text-zinc-800 dark:text-zinc-200">
-                  Reveal keys
-                </strong>{" "}
-                on the project card to refresh anon and service-role JWTs.
-              </p>
-
-              <form onSubmit={(e) => void saveJwtSettings(e)} className="mt-6">
-                {lastSavedJwtSecret ? (
-                  <div className="mb-6 space-y-2">
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      Signing key below is only kept until you close this dialog;
-                      the server never sends it back.
-                    </p>
-                    <CopyableField
-                      key={lastSavedJwtSecret}
-                      label="Signing key you saved"
-                      value={lastSavedJwtSecret}
-                      isSecret
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLastSavedJwtSecret(null);
-                        setJwtSecretInput("");
-                      }}
-                      className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
-                    >
-                      Replace secret
-                    </button>
-                  </div>
-                ) : null}
-                <label
-                  htmlFor={`jwt-secret-${p.id}`}
-                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
-                >
-                  {lastSavedJwtSecret
-                    ? "Update JWT secret (optional)"
-                    : "JWT secret / webhook secret"}
-                </label>
-                <input
-                  id={`jwt-secret-${p.id}`}
-                  type="password"
-                  value={jwtSecretInput}
-                  onChange={(e) => setJwtSecretInput(e.target.value)}
-                  autoComplete="off"
-                  placeholder="Paste signing key"
-                  disabled={settingsSaving}
-                  className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 font-mono text-sm outline-none transition-shadow focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-950"
-                />
-
-                {settingsError ? (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
-                    {settingsError}
-                  </p>
-                ) : null}
-                {settingsSuccess ? (
-                  <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">
-                    Saved. PostgREST was restarted with the new secret.
-                  </p>
-                ) : null}
-
-                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                  <button
-                    type="button"
-                    onClick={closeSettingsModal}
-                    disabled={settingsSaving}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={settingsSaving}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                  >
-                    {settingsSaving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : null}
-                    {settingsSaving ? "Saving…" : "Save settings"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {deleteOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-          role="presentation"
-          onClick={closeDeleteModal}
-        >
-          <div
-            className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`delete-title-${p.id}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={closeDeleteModal}
-              disabled={isDeleting}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" aria-hidden />
-            </button>
-
-            <div className="pr-10">
-              <div className="mb-4 flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950">
-                  <AlertTriangle
-                    className="h-5 w-5 text-red-600 dark:text-red-400"
-                    aria-hidden
-                  />
-                </div>
-                <div className="min-w-0">
-                  <h2
-                    id={`delete-title-${p.id}`}
-                    className="text-base font-semibold text-zinc-900 dark:text-zinc-50"
-                  >
-                    Delete project
-                  </h2>
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    This permanently destroys all containers and database volumes
-                    for{" "}
-                    <strong className="text-zinc-900 dark:text-zinc-100">
-                      {p.name}
-                    </strong>
-                    . This action cannot be undone.
-                  </p>
-                </div>
-              </div>
-
-              <form onSubmit={(e) => void handleDelete(e)}>
-                <label
-                  htmlFor={`delete-confirm-${p.id}`}
-                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
-                >
-                  Type{" "}
-                  <span className="font-mono font-semibold">{p.name}</span> to
-                  confirm
-                </label>
-                <input
-                  id={`delete-confirm-${p.id}`}
-                  type="text"
-                  value={deleteConfirm}
-                  onChange={(e) => setDeleteConfirm(e.target.value)}
-                  className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none ring-zinc-200 transition-shadow focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-950 dark:ring-zinc-800"
-                  placeholder={p.name}
-                  autoComplete="off"
-                  disabled={isDeleting}
-                />
-
-                {deleteError ? (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
-                    {deleteError}
-                  </p>
-                ) : null}
-
-                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                  <button
-                    type="button"
-                    onClick={closeDeleteModal}
-                    disabled={isDeleting}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={deleteConfirm !== p.name || isDeleting}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
-                  >
-                    {isDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : (
-                      <Trash2 className="h-4 w-4" aria-hidden />
-                    )}
-                    {isDeleting ? "Deleting…" : "Delete project"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </>
-  );
-}
+const rowActionClass = `shrink-0 bg-transparent font-mono text-[9px] uppercase tracking-[0.12em] text-zinc-400 transition-colors enabled:hover:text-zinc-300 enabled:focus-visible:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40 sm:text-[10px] sm:tracking-[0.14em] ${focusable}`;
 
 export default function ProjectsPage() {
+  const { data: session } = useSession();
+  const userId = session?.user?.id ?? "—";
+
   const [projectList, setProjectList] = useState<ProjectRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
@@ -904,6 +52,8 @@ export default function ProjectsPage() {
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<"hobby" | "pro" | null>(null);
+  const [detailSlug, setDetailSlug] = useState<string | null>(null);
+  const [rowActionBusy, setRowActionBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -1020,6 +170,15 @@ export default function ProjectsPage() {
     };
   }, [createOpen]);
 
+  useEffect(() => {
+    if (!detailSlug) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [detailSlug]);
+
   function openCreateModal(): void {
     setCreateError(null);
     setCreateLimitBanner(null);
@@ -1101,17 +260,82 @@ export default function ProjectsPage() {
 
   function handleProjectDeleted(slug: string): void {
     setProjectList((prev) => prev.filter((p) => p.slug !== slug));
+    if (detailSlug === slug) setDetailSlug(null);
   }
 
+  async function runRepairFromTable(slug: string): Promise<void> {
+    if (
+      !window.confirm(
+        "Repair removes any Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?",
+      )
+    ) {
+      return;
+    }
+    setRowActionBusy(slug);
+    try {
+      const res = await fetch(`/api/projects/${slug}/repair`, {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Repair failed (${String(res.status)})`);
+      }
+      setDetailSlug(null);
+      await load();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRowActionBusy(null);
+    }
+  }
+
+  async function stopFromTable(slug: string): Promise<void> {
+    const p = projectList.find((x) => x.slug === slug);
+    if (!p) return;
+    if (p.status !== "running" && p.status !== "partial") return;
+    setRowActionBusy(slug);
+    try {
+      const res = await fetch(`/api/projects/${p.slug}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `Stop failed (${String(res.status)})`);
+      }
+      await load();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRowActionBusy(null);
+    }
+  }
+
+  const detailProject = detailSlug
+    ? projectList.find((p) => p.slug === detailSlug)
+    : undefined;
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-8 flex min-w-0 items-start justify-between gap-4">
+    <div className="flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-10 sm:px-8 sm:py-14">
+      <div className="border-b border-zinc-800 pb-4">
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 sm:text-[11px]">
+          <span className="text-zinc-400">fleet_directory</span>
+          <span className="text-zinc-600"> / </span>
+          <span className="break-all text-zinc-300 tabular-nums">user_{userId}</span>
+        </p>
+      </div>
+
+      <div className="mb-0 flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Projects
+          <h1
+            className="font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-500"
+            id="fleet-spec"
+          >
+            HORIZONTAL // SPEC
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Manage your Flux database projects
+          <p className="mt-1 font-sans text-xl font-semibold tracking-tight text-zinc-300 sm:text-2xl">
+            Projects
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -1120,35 +344,32 @@ export default function ProjectsPage() {
               type="button"
               onClick={() => void startProCheckout()}
               disabled={upgradeLoading}
-              className="inline-flex h-10 items-center gap-2 rounded-full border border-amber-300/90 bg-gradient-to-r from-red-600 to-amber-600 px-4 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700/80"
+              className="inline-flex h-10 items-center gap-2 border border-amber-500/40 bg-zinc-900/60 px-3 text-xs font-mono font-medium uppercase tracking-[0.12em] text-amber-500 transition-colors hover:border-amber-500/70 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {upgradeLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
               ) : null}
-              {upgradeLoading ? "Redirecting…" : "Upgrade to Pro"}
+              {upgradeLoading ? "…" : "[ UPGRADE_PRO ]"}
             </button>
           ) : userPlan === "pro" ? (
-            <span
-              className="inline-flex h-10 items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
-              title="Your account is on the Pro plan"
-            >
-              Pro
+            <span className="inline-flex h-10 items-center border border-emerald-800/60 bg-zinc-900/40 px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-emerald-500">
+              PRO
             </span>
           ) : null}
           <button
             type="button"
             onClick={openCreateModal}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center border border-zinc-700 bg-zinc-900/50 text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
             aria-label="Create project"
           >
             <Plus className="h-5 w-5" aria-hidden />
           </button>
         </div>
-      </header>
+      </div>
 
       {billingError && !createOpen ? (
         <p
-          className="mb-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+          className="mb-2 rounded border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-300"
           role="alert"
         >
           {billingError}
@@ -1157,28 +378,151 @@ export default function ProjectsPage() {
 
       {fetching ? (
         <div className="flex justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+          <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
         </div>
       ) : loadError ? (
-        <p className="text-red-600 dark:text-red-400">{loadError}</p>
+        <p className="text-red-400">{loadError}</p>
       ) : projectList.length === 0 ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          No projects yet. Use the plus button to create one.
+        <p className="font-mono text-sm text-zinc-500">
+          No projects yet. Use the plus control to create one.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {projectList.map((p) => (
-            <ProjectCard
-              key={p.id}
-              project={p}
-              onDelete={() => handleProjectDeleted(p.slug)}
-              onSettingsSaved={handleSettingsSavedClearCredentials}
-              onCredentialsRevealed={handleCredentialsRevealed}
-              onRepaired={() => handleProjectRepaired(p.slug)}
-            />
-          ))}
+        <div className="overflow-x-auto border border-zinc-800">
+          <table
+            className="w-full min-w-[58rem] border-collapse text-left font-mono text-sm"
+            aria-labelledby="fleet-spec"
+          >
+            <thead>
+              <tr>
+                <th scope="col" className={thSpec}>
+                  COL 01 [INDEX]
+                </th>
+                <th scope="col" className={thSpec}>
+                  COL 02 [IDENTITY]
+                </th>
+                <th scope="col" className={thSpec}>
+                  COL 03 [INTERFACE]
+                </th>
+                <th scope="col" className={thSpec}>
+                  COL 04 [UPTIME]
+                </th>
+                <th scope="col" className={`${thSpec} w-[1%] text-right`}>
+                  CTL
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {projectList.map((p, i) => {
+                const hash = hashSegment(`${p.slug}:${p.id}`);
+                const specHost = projectApiInterface(p.slug, hash);
+                const busy = rowActionBusy === p.slug;
+                return (
+                  <tr key={p.id}>
+                    <td className={tdSpec}>
+                      <span className="text-[10px] text-zinc-500 sm:text-xs">
+                        {`#${String(i + 1).padStart(2, "0")}`}
+                      </span>
+                    </td>
+                    <td className={tdSpec}>
+                      <span className="text-zinc-100">{p.slug}</span>
+                      <span className="text-zinc-600"> / </span>
+                      <span className="text-amber-500">{hash}</span>
+                    </td>
+                    <td className={tdSpec}>
+                      <code
+                        className="block max-w-[18rem] truncate border border-zinc-800 bg-zinc-900/50 px-2 py-1.5 text-[10px] text-zinc-400 sm:max-w-[20rem] sm:text-[11px]"
+                        title={p.apiUrl}
+                      >
+                        {p.apiUrl || specHost}
+                      </code>
+                    </td>
+                    <td className={tdSpec}>
+                      <span
+                        className={`inline-block min-w-[4.5rem] border border-zinc-800 px-2 py-1.5 text-center text-[10px] tabular-nums ${
+                          p.status === "running"
+                            ? "bg-zinc-900/40 text-amber-500"
+                            : "bg-zinc-900/20 text-zinc-500"
+                        } sm:text-[11px]`}
+                      >
+                        {uptimeReadoutForStatus(p.status)}
+                      </span>
+                    </td>
+                    <td
+                      className={`${tdSpec} w-[1%] whitespace-nowrap text-right`}
+                    >
+                      <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDetailSlug(p.slug)}
+                          className={rowActionClass}
+                        >
+                          [ CONSOLE ]
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void runRepairFromTable(p.slug)}
+                          className={rowActionClass}
+                        >
+                          [ REPAIR ]
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            busy ||
+                            (p.status !== "running" && p.status !== "partial")
+                          }
+                          onClick={() => void stopFromTable(p.slug)}
+                          className={rowActionClass}
+                        >
+                          [ STOP ]
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
+
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-600">
+        WIRE // FLUX ORCHESTRATION // API ROUTES LIVE
+      </p>
+
+      {detailSlug && detailProject ? (
+        <div
+          className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-10 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setDetailSlug(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl pb-20"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setDetailSlug(null)}
+              className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center border border-zinc-600 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <ProjectCard
+              key={detailProject.id}
+              project={detailProject}
+              onDelete={() => {
+                handleProjectDeleted(detailProject.slug);
+                setDetailSlug(null);
+              }}
+              onSettingsSaved={handleSettingsSavedClearCredentials}
+              onCredentialsRevealed={handleCredentialsRevealed}
+              onRepaired={() => handleProjectRepaired(detailProject.slug)}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {createOpen ? (
         <div
@@ -1187,7 +531,7 @@ export default function ProjectsPage() {
           onClick={closeCreateModal}
         >
           <div
-            className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900"
+            className="relative w-full max-w-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-project-title"
@@ -1197,44 +541,44 @@ export default function ProjectsPage() {
               type="button"
               onClick={closeCreateModal}
               disabled={creating}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
               aria-label="Close"
             >
-              <X className="h-5 w-5" aria-hidden />
+              <X className="h-5 w-5" />
             </button>
 
             <div className="pr-10">
               <h2
                 id="create-project-title"
-                className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+                className="text-lg font-semibold text-zinc-100"
               >
                 New project
               </h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1 text-sm text-zinc-500">
                 Provisions Postgres and PostgREST (this may take a minute).
               </p>
 
               {createLimitBanner === "hobby" ? (
                 <div
-                  className="mt-5 flex flex-col gap-3 rounded-xl border border-amber-300/80 bg-gradient-to-br from-red-50 to-amber-50 p-4 dark:border-amber-700/60 dark:from-red-950/50 dark:to-amber-950/40"
+                  className="mt-5 flex flex-col gap-3 border border-amber-500/30 bg-amber-950/20 p-4"
                   role="alert"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-200/90 dark:bg-amber-900/80">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/20">
                       <AlertTriangle
-                        className="h-5 w-5 text-amber-800 dark:text-amber-200"
+                        className="h-5 w-5 text-amber-500"
                         aria-hidden
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-red-900 dark:text-red-200">
+                      <p className="text-sm font-semibold text-amber-200">
                         Free tier limit reached (2/2 projects).
                       </p>
-                      <p className="mt-1 text-sm text-amber-900/90 dark:text-amber-100/90">
+                      <p className="mt-1 text-sm text-amber-100/80">
                         Delete a project or upgrade to create more.
                       </p>
                       {billingError ? (
-                        <p className="mt-2 text-sm text-red-700 dark:text-red-400">
+                        <p className="mt-2 text-sm text-red-400">
                           {billingError}
                         </p>
                       ) : null}
@@ -1242,7 +586,7 @@ export default function ProjectsPage() {
                         type="button"
                         onClick={() => void startProCheckout()}
                         disabled={upgradeLoading}
-                        className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-red-600 to-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="mt-3 inline-flex items-center justify-center gap-2 border border-amber-500/50 bg-amber-950/40 px-4 py-2 text-sm font-medium text-amber-200 transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {upgradeLoading ? (
                           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -1256,14 +600,14 @@ export default function ProjectsPage() {
 
               {createLimitBanner === "pro" ? (
                 <div
-                  className="mt-5 flex items-start gap-3 rounded-xl border border-amber-300/80 bg-amber-50 p-4 dark:border-amber-700/60 dark:bg-amber-950/50"
+                  className="mt-5 flex items-start gap-3 border border-amber-500/30 bg-amber-950/20 p-4"
                   role="alert"
                 >
                   <AlertTriangle
-                    className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300"
+                    className="mt-0.5 h-5 w-5 shrink-0 text-amber-500"
                     aria-hidden
                   />
-                  <p className="text-sm text-amber-950 dark:text-amber-100">
+                  <p className="text-sm text-amber-100">
                     You&apos;ve reached the project limit for your Pro plan (10
                     projects).
                   </p>
@@ -1273,7 +617,7 @@ export default function ProjectsPage() {
               <form onSubmit={(e) => void onCreate(e)} className="mt-6">
                 <label
                   htmlFor="project-name"
-                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
+                  className="block text-sm font-medium text-zinc-200"
                 >
                   Name
                 </label>
@@ -1282,29 +626,27 @@ export default function ProjectsPage() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none transition-shadow focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-950"
+                  className="mt-2 w-full border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200 outline-none transition-shadow focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/30"
                   placeholder="my-app"
                   required
                   disabled={creating}
                 />
                 {createError ? (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
-                    {createError}
-                  </p>
+                  <p className="mt-2 text-sm text-red-400">{createError}</p>
                 ) : null}
                 <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
                   <button
                     type="button"
                     onClick={closeCreateModal}
                     disabled={creating}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    className="px-4 py-2 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-60"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={creating}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    className="inline-flex items-center justify-center gap-2 border border-zinc-600 bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-white disabled:opacity-60"
                   >
                     {creating ? (
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

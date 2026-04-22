@@ -39,7 +39,7 @@ function withCoercedAccountTimestamps(adapter: Adapter): Adapter {
 
 declare module "next-auth" {
   interface Session {
-    user: { id: string } & DefaultSession["user"];
+    user: { id: string; githubLogin?: string | null } & DefaultSession["user"];
   }
 }
 
@@ -67,13 +67,24 @@ function coreAuthConfig(): Omit<NextAuthConfig, "adapter"> {
         }
         return true;
       },
-      async jwt({ token, user }) {
+      async jwt({ token, user, account, profile }) {
         if (user?.id) token.id = user.id;
+        if (
+          account?.provider === "github" &&
+          profile &&
+          typeof profile === "object" &&
+          "login" in profile
+        ) {
+          token.githubLogin = (profile as { login: string }).login;
+        }
         return token;
       },
       async session({ session, token }) {
         const id = (token.id as string | undefined) ?? token.sub;
         if (id) session.user.id = id;
+        if (token.githubLogin != null) {
+          session.user.githubLogin = token.githubLogin as string;
+        }
         return session;
       },
     },

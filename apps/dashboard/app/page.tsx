@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { FluxLanding } from "@/src/components/flux-landing";
 
-export default function Home(): never {
-  redirect("/projects");
+export default function Home() {
+  return <FluxLanding />;
 }
