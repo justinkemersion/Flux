@@ -73,6 +73,15 @@ export function ProjectsFleetBar({
           >
             API_KEYS
           </Link>
+          <span className="text-zinc-700" aria-hidden>
+            /
+          </span>
+          <Link
+            href="/docs"
+            className={`shrink-0 text-zinc-500 transition-colors hover:text-zinc-200 ${focus}`}
+          >
+            CODEX
+          </Link>
         </nav>
 
         <div className="flex justify-center">

@@ -3,6 +3,7 @@ import type {
   FluxProjectSummary,
   ImportSqlFileResult,
 } from "@flux/core/standalone";
+import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 
 const DEFAULT_BASE = "https://flux.vsl-base.com/api";
@@ -21,6 +22,28 @@ const fluxProjectSummarySchema = z.object({
 });
 
 const listProjectsResponseSchema = z.array(fluxProjectSummarySchema);
+
+const createProjectSecretsSchema = z.object({
+  pgrstJwtSecret: z.string(),
+  postgresPassword: z.string(),
+  postgresContainerHost: z.string(),
+  note: z.string(),
+});
+
+const createProjectResponseSchema = z.object({
+  summary: fluxProjectSummarySchema,
+  secrets: createProjectSecretsSchema,
+});
+
+const pushSqlResponseSchema = z.object({
+  ok: z.boolean().optional(),
+  tablesMoved: z.number(),
+  sequencesMoved: z.number(),
+  viewsMoved: z.number(),
+});
+
+export type CreateProjectSecrets = z.infer<typeof createProjectSecretsSchema>;
+export type CreateProjectResult = z.infer<typeof createProjectResponseSchema>;
 
 /**
  * Base URL: `https://flux.vsl-base.com/api` by default, or `process.env.FLUX_API_BASE` (no trailing slash).
@@ -100,30 +123,142 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------------
-  // POST /projects — provision (body: { name, stripSupabaseRestPrefix?, hash? })
+  // POST /api/cli/v1/create — body: { name, stripSupabaseRestPrefix? }
   // ---------------------------------------------------------------------------
-  createProject(_input: {
+  async createProject(input: {
     name: string;
     stripSupabaseRestPrefix: boolean;
-    hash?: string;
-  }): Promise<{
-    name: string;
-    slug: string;
-    hash: string;
-    apiUrl: string;
-    postgresUrl: string;
-    stripSupabaseRestPrefix: boolean;
-  }> {
-    return Promise.reject(this.notImplemented("createProject"));
+  }): Promise<CreateProjectResult> {
+    const token = process.env.FLUX_API_TOKEN?.trim();
+    if (!token) {
+      throw new Error(
+        "Missing FLUX_API_TOKEN. Export it or run flux login (when available).",
+      );
+    }
+    const url = `${this.baseUrl}/cli/v1/create`;
+    const body: { name: string; stripSupabaseRestPrefix?: boolean } = {
+      name: input.name.trim(),
+    };
+    if (input.stripSupabaseRestPrefix === false) {
+      body.stripSupabaseRestPrefix = false;
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) {
+      throw new Error(
+        "Invalid or expired API token. Run flux login.",
+      );
+    }
+    const text = await res.text();
+    let raw: unknown;
+    try {
+      raw = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI create: response was not JSON (${res.status}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (!res.ok) {
+      const msg =
+        raw &&
+        typeof raw === "object" &&
+        raw !== null &&
+        "error" in raw &&
+        typeof (raw as { error: unknown }).error === "string"
+          ? (raw as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = createProjectResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        "CLI create: response did not match expected { summary, secrets } shape.",
+      );
+    }
+    return parsed.data;
   }
 
   // ---------------------------------------------------------------------------
-  // POST /projects/{slug}/import-sql?hash= — push SQL (multipart or JSON ref TBD)
+  // POST /api/cli/v1/push — body: { slug, hash, sql }
   // ---------------------------------------------------------------------------
-  importSqlFile(
-    _project: string,
-    _filePath: string,
-    _hash: string,
+  async pushSql(input: {
+    slug: string;
+    hash: string;
+    sql: string;
+  }): Promise<ImportSqlFileResult> {
+    const token = process.env.FLUX_API_TOKEN?.trim();
+    if (!token) {
+      throw new Error(
+        "Missing FLUX_API_TOKEN. Export it or run flux login (when available).",
+      );
+    }
+    const url = `${this.baseUrl}/cli/v1/push`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        slug: input.slug.trim(),
+        hash: input.hash.trim().toLowerCase(),
+        sql: input.sql,
+      }),
+    });
+    if (res.status === 401) {
+      throw new Error(
+        "Invalid or expired API token. Run flux login.",
+      );
+    }
+    const text = await res.text();
+    let raw: unknown;
+    try {
+      raw = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI push: response was not JSON (${res.status}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (!res.ok) {
+      const msg =
+        raw &&
+        typeof raw === "object" &&
+        raw !== null &&
+        "error" in raw &&
+        typeof (raw as { error: unknown }).error === "string"
+          ? (raw as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = pushSqlResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        "CLI push: response did not match expected ImportSqlFileResult shape.",
+      );
+    }
+    return {
+      tablesMoved: parsed.data.tablesMoved,
+      sequencesMoved: parsed.data.sequencesMoved,
+      viewsMoved: parsed.data.viewsMoved,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reads a local .sql file and applies it via {@link pushSql} (no local Docker).
+  // Supabase / sanitize options are reserved for a future control-plane import path.
+  // ---------------------------------------------------------------------------
+  async importSqlFile(
+    project: string,
+    filePath: string,
+    hash: string,
     _options: {
       supabaseCompat: boolean;
       sanitizeForTarget: boolean;
@@ -131,7 +266,14 @@ export class ApiClient {
       disableRowLevelSecurityInApi?: boolean;
     },
   ): Promise<ImportSqlFileResult> {
-    return Promise.reject(this.notImplemented("importSqlFile"));
+    const s = await stat(filePath);
+    if (s.size > 4 * 1024 * 1024) {
+      throw new Error(
+        "SQL file is larger than 4 MiB (server limit for flux push).",
+      );
+    }
+    const sql = await readFile(filePath, "utf8");
+    return this.pushSql({ slug: project, hash, sql });
   }
 
   // ---------------------------------------------------------------------------

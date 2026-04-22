@@ -8,7 +8,7 @@ import type {
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
-import { getApiClient } from "./api-client";
+import { type CreateProjectResult, getApiClient } from "./api-client";
 import { type FluxJson, readFluxJson } from "./flux-config";
 import {
   resolveHash,
@@ -58,32 +58,66 @@ function printErrorAndExit(err: unknown): void {
   process.exit(1);
 }
 
+function printProjectSummaryCard(
+  result: CreateProjectResult,
+  nameArg: string,
+): void {
+  const { summary, secrets } = result;
+  const inner = 62;
+  const hr = chalk.dim("─".repeat(inner));
+  const row = (key: string, val: string): void => {
+    console.log(
+      `${chalk.dim("  │ ")}${chalk.yellow(key.padEnd(16))}${chalk.white(val)}`,
+    );
+  };
+  console.log();
+  console.log(chalk.dim("  ┌") + hr + chalk.dim("┐"));
+  console.log(
+    `${chalk.dim("  │ ")}${chalk.bold.cyan("PROJECT_SUMMARY")}${chalk.dim(" ".repeat(Math.max(0, inner - 17)))}${chalk.dim("│")}`,
+  );
+  console.log(chalk.dim("  ├") + hr + chalk.dim("┤"));
+  row("name_arg", nameArg);
+  row("slug", summary.slug);
+  row("hash", summary.hash);
+  row("status", summary.status);
+  row("api_url", summary.apiUrl);
+  console.log(chalk.dim("  ├") + hr + chalk.dim("┤"));
+  console.log(
+    `${chalk.dim("  │ ")}${chalk.bold.magenta("SECRETS")}${chalk.dim(" ".repeat(Math.max(0, inner - 8)))}${chalk.dim("│")}`,
+  );
+  console.log(chalk.dim("  ├") + hr + chalk.dim("┤"));
+  row("postgres_pw", secrets.postgresPassword);
+  row("jwt_secret", secrets.pgrstJwtSecret);
+  row("pg_container", secrets.postgresContainerHost);
+  console.log(chalk.dim("  └") + hr + chalk.dim("┘"));
+  console.log();
+  for (const line of secrets.note.match(/.{1,76}/g) ?? [secrets.note]) {
+    console.log(chalk.dim(`    ${line}`));
+  }
+  console.log();
+}
+
 async function cmdCreate(
   name: string,
   options: { noSupabaseRestPath?: boolean; hash?: string },
 ): Promise<void> {
+  if (options.hash?.trim()) {
+    console.log(
+      chalk.dim(
+        "Note: --hash is ignored for remote create; the control plane allocates a unique 7-hex id.",
+      ),
+    );
+  }
   const client = getApiClient();
   console.log(chalk.blue("Creating project…"));
-  const spin = ora("Calling control plane…").start();
+  const spin = ora("POST /api/cli/v1/create…").start();
   try {
-    const project = await client.createProject({
+    const result = await client.createProject({
       name,
       stripSupabaseRestPrefix: options.noSupabaseRestPath !== true,
-      ...(options.hash?.trim() ? { hash: options.hash.trim() } : {}),
     });
-    spin.succeed("Provisioned");
-    printBanner("Project ready");
-    console.log(
-      chalk.green("✓"),
-      chalk.white("Created"),
-      chalk.yellow(project.name),
-      chalk.dim(`(${project.slug} · hash=${project.hash})`),
-    );
-    console.log();
-    console.log(chalk.dim("  API"), chalk.white(project.apiUrl));
-    if (project.postgresUrl) {
-      console.log(chalk.dim("  Postgres"), chalk.white(project.postgresUrl));
-    }
+    spin.succeed("Created");
+    printProjectSummaryCard(result, name);
   } catch (e) {
     spin.fail("Failed");
     throw e;
@@ -127,11 +161,13 @@ async function cmdPush(
     if (options.supabaseCompat) {
       spinner.stop();
       console.log(
-        chalk.dim("  Supabase compatibility mode. Adjusting schemas after import (when API is available)."),
+        chalk.dim(
+          "  Supabase compatibility mode. Remote control plane applies the raw SQL as-is; local transforms are not run.",
+        ),
       );
       if (options.disableApiRls) {
         console.log(
-          chalk.dim("  Will disable RLS on api tables that have it when supported."),
+          chalk.dim("  (RLS options are not applied on remote push yet.)"),
         );
       }
       spinner.start("Applying…");
@@ -529,7 +565,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--hash <hex>",
-      "Deterministic 7-hex hash for this project (server-dependent)",
+      "Ignored for remote API (server allocates hash); reserved for local control plane",
     )
     .action(async (name: string) => {
       try {

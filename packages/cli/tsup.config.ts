@@ -8,7 +8,12 @@ export default defineConfig({
   target: "node20",
   clean: true,
   sourcemap: true,
-  dts: true,
+  dts: {
+    compilerOptions: {
+      // DTS worker injects deprecated `baseUrl`; TS 6 wants this here, not only in tsconfig, to avoid TS5101.
+      ignoreDeprecations: "6.0",
+    },
+  },
   treeshake: true,
   bundle: true,
   banner: { js: "#!/usr/bin/env node" },

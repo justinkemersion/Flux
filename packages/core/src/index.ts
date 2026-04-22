@@ -215,6 +215,23 @@ function deterministicPostgresPasswordFromDevSecret(
     .slice(0, 32);
 }
 
+/**
+ * Deterministic HMAC-SHA256 PostgreSQL superuser password for a tenant, matching
+ * `FLUX_DEV_POSTGRES_PASSWORD` / `FLUX_PROJECT_PASSWORD_SECRET` at provision time (same bytes as
+ * `deterministicPostgresPasswordFromDevSecret` for {@link tenantVolumeName} of this `(hash, slug)`).
+ */
+export function deriveTenantPostgresPasswordFromSecret(
+  secret: string,
+  hash: string,
+  slugOrName: string,
+): string {
+  const slug = slugifyProjectName(slugOrName);
+  return deterministicPostgresPasswordFromDevSecret(
+    secret.trim(),
+    tenantVolumeName(hash, slug),
+  );
+}
+
 /** Removes API + DB containers, the data volume, and the per-tenant private network when `privateNetworkName` is set (404-safe). */
 async function removeApiPgAndVolumeForProvision(
   docker: Docker,
@@ -473,7 +490,8 @@ function postgrestContainerName(hash: string, slug: string): string {
   return `${fluxTenantStackBaseId(hash, slug)}-api`;
 }
 
-function tenantVolumeName(hash: string, slug: string): string {
+/** `flux-{hash}-{slug}-db-data` — Docker named volume for tenant PG data (used in deterministic password derivation). */
+export function tenantVolumeName(hash: string, slug: string): string {
   return `${fluxTenantStackBaseId(hash, slug)}-db-data`;
 }
 
@@ -2238,6 +2256,56 @@ export class ProjectManager {
     );
     await new Promise((resolve) => setTimeout(resolve, 500));
     const apiName = postgrestContainerName(hash, slug);
+    try {
+      await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
+    } catch (err: unknown) {
+      const code = getHttpStatus(err);
+      if (code === 404 || code === 409) return;
+      throw err;
+    }
+  }
+
+  /**
+   * Data-plane SQL push (CLI / control plane): runs the script in a **single** transaction, ends with
+   * `NOTIFY pgrst, 'reload schema'`, then `SIGUSR1` on the PostgREST API container. Uses `psql` via
+   * `docker exec` to the running tenant DB (works with remote Docker; no host TCP to tenant PG).
+   *
+   * If `FLUX_PROJECT_PASSWORD_SECRET` or `FLUX_DEV_POSTGRES_PASSWORD` is set, requires the
+   * HMAC-derived password to match the container’s `POSTGRES_PASSWORD` (see
+   * {@link deriveTenantPostgresPasswordFromSecret}).
+   */
+  async pushSqlFromCli(
+    projectName: string,
+    hash: string,
+    sql: string,
+  ): Promise<void> {
+    const creds = await this.resolveRunningPostgresCredentials(projectName, hash);
+    const secret =
+      process.env.FLUX_PROJECT_PASSWORD_SECRET?.trim() ||
+      process.env.FLUX_DEV_POSTGRES_PASSWORD?.trim();
+    if (secret) {
+      const derived = deriveTenantPostgresPasswordFromSecret(
+        secret,
+        creds.hash,
+        creds.slug,
+      );
+      if (derived !== creds.password) {
+        throw new Error(
+          "HMAC password check failed: FLUX_PROJECT_PASSWORD_SECRET or FLUX_DEV_POSTGRES_PASSWORD does not match this project's running Postgres (POSTGRES_PASSWORD).",
+        );
+      }
+    }
+
+    const wrapped = `BEGIN;\n${sql}\nNOTIFY pgrst, 'reload schema';\nCOMMIT;\n`;
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      creds.containerId,
+      creds.password,
+      wrapped,
+      POSTGRES_USER,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const apiName = postgrestContainerName(hash, creds.slug);
     try {
       await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
     } catch (err: unknown) {
