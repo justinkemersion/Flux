@@ -1,6 +1,7 @@
 # Flux Next.js web app (dashboard). Requires Traefik on `flux-network` (see scratch/docker-compose.yml).
-# Build from repo root: docker compose -f docker/web/docker-compose.yml build
-# Run: docker compose -f docker/web/docker-compose.yml up -d
+# Build / restart: run `bash docker/web/deploy.sh` from repo root (Hetzner-friendly; see script for prune/env).
+# Or manually: docker compose -f docker/web/docker-compose.yml build
+#            docker compose -f docker/web/docker-compose.yml up -d
 #
 # Routes:
 #   https://flux.vsl-base.com       — UI

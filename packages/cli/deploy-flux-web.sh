@@ -19,8 +19,8 @@ ssh -A "$REMOTE" "test -f $APP_DIR/docker/web/.env" || {
   exit 1
 }
 
-echo "Building and starting flux-web..."
-ssh -A "$REMOTE" "cd $APP_DIR && docker compose -f docker/web/docker-compose.yml build && docker compose -f docker/web/docker-compose.yml up -d"
+echo "Building and starting flux-web (docker/web/deploy.sh)..."
+ssh -A "$REMOTE" "cd $APP_DIR && bash docker/web/deploy.sh"
 
 echo
 echo "Deployed."
