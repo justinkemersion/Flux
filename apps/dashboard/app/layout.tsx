@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "@/src/components/Providers";
 import { WorkspaceHeader } from "@/src/components/workspace-header";
+import { auth } from "@/src/lib/auth";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -21,18 +22,19 @@ export const metadata: Metadata = {
     "Deterministic orchestration: isolated PostgreSQL and PostgREST per project. flux.vsl-base.com",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-zinc-50 font-sans text-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
-        <Providers>
+        <Providers session={session}>
           <WorkspaceHeader />
           {children}
         </Providers>

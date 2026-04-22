@@ -34,7 +34,7 @@ export function WorkspaceHeader() {
   const isLanding = pathname === "/";
   const contentMaxClassName = isLanding
     ? "max-w-5xl"
-    : pathname === "/projects"
+    : pathname.startsWith("/settings")
       ? "max-w-6xl"
       : "max-w-3xl";
 
@@ -108,7 +108,9 @@ function StatusBarSession({ isLanding }: { isLanding: boolean }) {
     return (
       <button
         type="button"
-        onClick={() => void signIn("github")}
+        onClick={() =>
+          void signIn("github", { callbackUrl: pathname || "/" })
+        }
         className={`${muted} rounded-md transition-colors ${hoverMuted} ${focus}`}
       >
         Sign in with GitHub
