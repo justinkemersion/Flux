@@ -9,6 +9,9 @@ export async function register(): Promise<void> {
       const { initSystemDb } = await import("./src/lib/db");
       await initSystemDb();
       console.log("[flux] System DB ready.");
+      const { startFleetMonitor } = await import("./src/lib/fleet-monitor");
+      startFleetMonitor();
+      console.log("[flux] Fleet monitor started (2m interval).");
     } catch (err) {
       console.error(
         "[flux] System DB initialisation failed — auth and project APIs will be unavailable until Docker is reachable:",

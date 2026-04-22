@@ -4,6 +4,10 @@ import { Check, Clipboard, Loader2, Wrench } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { ProjectRow } from "@/src/components/projects/project-card";
+import {
+  deriveTelemetryDisplay,
+  fleetTelemetryLabel,
+} from "@/src/lib/fleet-telemetry-display";
 import { projectApiInterface } from "@/src/lib/routing-identity";
 
 type ServerStatus = ProjectRow["status"];
@@ -31,9 +35,44 @@ function fleetStatusLabel(status: DisplayStatus): string {
   }
 }
 
-function StatusTag({ status }: { status: DisplayStatus }) {
+function StatusTag({
+  status,
+  project,
+}: {
+  status: DisplayStatus;
+  project: ProjectRow;
+}) {
   const isRunning = status === "running";
   const isTransition = status === "transitioning";
+  const hasMesh = project.lastHeartbeatAt != null || project.healthStatus != null;
+  if (hasMesh) {
+    const m = deriveTelemetryDisplay(
+      project.healthStatus,
+      project.lastHeartbeatAt,
+    );
+    const dotClass =
+      m === "operational"
+        ? "bg-emerald-500"
+        : m === "stale"
+          ? "bg-amber-500"
+          : "bg-red-500";
+    return (
+      <span className="inline-flex max-w-[min(100%,16rem)] flex-col items-end gap-0.5">
+        <span className="inline-flex items-center justify-end gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-200">
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`}
+            aria-hidden
+          />
+          <span className="text-right">
+            {fleetTelemetryLabel(m)}
+          </span>
+        </span>
+        <span className="text-right font-mono text-[9px] uppercase tracking-[0.1em] text-zinc-500">
+          stack {fleetStatusLabel(status)}
+        </span>
+      </span>
+    );
+  }
   return (
     <span className="inline-flex max-w-[min(100%,14rem)] items-center justify-end gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-400">
       {isRunning ? (
@@ -216,7 +255,7 @@ export function ProjectSummaryCard({
         </div>
 
         <div className="flex shrink-0 justify-end sm:pt-0.5">
-          <StatusTag status={displayStatus} />
+          <StatusTag status={displayStatus} project={p} />
         </div>
       </div>
 

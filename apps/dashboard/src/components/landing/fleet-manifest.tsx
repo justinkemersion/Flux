@@ -1,26 +1,30 @@
 import Link from "next/link";
+import type { FleetShowcaseCard } from "@/src/lib/fleet-showcase";
+import {
+  type FleetTelemetryLevel,
+  fleetTelemetryLabel,
+} from "@/src/lib/fleet-telemetry-display";
 
 const focus =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 
-type FleetProject = {
-  name: string;
-  host: string;
-  href: string;
-  description: string;
+const dot: Record<FleetTelemetryLevel, string> = {
+  operational: "bg-emerald-500",
+  stale: "bg-amber-500",
+  offline: "bg-red-500",
 };
 
-const showcase: FleetProject[] = [
-  {
-    name: "YeastCoast",
-    host: "yeastcoast.vsl-base.com",
-    href: "https://yeastcoast.vsl-base.com",
-    description:
-      "Flux infrastructure: dedicated PostgREST + Postgres for a production app — share beer recipes, fork brews, track ingredients, fermentation, and simulation.",
-  },
-];
+const label: Record<FleetTelemetryLevel, string> = {
+  operational: "text-emerald-400/95",
+  stale: "text-amber-400/95",
+  offline: "text-red-400/95",
+};
 
-export function FleetManifest() {
+type Props = {
+  showcase: FleetShowcaseCard[];
+};
+
+export function FleetManifest({ showcase }: Props) {
   return (
     <section
       aria-labelledby="fleet-heading"
@@ -34,7 +38,7 @@ export function FleetManifest() {
       </h2>
       <p className="mt-2 max-w-2xl font-sans text-xs leading-relaxed text-zinc-500">
         Live tenant stacks on the public mesh: isolated engines, one contract, deterministic
-        operations.
+        operations. Mesh status from PostgREST probes (2m).
       </p>
       <ul className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
         {showcase.map((p) => (
@@ -46,12 +50,15 @@ export function FleetManifest() {
                 <h3 className="font-sans text-lg font-semibold tracking-tight text-zinc-100">
                   {p.name}
                 </h3>
-                <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-400">
+                <div
+                  className={`flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] ${label[p.level]}`}
+                  title="Mesh probe: running + fresh heartbeat = Operational"
+                >
                   <span
-                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot[p.level]}`}
                     aria-hidden
                   />
-                  <span>Status: Operational</span>
+                  <span>Status: {fleetTelemetryLabel(p.level)}</span>
                 </div>
               </div>
               <p className="mt-1 font-mono text-xs text-zinc-400">

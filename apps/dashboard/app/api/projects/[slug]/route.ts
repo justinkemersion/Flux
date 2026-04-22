@@ -70,6 +70,10 @@ export async function GET(
         process.env.NODE_ENV === "production",
       ),
     createdAt: project.createdAt,
+    healthStatus: project.healthStatus ?? null,
+    lastHeartbeatAt: project.lastHeartbeatAt
+      ? project.lastHeartbeatAt.toISOString()
+      : null,
   });
 }
 

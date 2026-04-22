@@ -1,6 +1,7 @@
 "use client";
 
 import { FleetManifest } from "@/src/components/landing/fleet-manifest";
+import type { FleetShowcaseCard } from "@/src/lib/fleet-showcase";
 import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
 
@@ -13,7 +14,11 @@ const focusSecondary =
 const focusLink =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
 
-export function FluxLanding() {
+type Props = {
+  fleetShowcase: FleetShowcaseCard[];
+};
+
+export function FluxLanding({ fleetShowcase }: Props) {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-zinc-950 text-zinc-100">
       <div className="flux-hero-grid border-b border-zinc-800/80">
@@ -40,7 +45,7 @@ export function FluxLanding() {
       </div>
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col bg-zinc-950 px-6 py-16 text-zinc-100 sm:px-10 sm:py-20">
-        <FleetManifest />
+        <FleetManifest showcase={fleetShowcase} />
 
         <section
           id="install"

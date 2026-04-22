@@ -101,6 +101,10 @@ export const projects = pgTable(
     lastAccessedAt: timestamp("last_accessed_at", { mode: "date" })
       .notNull()
       .defaultNow(),
+    /** Last fleet monitor probe (PostgREST HTTP); null until the first check. */
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { mode: "date" }),
+    /** Last probe outcome: `running` (2xx/3xx) or `error`. */
+    healthStatus: text("health_status"),
   },
   (t) => [uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug)],
 );

@@ -183,6 +183,11 @@ async function _init(): Promise<void> {
   `);
 
   await pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMPTZ;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS health_status TEXT;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS flux_api_keys (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

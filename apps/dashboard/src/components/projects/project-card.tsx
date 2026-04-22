@@ -15,6 +15,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
 import {
   useCallback,
   useEffect,
@@ -38,6 +39,9 @@ export type ProjectRow = {
   status: ServerStatus;
   apiUrl: string;
   createdAt: string;
+  /** Mesh probe (2m) — from flux-system. */
+  healthStatus?: string | null;
+  lastHeartbeatAt?: string | null;
   /** Loaded only after "Reveal keys" — not returned by list API. */
   anonKey?: string | null;
   serviceRoleKey?: string | null;
@@ -622,6 +626,10 @@ export function ProjectCard({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <StatusBadge status={currentStatus} />
+            <MeshTelemetryPill
+              healthStatus={p.healthStatus}
+              lastHeartbeatAt={p.lastHeartbeatAt}
+            />
             {currentStatus === "missing" || currentStatus === "corrupted" ? (
               <button
                 type="button"

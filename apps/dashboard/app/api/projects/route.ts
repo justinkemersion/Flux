@@ -93,6 +93,10 @@ export async function GET(): Promise<Response> {
         s?.apiUrl ??
         fluxApiUrlForSlug(p.slug, p.hash, process.env.NODE_ENV === "production"),
       createdAt: p.createdAt,
+      healthStatus: p.healthStatus ?? null,
+      lastHeartbeatAt: p.lastHeartbeatAt
+        ? p.lastHeartbeatAt.toISOString()
+        : null,
     };
   });
 
