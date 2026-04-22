@@ -51,11 +51,39 @@ export default function ProjectsPage() {
     setLoadError(null);
     try {
       const res = await fetch("/api/projects");
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Request failed (${String(res.status)})`);
+      // Read body once. `res.json()` throws if the body is HTML (e.g. proxy) or not JSON — the
+      // same symptom as "JSON.parse: unexpected character at line 1 column 1".
+      const text = await res.text();
+      let payload: unknown;
+      try {
+        payload = text.trim() ? (JSON.parse(text) as unknown) : null;
+      } catch {
+        throw new Error(
+          "The projects API did not return valid JSON. If you use a reverse proxy, ensure /api is forwarded to this Next.js app, not a static file or other host.",
+        );
       }
-      const data = (await res.json()) as {
+      if (!res.ok) {
+        const msg =
+          payload &&
+          typeof payload === "object" &&
+          payload !== null &&
+          "error" in payload &&
+          typeof (payload as { error: unknown }).error === "string"
+            ? (payload as { error: string }).error
+            : `Request failed (${String(res.status)})`;
+        throw new Error(msg);
+      }
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !("projects" in payload) ||
+        !Array.isArray((payload as { projects: unknown }).projects)
+      ) {
+        throw new Error(
+          "Invalid response: expected JSON with a projects array.",
+        );
+      }
+      const data = payload as {
         projects: ProjectRow[];
         plan?: "hobby" | "pro";
       };
