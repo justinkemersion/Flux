@@ -57,19 +57,26 @@ export {
 export const FLUX_NETWORK_NAME = "flux-network";
 
 /**
- * Docker label for tenant containers (Postgres, PostgREST) created by Flux so UIs can filter
- * out infrastructure (Traefik, dashboard, etc.).
+ * Docker label: Flux-managed Postgres / PostgREST stacks (filter from Traefik, dashboard, etc.).
+ * Legacy `vessel.flux.managed` is stripped on Traefik label reconcile.
  */
-export const FLUX_VESSEL_MANAGED_LABEL = "vessel.flux.managed" as const;
+export const FLUX_VESSEL_MANAGED_LABEL = "vessel.managed" as const;
 export const FLUX_VESSEL_MANAGED_VALUE = "true" as const;
+export const FLUX_VESSEL_PURPOSE_LABEL = "vessel.purpose" as const;
+export const FLUX_VESSEL_PROJECT_SLUG_LABEL = "vessel.project.slug" as const;
+export const FLUX_VESSEL_PURPOSE_TENANT = "tenant" as const;
+export const FLUX_VESSEL_PURPOSE_CONTROL_PLANE = "control-plane" as const;
+
+const FLUX_VESSEL_MANAGED_LABEL_LEGACY = "vessel.flux.managed" as const;
 
 const FLUX_TENANT_DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024;
 /** 0.5 vCPU for each of DB and API (tunable; stack uses ~1 core under full load on both). */
 const FLUX_TENANT_DEFAULT_NANOCPUS = 500_000_000;
 
 /**
- * Per-tenant memory cap for Postgres and PostgREST (bytes), default 256 MiB. Override with
- * `FLUX_TENANT_MEMORY_BYTES` (decimal integer).
+ * Per-tenant memory reservation (cgroup soft hint) and default cap (bytes), default 256 MiB.
+ * Override with `FLUX_TENANT_MEMORY_BYTES` (decimal integer). Used for both `MemoryReservation`
+ * and `Memory` on tenant containers unless the container already has stricter inspect values.
  */
 export function fluxTenantMemoryLimitBytes(): number {
   const raw = process.env.FLUX_TENANT_MEMORY_BYTES?.trim();
@@ -100,8 +107,12 @@ const FLUX_TENANT_RESTART_POLICY = {
   Name: "unless-stopped" as const,
 };
 
-function managedTenantContainerLabels(): Record<string, string> {
-  return { [FLUX_VESSEL_MANAGED_LABEL]: FLUX_VESSEL_MANAGED_VALUE };
+function tenantStackHostMemoryConfig(): {
+  Memory: number;
+  MemoryReservation: number;
+} {
+  const b = fluxTenantMemoryLimitBytes();
+  return { Memory: b, MemoryReservation: b };
 }
 
 /**
@@ -447,6 +458,27 @@ function isPlatformSystemStackSlug(slug: string): boolean {
   return slug === "flux-system";
 }
 
+/** Purpose + slug metadata for Flux-managed DB/API containers (see {@link FLUX_VESSEL_MANAGED_LABEL}). */
+function vesselContainerMetadataLabels(slug: string): Record<string, string> {
+  const out: Record<string, string> = {
+    [FLUX_VESSEL_MANAGED_LABEL]: FLUX_VESSEL_MANAGED_VALUE,
+  };
+  if (isPlatformSystemStackSlug(slug)) {
+    out[FLUX_VESSEL_PURPOSE_LABEL] = FLUX_VESSEL_PURPOSE_CONTROL_PLANE;
+  } else {
+    out[FLUX_VESSEL_PURPOSE_LABEL] = FLUX_VESSEL_PURPOSE_TENANT;
+    out[FLUX_VESSEL_PROJECT_SLUG_LABEL] = slug;
+  }
+  return out;
+}
+
+function omitLegacyVesselManagedLabel(
+  labels: Record<string, string>,
+): Record<string, string> {
+  const { [FLUX_VESSEL_MANAGED_LABEL_LEGACY]: _removed, ...rest } = labels;
+  return rest;
+}
+
 function postgresContainerName(hash: string, slug: string): string {
   return `${fluxTenantStackBaseId(hash, slug)}-db`;
 }
@@ -764,9 +796,7 @@ function postgrestTraefikDockerLabels(
     : corsMw;
   labels[`traefik.http.routers.${traefikSvc}.middlewares`] = middlewares;
 
-  labels[FLUX_VESSEL_MANAGED_LABEL] = FLUX_VESSEL_MANAGED_VALUE;
-
-  return labels;
+  return { ...labels, ...vesselContainerMetadataLabels(slug) };
 }
 
 /**
@@ -795,6 +825,7 @@ function stripAllTraefikLabelsPreservingFluxExtras(
     if (k === "traefik.enable") continue;
     if (k === "traefik.docker.network") continue;
     if (k.startsWith("traefik.")) continue;
+    if (k === FLUX_VESSEL_MANAGED_LABEL_LEGACY) continue;
     out[k] = v;
   }
   return out;
@@ -1540,7 +1571,7 @@ export class ProjectManager {
    * Provisions Postgres on an **internal** per-tenant private bridge (`flux-{hash}-{slug}-net`) and
    * PostgREST on that private network **and** {@link FLUX_NETWORK_NAME} (Traefik). Prevents other
    * `flux-network` services from reaching tenant Postgres. Resource caps and
-   * {@link FLUX_VESSEL_MANAGED_LABEL} are applied to both containers.
+   * {@link FLUX_VESSEL_MANAGED_LABEL} / purpose labels are applied to both containers.
    *
    * A Traefik instance named {@link FLUX_GATEWAY_CONTAINER_NAME} (managed outside this API, e.g. Compose)
    * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.{hash}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
@@ -1802,7 +1833,7 @@ export class ProjectManager {
         ],
         ExposedPorts: { "3000/tcp": {} },
         HostConfig: {
-          Memory: fluxTenantMemoryLimitBytes(),
+          ...tenantStackHostMemoryConfig(),
           NanoCpus: fluxTenantCpuNanoCpus(),
           RestartPolicy: FLUX_TENANT_RESTART_POLICY,
         },
@@ -2044,7 +2075,7 @@ export class ProjectManager {
     const bind = `${opts.volumeName}:/var/lib/postgresql/data`;
     const hostBase = {
       Binds: [bind],
-      Memory: fluxTenantMemoryLimitBytes(),
+      ...tenantStackHostMemoryConfig(),
       NanoCpus: fluxTenantCpuNanoCpus(),
       RestartPolicy: FLUX_TENANT_RESTART_POLICY,
     };
@@ -2052,7 +2083,7 @@ export class ProjectManager {
       return await this.docker.createContainer({
         name: opts.name,
         Image: POSTGRES_IMAGE,
-        Labels: managedTenantContainerLabels(),
+        Labels: vesselContainerMetadataLabels(opts.slug),
         Env: [`POSTGRES_PASSWORD=${opts.password}`],
         HostConfig: hostBase,
         NetworkingConfig: {
@@ -2066,7 +2097,7 @@ export class ProjectManager {
     return await this.docker.createContainer({
       name: opts.name,
       Image: POSTGRES_IMAGE,
-      Labels: managedTenantContainerLabels(),
+      Labels: vesselContainerMetadataLabels(opts.slug),
       Env: [`POSTGRES_PASSWORD=${opts.password}`],
       HostConfig: {
         ...hostBase,
@@ -2113,14 +2144,20 @@ export class ProjectManager {
       typeof hc.Memory === "number" && hc.Memory > 0
         ? hc.Memory
         : fluxTenantMemoryLimitBytes();
+    const memoryReservation =
+      typeof hc.MemoryReservation === "number" && hc.MemoryReservation > 0
+        ? hc.MemoryReservation
+        : fluxTenantMemoryLimitBytes();
     const nanoCpus =
       typeof hc.NanoCpus === "number" && hc.NanoCpus > 0
         ? hc.NanoCpus
         : fluxTenantCpuNanoCpus();
-    const labelMap = {
-      ...managedTenantContainerLabels(),
-      ...(replaceOptions?.labels ?? inspect.Config.Labels ?? {}),
-    };
+    const labelMap =
+      replaceOptions?.labels ??
+      {
+        ...omitLegacyVesselManagedLabel(inspect.Config.Labels ?? {}),
+        ...vesselContainerMetadataLabels(slug),
+      };
 
     const created = await this.docker.createContainer({
       name: apiName,
@@ -2130,6 +2167,7 @@ export class ProjectManager {
       ExposedPorts: inspect.Config.ExposedPorts ?? { "3000/tcp": {} },
       HostConfig: {
         Memory: memory,
+        MemoryReservation: memoryReservation,
         NanoCpus: nanoCpus,
         RestartPolicy: FLUX_TENANT_RESTART_POLICY,
       },
@@ -2922,7 +2960,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   ): Promise<void> {
     try {
       await this.docker.getContainer(containerId).update({
-        Memory: fluxTenantMemoryLimitBytes(),
+        ...tenantStackHostMemoryConfig(),
         NanoCpus: fluxTenantCpuNanoCpus(),
         RestartPolicy: FLUX_TENANT_RESTART_POLICY,
       });
