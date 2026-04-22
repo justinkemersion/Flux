@@ -1,24 +1,29 @@
 "use client";
 
-import { Check, Clipboard, Settings } from "lucide-react";
-import { useState } from "react";
+import { Check, Clipboard, Loader2, Wrench } from "lucide-react";
+import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import type { ProjectRow } from "@/src/components/projects/project-card";
 import { projectApiInterface } from "@/src/lib/routing-identity";
 
 type ServerStatus = ProjectRow["status"];
 
-function statusLabel(status: ServerStatus): string {
+type DisplayStatus = ServerStatus | "transitioning";
+
+function fleetStatusLabel(status: DisplayStatus): string {
   switch (status) {
     case "running":
-      return "Online";
+      return "ACTIVE_RUNNING";
     case "stopped":
-      return "Offline";
+      return "STANDBY_HALTED";
+    case "transitioning":
+      return "POWER_TRANSITION";
     case "partial":
-      return "Partial";
+      return "SUBSYSTEM_PARTIAL";
     case "missing":
-      return "Missing";
+      return "STACK_MISSING";
     case "corrupted":
-      return "Drift";
+      return "CONFIG_DRIFT";
     default: {
       const _e: never = status;
       return _e;
@@ -26,45 +31,77 @@ function statusLabel(status: ServerStatus): string {
   }
 }
 
-function StatusDot({ status }: { status: ServerStatus }) {
-  const cls =
-    status === "running"
-      ? "bg-emerald-500"
-      : status === "partial"
-        ? "bg-orange-500"
-        : status === "stopped"
-          ? "bg-zinc-400 dark:bg-zinc-500"
-          : "bg-red-500";
+function StatusTag({ status }: { status: DisplayStatus }) {
+  const isRunning = status === "running";
+  const isTransition = status === "transitioning";
   return (
-    <span
-      className={`h-2 w-2 shrink-0 rounded-full ${cls}`}
-      aria-hidden
-    />
+    <span className="inline-flex max-w-[min(100%,14rem)] items-center justify-end gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-400">
+      {isRunning ? (
+        <span
+          className="relative flex h-2 w-2 shrink-0"
+          aria-hidden
+        >
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/40" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+        </span>
+      ) : isTransition ? (
+        <Loader2
+          className="h-3 w-3 shrink-0 animate-spin text-zinc-500"
+          aria-hidden
+        />
+      ) : (
+        <span
+          className={`h-2 w-2 shrink-0 rounded-full ${
+            status === "stopped"
+              ? "bg-zinc-600"
+              : status === "partial"
+                ? "bg-amber-500"
+                : "bg-red-500"
+          }`}
+          aria-hidden
+        />
+      )}
+      <span className="truncate text-right">{fleetStatusLabel(status)}</span>
+    </span>
   );
 }
+
+const easeOut = [0.22, 1, 0.36, 1] as const;
 
 type Props = {
   project: ProjectRow;
   onOpenDetail: () => void;
-  onOpenSettings: () => void;
+  onRepaired?: () => void;
+  onPowerChanged?: () => void;
+  staggerIndex?: number;
 };
 
 export function ProjectSummaryCard({
   project: p,
   onOpenDetail,
-  onOpenSettings,
+  onRepaired,
+  onPowerChanged,
+  staggerIndex = 0,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [displayStatus, setDisplayStatus] = useState<DisplayStatus>(p.status);
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!busy && !repairBusy) {
+      setDisplayStatus(p.status);
+    }
+  }, [p.status, busy, repairBusy]);
 
   const specHost = projectApiInterface(p.slug, p.hash);
-  const apiText = (p.apiUrl?.trim() || specHost).trim();
-  const apiHref = /^https?:\/\//i.test(apiText)
-    ? apiText
-    : `https://${apiText}`;
+  const raw = (p.apiUrl?.trim() || specHost).trim();
+  const apiHref = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 
   async function copyApiUrl(): Promise<void> {
     try {
-      await navigator.clipboard.writeText(apiText);
+      await navigator.clipboard.writeText(apiHref);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -72,72 +109,162 @@ export function ProjectSummaryCard({
     }
   }
 
+  async function runStop(): Promise<void> {
+    if (busy) return;
+    if (displayStatus !== "running") return;
+    setBusy(true);
+    setActionError(null);
+    setDisplayStatus("transitioning");
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(p.slug)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `Stop failed (${String(res.status)})`);
+      }
+      setDisplayStatus("stopped");
+      onPowerChanged?.();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+      setDisplayStatus(p.status);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runRepair(): Promise<void> {
+    if (
+      !window.confirm(
+        "Repair removes Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?",
+      )
+    ) {
+      return;
+    }
+    setRepairBusy(true);
+    setActionError(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(p.slug)}/repair`,
+        { method: "POST" },
+      );
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Repair failed (${String(res.status)})`);
+      }
+      onRepaired?.();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRepairBusy(false);
+    }
+  }
+
+  const bladeBtn =
+    "rounded-md border border-zinc-700 bg-transparent px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-500 transition-[opacity,color,border-color] duration-200 hover:border-zinc-500 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
+
+  const bladeBtnDisabled =
+    "disabled:cursor-not-allowed disabled:opacity-40";
+
+  const stopDisabled =
+    displayStatus !== "running" && displayStatus !== "transitioning";
+
   return (
-    <article
-      className="flex flex-col rounded-md border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-      aria-label={`Project ${p.name}`}
+    <motion.article
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        duration: 0.38,
+        delay: staggerIndex * 0.06,
+        ease: easeOut,
+      }}
+      className="group relative flex flex-col rounded-md border border-zinc-800 bg-black shadow-[inset_0_0_0_1px_rgb(255_255_255/0.05),inset_0_0_100px_-24px_rgb(99_102_241/0.02)] transition-[border-color] duration-200 group-hover:border-zinc-600 group-focus-within:border-zinc-600"
+      aria-label={`Project ${p.slug}`}
     >
-      <div className="min-w-0">
-        <button
-          type="button"
-          onClick={onOpenDetail}
-          className="w-full text-left text-xl font-semibold leading-snug text-zinc-900 transition-colors hover:text-zinc-700 dark:text-zinc-50 dark:hover:text-zinc-200"
-        >
-          {p.name}
-        </button>
+      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 sm:p-6">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2
+              className="font-sans text-lg font-bold tracking-tight text-white transition-[text-shadow] duration-200 group-hover:[text-shadow:0_0_28px_rgba(245,158,11,0.18)] sm:text-xl"
+            >
+              {p.slug}
+            </h2>
+            <span className="font-mono text-sm text-zinc-500">
+              #{p.hash}
+            </span>
+          </div>
+
+          <div className="mt-4 flex min-w-0 items-stretch gap-2 rounded-md border border-zinc-800/80 bg-zinc-900 px-3 py-2.5">
+            <code className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-300">
+              {apiHref}
+            </code>
+            <button
+              type="button"
+              onClick={() => void copyApiUrl()}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+              aria-label="Copy API URL"
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden />
+              ) : (
+                <Clipboard className="h-3.5 w-3.5" aria-hidden />
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 justify-end sm:pt-0.5">
+          <StatusTag status={displayStatus} />
+        </div>
       </div>
 
-      <div className="mt-4 flex min-w-0 items-stretch gap-2">
-        <a
-          href={apiHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex min-w-0 flex-1 items-center rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5 font-mono text-xs leading-snug text-zinc-800 transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-200 dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
-          title={apiText}
+      {actionError ? (
+        <p
+          className="border-t border-zinc-800/80 px-5 py-2 font-mono text-[10px] text-red-400 sm:px-6"
+          role="alert"
         >
-          <span className="truncate">{apiText}</span>
-        </a>
+          {actionError}
+        </p>
+      ) : null}
+
+      <div
+        className="flex flex-wrap gap-2 border-t border-zinc-800/80 px-5 py-4 opacity-40 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 sm:px-6"
+      >
+        <button type="button" onClick={onOpenDetail} className={bladeBtn}>
+          OPEN_CONSOLE
+        </button>
         <button
           type="button"
-          onClick={() => void copyApiUrl()}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-          aria-label="Copy API URL"
+          onClick={() => void runRepair()}
+          disabled={repairBusy}
+          className={`inline-flex items-center justify-center gap-2 ${bladeBtn} ${bladeBtnDisabled}`}
         >
-          {copied ? (
-            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          {repairBusy ? (
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
           ) : (
-            <Clipboard className="h-4 w-4" aria-hidden />
+            <Wrench className="h-3 w-3" aria-hidden />
+          )}
+          REPAIR
+        </button>
+        <button
+          type="button"
+          onClick={() => void runStop()}
+          disabled={stopDisabled}
+          className={`${bladeBtn} ${stopDisabled ? bladeBtnDisabled : ""}`}
+        >
+          {busy || displayStatus === "transitioning" ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+              STOP
+            </span>
+          ) : (
+            "STOP"
           )}
         </button>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800/80">
-        <span className="inline-flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-          <StatusDot status={p.status} />
-          {statusLabel(p.status)}
-        </span>
-        <span className="font-mono text-xs tabular-nums text-zinc-500 dark:text-zinc-500">
-          #{p.hash}
-        </span>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800/80">
-        <button
-          type="button"
-          onClick={onOpenDetail}
-          className="inline-flex flex-1 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 sm:flex-none"
-        >
-          Open
-        </button>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 sm:flex-none"
-        >
-          <Settings className="h-4 w-4 shrink-0" aria-hidden />
-          Settings
-        </button>
-      </div>
-    </article>
+    </motion.article>
   );
 }

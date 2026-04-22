@@ -3,13 +3,13 @@
 import {
   AlertTriangle,
   Loader2,
-  Plus,
   X,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import {
@@ -18,11 +18,15 @@ import {
   ProjectCard,
   type ProjectRow,
 } from "@/src/components/projects/project-card";
+import { ProjectsFleetBar } from "@/src/components/projects/projects-fleet-bar";
 import { ProjectSummaryCard } from "@/src/components/projects/project-summary-card";
 
 export default function ProjectsPage() {
   const { data: session } = useSession();
-  const userId = session?.user?.id ?? "—";
+  const userSegment =
+    session?.user?.githubLogin?.trim() ||
+    session?.user?.id?.trim() ||
+    "—";
 
   const [projectList, setProjectList] = useState<ProjectRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -38,11 +42,9 @@ export default function ProjectsPage() {
   const [billingError, setBillingError] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<"hobby" | "pro" | null>(null);
   const [detailSlug, setDetailSlug] = useState<string | null>(null);
-  const [detailOpenSettings, setDetailOpenSettings] = useState(false);
 
   function closeProjectDetail(): void {
     setDetailSlug(null);
-    setDetailOpenSettings(false);
   }
 
   const load = useCallback(async () => {
@@ -257,117 +259,102 @@ export default function ProjectsPage() {
     ? projectList.find((p) => p.slug === detailSlug)
     : undefined;
 
-  return (
-    <div className="flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-10 sm:px-8 sm:py-14">
-      <div className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
-        <p className="text-xs text-zinc-500 dark:text-zinc-500">
-          Signed in as{" "}
-          <span className="font-medium text-zinc-800 dark:text-zinc-300">
-            user_{userId}
-          </span>
-        </p>
-      </div>
+  const { fleetLine, fleetDegraded } = useMemo(() => {
+    if (loadError) {
+      return { fleetLine: "SYSTEM_FLEET_FAULT", fleetDegraded: true };
+    }
+    if (fetching && projectList.length === 0) {
+      return { fleetLine: "SYSTEM_FLEET_SYNC", fleetDegraded: false };
+    }
+    const bad = projectList.some(
+      (p) => p.status === "missing" || p.status === "corrupted",
+    );
+    if (bad) {
+      return { fleetLine: "SYSTEM_FLEET_ATTENTION", fleetDegraded: true };
+    }
+    return { fleetLine: "SYSTEM_FLEET_NOMINAL", fleetDegraded: false };
+  }, [loadError, fetching, projectList]);
 
-      <div className="mb-0 flex min-w-0 items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1
-            className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 sm:text-2xl"
-            id="fleet-spec"
-          >
-            Projects
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
-            Tenant databases and APIs
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+  return (
+    <div className="flex min-h-full w-full flex-1 flex-col bg-zinc-950 text-zinc-400">
+      <ProjectsFleetBar
+        userSegment={userSegment}
+        fleetLine={fleetLine}
+        fleetDegraded={fleetDegraded}
+        onNewProject={openCreateModal}
+      />
+
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-8 sm:px-8 sm:py-10 lg:px-10">
+        <div className="mb-8 flex min-w-0 flex-wrap items-center justify-end gap-3">
           {userPlan === "hobby" ? (
             <button
               type="button"
               onClick={() => void startProCheckout()}
               disabled={upgradeLoading}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-700 bg-transparent px-3 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-900/50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {upgradeLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
               ) : null}
-              {upgradeLoading ? "Redirecting…" : "Upgrade to Pro"}
+              {upgradeLoading ? "Redirecting…" : "Upgrade_to_Pro"}
             </button>
           ) : userPlan === "pro" ? (
-            <span className="inline-flex h-10 items-center rounded-md border border-zinc-200 bg-zinc-50 px-3 text-xs font-medium text-emerald-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-emerald-400">
-              Pro
+            <span className="inline-flex h-9 items-center rounded-md border border-zinc-800 bg-zinc-900/40 px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-400/90">
+              PRO_TIER
             </span>
           ) : null}
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label="Create project"
-          >
-            <Plus className="h-5 w-5" aria-hidden />
-          </button>
         </div>
+
+        {billingError && !createOpen ? (
+          <p
+            className="mb-6 rounded-md border border-red-900/50 bg-red-950/20 px-3 py-2 font-mono text-xs text-red-300"
+            role="alert"
+          >
+            {billingError}
+          </p>
+        ) : null}
+
+        {fetching ? (
+          <div className="flex flex-1 justify-center py-24">
+            <Loader2 className="h-8 w-8 animate-spin text-zinc-600" />
+          </div>
+        ) : loadError ? (
+          <p className="font-mono text-sm text-red-400">{loadError}</p>
+        ) : projectList.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center py-16 sm:py-24">
+            <div className="flex w-full max-w-2xl flex-col items-center justify-center rounded-md border border-zinc-800 bg-transparent px-8 py-20 text-center sm:py-28">
+              <p className="max-w-md font-mono text-xs uppercase leading-relaxed tracking-[0.2em] text-zinc-500">
+                NO_RESOURCES_ALLOCATED.
+                <br />
+                AWAITING_PROVISIONING_COMMAND.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ul
+            className="grid list-none grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5"
+            aria-label="Project fleet"
+          >
+            {projectList.map((p, i) => (
+              <li key={p.id}>
+                <ProjectSummaryCard
+                  project={p}
+                  staggerIndex={i}
+                  onOpenDetail={() => {
+                    setDetailSlug(p.slug);
+                  }}
+                  onRepaired={() => handleProjectRepaired(p.slug)}
+                  onPowerChanged={() => void load()}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-
-      {billingError && !createOpen ? (
-        <p
-          className="mb-2 rounded border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-300"
-          role="alert"
-        >
-          {billingError}
-        </p>
-      ) : null}
-
-      {fetching ? (
-        <div className="flex justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
-        </div>
-      ) : loadError ? (
-        <p className="text-red-600 dark:text-red-400">{loadError}</p>
-      ) : projectList.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 sm:py-20">
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="flex w-full max-w-md flex-col items-center rounded-md border border-dashed border-zinc-300 bg-zinc-50/50 px-8 py-14 text-center shadow-sm transition-colors hover:border-zinc-400 hover:bg-zinc-100/80 dark:border-zinc-700 dark:bg-zinc-900/30 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/50"
-          >
-            <span className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-              <Plus className="h-6 w-6 text-zinc-600 dark:text-zinc-400" aria-hidden />
-            </span>
-            <span className="mt-5 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-              New Project
-            </span>
-            <span className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-500">
-              Add Postgres and PostgREST for a new app
-            </span>
-          </button>
-        </div>
-      ) : (
-        <ul
-          className="grid list-none gap-4 sm:grid-cols-2 xl:grid-cols-3"
-          aria-labelledby="fleet-spec"
-        >
-          {projectList.map((p) => (
-            <li key={p.id}>
-              <ProjectSummaryCard
-                project={p}
-                onOpenDetail={() => {
-                  setDetailOpenSettings(false);
-                  setDetailSlug(p.slug);
-                }}
-                onOpenSettings={() => {
-                  setDetailOpenSettings(true);
-                  setDetailSlug(p.slug);
-                }}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
 
       {detailSlug && detailProject ? (
         <div
-          className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-10 backdrop-blur-sm"
+          className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-10 backdrop-blur-sm"
           role="presentation"
           onClick={closeProjectDetail}
         >
@@ -378,15 +365,14 @@ export default function ProjectsPage() {
             <button
               type="button"
               onClick={closeProjectDetail}
-              className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-100"
+              className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 bg-zinc-950 font-mono text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-100"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
             </button>
             <ProjectCard
-              key={`${detailProject.id}-${detailOpenSettings ? "s" : "d"}`}
+              key={detailProject.id}
               project={detailProject}
-              autoOpenSettings={detailOpenSettings}
               onDelete={() => {
                 handleProjectDeleted(detailProject.slug);
                 closeProjectDetail();
@@ -401,12 +387,12 @@ export default function ProjectsPage() {
 
       {createOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           role="presentation"
           onClick={closeCreateModal}
         >
           <div
-            className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+            className="relative w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-project-title"
@@ -425,35 +411,35 @@ export default function ProjectsPage() {
             <div className="pr-10">
               <h2
                 id="create-project-title"
-                className="text-lg font-semibold text-zinc-900 dark:text-zinc-100"
+                className="font-sans text-lg font-semibold text-zinc-100"
               >
                 New project
               </h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+              <p className="mt-1 font-mono text-xs text-zinc-500">
                 Provisions Postgres and PostgREST (this may take a minute).
               </p>
 
               {createLimitBanner === "hobby" ? (
                 <div
-                  className="mt-5 flex flex-col gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40"
+                  className="mt-5 flex flex-col gap-3 rounded-md border border-zinc-800 bg-zinc-900/40 p-4"
                   role="alert"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800">
                       <AlertTriangle
-                        className="h-5 w-5 text-zinc-600 dark:text-zinc-400"
+                        className="h-5 w-5 text-zinc-400"
                         aria-hidden
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                      <p className="text-sm font-semibold text-zinc-100">
                         Free tier limit reached (2/2 projects).
                       </p>
-                      <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                      <p className="mt-1 text-sm text-zinc-500">
                         Delete a project or upgrade to create more.
                       </p>
                       {billingError ? (
-                        <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                        <p className="mt-2 text-sm text-red-400">
                           {billingError}
                         </p>
                       ) : null}
@@ -461,7 +447,7 @@ export default function ProjectsPage() {
                         type="button"
                         onClick={() => void startProCheckout()}
                         disabled={upgradeLoading}
-                        className="mt-3 inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                        className="mt-3 inline-flex items-center justify-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {upgradeLoading ? (
                           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -475,14 +461,14 @@ export default function ProjectsPage() {
 
               {createLimitBanner === "pro" ? (
                 <div
-                  className="mt-5 flex items-start gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40"
+                  className="mt-5 flex items-start gap-3 rounded-md border border-zinc-800 bg-zinc-900/40 p-4"
                   role="alert"
                 >
                   <AlertTriangle
-                    className="mt-0.5 h-5 w-5 shrink-0 text-zinc-500 dark:text-zinc-400"
+                    className="mt-0.5 h-5 w-5 shrink-0 text-zinc-500"
                     aria-hidden
                   />
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                  <p className="text-sm text-zinc-400">
                     You&apos;ve reached the project limit for your Pro plan (10
                     projects).
                   </p>
@@ -492,7 +478,7 @@ export default function ProjectsPage() {
               <form onSubmit={(e) => void onCreate(e)} className="mt-6">
                 <label
                   htmlFor="project-name"
-                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-200"
+                  className="block text-sm font-medium text-zinc-200"
                 >
                   Name
                 </label>
@@ -501,7 +487,7 @@ export default function ProjectsPage() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="mt-2 w-full rounded-md border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-shadow focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
+                  className="mt-2 w-full rounded-md border border-zinc-700 bg-black px-3 py-2.5 text-sm text-zinc-100 outline-none transition-shadow focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/25"
                   placeholder="my-app"
                   required
                   disabled={creating}
@@ -514,14 +500,14 @@ export default function ProjectsPage() {
                     type="button"
                     onClick={closeCreateModal}
                     disabled={creating}
-                    className="rounded-md px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-60 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    className="rounded-md px-4 py-2 text-sm font-medium text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 disabled:opacity-60"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={creating}
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-600 bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-white disabled:opacity-60"
                   >
                     {creating ? (
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

@@ -28,6 +28,9 @@ function formatUtc(d: Date): string {
 
 export function WorkspaceHeader() {
   const pathname = usePathname();
+  if (pathname === "/projects") {
+    return null;
+  }
   const isLanding = pathname === "/";
   const contentMaxClassName = isLanding
     ? "max-w-5xl"
