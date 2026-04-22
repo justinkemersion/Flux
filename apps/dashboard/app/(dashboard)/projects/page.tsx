@@ -38,6 +38,12 @@ export default function ProjectsPage() {
   const [billingError, setBillingError] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<"hobby" | "pro" | null>(null);
   const [detailSlug, setDetailSlug] = useState<string | null>(null);
+  const [detailOpenSettings, setDetailOpenSettings] = useState(false);
+
+  function closeProjectDetail(): void {
+    setDetailSlug(null);
+    setDetailOpenSettings(false);
+  }
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -244,7 +250,7 @@ export default function ProjectsPage() {
 
   function handleProjectDeleted(slug: string): void {
     setProjectList((prev) => prev.filter((p) => p.slug !== slug));
-    if (detailSlug === slug) setDetailSlug(null);
+    if (detailSlug === slug) closeProjectDetail();
   }
 
   const detailProject = detailSlug
@@ -345,7 +351,14 @@ export default function ProjectsPage() {
             <li key={p.id}>
               <ProjectSummaryCard
                 project={p}
-                onOpenDetail={() => setDetailSlug(p.slug)}
+                onOpenDetail={() => {
+                  setDetailOpenSettings(false);
+                  setDetailSlug(p.slug);
+                }}
+                onOpenSettings={() => {
+                  setDetailOpenSettings(true);
+                  setDetailSlug(p.slug);
+                }}
               />
             </li>
           ))}
@@ -356,7 +369,7 @@ export default function ProjectsPage() {
         <div
           className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-10 backdrop-blur-sm"
           role="presentation"
-          onClick={() => setDetailSlug(null)}
+          onClick={closeProjectDetail}
         >
           <div
             className="relative w-full max-w-2xl pb-20"
@@ -364,18 +377,19 @@ export default function ProjectsPage() {
           >
             <button
               type="button"
-              onClick={() => setDetailSlug(null)}
+              onClick={closeProjectDetail}
               className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-100"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
             </button>
             <ProjectCard
-              key={detailProject.id}
+              key={`${detailProject.id}-${detailOpenSettings ? "s" : "d"}`}
               project={detailProject}
+              autoOpenSettings={detailOpenSettings}
               onDelete={() => {
                 handleProjectDeleted(detailProject.slug);
-                setDetailSlug(null);
+                closeProjectDetail();
               }}
               onSettingsSaved={handleSettingsSavedClearCredentials}
               onCredentialsRevealed={handleCredentialsRevealed}

@@ -88,6 +88,7 @@ export async function GET(): Promise<Response> {
       id: p.id,
       name: p.name,
       slug: p.slug,
+      hash: p.hash,
       status: docker?.status ?? "missing",
       apiUrl:
         docker?.apiUrl ??

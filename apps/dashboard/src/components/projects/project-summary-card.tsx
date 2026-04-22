@@ -1,12 +1,9 @@
 "use client";
 
-import { Check, Clipboard } from "lucide-react";
+import { Check, Clipboard, Settings } from "lucide-react";
 import { useState } from "react";
 import type { ProjectRow } from "@/src/components/projects/project-card";
-import {
-  hashSegment,
-  projectApiInterface,
-} from "@/src/lib/routing-identity";
+import { projectApiInterface } from "@/src/lib/routing-identity";
 
 type ServerStatus = ProjectRow["status"];
 
@@ -49,13 +46,17 @@ function StatusDot({ status }: { status: ServerStatus }) {
 type Props = {
   project: ProjectRow;
   onOpenDetail: () => void;
+  onOpenSettings: () => void;
 };
 
-export function ProjectSummaryCard({ project: p, onOpenDetail }: Props) {
+export function ProjectSummaryCard({
+  project: p,
+  onOpenDetail,
+  onOpenSettings,
+}: Props) {
   const [copied, setCopied] = useState(false);
 
-  const hash = hashSegment(`${p.slug}:${p.id}`);
-  const specHost = projectApiInterface(p.slug, hash);
+  const specHost = projectApiInterface(p.slug, p.hash);
   const apiText = (p.apiUrl?.trim() || specHost).trim();
   const apiHref = /^https?:\/\//i.test(apiText)
     ? apiText
@@ -116,8 +117,26 @@ export function ProjectSummaryCard({ project: p, onOpenDetail }: Props) {
           {statusLabel(p.status)}
         </span>
         <span className="font-mono text-xs tabular-nums text-zinc-500 dark:text-zinc-500">
-          #{hash}
+          #{p.hash}
         </span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800/80">
+        <button
+          type="button"
+          onClick={onOpenDetail}
+          className="inline-flex flex-1 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 sm:flex-none"
+        >
+          Open
+        </button>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="inline-flex flex-1 items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 sm:flex-none"
+        >
+          <Settings className="h-4 w-4 shrink-0" aria-hidden />
+          Settings
+        </button>
       </div>
     </article>
   );

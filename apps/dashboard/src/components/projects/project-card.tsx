@@ -18,6 +18,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -32,6 +33,8 @@ export type ProjectRow = {
   id: string;
   name: string;
   slug: string;
+  /** Catalog / Docker stack hash (7 hex), required for CLI `--hash` and hostnames. */
+  hash: string;
   status: ServerStatus;
   apiUrl: string;
   createdAt: string;
@@ -131,6 +134,7 @@ function CopyableField({
   isSecret,
   visuallyTruncate = false,
   prominent = false,
+  emptyHint,
 }: {
   label: string;
   value: string | null;
@@ -139,6 +143,8 @@ function CopyableField({
   visuallyTruncate?: boolean;
   /** Larger type and padding for the “How to connect” section. */
   prominent?: boolean;
+  /** Shown instead of “Unavailable” when the value is empty (e.g. secrets not loaded yet). */
+  emptyHint?: string;
 }) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -147,10 +153,11 @@ function CopyableField({
   const unavailable = raw.length === 0;
   const masked = isSecret && !revealed && !unavailable;
   const displayText = unavailable
-    ? "Unavailable"
+    ? (emptyHint ?? "Unavailable")
     : masked
       ? "••••••••"
       : raw;
+  const showEmptyHint = unavailable && Boolean(emptyHint);
 
   async function copy(): Promise<void> {
     if (unavailable) return;
@@ -180,12 +187,16 @@ function CopyableField({
         className={`flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50/90 dark:border-zinc-800 ${boxCls}`}
       >
         <span
-          className={`min-w-0 flex-1 font-mono ${valueCls} text-zinc-800 dark:text-zinc-200 ${
-            visuallyTruncate && !masked
-              ? "truncate"
-              : unavailable
-                ? "text-zinc-400 dark:text-zinc-500"
-                : "break-all"
+          className={`min-w-0 flex-1 ${valueCls} ${
+            showEmptyHint
+              ? "font-sans italic text-zinc-500 dark:text-zinc-400"
+              : `font-mono text-zinc-800 dark:text-zinc-200 ${
+                  visuallyTruncate && !masked
+                    ? "truncate"
+                    : unavailable
+                      ? "text-zinc-400 dark:text-zinc-500"
+                      : "break-all"
+                }`
           }`}
           title={unavailable || masked ? undefined : raw}
         >
@@ -225,8 +236,8 @@ function CopyableField({
   );
 }
 
-function CliSnippetBlock({ slug }: { slug: string }) {
-  const line = `flux push ./migrations/schema.sql --project ${slug}`;
+function CliSnippetBlock({ slug, hash }: { slug: string; hash: string }) {
+  const line = `flux push ./migrations/schema.sql --project ${slug} --hash ${hash}`;
   const [copied, setCopied] = useState(false);
 
   async function copyLine(): Promise<void> {
@@ -245,8 +256,13 @@ function CliSnippetBlock({ slug }: { slug: string }) {
         CLI snippet
       </h3>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        Run the Flux CLI from your machine. Swap in your SQL file path; the
-        project flag targets this stack.
+        <code className="font-mono text-[11px]">--hash</code> is the stack id: it
+        matches Docker resources{" "}
+        <code className="font-mono text-[11px]">flux-{"{hash}"}-{"{slug}"}-*</code>{" "}
+        and the hash shown on the project card. Use it when the CLI cannot resolve
+        the project from flux-system (for example remote Docker or missing{" "}
+        <code className="font-mono text-[11px]">FLUX_OWNER_KEY</code>). Swap in
+        your SQL file path.
       </p>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-zinc-200 bg-white px-3 py-2.5 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
@@ -284,6 +300,8 @@ type ProjectCardProps = {
   ) => void;
   /** After destructive repair reprovisions the stack. */
   onRepaired?: () => void;
+  /** When true (e.g. opened from list “Settings”), open the settings modal once on mount. */
+  autoOpenSettings?: boolean;
 };
 
 export function ProjectCard({
@@ -292,6 +310,7 @@ export function ProjectCard({
   onSettingsSaved,
   onCredentialsRevealed,
   onRepaired,
+  autoOpenSettings = false,
 }: ProjectCardProps) {
   const [isBusy, setIsBusy] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<DisplayStatus>(p.status);
@@ -318,6 +337,7 @@ export function ProjectCard({
   const [logsText, setLogsText] = useState("");
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
+  const didAutoOpenSettings = useRef(false);
 
   const canRevealCredentials =
     p.status === "running" ||
@@ -328,6 +348,11 @@ export function ProjectCard({
     (p.anonKey?.length ?? 0) > 0 &&
     (p.serviceRoleKey?.length ?? 0) > 0 &&
     (p.postgresConnectionString?.length ?? 0) > 0;
+
+  const connectSecretEmptyHint =
+    !credentialsLoaded && canRevealCredentials
+      ? "Click Load connection secrets to view."
+      : undefined;
 
   useEffect(() => {
     if (!isBusy) {
@@ -360,6 +385,12 @@ export function ProjectCard({
     setSettingsSuccess(false);
     setSettingsOpen(true);
   }, []);
+
+  useEffect(() => {
+    if (!autoOpenSettings || didAutoOpenSettings.current) return;
+    didAutoOpenSettings.current = true;
+    openSettingsModal();
+  }, [autoOpenSettings, openSettingsModal]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -695,6 +726,7 @@ export function ProjectCard({
               }
               isSecret
               prominent
+              emptyHint={connectSecretEmptyHint}
             />
             <CopyableField
               label="Anon key"
@@ -702,10 +734,11 @@ export function ProjectCard({
               isSecret={false}
               visuallyTruncate
               prominent
+              emptyHint={connectSecretEmptyHint}
             />
             <CopyableField
               label="Service URL"
-              value={p.apiUrl}
+              value={p.apiUrl || null}
               isSecret={false}
               visuallyTruncate
               prominent
@@ -715,6 +748,7 @@ export function ProjectCard({
               value={credentialsLoaded ? (p.serviceRoleKey ?? null) : null}
               isSecret
               prominent
+              emptyHint={connectSecretEmptyHint}
             />
           </div>
 
@@ -726,15 +760,6 @@ export function ProjectCard({
               this project.
             </p>
           ) : null}
-          {!credentialsLoaded && canRevealCredentials ? (
-            <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
-              Postgres and anon values load when you choose{" "}
-              <strong className="font-medium text-zinc-700 dark:text-zinc-300">
-                Load connection secrets
-              </strong>
-              .
-            </p>
-          ) : null}
           {credentialsLoaded ? (
             <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
               Update the JWT signing secret or CORS from project settings when
@@ -744,7 +769,7 @@ export function ProjectCard({
         </section>
 
         <div className="mt-8">
-          <CliSnippetBlock slug={p.slug} />
+          <CliSnippetBlock slug={p.slug} hash={p.hash} />
         </div>
 
         <div className="mt-6">
