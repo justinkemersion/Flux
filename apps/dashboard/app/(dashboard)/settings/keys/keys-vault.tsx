@@ -47,12 +47,12 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
   );
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 text-center sm:text-left">
       <div>
         <h1 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-zinc-300">
           Key_vault
         </h1>
-        <p className="mt-2 max-w-2xl font-mono text-[11px] leading-relaxed text-zinc-500">
+        <p className="mx-auto mt-2 max-w-2xl font-mono text-[11px] leading-relaxed text-zinc-500">
           CLI and automation use Bearer tokens. Raw secrets are shown once at creation and are
           never stored; only a SHA-256 hash is kept. Export{" "}
           <span className="text-zinc-400">FLUX_API_TOKEN</span> locally and point{" "}
@@ -62,17 +62,17 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
       </div>
 
       <section
-        className="border border-zinc-700 bg-zinc-900/30 p-4"
+        className="border border-zinc-700 bg-zinc-900/30 p-4 sm:mx-0"
         aria-labelledby="new-key-heading"
       >
         <h2
           id="new-key-heading"
-          className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500"
+          className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 sm:text-left"
         >
           Issue_key
         </h2>
         <form
-          className="flex flex-col gap-3 sm:flex-row sm:items-end"
+          className="mx-auto flex max-w-lg flex-col gap-3 sm:mx-0 sm:flex-row sm:items-end"
           onSubmit={(e) => {
             e.preventDefault();
             onSubmit(new FormData(e.currentTarget));
@@ -141,10 +141,13 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
         </section>
       ) : null}
 
-      <section aria-labelledby="vault-list-heading">
+      <section
+        className="text-left"
+        aria-labelledby="vault-list-heading"
+      >
         <h2
           id="vault-list-heading"
-          className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500"
+          className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 sm:text-left"
         >
           Keys_{rows.length}
         </h2>

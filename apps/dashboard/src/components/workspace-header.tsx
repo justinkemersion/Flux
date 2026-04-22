@@ -47,7 +47,7 @@ export function WorkspaceHeader() {
     : `inline-flex items-center text-sm font-semibold tracking-tight text-zinc-900 transition-colors hover:text-zinc-700 dark:text-zinc-100 dark:hover:text-zinc-300 ${focusable} rounded-md`;
 
   return (
-    <header className={`w-full ${headerSurface}`}>
+    <header className={`relative z-40 w-full ${headerSurface}`}>
       <div
         className={`mx-auto flex w-full items-center gap-4 px-4 py-3 sm:px-8 sm:px-10 ${contentMaxClassName}`}
         role="navigation"

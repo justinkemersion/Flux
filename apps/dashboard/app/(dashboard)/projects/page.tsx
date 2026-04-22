@@ -385,7 +385,7 @@ export default function ProjectsPage() {
 
       {detailSlug && detailProject ? (
         <div
-          className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-10 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-20 backdrop-blur-sm"
           role="presentation"
           onClick={closeProjectDetail}
         >
@@ -422,7 +422,7 @@ export default function ProjectsPage() {
 
       {createOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           role="presentation"
           onClick={closeCreateModal}
         >

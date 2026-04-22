@@ -47,9 +47,9 @@ export default async function SettingsKeysPage() {
 
   return (
     <div className="flex min-h-full flex-col bg-zinc-950 text-zinc-400">
-      <div className="mx-auto w-full max-w-6xl flex-1 px-4 pb-10 pt-4 sm:px-8 sm:px-10 sm:pt-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col items-center px-4 pb-10 pt-4 sm:px-8 sm:pt-6 lg:px-10">
         <nav
-          className="mb-8 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-zinc-800/90 pb-4 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500"
+          className="mb-8 flex w-full max-w-2xl min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-zinc-800/90 pb-4 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500 sm:justify-start sm:text-left"
           aria-label="Breadcrumb"
         >
           <Link
@@ -73,7 +73,9 @@ export default async function SettingsKeysPage() {
           </span>
           <span className="shrink-0 text-zinc-300">API_KEYS</span>
         </nav>
-        <KeysVault initialRows={initialRows} />
+        <div className="w-full max-w-2xl">
+          <KeysVault initialRows={initialRows} />
+        </div>
       </div>
     </div>
   );
