@@ -4,8 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "pnpm --filter @flux/cli run build",
-    "build": "next build",
+    "build": "pnpm --filter @flux/cli run build && next build",
     "start": "next start",
     "lint": "eslint"
   },
