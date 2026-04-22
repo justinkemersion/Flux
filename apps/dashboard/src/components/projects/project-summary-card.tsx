@@ -124,6 +124,7 @@ export function ProjectSummaryCard({
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [powerAction, setPowerAction] = useState<"start" | "stop" | null>(null);
   const [displayStatus, setDisplayStatus] = useState<DisplayStatus>(p.status);
   const [repairBusy, setRepairBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -148,10 +149,40 @@ export function ProjectSummaryCard({
     }
   }
 
+  async function runStart(): Promise<void> {
+    if (busy) return;
+    if (displayStatus !== "stopped") return;
+    setBusy(true);
+    setPowerAction("start");
+    setActionError(null);
+    setDisplayStatus("transitioning");
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(p.slug)}/start`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(
+          data.error ?? `Start failed (${String(res.status)})`,
+        );
+      }
+      setDisplayStatus("running");
+      onPowerChanged?.();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+      setDisplayStatus(p.status);
+    } finally {
+      setBusy(false);
+      setPowerAction(null);
+    }
+  }
+
   async function runStop(): Promise<void> {
     if (busy) return;
     if (displayStatus !== "running") return;
     setBusy(true);
+    setPowerAction("stop");
     setActionError(null);
     setDisplayStatus("transitioning");
     try {
@@ -171,6 +202,7 @@ export function ProjectSummaryCard({
       setDisplayStatus(p.status);
     } finally {
       setBusy(false);
+      setPowerAction(null);
     }
   }
 
@@ -202,13 +234,20 @@ export function ProjectSummaryCard({
   }
 
   const bladeBtn =
-    "rounded-md border border-zinc-700 bg-transparent px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-500 transition-[opacity,color,border-color] duration-200 hover:border-zinc-500 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
+    "rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-300 transition-[opacity,color,border-color] duration-200 hover:border-zinc-500 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
+
+  const startBladeBtn =
+    "rounded-md border border-emerald-600/80 bg-zinc-900 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-400 transition-[opacity,color,border-color] duration-200 hover:border-emerald-500 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
 
   const bladeBtnDisabled =
     "disabled:cursor-not-allowed disabled:opacity-40";
 
-  const stopDisabled =
-    displayStatus !== "running" && displayStatus !== "transitioning";
+  const showStartButton =
+    displayStatus === "stopped" ||
+    (displayStatus === "transitioning" && powerAction === "start");
+  const showStopButton =
+    displayStatus === "running" ||
+    (displayStatus === "transitioning" && powerAction === "stop");
 
   return (
     <motion.article
@@ -287,21 +326,42 @@ export function ProjectSummaryCard({
           )}
           REPAIR
         </button>
-        <button
-          type="button"
-          onClick={() => void runStop()}
-          disabled={stopDisabled}
-          className={`${bladeBtn} ${stopDisabled ? bladeBtnDisabled : ""}`}
-        >
-          {busy || displayStatus === "transitioning" ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-              STOP
-            </span>
-          ) : (
-            "STOP"
-          )}
-        </button>
+        {showStartButton ? (
+          <button
+            type="button"
+            onClick={() => void runStart()}
+            disabled={busy && powerAction !== "start"}
+            className={`${startBladeBtn} ${bladeBtnDisabled}`}
+            aria-label="Start project"
+          >
+            {busy && powerAction === "start" ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                [ START ]
+              </span>
+            ) : (
+              "[ START ]"
+            )}
+          </button>
+        ) : null}
+        {showStopButton ? (
+          <button
+            type="button"
+            onClick={() => void runStop()}
+            disabled={busy && powerAction !== "stop"}
+            className={`${bladeBtn} ${bladeBtnDisabled}`}
+            aria-label="Stop project"
+          >
+            {busy && powerAction === "stop" ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                [ STOP ]
+              </span>
+            ) : (
+              "[ STOP ]"
+            )}
+          </button>
+        ) : null}
       </div>
 
     </motion.article>

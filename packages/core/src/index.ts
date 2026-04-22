@@ -2821,14 +2821,24 @@ COMMENT ON SCHEMA public IS 'standard public schema';
   }
 
   /**
-   * Starts the Postgres and PostgREST containers (DB first, then API).
+   * Start stopped tenant containers: Postgres first, brief wait, then PostgREST.
+   * Used by the control plane so the DB accepts connections before the API starts.
+   */
+  async startProjectInfrastructure(slug: string, hash: string): Promise<void> {
+    const normalized = slugifyProjectName(slug);
+    const dbName = postgresContainerName(hash, normalized);
+    const apiName = postgrestContainerName(hash, normalized);
+    await this.startContainerOrThrow(dbName);
+    await sleep(2000);
+    await this.startContainerOrThrow(apiName);
+  }
+
+  /**
+   * Starts the Postgres and PostgREST containers (DB first, then API after a short delay).
    */
   async startProject(name: string, hash: string): Promise<void> {
     const slug = slugifyProjectName(name);
-    const dbName = postgresContainerName(hash, slug);
-    const apiName = postgrestContainerName(hash, slug);
-    await this.startContainerOrThrow(dbName);
-    await this.startContainerOrThrow(apiName);
+    await this.startProjectInfrastructure(slug, hash);
   }
 
   /**

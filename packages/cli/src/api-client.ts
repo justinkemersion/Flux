@@ -435,14 +435,58 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------------
-  // PUT /projects/{slug}/lifecycle?hash= — { action: "start" | "stop" }
+  // POST /cli/v1/projects/:hash/lifecycle — { action: "start" | "stop" }
   // ---------------------------------------------------------------------------
-  stopProject(_project: string, _hash: string): Promise<void> {
-    return Promise.reject(this.notImplemented("stopProject"));
+  private async runLifecycle(
+    project: string,
+    hash: string,
+    action: "start" | "stop",
+  ): Promise<void> {
+    const token = this.tokenOrThrow();
+    const h = hash.trim().toLowerCase();
+    const url = `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(
+      h,
+    )}/lifecycle`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action }),
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI lifecycle: response was not JSON (${res.status}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
   }
 
-  startProject(_project: string, _hash: string): Promise<void> {
-    return Promise.reject(this.notImplemented("startProject"));
+  async stopProject(project: string, hash: string): Promise<void> {
+    await this.runLifecycle(project, hash, "stop");
+  }
+
+  async startProject(project: string, hash: string): Promise<void> {
+    await this.runLifecycle(project, hash, "start");
   }
 
   // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { projects } from "@/src/db/schema";
 import { fluxApiUrlForSlug } from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
+import { applyProjectPowerAction } from "@/src/lib/project-lifecycle";
 
 export const runtime = "nodejs";
 
@@ -116,17 +117,15 @@ export async function PUT(
   const project = await resolveOwnedProject(slug, session.user.id);
   if (!project) return jsonError("Project not found", 404);
 
-  const pm = getProjectManager();
-  try {
-    if (action === "start") {
-      await pm.startProject(slug, project.hash);
-    } else {
-      await pm.stopProject(slug, project.hash);
-    }
-    return Response.json({ ok: true, action });
-  } catch (err: unknown) {
-    return jsonError(err instanceof Error ? err.message : String(err), 500);
+  const result = await applyProjectPowerAction({
+    slug,
+    userId: session.user.id,
+    action,
+  });
+  if ("error" in result) {
+    return jsonError(result.error, result.status);
   }
+  return Response.json({ ok: true, action });
 }
 
 /**

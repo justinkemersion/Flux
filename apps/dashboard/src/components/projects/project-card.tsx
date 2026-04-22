@@ -7,10 +7,8 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  Play,
   RefreshCw,
   Settings,
-  Square,
   Trash2,
   Wrench,
   X,
@@ -317,6 +315,9 @@ export function ProjectCard({
   autoOpenSettings = false,
 }: ProjectCardProps) {
   const [isBusy, setIsBusy] = useState(false);
+  const [powerIntent, setPowerIntent] = useState<"start" | "stop" | null>(
+    null,
+  );
   const [currentStatus, setCurrentStatus] = useState<DisplayStatus>(p.status);
   const [actionError, setActionError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -454,14 +455,21 @@ export function ProjectCard({
     if (isBusy || currentStatus === "partial") return;
     const action = currentStatus === "running" ? "stop" : "start";
     setIsBusy(true);
+    setPowerIntent(action);
     setActionError(null);
     setCurrentStatus("transitioning");
     try {
-      const res = await fetch(`/api/projects/${p.slug}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
+      const res =
+        action === "start"
+          ? await fetch(
+              `/api/projects/${encodeURIComponent(p.slug)}/start`,
+              { method: "POST" },
+            )
+          : await fetch(`/api/projects/${encodeURIComponent(p.slug)}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "stop" as const }),
+            });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? `Action failed (${String(res.status)})`);
@@ -472,6 +480,7 @@ export function ProjectCard({
       setCurrentStatus(p.status);
     } finally {
       setIsBusy(false);
+      setPowerIntent(null);
     }
   }
 
@@ -605,6 +614,19 @@ export function ProjectCard({
     currentStatus !== "missing" &&
     currentStatus !== "corrupted";
 
+  /** Stack state drives power; mesh `healthStatus` is in MeshTelemetryPill. */
+  const showStartButton =
+    currentStatus === "stopped" ||
+    (currentStatus === "transitioning" && powerIntent === "start");
+  const showStopButton =
+    currentStatus === "running" ||
+    (currentStatus === "transitioning" && powerIntent === "stop");
+
+  const powerBtn =
+    "inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition-[color,border-color,opacity] hover:border-zinc-500 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700";
+  const powerStartBtn =
+    "inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-emerald-600/80 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-emerald-400 transition-[color,border-color,opacity] hover:border-emerald-500 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/50 disabled:cursor-not-allowed disabled:opacity-40";
+
   const logSourceBtn =
     "rounded px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50";
   const logSourceActive =
@@ -645,26 +667,44 @@ export function ProjectCard({
                 Repair
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => void togglePower()}
-              disabled={!canToggle}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              aria-label={
-                currentStatus === "running" ? `Stop ${p.name}` : `Start ${p.name}`
-              }
-              title={
-                currentStatus === "running" ? "Stop project" : "Start project"
-              }
-            >
-              {isBusy || currentStatus === "transitioning" ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : currentStatus === "running" ? (
-                <Square className="h-4 w-4" aria-hidden />
-              ) : (
-                <Play className="h-4 w-4" aria-hidden />
-              )}
-            </button>
+            {showStartButton ? (
+              <button
+                type="button"
+                onClick={() => void togglePower()}
+                disabled={!canToggle && !(isBusy && powerIntent === "start")}
+                className={powerStartBtn}
+                title="Start project"
+                aria-label={`Start ${p.name}`}
+              >
+                {isBusy && powerIntent === "start" ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    <span>[ START ]</span>
+                  </span>
+                ) : (
+                  "[ START ]"
+                )}
+              </button>
+            ) : null}
+            {showStopButton ? (
+              <button
+                type="button"
+                onClick={() => void togglePower()}
+                disabled={!canToggle && !(isBusy && powerIntent === "stop")}
+                className={powerBtn}
+                title="Stop project"
+                aria-label={`Stop ${p.name}`}
+              >
+                {isBusy && powerIntent === "stop" ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    <span>[ STOP ]</span>
+                  </span>
+                ) : (
+                  "[ STOP ]"
+                )}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={openSettingsModal}
