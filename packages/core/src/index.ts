@@ -410,6 +410,15 @@ function projectPrivateNetworkName(hash: string, slug: string): string {
   return `${fluxTenantStackBaseId(hash, slug)}-net`;
 }
 
+/**
+ * The `flux-system` project hosts the control-plane DB; services on {@link FLUX_NETWORK_NAME} (e.g. the
+ * dashboard) must be able to reach it via Docker DNS, while other tenants' Postgres must stay
+ * off the shared bridge. See {@link ProjectManager} provision / align.
+ */
+function isPlatformSystemStackSlug(slug: string): boolean {
+  return slug === "flux-system";
+}
+
 function postgresContainerName(hash: string, slug: string): string {
   return `${fluxTenantStackBaseId(hash, slug)}-db`;
 }
@@ -1611,19 +1620,12 @@ export class ProjectManager {
         pgContainer = this.docker.getContainer(pgContainerName);
       } else {
         log?.(`Creating Postgres container ${pgContainerName}…`);
-        pgContainer = await this.docker.createContainer({
+        pgContainer = await this.createPostgresContainerForProvision({
           name: pgContainerName,
-          Image: POSTGRES_IMAGE,
-          Labels: managedTenantContainerLabels(),
-          Env: [`POSTGRES_PASSWORD=${postgresPassword}`],
-          HostConfig: {
-            NetworkMode: privateNet,
-            Binds: [`${volumeName}:/var/lib/postgresql/data`],
-            Memory: fluxTenantMemoryLimitBytes(),
-            NanoCpus: fluxTenantCpuNanoCpus(),
-            RestartPolicy: FLUX_TENANT_RESTART_POLICY,
-            /* Intentionally no PortBindings: health + SQL use docker exec inside the container. */
-          },
+          password: postgresPassword,
+          volumeName,
+          privateNet,
+          slug,
         });
       }
     } else if (pgExisting) {
@@ -1644,19 +1646,12 @@ export class ProjectManager {
     } else {
       postgresPassword = randomHexChars(16);
       log?.(`Creating Postgres container ${pgContainerName}…`);
-      pgContainer = await this.docker.createContainer({
+      pgContainer = await this.createPostgresContainerForProvision({
         name: pgContainerName,
-        Image: POSTGRES_IMAGE,
-        Labels: managedTenantContainerLabels(),
-        Env: [`POSTGRES_PASSWORD=${postgresPassword}`],
-        HostConfig: {
-          NetworkMode: privateNet,
-          Binds: [`${volumeName}:/var/lib/postgresql/data`],
-          Memory: fluxTenantMemoryLimitBytes(),
-          NanoCpus: fluxTenantCpuNanoCpus(),
-          RestartPolicy: FLUX_TENANT_RESTART_POLICY,
-          /* Intentionally no PortBindings: health + SQL use docker exec inside the container. */
-        },
+        password: postgresPassword,
+        volumeName,
+        privateNet,
+        slug,
       });
     }
 
@@ -2007,6 +2002,51 @@ export class ProjectManager {
   }
 
   /**
+   * Tenant Postgres: private network only. Platform `flux-system` Postgres: private + `flux-network`
+   * so the control plane can connect without joining every tenant’s internal bridge.
+   */
+  private async createPostgresContainerForProvision(opts: {
+    name: string;
+    password: string;
+    volumeName: string;
+    privateNet: string;
+    slug: string;
+  }): Promise<Docker.Container> {
+    const bind = `${opts.volumeName}:/var/lib/postgresql/data`;
+    const hostBase = {
+      Binds: [bind],
+      Memory: fluxTenantMemoryLimitBytes(),
+      NanoCpus: fluxTenantCpuNanoCpus(),
+      RestartPolicy: FLUX_TENANT_RESTART_POLICY,
+    };
+    if (isPlatformSystemStackSlug(opts.slug)) {
+      return await this.docker.createContainer({
+        name: opts.name,
+        Image: POSTGRES_IMAGE,
+        Labels: managedTenantContainerLabels(),
+        Env: [`POSTGRES_PASSWORD=${opts.password}`],
+        HostConfig: hostBase,
+        NetworkingConfig: {
+          EndpointsConfig: {
+            [FLUX_NETWORK_NAME]: {},
+            [opts.privateNet]: {},
+          },
+        },
+      });
+    }
+    return await this.docker.createContainer({
+      name: opts.name,
+      Image: POSTGRES_IMAGE,
+      Labels: managedTenantContainerLabels(),
+      Env: [`POSTGRES_PASSWORD=${opts.password}`],
+      HostConfig: {
+        ...hostBase,
+        NetworkMode: opts.privateNet,
+      },
+    });
+  }
+
+  /**
    * Stops/removes the API container and creates a new one with `mergedEnv`, preserving Traefik
    * labels and host settings from `inspect` unless `replaceOptions.labels` is set.
    */
@@ -2084,10 +2124,11 @@ export class ProjectManager {
   }
 
   /**
-   * Postgres URI using the DB container’s Docker DNS hostname. The database is on the **tenant private**
-   * network only — not on {@link FLUX_NETWORK_NAME} — so TCP from other `flux-network` services will
-   * not resolve. Use `docker exec` / control-plane exec helpers, or a client attached to the same
-   * private network (e.g. the tenant PostgREST container’s network namespace).
+   * Postgres URI using the DB container’s Docker DNS hostname. **Customer** project databases are on
+   * the **tenant private** network only, so they are not reachable from arbitrary `flux-network`
+   * clients. The **`flux-system`** project is an exception: its Postgres is also on
+   * {@link FLUX_NETWORK_NAME} for the control plane (dashboard) `Pool` connection. For other tenants,
+   * use `docker exec` / or connect from a container on that tenant’s private network (e.g. PostgREST).
    */
   async getPostgresHostConnectionString(
     projectName: string,
@@ -2751,7 +2792,11 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     return name;
   }
 
-  /** Moves Postgres off the shared bridge and onto the private network only (idempotent). */
+  /**
+   * Isolates tenant Postgres on the private network only. The platform `flux-system` DB is an
+   * exception: it stays on the private network **and** {@link FLUX_NETWORK_NAME} so the dashboard
+   * (or other bridge-only services) can open `Pool` / Drizzle to `getPostgresHostConnectionString`.
+   */
   private async alignPostgresToPrivateOnlyNetwork(
     containerId: string,
     hash: string,
@@ -2759,6 +2804,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     onStatus?: (message: string) => void,
   ): Promise<void> {
     const privateName = projectPrivateNetworkName(hash, slug);
+    const platform = isPlatformSystemStackSlug(slug);
     await this.ensureProjectPrivateNetwork(hash, slug, onStatus);
     const before = await this.docker.getContainer(containerId).inspect();
     const nets = before.NetworkSettings?.Networks ?? {};
@@ -2771,6 +2817,13 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       } catch (err: unknown) {
         if (getHttpStatus(err) !== 409) throw err;
       }
+    }
+    if (platform) {
+      onStatus?.(
+        `Ensuring platform Postgres stays on ${FLUX_NETWORK_NAME} (control plane access)…`,
+      );
+      await this.ensureContainerAttachedToFluxNetwork(containerId);
+      return;
     }
     const after = await this.docker.getContainer(containerId).inspect();
     const hasFlux =
