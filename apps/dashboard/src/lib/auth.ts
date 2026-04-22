@@ -62,7 +62,8 @@ function coreAuthConfig(): Omit<NextAuthConfig, "adapter"> {
     ],
     callbacks: {
       authorized({ auth, request }) {
-        if (request.nextUrl.pathname.startsWith("/projects")) {
+        const p = request.nextUrl.pathname;
+        if (p.startsWith("/projects") || p.startsWith("/settings")) {
           return !!auth?.user;
         }
         return true;

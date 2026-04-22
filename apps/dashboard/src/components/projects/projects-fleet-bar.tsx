@@ -64,6 +64,15 @@ export function ProjectsFleetBar({
             /
           </span>
           <span className="shrink-0 text-zinc-400">PROJECTS</span>
+          <span className="text-zinc-700" aria-hidden>
+            /
+          </span>
+          <Link
+            href="/settings/keys"
+            className={`shrink-0 text-zinc-500 transition-colors hover:text-zinc-200 ${focus}`}
+          >
+            API_KEYS
+          </Link>
         </nav>
 
         <div className="flex justify-center">

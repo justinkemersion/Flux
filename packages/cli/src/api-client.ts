@@ -3,8 +3,24 @@ import type {
   FluxProjectSummary,
   ImportSqlFileResult,
 } from "@flux/core/standalone";
+import { z } from "zod";
 
 const DEFAULT_BASE = "https://flux.vsl-base.com/api";
+
+const fluxProjectSummarySchema = z.object({
+  slug: z.string(),
+  hash: z.string(),
+  status: z.enum([
+    "running",
+    "stopped",
+    "partial",
+    "missing",
+    "corrupted",
+  ]),
+  apiUrl: z.string(),
+});
+
+const listProjectsResponseSchema = z.array(fluxProjectSummarySchema);
 
 /**
  * Base URL: `https://flux.vsl-base.com/api` by default, or `process.env.FLUX_API_BASE` (no trailing slash).
@@ -32,10 +48,55 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------------
-  // GET /projects — list projects (dashboard parity)
+  // GET /api/cli/v1/list — catalog + Docker summaries for the token owner
   // ---------------------------------------------------------------------------
-  listProjects(): Promise<FluxProjectSummary[]> {
-    return Promise.reject(this.notImplemented("listProjects"));
+  async listProjects(): Promise<FluxProjectSummary[]> {
+    const token = process.env.FLUX_API_TOKEN?.trim();
+    if (!token) {
+      throw new Error(
+        "Missing FLUX_API_TOKEN. Export it or run flux login (when available).",
+      );
+    }
+    const url = `${this.baseUrl}/cli/v1/list`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    if (res.status === 401) {
+      throw new Error(
+        "Invalid or expired API token. Run flux login.",
+      );
+    }
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI list: response was not JSON (${res.status}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = listProjectsResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new Error(
+        "CLI list: response did not match expected FluxProjectSummary[] shape.",
+      );
+    }
+    return parsed.data;
   }
 
   // ---------------------------------------------------------------------------
