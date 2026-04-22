@@ -57,6 +57,55 @@ export {
 export const FLUX_NETWORK_NAME = "flux-network";
 
 /**
+ * Docker label for tenant containers (Postgres, PostgREST) created by Flux so UIs can filter
+ * out infrastructure (Traefik, dashboard, etc.).
+ */
+export const FLUX_VESSEL_MANAGED_LABEL = "vessel.flux.managed" as const;
+export const FLUX_VESSEL_MANAGED_VALUE = "true" as const;
+
+const FLUX_TENANT_DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024;
+/** 0.5 vCPU for each of DB and API (tunable; stack uses ~1 core under full load on both). */
+const FLUX_TENANT_DEFAULT_NANOCPUS = 500_000_000;
+
+/**
+ * Per-tenant memory cap for Postgres and PostgREST (bytes), default 256 MiB. Override with
+ * `FLUX_TENANT_MEMORY_BYTES` (decimal integer).
+ */
+export function fluxTenantMemoryLimitBytes(): number {
+  const raw = process.env.FLUX_TENANT_MEMORY_BYTES?.trim();
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return FLUX_TENANT_DEFAULT_MEMORY_BYTES;
+}
+
+/**
+ * Per-container CPU cap in nanoseconds per CPU per second, default 0.5 vCPU. Override with
+ * `FLUX_TENANT_CPU` as a positive decimal (e.g. `0.5`); converted with `round(cpu * 1e9)`.
+ */
+export function fluxTenantCpuNanoCpus(): number {
+  const raw = process.env.FLUX_TENANT_CPU?.trim();
+  if (raw) {
+    const f = Number.parseFloat(raw);
+    if (Number.isFinite(f) && f > 0) {
+      return Math.max(1, Math.round(f * 1_000_000_000));
+    }
+  }
+  return FLUX_TENANT_DEFAULT_NANOCPUS;
+}
+
+/** `unless-stopped` with `MaximumRetryCount` 5 (honored for `on-failure`; stamped for policy visibility). */
+const FLUX_TENANT_RESTART_POLICY = {
+  Name: "unless-stopped" as const,
+  MaximumRetryCount: 5,
+};
+
+function managedTenantContainerLabels(): Record<string, string> {
+  return { [FLUX_VESSEL_MANAGED_LABEL]: FLUX_VESSEL_MANAGED_VALUE };
+}
+
+/**
  * Traefik gateway container (Docker provider: `web` on :80; optional `websecure` on :443 with ACME).
  * Set `FLUX_TRAEFIK_CERTRESOLVER` (or `FLUX_DOMAIN` / remote `DOCKER_HOST`) on the control plane
  * to match this Traefik’s ACME resolver; tenant PostgREST routers use `websecure` + that resolver.
@@ -152,12 +201,13 @@ function deterministicPostgresPasswordFromDevSecret(
     .slice(0, 32);
 }
 
-/** Removes API + DB containers and the data volume (404-safe). */
+/** Removes API + DB containers, the data volume, and the per-tenant private network when `privateNetworkName` is set (404-safe). */
 async function removeApiPgAndVolumeForProvision(
   docker: Docker,
   apiContainerName: string,
   pgContainerName: string,
   volumeName: string,
+  privateNetworkName?: string,
 ): Promise<void> {
   for (const name of [apiContainerName, pgContainerName]) {
     try {
@@ -170,6 +220,13 @@ async function removeApiPgAndVolumeForProvision(
     await docker.getVolume(volumeName).remove({ force: true });
   } catch (err: unknown) {
     if (getHttpStatus(err) !== 404) throw err;
+  }
+  if (privateNetworkName && privateNetworkName.length > 0) {
+    try {
+      await docker.getNetwork(privateNetworkName).remove();
+    } catch (err: unknown) {
+      if (getHttpStatus(err) !== 404) throw err;
+    }
   }
 }
 
@@ -346,6 +403,11 @@ export function slugifyProjectName(name: string): string {
 /** `flux-{hash}-{slug}` — base for `-db`, `-api`, Traefik router id, etc. */
 function fluxTenantStackBaseId(hash: string, slug: string): string {
   return `flux-${hash}-${slug}`;
+}
+
+/** Per-tenant isolated internal bridge for DB + API (Postgres only on this network; API also on {@link FLUX_NETWORK_NAME}). */
+function projectPrivateNetworkName(hash: string, slug: string): string {
+  return `${fluxTenantStackBaseId(hash, slug)}-net`;
 }
 
 function postgresContainerName(hash: string, slug: string): string {
@@ -664,6 +726,8 @@ function postgrestTraefikDockerLabels(
     ? `${corsMw},${stripMw}`
     : corsMw;
   labels[`traefik.http.routers.${traefikSvc}.middlewares`] = middlewares;
+
+  labels[FLUX_VESSEL_MANAGED_LABEL] = FLUX_VESSEL_MANAGED_VALUE;
 
   return labels;
 }
@@ -1044,7 +1108,7 @@ function postgresDockerInternalUri(containerName: string, password: string): str
   return `postgres://${user}:${pass}@${containerName}:5432/postgres`;
 }
 
-/** Describes a fully provisioned Flux tenant: DB + PostgREST on the shared bridge network. */
+/** Describes a fully provisioned Flux tenant: PostgREST on the shared + private networks; DB on the private network only. */
 export interface FluxProject {
   /** Display name supplied to `provisionProject`. */
   name: string;
@@ -1052,11 +1116,22 @@ export interface FluxProject {
   slug: string;
   /** Random per-project 7-hex id embedded in Docker names and the public API hostname. */
   hash: string;
-  /** User-defined bridge all project containers attach to (e.g. `flux-network`). */
+  /**
+   * Traefik-facing user-defined bridge (e.g. `flux-network`). The PostgREST container attaches here
+   * and to {@link privateNetworkName}; Postgres attaches only to the private network.
+   */
   networkName: string;
+  /**
+   * Isolated **internal** bridge (`flux-{hash}-{slug}-net`) shared by this project’s DB and API only.
+   * `PGRST_DB_URI` uses the Postgres container name, which is resolvable on this network.
+   */
+  privateNetworkName: string;
   postgres: {
     containerId: string;
-    /** Resolvable hostname on `networkName` (Docker DNS: same as container name). */
+    /**
+     * Docker DNS hostname (same on the private network). Not reachable from arbitrary containers on
+     * {@link networkName} because Postgres is not attached there.
+     */
     containerName: string;
   };
   postgrest: {
@@ -1408,7 +1483,7 @@ export class ProjectManager {
     await assertFluxDockerEngineReachableOrThrow(this.docker);
   }
 
-  /** Docker DNS names for Postgres and PostgREST on {@link FLUX_NETWORK_NAME} (internal connectivity). */
+  /** Docker DNS names for Postgres and PostgREST (Postgres reachable on the tenant private network only). */
   static containerNamesForSlug(
     slug: string,
     hash: string,
@@ -1424,7 +1499,10 @@ export class ProjectManager {
   }
 
   /**
-   * Provisions Postgres + PostgREST on {@link FLUX_NETWORK_NAME}, with internal DNS between services.
+   * Provisions Postgres on an **internal** per-tenant private bridge (`flux-{hash}-{slug}-net`) and
+   * PostgREST on that private network **and** {@link FLUX_NETWORK_NAME} (Traefik). Prevents other
+   * `flux-network` services from reaching tenant Postgres. Resource caps and
+   * {@link FLUX_VESSEL_MANAGED_LABEL} are applied to both containers.
    *
    * A Traefik instance named {@link FLUX_GATEWAY_CONTAINER_NAME} (managed outside this API, e.g. Compose)
    * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.{hash}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
@@ -1437,12 +1515,13 @@ export class ProjectManager {
    * **`docker exec`** (`pg_isready`, `psql`) inside the DB container so provisioning works with
    * remote Engine endpoints (no `localhost:5432` from the control plane).
    *
-   * PostgREST is started with RestartPolicy `on-failure` (with a retry cap) so it survives Postgres
-   * startup races; internal readiness uses `pg_isready` in-container before applying {@link BOOTSTRAP_SQL}.
+   * `PGRST_DB_URI` points at the Postgres service name; PostgREST resolves it on the private network.
+   * Internal readiness uses `pg_isready` in-container before applying {@link BOOTSTRAP_SQL}.
    *
    * **Resume:** If the Postgres or PostgREST container already exists (by name), Flux **adopts** it
    * (reads secrets from inspect, starts if stopped) and continues bootstrap—no error, whether the
-   * prior run failed after create or only partially completed.
+   * prior run failed after create or only partially completed. Adopted stacks are realigned to the
+   * private + bridge network layout.
    */
   async provisionProject(
     name: string,
@@ -1461,6 +1540,11 @@ export class ProjectManager {
     await this.ensureFluxGateway(log);
     const slug = slugifyProjectName(name);
     const projectHash = hash ?? generateProjectHash();
+    const privateNet = await this.ensureProjectPrivateNetwork(
+      projectHash,
+      slug,
+      log,
+    );
     const trimmedCustomJwt = options?.customJwtSecret?.trim();
     let jwtSecret =
       trimmedCustomJwt && trimmedCustomJwt.length > 0
@@ -1480,6 +1564,7 @@ export class ProjectManager {
         apiContainerName,
         pgContainerName,
         volumeName,
+        privateNet,
       );
     } else if (fluxResetTenantVolumeEnabled() && slug === "flux-system") {
       log?.(
@@ -1529,12 +1614,14 @@ export class ProjectManager {
         pgContainer = await this.docker.createContainer({
           name: pgContainerName,
           Image: POSTGRES_IMAGE,
+          Labels: managedTenantContainerLabels(),
           Env: [`POSTGRES_PASSWORD=${postgresPassword}`],
           HostConfig: {
-            NetworkMode: FLUX_NETWORK_NAME,
+            NetworkMode: privateNet,
             Binds: [`${volumeName}:/var/lib/postgresql/data`],
-            Memory: 512 * 1024 * 1024,
-            RestartPolicy: { Name: "unless-stopped" },
+            Memory: fluxTenantMemoryLimitBytes(),
+            NanoCpus: fluxTenantCpuNanoCpus(),
+            RestartPolicy: FLUX_TENANT_RESTART_POLICY,
             /* Intentionally no PortBindings: health + SQL use docker exec inside the container. */
           },
         });
@@ -1560,12 +1647,14 @@ export class ProjectManager {
       pgContainer = await this.docker.createContainer({
         name: pgContainerName,
         Image: POSTGRES_IMAGE,
+        Labels: managedTenantContainerLabels(),
         Env: [`POSTGRES_PASSWORD=${postgresPassword}`],
         HostConfig: {
-          NetworkMode: FLUX_NETWORK_NAME,
+          NetworkMode: privateNet,
           Binds: [`${volumeName}:/var/lib/postgresql/data`],
-          Memory: 512 * 1024 * 1024,
-          RestartPolicy: { Name: "unless-stopped" },
+          Memory: fluxTenantMemoryLimitBytes(),
+          NanoCpus: fluxTenantCpuNanoCpus(),
+          RestartPolicy: FLUX_TENANT_RESTART_POLICY,
           /* Intentionally no PortBindings: health + SQL use docker exec inside the container. */
         },
       });
@@ -1574,6 +1663,8 @@ export class ProjectManager {
     log?.("Starting Postgres (if stopped)…");
     await startFluxContainerIfStopped(pgContainer);
     const pgInspect = await pgContainer.inspect();
+    await this.alignPostgresToPrivateOnlyNetwork(pgInspect.Id, projectHash, slug, log);
+    await this.applyTenantResourceLimits(pgInspect.Id, log);
 
     await waitPostgresReadyInsideContainer(
       this.docker,
@@ -1687,9 +1778,15 @@ export class ProjectManager {
         ],
         ExposedPorts: { "3000/tcp": {} },
         HostConfig: {
-          NetworkMode: FLUX_NETWORK_NAME,
-          Memory: 256 * 1024 * 1024,
-          RestartPolicy: { Name: "on-failure", MaximumRetryCount: 25 },
+          Memory: fluxTenantMemoryLimitBytes(),
+          NanoCpus: fluxTenantCpuNanoCpus(),
+          RestartPolicy: FLUX_TENANT_RESTART_POLICY,
+        },
+        NetworkingConfig: {
+          EndpointsConfig: {
+            [FLUX_NETWORK_NAME]: {},
+            [privateNet]: {},
+          },
         },
       });
     }
@@ -1697,9 +1794,10 @@ export class ProjectManager {
     log?.("Starting PostgREST (if stopped)…");
     await startFluxContainerIfStopped(apiContainer);
     const apiInspect = await apiContainer.inspect();
-    await this.ensureContainerAttachedToFluxNetwork(apiInspect.Id);
+    await this.alignPostgrestToBridgeAndPrivate(apiInspect.Id, projectHash, slug, log);
+    await this.applyTenantResourceLimits(apiInspect.Id, log);
     log?.(
-      `Verified PostgREST container is attached to ${FLUX_NETWORK_NAME} (Traefik can reach it).`,
+      `Verified PostgREST is on ${FLUX_NETWORK_NAME} and ${privateNet} (Traefik + DB reachability).`,
     );
 
     const isProduction = options?.isProduction === true;
@@ -1712,6 +1810,7 @@ export class ProjectManager {
       slug,
       hash: projectHash,
       networkName: FLUX_NETWORK_NAME,
+      privateNetworkName: privateNet,
       postgres: {
         containerId: pgInspect.Id,
         containerName: pgContainerName,
@@ -1922,6 +2021,8 @@ export class ProjectManager {
     const container = this.docker.getContainer(inspect.Id);
     const env = dockerEnvFromRecord(mergedEnv);
     const wasRunning = inspect.State.Running;
+    const privateNet = projectPrivateNetworkName(hash, slug);
+    await this.ensureProjectPrivateNetwork(hash, slug);
 
     if (wasRunning) {
       try {
@@ -1939,45 +2040,54 @@ export class ProjectManager {
     }
 
     const hc = inspect.HostConfig;
-    const networkMode =
-      hc.NetworkMode &&
-      hc.NetworkMode !== "" &&
-      hc.NetworkMode !== "default"
-        ? hc.NetworkMode
-        : FLUX_NETWORK_NAME;
     const memory =
       typeof hc.Memory === "number" && hc.Memory > 0
         ? hc.Memory
-        : 256 * 1024 * 1024;
-    const restartPolicy = hc.RestartPolicy ?? {
-      Name: "on-failure" as const,
-      MaximumRetryCount: 25,
+        : fluxTenantMemoryLimitBytes();
+    const nanoCpus =
+      typeof hc.NanoCpus === "number" && hc.NanoCpus > 0
+        ? hc.NanoCpus
+        : fluxTenantCpuNanoCpus();
+    const restartPolicy = hc.RestartPolicy?.Name
+      ? hc.RestartPolicy
+      : FLUX_TENANT_RESTART_POLICY;
+
+    const labelMap = {
+      ...managedTenantContainerLabels(),
+      ...(replaceOptions?.labels ?? inspect.Config.Labels ?? {}),
     };
 
     const created = await this.docker.createContainer({
       name: apiName,
       Image: inspect.Config.Image,
-      Labels: replaceOptions?.labels ?? inspect.Config.Labels ?? {},
+      Labels: labelMap,
       Env: env,
       ExposedPorts: inspect.Config.ExposedPorts ?? { "3000/tcp": {} },
       HostConfig: {
-        NetworkMode: networkMode,
         Memory: memory,
+        NanoCpus: nanoCpus,
         RestartPolicy: restartPolicy,
+      },
+      NetworkingConfig: {
+        EndpointsConfig: {
+          [FLUX_NETWORK_NAME]: {},
+          [privateNet]: {},
+        },
       },
     });
 
     if (wasRunning) {
       await created.start();
       const newInspect = await created.inspect();
-      await this.ensureContainerAttachedToFluxNetwork(newInspect.Id);
+      await this.alignPostgrestToBridgeAndPrivate(newInspect.Id, hash, slug);
     }
   }
 
   /**
-   * Postgres URI using the container’s Docker DNS hostname (`flux-<slug>-db` on {@link FLUX_NETWORK_NAME}).
-   * Connect from another container on that network, or set `FLUX_SYSTEM_DATABASE_URL` for the
-   * dashboard when the control plane runs outside Docker.
+   * Postgres URI using the DB container’s Docker DNS hostname. The database is on the **tenant private**
+   * network only — not on {@link FLUX_NETWORK_NAME} — so TCP from other `flux-network` services will
+   * not resolve. Use `docker exec` / control-plane exec helpers, or a client attached to the same
+   * private network (e.g. the tenant PostgREST container’s network namespace).
    */
   async getPostgresHostConnectionString(
     projectName: string,
@@ -2502,7 +2612,14 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     const apiName = postgrestContainerName(options.hash, slug);
     const dbName = postgresContainerName(options.hash, slug);
     const vol = tenantVolumeName(options.hash, slug);
-    await removeApiPgAndVolumeForProvision(this.docker, apiName, dbName, vol);
+    const privateNet = projectPrivateNetworkName(options.hash, slug);
+    await removeApiPgAndVolumeForProvision(
+      this.docker,
+      apiName,
+      dbName,
+      vol,
+      privateNet,
+    );
   }
 
   /**
@@ -2516,7 +2633,14 @@ COMMENT ON SCHEMA public IS 'standard public schema';
     const apiName = postgrestContainerName(hash, normalized);
     const dbName = postgresContainerName(hash, normalized);
     const vol = tenantVolumeName(hash, normalized);
-    await removeApiPgAndVolumeForProvision(this.docker, apiName, dbName, vol);
+    const privateNet = projectPrivateNetworkName(hash, normalized);
+    await removeApiPgAndVolumeForProvision(
+      this.docker,
+      apiName,
+      dbName,
+      vol,
+      privateNet,
+    );
   }
 
   /**
@@ -2596,6 +2720,117 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       }
       if (code === 304) return;
       throw err;
+    }
+  }
+
+  /**
+   * Isolated per-tenant bridge used only for Postgres + PostgREST (internal: no default route to
+   * the public internet; tenant DB is not on {@link FLUX_NETWORK_NAME}).
+   */
+  private async ensureProjectPrivateNetwork(
+    hash: string,
+    slug: string,
+    onStatus?: (message: string) => void,
+  ): Promise<string> {
+    const name = projectPrivateNetworkName(hash, slug);
+    onStatus?.(`Checking Docker network ${name}…`);
+    const listed = await this.docker.listNetworks({
+      filters: { name: [name] },
+    });
+    if (!listed.some((n) => n.Name === name)) {
+      await this.docker.createNetwork({
+        Name: name,
+        Driver: "bridge",
+        Internal: true,
+        CheckDuplicate: true,
+      });
+      onStatus?.(`Created internal network ${name}.`);
+    } else {
+      onStatus?.(`Network ${name} already exists.`);
+    }
+    return name;
+  }
+
+  /** Moves Postgres off the shared bridge and onto the private network only (idempotent). */
+  private async alignPostgresToPrivateOnlyNetwork(
+    containerId: string,
+    hash: string,
+    slug: string,
+    onStatus?: (message: string) => void,
+  ): Promise<void> {
+    const privateName = projectPrivateNetworkName(hash, slug);
+    await this.ensureProjectPrivateNetwork(hash, slug, onStatus);
+    const before = await this.docker.getContainer(containerId).inspect();
+    const nets = before.NetworkSettings?.Networks ?? {};
+    if (!nets[privateName]) {
+      onStatus?.(`Attaching Postgres to ${privateName}…`);
+      try {
+        await this.docker
+          .getNetwork(privateName)
+          .connect({ Container: containerId });
+      } catch (err: unknown) {
+        if (getHttpStatus(err) !== 409) throw err;
+      }
+    }
+    const after = await this.docker.getContainer(containerId).inspect();
+    const hasFlux =
+      (after.NetworkSettings?.Networks ?? {})[FLUX_NETWORK_NAME] != null;
+    if (hasFlux) {
+      onStatus?.(`Detaching Postgres from ${FLUX_NETWORK_NAME}…`);
+      try {
+        await this.docker.getNetwork(FLUX_NETWORK_NAME).disconnect({
+          Container: containerId,
+          Force: true,
+        });
+      } catch (err: unknown) {
+        if (getHttpStatus(err) !== 404) throw err;
+      }
+    }
+  }
+
+  /**
+   * PostgREST must be on the Traefik bridge and the private network so the gateway and `PGRST_DB_URI`
+   * can each reach their peer.
+   */
+  private async alignPostgrestToBridgeAndPrivate(
+    containerId: string,
+    hash: string,
+    slug: string,
+    onStatus?: (message: string) => void,
+  ): Promise<void> {
+    const privateName = projectPrivateNetworkName(hash, slug);
+    await this.ensureProjectPrivateNetwork(hash, slug, onStatus);
+    const before = await this.docker.getContainer(containerId).inspect();
+    const nets = before.NetworkSettings?.Networks ?? {};
+    if (!nets[privateName]) {
+      onStatus?.(`Attaching PostgREST to ${privateName}…`);
+      try {
+        await this.docker
+          .getNetwork(privateName)
+          .connect({ Container: containerId });
+      } catch (err: unknown) {
+        if (getHttpStatus(err) !== 409) throw err;
+      }
+    }
+    await this.ensureContainerAttachedToFluxNetwork(containerId);
+  }
+
+  /** Best-effort: sync memory / CPU / restart policy to current tenant defaults (idempotent for new containers). */
+  private async applyTenantResourceLimits(
+    containerId: string,
+    onStatus?: (message: string) => void,
+  ): Promise<void> {
+    try {
+      await this.docker.getContainer(containerId).update({
+        Memory: fluxTenantMemoryLimitBytes(),
+        NanoCpus: fluxTenantCpuNanoCpus(),
+        RestartPolicy: FLUX_TENANT_RESTART_POLICY,
+      });
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : String(err);
+      onStatus?.(
+        `Note: could not apply resource or restart policy update to ${containerId.slice(0, 12)}: ${detail}`,
+      );
     }
   }
 
