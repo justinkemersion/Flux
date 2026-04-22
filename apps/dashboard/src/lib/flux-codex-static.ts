@@ -28,6 +28,8 @@ export const FLUX_CODEX_JSON = {
     list: "GET /api/cli/v1/list — list projects for the authenticated account.",
     push:
       "POST /api/cli/v1/push — apply a SQL file to a project's database in a transaction and notify PostgREST to reload the schema cache.",
+    logs:
+      "GET /api/cli/v1/logs?slug=&hash=&service=api|db — stream container logs (SSE) for the PostgREST or Postgres container.",
     reap:
       "POST /api/cli/v1/reap — destroy a project and tear down its containers and volumes (when implemented).",
   },

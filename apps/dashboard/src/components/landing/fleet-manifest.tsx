@@ -78,7 +78,7 @@ export function FleetManifest() {
         ))}
         <li>
           <Link
-            href="/#install"
+            href="/docs#install"
             className={`group flex h-full min-h-[12rem] flex-col justify-between border border-dashed border-zinc-800 bg-transparent p-5 transition-[border-color,background-color] duration-200 ease-linear hover:border-zinc-600 hover:bg-zinc-900/20 md:p-6 ${focus} rounded-none`}
           >
             <div>

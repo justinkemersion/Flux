@@ -54,16 +54,32 @@ export function FluxLanding() {
             CLI install
           </h2>
           <p className="mt-3 max-w-2xl font-sans text-sm leading-relaxed text-zinc-400">
-            Install the bundled CLI, then set the control plane URL and an API key
-            (Dashboard → API keys).
+            You need <strong className="font-medium text-zinc-300">Node.js 20+</strong> and{" "}
+            <code className="text-zinc-400">curl</code> on your machine. The installer writes{" "}
+            <code className="text-zinc-400">flux</code> to <code className="text-zinc-400">~/.local/bin</code> by
+            default (no <code className="text-zinc-400">sudo</code>); add that directory to your{" "}
+            <code className="text-zinc-400">PATH</code> if needed.
+          </p>
+          <p className="mt-3 max-w-2xl font-sans text-sm leading-relaxed text-zinc-500">
+            Create a key in{" "}
+            <Link
+              href="/settings/keys"
+              className={`text-zinc-300 underline-offset-2 transition-colors duration-200 ease-linear hover:text-white hover:underline ${focusLink} rounded-sm`}
+            >
+              Settings → API keys
+            </Link>{" "}
+            before the commands below.
           </p>
           <div
             className="mt-6 overflow-x-auto border border-zinc-800 bg-black/50 p-4 font-mono text-sm leading-relaxed text-zinc-300"
             role="region"
             aria-label="Install Flux CLI"
           >
-            <pre className="whitespace-pre text-[13px]">
-{`curl -sL https://flux.vsl-base.com/install | bash
+            <pre className="whitespace-pre text-[12px] sm:text-[13px]">
+{`# One-liner (optional: FLUX_ORIGIN, or bash -s for install directory)
+curl -sL https://flux.vsl-base.com/install | bash
+# FLUX_ORIGIN=https://your-host curl -sL $FLUX_ORIGIN/install | bash
+# curl -sL https://flux.vsl-base.com/install | bash -s /usr/local/bin
 
 export FLUX_API_BASE="https://flux.vsl-base.com/api"
 export FLUX_API_TOKEN="flx_live_…"
@@ -72,15 +88,21 @@ flux create "My project"
 flux list`}
             </pre>
           </div>
+          <p className="mt-4 max-w-2xl font-sans text-xs text-zinc-500">
+            If the download returns{" "}
+            <span className="text-zinc-400">503</span>, the server build does not include the prebuilt
+            CLI bundle (host must run <code className="text-zinc-500">pnpm --filter @flux/cli run build</code>{" "}
+            before the dashboard image is built).
+          </p>
           <p className="mt-4 font-sans text-sm text-zinc-400">
             <Link
-              href="/docs"
+              href="/docs#install"
               className={`text-zinc-300 underline-offset-2 transition-colors duration-200 ease-linear hover:text-white hover:underline ${focusLink} rounded-sm`}
             >
-              Codex
+              Full install &amp; API reference
             </Link>
             {" · "}
-            same contract, deterministic reference.
+            same contract as the machine-readable Codex.
           </p>
         </section>
 

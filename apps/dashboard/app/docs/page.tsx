@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CodexManual } from "@/src/components/codex-manual";
 import { CodexQueryPanel } from "@/src/components/codex-query-panel";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export const metadata: Metadata = {
-  title: "Codex — Flux",
-  description: "AI documentation for Flux core rules and CLI reference.",
+  title: "Docs — Flux",
+  description: "Install, control plane, CLI reference, and interactive Codex.",
 };
 
 export default function DocsPage() {
@@ -20,7 +21,7 @@ export default function DocsPage() {
               Module
             </p>
             <h1 className="mt-1 text-lg font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-              CODEX
+              DOCS_&_CODEX
             </h1>
           </div>
           <div className="flex flex-wrap gap-4 text-[10px] uppercase tracking-[0.16em]">
@@ -30,6 +31,12 @@ export default function DocsPage() {
             >
               ←_FLUX
             </Link>
+            <a
+              href="#install"
+              className="text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              #install
+            </a>
             <Link
               href="/api/auth/signin?callbackUrl=%2Fdocs"
               className="text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-700 dark:hover:text-zinc-300"
@@ -37,6 +44,10 @@ export default function DocsPage() {
               FLEET_
             </Link>
           </div>
+        </div>
+
+        <div className="mb-10">
+          <CodexManual />
         </div>
 
         <div className="rounded-sm border border-zinc-300 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.02)] dark:border-zinc-800 dark:bg-zinc-950/80">
