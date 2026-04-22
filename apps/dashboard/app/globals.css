@@ -30,3 +30,16 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+/* Landing hero: industrial grid on zinc-950 (very subtle) */
+.flux-hero-grid {
+  background-color: #09090b;
+  background-image: linear-gradient(
+      to right,
+      rgb(39 39 42 / 0.22) 1px,
+      transparent 1px
+    ),
+    linear-gradient(to bottom, rgb(39 39 42 / 0.22) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: center top;
+}
