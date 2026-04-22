@@ -10,12 +10,12 @@ FROM base AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY packages/core ./packages/core
-COPY apps/dashboard ./apps/dashboard
-
+# Full monorepo (see repo-root .dockerignore); CLI dist must exist before dashboard
+# build so /api/install/cli can stream packages/cli/dist/index.js from the image.
+COPY . .
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter dashboard build
+RUN pnpm --filter @flux/cli run build
+RUN pnpm --filter dashboard run build
 
 FROM base AS runner
 ENV NODE_ENV=production
