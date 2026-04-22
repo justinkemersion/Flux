@@ -9,17 +9,18 @@ APP_DIR=${APP_DIR:-/srv/platform/flux}
 BRANCH=${BRANCH:-main}
 
 echo "Syncing repo on $REMOTE ($APP_DIR @ origin/$BRANCH)..."
-ssh "$REMOTE" "cd $APP_DIR && git fetch --all --prune && git reset --hard origin/$BRANCH"
+# The -A flag explicitly enables SSH Agent Forwarding so git can pull
+ssh -A "$REMOTE" "cd $APP_DIR && git fetch --all --prune && git reset --hard origin/$BRANCH"
 
 echo "Checking server-side .env..."
-ssh "$REMOTE" "test -f $APP_DIR/docker/web/.env" || {
+ssh -A "$REMOTE" "test -f $APP_DIR/docker/web/.env" || {
   echo "ERROR: $APP_DIR/docker/web/.env missing on $REMOTE."
   echo "       Create it from docker/web/.env.example before deploying."
   exit 1
 }
 
 echo "Building and starting flux-web..."
-ssh "$REMOTE" "cd $APP_DIR && docker compose -f docker/web/docker-compose.yml build && docker compose -f docker/web/docker-compose.yml up -d"
+ssh -A "$REMOTE" "cd $APP_DIR && docker compose -f docker/web/docker-compose.yml build && docker compose -f docker/web/docker-compose.yml up -d"
 
 echo
 echo "Deployed."

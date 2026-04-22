@@ -18,6 +18,32 @@ function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
 }
 
+/**
+ * Unwrap the innermost error message so Postgres/Drizzle errors don't get reported as the opaque
+ * `"Failed query: insert into ..."` envelope. Drizzle hangs the real `pg.DatabaseError`
+ * (code, detail, constraint) on `.cause`; surface that so operators can tell a foreign-key
+ * violation from a duplicate-key collision.
+ */
+function describeError(err: unknown): string {
+  const e = err as { message?: unknown; cause?: unknown } | null;
+  const cause = e?.cause as
+    | { message?: unknown; detail?: unknown; code?: unknown }
+    | undefined;
+  const causeMsg =
+    typeof cause?.message === "string" ? cause.message : undefined;
+  const causeDetail =
+    typeof cause?.detail === "string" ? cause.detail : undefined;
+  const causeCode = typeof cause?.code === "string" ? cause.code : undefined;
+  if (causeMsg) {
+    const parts = [causeMsg];
+    if (causeDetail) parts.push(causeDetail);
+    if (causeCode) parts.push(`(pg ${causeCode})`);
+    return parts.join(" — ");
+  }
+  if (typeof e?.message === "string") return e.message;
+  return String(err);
+}
+
 export async function GET(): Promise<Response> {
   const session = await auth();
   if (!session?.user?.id) return jsonError("Unauthorized", 401);
@@ -201,7 +227,11 @@ export async function POST(req: Request): Promise<Response> {
     await pm
       .nukeContainersOnly(project.slug, project.hash)
       .catch(() => undefined);
-    const message = err instanceof Error ? err.message : String(err);
+    const message = describeError(err);
+    console.error(
+      `[flux] projects.insert failed after provisioning slug=${project.slug} hash=${project.hash}: ${message}`,
+      err,
+    );
     return jsonError(message, 500);
   }
 }

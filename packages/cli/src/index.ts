@@ -573,7 +573,7 @@ async function main(): Promise<void> {
     .argument("<name>", "project name")
     .option(
       "--no-supabase-rest-path",
-      "Omit flux-<slug>-stripprefix on the tenant router (PostgREST at URL root; default is strip + CORS)",
+      "Omit flux-<hash>-<slug>-stripprefix on the tenant router (PostgREST at URL root; default is strip + CORS)",
       false,
     )
     .option(

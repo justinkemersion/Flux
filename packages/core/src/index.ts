@@ -596,6 +596,16 @@ const PGRST_DB_SCHEMAS_VALUE = "api,public";
 /**
  * Traefik labels for the tenant PostgREST router (shared by provision and label updates).
  *
+ * **Naming rule (global-hash namespacing — keep absolutely consistent with the hostname):**
+ *   - Router / service id   `flux-${hash}-${slug}-api`
+ *   - CORS middleware id    `flux-${hash}-${slug}-cors`
+ *   - Strip middleware id   `flux-${hash}-${slug}-stripprefix`
+ *   - Router rule           ``Host(`api.${slug}.${hash}.${domain}`)``
+ *
+ * All four share the same `flux-${hash}-${slug}` base ({@link fluxTenantStackBaseId}) and the
+ * hostname produced by {@link fluxTenantPostgrestHostname} so Traefik can never mismatch a
+ * router’s `.rule` with its `.service`.
+ *
  * `perProjectExtraOrigins` is layered on top of the built-in dashboard origins and
  * {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV}; the resolved list is stamped both into the Traefik
  * `accesscontrolalloworiginlist` middleware **and** the {@link FLUX_CORS_EXTRA_ORIGINS_LABEL}
@@ -659,28 +669,31 @@ function postgrestTraefikDockerLabels(
 }
 
 /**
- * Strips Flux’s Traefik routing labels for this tenant’s API so they can be replaced (toggle strip).
- * Preserves unrelated Docker labels on the same container, including the persisted
+ * Strips **all** Traefik labels off a tenant container so the router/service/middleware set can
+ * be re-stamped cleanly. Preserves non-Traefik labels and the persisted
  * {@link FLUX_CORS_EXTRA_ORIGINS_LABEL} (read back by {@link mergedPostgrestTraefikDockerLabels}).
+ *
+ * Intentionally **not** scoped to the current `flux-${hash}-${slug}-*` namespace: legacy Flux
+ * installations stamped router/middleware names without the project hash segment (e.g.
+ * `flux-${slug}-api`, `flux-${slug}-cors`, `flux-${slug}-stripprefix`). Leaving any of those
+ * behind collides with the new hashed namespace under Traefik v3 (which treats router, service,
+ * and middleware names as global) and is a known cause of `404 Service Not Found` after a
+ * migration — both the old and new definitions race, and the legacy ones keep pointing at a
+ * hostname/port that no longer exists. Wiping the entire `traefik.*` surface is the only safe,
+ * idempotent answer for a catalog that mixes pre- and post-hash containers.
  */
-function removeFluxPostgrestTraefikDockerLabels(
+function stripAllTraefikLabelsPreservingFluxExtras(
   existing: Record<string, string>,
-  slug: string,
-  hash: string,
 ): Record<string, string> {
-  const traefikSvc = `${fluxTenantStackBaseId(hash, slug)}-api`;
-  const mwPrefixes = [
-    `traefik.http.middlewares.${traefikCorsMiddlewareName(hash, slug)}`,
-    `traefik.http.middlewares.${traefikStripMiddlewareName(hash, slug)}`,
-  ];
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(existing)) {
+    if (k === FLUX_CORS_EXTRA_ORIGINS_LABEL) {
+      out[k] = v;
+      continue;
+    }
     if (k === "traefik.enable") continue;
     if (k === "traefik.docker.network") continue;
-    if (k === FLUX_CORS_EXTRA_ORIGINS_LABEL) continue;
-    if (k.startsWith(`traefik.http.routers.${traefikSvc}.`)) continue;
-    if (k.startsWith(`traefik.http.services.${traefikSvc}.`)) continue;
-    if (mwPrefixes.some((p) => k.startsWith(p))) continue;
+    if (k.startsWith("traefik.")) continue;
     out[k] = v;
   }
   return out;
@@ -703,7 +716,7 @@ function mergedPostgrestTraefikDockerLabels(
     extraOriginsOverride ??
     parseAllowedOriginsList(existing[FLUX_CORS_EXTRA_ORIGINS_LABEL]);
   return {
-    ...removeFluxPostgrestTraefikDockerLabels(existing, slug, hash),
+    ...stripAllTraefikLabelsPreservingFluxExtras(existing),
     ...postgrestTraefikDockerLabels(
       slug,
       hash,
@@ -713,12 +726,53 @@ function mergedPostgrestTraefikDockerLabels(
   };
 }
 
+/**
+ * Dev/ops aid: emits the generated Traefik label set so an operator can eyeball the router,
+ * service, middleware, and host rule we just stamped on a tenant PostgREST container. Helpful
+ * when diagnosing `404 Service Not Found` after a hash migration — the labels that Traefik
+ * actually sees live on the container, and this is the only place we have them assembled.
+ */
+function logTraefikLabelsForTenant(
+  stage: string,
+  slug: string,
+  hash: string,
+  labels: Record<string, string>,
+  onStatus?: (message: string) => void,
+): void {
+  const sink = onStatus ?? ((m: string) => { console.log(m); });
+  const header = `[flux] Traefik labels (${stage}) for ${fluxTenantStackBaseId(hash, slug)} → ${fluxTenantPostgrestHostname(slug, hash)}`;
+  sink(header);
+  const keys = Object.keys(labels).sort((a, b) => a.localeCompare(b));
+  for (const k of keys) {
+    sink(`    ${k} = ${labels[k] ?? ""}`);
+  }
+}
+
 function dockerLabelsSatisfy(
   required: Record<string, string>,
   current: Record<string, string> | undefined,
 ): boolean {
   for (const [k, v] of Object.entries(required)) {
     if (current?.[k] !== v) return false;
+  }
+  return true;
+}
+
+/**
+ * Stricter than {@link dockerLabelsSatisfy}: also fails if `current` has any `traefik.*` label
+ * that is **not** in `required`. Prevents legacy (pre-hash) router / middleware labels from
+ * silently surviving a reconcile pass because the new label set happens to be a strict subset
+ * of whatever was on the container before the hash-namespacing refactor landed.
+ */
+function traefikLabelsExactlyMatch(
+  required: Record<string, string>,
+  current: Record<string, string> | undefined,
+): boolean {
+  if (!dockerLabelsSatisfy(required, current)) return false;
+  if (!current) return true;
+  for (const k of Object.keys(current)) {
+    if (!k.startsWith("traefik.")) continue;
+    if (!(k in required)) return false;
   }
   return true;
 }
@@ -1016,7 +1070,7 @@ export interface FluxProject {
   /** Generated Postgres superuser password — treat as sensitive. */
   postgresPassword: string;
   /**
-   * When true, the gateway chains per-tenant CORS + `flux-<slug>-stripprefix` for `/rest/v1` (see {@link ProvisionOptions.stripSupabaseRestPrefix}).
+   * When true, the gateway chains per-tenant CORS + `flux-<hash>-<slug>-stripprefix` for `/rest/v1` (see {@link ProvisionOptions.stripSupabaseRestPrefix}).
    */
   stripSupabaseRestPrefix: boolean;
 }
@@ -1039,7 +1093,7 @@ export interface ProvisionOptions {
   customJwtSecret?: string;
   /**
    * When true (default), the tenant router chains per-tenant CORS (dashboard + when `FLUX_DOMAIN` is set
-   * `https://<slug>.<FLUX_DOMAIN>` + env extras + HTTPS `*.domain` regex) and `flux-<slug>-stripprefix`
+   * `https://<slug>.<FLUX_DOMAIN>` + env extras + HTTPS `*.domain` regex) and `flux-<hash>-<slug>-stripprefix`
    * so the Supabase JS client’s `/rest/v1` path reaches PostgREST.
    * Set to false only if clients call PostgREST at the URL root with no `/rest/v1` prefix.
    */
@@ -1376,7 +1430,7 @@ export class ProjectManager {
    * on {@link FLUX_NETWORK_NAME} routes `api.{slug}.{hash}.<FLUX_DOMAIN|vsl-base.com>` to PostgREST via Docker labels; PostgREST is not published
    * on a random host port. By default, Traefik chains per-tenant Headers (CORS) middleware for
    * `http://localhost:3001`, `https://app.<domain>`, when `FLUX_DOMAIN` is set `https://<slug>.<domain>`,
-   * HTTPS apps matching `*.domain`, extras, and `flux-<slug>-stripprefix` for `/rest/v1` (Supabase JS).
+   * HTTPS apps matching `*.domain`, extras, and `flux-<hash>-<slug>-stripprefix` for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
    *
    * Postgres is **not** published on the Docker host: bootstrap SQL and health checks use
@@ -1547,6 +1601,13 @@ export class ProjectManager {
       stripSupabaseRestPrefix,
       additionalAllowedOrigins ?? [],
     );
+    logTraefikLabelsForTenant(
+      "provision",
+      slug,
+      projectHash,
+      traefikLabels,
+      log,
+    );
 
     log?.("Post-Postgres stabilization (5s) before starting PostgREST on remote engines…");
     await sleep(5000);
@@ -1572,9 +1633,16 @@ export class ProjectManager {
         stripSupabaseRestPrefix,
         additionalAllowedOrigins,
       );
+      logTraefikLabelsForTenant(
+        "provision.adopt",
+        slug,
+        projectHash,
+        mergedTraefik,
+        log,
+      );
       const apiEnv = envRecordFromDockerEnv(apiExisting.Config?.Env);
       const envWithDbUri = mergePostgrestEnvWithDbUri(apiEnv, dbUri);
-      const labelsOutOfDate = !dockerLabelsSatisfy(
+      const labelsOutOfDate = !traefikLabelsExactlyMatch(
         mergedTraefik,
         apiExisting.Config?.Labels,
       );
@@ -1736,7 +1804,8 @@ export class ProjectManager {
       strip,
       options?.additionalAllowedOrigins,
     );
-    if (dockerLabelsSatisfy(merged, existing.Config?.Labels)) {
+    logTraefikLabelsForTenant("reconcile", slug, hash, merged, log);
+    if (traefikLabelsExactlyMatch(merged, existing.Config?.Labels)) {
       log?.("PostgREST Traefik labels are already up to date.");
       return;
     }
