@@ -39,6 +39,7 @@ export async function POST(
   const pm = getProjectManager();
   try {
     await pm.nukeContainersOnly(slug, project.hash);
+    await pm.removeTenantPrivateNetworkAllowMissing(slug, project.hash);
     const provisioned = await pm.provisionProject(
       project.name,
       { isProduction: process.env.NODE_ENV === "production" },

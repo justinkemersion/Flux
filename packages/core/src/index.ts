@@ -95,10 +95,9 @@ export function fluxTenantCpuNanoCpus(): number {
   return FLUX_TENANT_DEFAULT_NANOCPUS;
 }
 
-/** `unless-stopped` with `MaximumRetryCount` 5 (honored for `on-failure`; stamped for policy visibility). */
+/** Production default: Docker only accepts `MaximumRetryCount` with `on-failure`; use plain `unless-stopped` for tenant stacks. */
 const FLUX_TENANT_RESTART_POLICY = {
   Name: "unless-stopped" as const,
-  MaximumRetryCount: 5,
 };
 
 function managedTenantContainerLabels(): Record<string, string> {
@@ -222,11 +221,40 @@ async function removeApiPgAndVolumeForProvision(
     if (getHttpStatus(err) !== 404) throw err;
   }
   if (privateNetworkName && privateNetworkName.length > 0) {
+    await removeDockerNetworkByNameAllowMissing(docker, privateNetworkName);
+  }
+}
+
+/**
+ * Disconnects all endpoints (survives stale attachments) then removes the network.
+ * 404 if the network does not exist is treated as success.
+ */
+async function removeDockerNetworkByNameAllowMissing(
+  docker: Docker,
+  networkName: string,
+): Promise<void> {
+  let inspect: { Containers?: Record<string, unknown> };
+  try {
+    inspect = (await docker.getNetwork(networkName).inspect()) as {
+      Containers?: Record<string, unknown>;
+    };
+  } catch (err: unknown) {
+    if (getHttpStatus(err) === 404) return;
+    throw err;
+  }
+  const net = docker.getNetwork(networkName);
+  for (const containerId of Object.keys(inspect.Containers ?? {})) {
     try {
-      await docker.getNetwork(privateNetworkName).remove();
+      await net.disconnect({ Container: containerId, Force: true });
     } catch (err: unknown) {
       if (getHttpStatus(err) !== 404) throw err;
     }
+  }
+  try {
+    await net.remove();
+  } catch (err: unknown) {
+    if (getHttpStatus(err) === 404) return;
+    throw err;
   }
 }
 
@@ -2088,10 +2116,6 @@ export class ProjectManager {
       typeof hc.NanoCpus === "number" && hc.NanoCpus > 0
         ? hc.NanoCpus
         : fluxTenantCpuNanoCpus();
-    const restartPolicy = hc.RestartPolicy?.Name
-      ? hc.RestartPolicy
-      : FLUX_TENANT_RESTART_POLICY;
-
     const labelMap = {
       ...managedTenantContainerLabels(),
       ...(replaceOptions?.labels ?? inspect.Config.Labels ?? {}),
@@ -2106,7 +2130,7 @@ export class ProjectManager {
       HostConfig: {
         Memory: memory,
         NanoCpus: nanoCpus,
-        RestartPolicy: restartPolicy,
+        RestartPolicy: FLUX_TENANT_RESTART_POLICY,
       },
       NetworkingConfig: {
         EndpointsConfig: {
@@ -2779,17 +2803,39 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       filters: { name: [name] },
     });
     if (!listed.some((n) => n.Name === name)) {
-      await this.docker.createNetwork({
-        Name: name,
-        Driver: "bridge",
-        Internal: true,
-        CheckDuplicate: true,
-      });
-      onStatus?.(`Created internal network ${name}.`);
+      try {
+        await this.docker.createNetwork({
+          Name: name,
+          Driver: "bridge",
+          Internal: true,
+          CheckDuplicate: true,
+        });
+        onStatus?.(`Created internal network ${name}.`);
+      } catch (err: unknown) {
+        if (getHttpStatus(err) === 409) {
+          onStatus?.(`Network ${name} already exists (race or stale state).`);
+        } else {
+          throw err;
+        }
+      }
     } else {
       onStatus?.(`Network ${name} already exists.`);
     }
     return name;
+  }
+
+  /**
+   * Removes the tenant’s private `flux-${hash}-${slug}-net` if it still exists, disconnecting
+   * endpoints first. Idempotent. Call after nuke, before (re)provision, so repair does not hit
+   * duplicate-network errors.
+   */
+  async removeTenantPrivateNetworkAllowMissing(
+    slug: string,
+    hash: string,
+  ): Promise<void> {
+    const normalized = slugifyProjectName(slug);
+    const netName = projectPrivateNetworkName(hash, normalized);
+    await removeDockerNetworkByNameAllowMissing(this.docker, netName);
   }
 
   /**
