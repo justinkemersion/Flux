@@ -1,8 +1,10 @@
 "use client";
 
+import { CodexQueryPanel } from "@/src/components/codex-query-panel";
 import { CodeBlock } from "@/src/components/docs/code-block";
 import { FleetManifest } from "@/src/components/landing/fleet-manifest";
 import { ReliabilityBadge } from "@/src/components/landing/reliability-badge";
+import type { queryCodexAction as QueryCodexAction } from "@/src/lib/actions";
 import type { FleetShowcaseCard } from "@/src/lib/fleet-showcase";
 import type { FleetReliability } from "@/src/lib/fleet-monitor";
 import Link from "next/link";
@@ -20,9 +22,10 @@ const focusLink =
 type Props = {
   fleetShowcase: FleetShowcaseCard[];
   reliability: FleetReliability;
+  queryCodexAction: typeof QueryCodexAction;
 };
 
-export function FluxLanding({ fleetShowcase, reliability }: Props) {
+export function FluxLanding({ fleetShowcase, reliability, queryCodexAction }: Props) {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-zinc-950 text-zinc-100">
       <div className="flux-hero-grid border-b border-zinc-800/80">
@@ -54,6 +57,36 @@ export function FluxLanding({ fleetShowcase, reliability }: Props) {
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col bg-zinc-950 px-6 py-16 text-zinc-100 sm:px-10 sm:py-20">
         <FleetManifest initialShowcase={fleetShowcase} />
+
+        <section
+          className="mt-16 border-t border-zinc-800 pt-14"
+          aria-labelledby="ai-codex-heading"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-3 border border-emerald-900/10 bg-zinc-900/80 shadow-[0_0_24px_-8px_rgba(6,78,59,0.35)]">
+            <div className="flex w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-b border-zinc-800 px-4 py-3 sm:px-5">
+              <h2
+                id="ai-codex-heading"
+                className="font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-500"
+                style={{ fontFamily: "var(--font-geist-mono)" }}
+              >
+                [ AI_CODEX_NAVIGATOR ]
+              </h2>
+              <p
+                className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500"
+                style={{ fontFamily: "var(--font-geist-mono)" }}
+                aria-label="Model status online"
+              >
+                <span className="text-emerald-400" aria-hidden>
+                  ●
+                </span>
+                _ONLINE_LLM_L3_8B
+              </p>
+            </div>
+            <div className="w-full">
+              <CodexQueryPanel queryAction={queryCodexAction} />
+            </div>
+          </div>
+        </section>
 
         <section
           className="mt-16 border-t border-zinc-800 pt-14"

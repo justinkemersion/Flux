@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CodexManual } from "@/src/components/docs/codex-manual";
-import { CodexQueryPanel } from "@/src/components/codex-query-panel";
-import { queryCodexAction } from "@/src/lib/actions";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
 
 export const metadata: Metadata = {
   title: "Docs — Flux",
-  description: "Install, control plane, CLI reference, and interactive Codex.",
+  description: "Install, control plane, CLI reference, and Codex manual. Interactive queries on the home page.",
 };
 
 export default function DocsPage() {
@@ -75,18 +72,21 @@ export default function DocsPage() {
           <CodexManual />
         </div>
 
-        <div className="rounded-sm border border-zinc-300 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.02)] dark:border-zinc-800 dark:bg-zinc-950/80">
-          <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
-              aria-hidden
-            />
-            <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">
-              Terminal_session · public_read
-            </span>
-          </div>
-          <CodexQueryPanel queryAction={queryCodexAction} />
-        </div>
+        <p className="mt-8 border border-zinc-200 bg-zinc-50/80 p-4 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-500">
+          Interactive Codex queries live on the{" "}
+          <Link
+            href="/"
+            className="text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400/90"
+          >
+            home page
+          </Link>
+          {" "}
+          under{" "}
+          <span className="font-mono text-zinc-800 dark:text-zinc-300">
+            [ AI_CODEX_NAVIGATOR ]
+          </span>
+          .
+        </p>
       </div>
     </main>
   );

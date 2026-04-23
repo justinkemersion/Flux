@@ -1,7 +1,7 @@
 "use client";
 
 import { readStreamableValue } from "ai/rsc";
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { CodexSuggestions } from "@/src/components/codex-suggestions";
 import type { queryCodexAction as QueryCodexAction } from "@/src/lib/actions";
 
@@ -9,10 +9,19 @@ type Props = {
   queryAction: typeof QueryCodexAction;
 };
 
+const TYPE_MS = 22;
+
 export function CodexQueryPanel({ queryAction }: Props) {
   const [query, setQuery] = useState("");
   const [output, setOutput] = useState("");
   const [pending, startTransition] = useTransition();
+  const typeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (typeTimerRef.current) clearInterval(typeTimerRef.current);
+    };
+  }, []);
 
   const runQuery = useCallback(
     (text: string) => {
@@ -37,17 +46,47 @@ export function CodexQueryPanel({ queryAction }: Props) {
   }
 
   function onSuggestionPick(question: string) {
-    setQuery(question);
-    runQuery(question);
+    if (typeTimerRef.current) {
+      clearInterval(typeTimerRef.current);
+      typeTimerRef.current = null;
+    }
+    const full = question.trim();
+    if (!full || pending) return;
+
+    let i = 0;
+    setQuery("");
+    setOutput("");
+
+    typeTimerRef.current = setInterval(() => {
+      i += 1;
+      setQuery(full.slice(0, i));
+      if (i >= full.length) {
+        if (typeTimerRef.current) clearInterval(typeTimerRef.current);
+        typeTimerRef.current = null;
+        setQuery(full);
+        runQuery(full);
+      }
+    }, TYPE_MS);
   }
 
   return (
-    <form onSubmit={onSubmit} className="p-4 sm:p-5">
+    <form
+      onSubmit={onSubmit}
+      className="p-4 sm:p-5"
+      style={{ fontFamily: "var(--font-geist-mono)" }}
+    >
+      <div className="mb-4 border-b border-zinc-800 pb-4">
+        <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400">
+          Diagnostic Starters
+        </p>
+        <CodexSuggestions disabled={pending} onPick={onSuggestionPick} />
+      </div>
+
       <label
         htmlFor="codex-query"
-        className="block text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500"
+        className="sr-only"
       >
-        Ask the Codex
+        Query Flux Intelligence
       </label>
       <input
         id="codex-query"
@@ -55,53 +94,33 @@ export function CodexQueryPanel({ queryAction }: Props) {
         name="q"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Query the Codex…"
+        placeholder="Query Flux Intelligence (AI)..."
         autoComplete="off"
         spellCheck={false}
         disabled={pending}
-        className="mt-2 w-full border border-zinc-300 bg-zinc-50 px-3 py-2.5 text-zinc-900 outline-none transition-[border-color,box-shadow] placeholder:text-zinc-400 focus:border-emerald-600/50 focus:ring-1 focus:ring-emerald-600/30 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:border-emerald-500/40 dark:focus:ring-emerald-500/25"
+        className="w-full border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-[12px] text-zinc-100 outline-none transition-[border-color,box-shadow] placeholder:text-zinc-600 focus:border-emerald-600/45 focus:ring-1 focus:ring-emerald-600/25 disabled:opacity-50 dark:focus:border-emerald-500/40 dark:focus:ring-emerald-500/20"
       />
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button
           type="submit"
           disabled={pending || !query.trim()}
-          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-200 transition-colors hover:border-emerald-600/60 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:border-emerald-500/50"
+          className="rounded border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-200 transition-colors hover:border-emerald-600/55 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:border-emerald-500/45"
         >
           {pending ? "Streaming…" : "Submit_query"}
         </button>
-        <span className="text-[11px] text-zinc-500 dark:text-zinc-600">
-          Workers AI:{" "}
-          <code className="text-zinc-600 dark:text-zinc-500">
-            @cf/meta/llama-3-8b-instruct
-          </code>
-        </span>
       </div>
-      <CodexSuggestions disabled={pending} onPick={onSuggestionPick} />
-      <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-600">
-        Static reference:{" "}
-        <code className="rounded bg-zinc-100 px-1 py-0.5 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
-          GET /api/cli/v1/codex
-        </code>
-      </p>
-      <div className="mt-4 min-h-[8rem] rounded border border-dashed border-zinc-200 bg-zinc-50/80 p-3 text-[12px] leading-relaxed text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-200">
+      <div className="mt-4 min-h-[8rem] border border-dashed border-zinc-800 bg-zinc-950/60 p-3 text-[12px] leading-relaxed text-zinc-200">
         {output ? (
-          <pre
-            className="whitespace-pre-wrap break-words text-[12px]"
-            style={{ fontFamily: "var(--font-geist-mono)" }}
-          >
-            {output}
-          </pre>
+          <pre className="whitespace-pre-wrap break-words text-[12px]">{output}</pre>
         ) : (
-          <p
-            className="text-[11px] text-zinc-500 dark:text-zinc-600"
-            style={{ fontFamily: "var(--font-geist-mono)" }}
-          >
-            {pending
-              ? "…"
-              : "Response stream appears here (Geist Mono)."}
+          <p className="text-[11px] text-zinc-600">
+            {pending ? "…" : "Response stream appears here (Geist Mono)."}
           </p>
         )}
       </div>
+      <p className="mt-3 text-[10px] leading-relaxed text-zinc-600/90">
+        Powered by Cloudflare Workers AI · Deterministic Context Injection
+      </p>
     </form>
   );
 }
