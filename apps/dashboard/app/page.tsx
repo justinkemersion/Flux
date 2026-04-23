@@ -5,9 +5,9 @@ import { queryCodexAction } from "@/src/lib/actions";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Flux — From zero to database in one command",
+  title: "Flux: The Backbone of Your Platform",
   description:
-    "Isolated Postgres and a REST API per project. Install the CLI, run create, and manage your stack from the terminal or dashboard.",
+    "Enterprise-grade database infrastructure for developers who ship.",
 };
 
 export const dynamic = "force-dynamic";

@@ -29,34 +29,62 @@ export function FluxLanding({ fleetShowcase, reliability, queryCodexAction }: Pr
   return (
     <div className="flex min-h-full flex-1 flex-col bg-zinc-950 text-zinc-100">
       <div className="flux-hero-grid border-b border-zinc-800/80">
-        <div className="mx-auto w-full max-w-5xl px-6 py-16 sm:px-10 sm:py-20 md:py-24">
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 max-w-3xl flex-1">
-            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-400">
-              Platform
-            </p>
-            <h1
-              id="flux-hero-heading"
-              className="mt-3 font-sans text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl md:text-6xl"
-            >
-              From zero to database in one command
-            </h1>
-            <p className="mt-6 max-w-2xl font-sans text-lg leading-relaxed text-zinc-400 sm:text-xl">
-              Each project gets isolated Postgres and a PostgREST API. Install
-              the CLI, run <code className="text-zinc-300">flux create</code>, and
-              manage stacks from here or the terminal—fast and yours.
-            </p>
-            <div className="mt-10">
-              <LandingCtas />
+        <div className="mx-auto flex w-full max-w-5xl px-6 py-16 sm:px-10 sm:py-20 md:py-24">
+          <div
+            aria-hidden
+            className="mr-5 w-px shrink-0 self-stretch bg-zinc-800 sm:mr-6"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 max-w-3xl flex-1">
+                <p
+                  className="text-[10px] font-medium uppercase tracking-[0.24em] text-zinc-500"
+                  style={{ fontFamily: "var(--font-geist-mono)" }}
+                >
+                  Backbone
+                </p>
+                <h1
+                  id="flux-hero-heading"
+                  className="mt-3 font-sans text-3xl font-semibold leading-[1.08] tracking-tight text-white sm:text-4xl md:text-[2.65rem]"
+                >
+                  Flux: The Backbone of Your Platform.
+                </h1>
+                <p
+                  className="mt-5 max-w-2xl text-[13px] font-medium leading-snug tracking-tight text-zinc-300 sm:text-sm"
+                  style={{ fontFamily: "var(--font-geist-mono)" }}
+                >
+                  Enterprise Postgres. Instant REST. Zero Ceremony.
+                </p>
+                <p
+                  className="mt-5 max-w-2xl text-[12px] leading-relaxed tracking-[0.01em] text-zinc-500 sm:text-[13px]"
+                  style={{ fontFamily: "var(--font-geist-mono)" }}
+                >
+                  Built for solo developers and teams who want to cut through the
+                  SaaS bloat. No complex UI maps, no proprietary lock-in. Just
+                  isolated PostgreSQL 16 and a high-performance PostgREST API,
+                  orchestrated with surgical precision. Get back to the bigger
+                  picture.
+                </p>
+                <div className="mt-10">
+                  <LandingCtas />
+                </div>
+              </div>
+              <ReliabilityBadge reliability={reliability} />
             </div>
-            </div>
-            <ReliabilityBadge reliability={reliability} />
           </div>
         </div>
       </div>
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col bg-zinc-950 px-6 py-16 text-zinc-100 sm:px-10 sm:py-20">
-        <FleetManifest initialShowcase={fleetShowcase} />
+        <div className="flex w-full">
+          <div
+            aria-hidden
+            className="mr-5 w-px shrink-0 self-stretch bg-zinc-800 sm:mr-6"
+          />
+          <div className="min-w-0 flex-1">
+            <FleetManifest initialShowcase={fleetShowcase} />
+          </div>
+        </div>
 
         <section
           className="mt-16 border-t border-zinc-800 pt-14"
