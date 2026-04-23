@@ -82,6 +82,13 @@ export const FLUX_CODEX_JSON = {
       example: "GET /your_table",
     },
   },
+  /**
+   * Copy-paste CLI patterns; Codex should cite these verbatim when relevant.
+   */
+  commonPatterns: {
+    exportingForLocalDev: "flux dump my-app --schema-only > local.sql",
+    streamingLogs: "flux logs my-app --hash xxxxx",
+  },
   commands: {
     authVerify:
       "GET /api/cli/v1/auth/verify — validate Bearer `flx_live_…` key; returns { ok: true, user } (used by `flux login`).",
@@ -90,8 +97,18 @@ export const FLUX_CODEX_JSON = {
     list: "GET /api/cli/v1/list — list projects for the authenticated account.",
     push:
       "POST /api/cli/v1/push — apply a SQL file to a project's database in a transaction and notify PostgREST to reload the schema cache.",
-    dump:
-      "GET /api/cli/v1/projects/:hash/dump?schemaOnly=&dataOnly=&clean=&publicOnly= — stream pg_dump SQL (stdout-safe for CLI redirection) with optional schema/data/public scope and clean replay flags.",
+    dump: {
+      cliSyntax:
+        "flux dump <project> --hash <hash> [options] — positional <project> is the slug (alias: -p/--project <name>); --hash <7-hex> disambiguates when multiple instances share a slug. Stdout stream; redirect to file.",
+      flags: {
+        schemaOnly: "-s / --schema-only: schema only (pg_dump -s). Mutually exclusive with --data-only.",
+        dataOnly: "-d / --data-only: data only (pg_dump -a). Mutually exclusive with --schema-only.",
+        clean: "-c / --clean: emit DROP … IF EXISTS before creates for clean replay.",
+        publicOnly: "--public-only: dump only the public schema (-n public).",
+      },
+      restAlternative:
+        "GET /api/cli/v1/projects/:hash/dump?schemaOnly=&dataOnly=&clean=&publicOnly= — same payload via HTTP; use after CLI is understood.",
+    },
     logs:
       "GET /api/cli/v1/logs?slug=&hash=&service=api|db — stream container logs (SSE) for the PostgREST or Postgres container.",
     reap:
