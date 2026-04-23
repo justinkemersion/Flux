@@ -44,7 +44,7 @@ export function parseResponseBodyAsJson(
     const ct = contentTypePart(res);
     const preview = text.replace(/\s+/g, " ").trim().slice(0, 160);
     const hint = trimmed.startsWith("<")
-      ? " (response looks like HTML — check reverse proxy: /api must forward to the Next.js server)"
+      ? " (response looks like HTML: forward PathPrefix /api to this Next.js app; if a CDN fronts the host, purge or disable cache for /api/* — never cache it as static HTML.)"
       : preview
         ? `: ${preview}${text.length > 160 ? "…" : ""}`
         : " (empty body)";

@@ -6,6 +6,8 @@
 # Routes:
 #   https://flux.vsl-base.com       — UI
 #   https://api.flux.vsl-base.com — same app (App Router /api/*); set AUTH_URL / NEXTAUTH_URL to the primary UI origin.
+# Two Traefik routers (same container): `flux-web-api` is higher priority for PathPrefix(/api) so
+# a misbehaving static/catch-all on the same host cannot serve index.html for /api/*. Redeploy to apply.
 #
 # Required: place a `.env` next to this file (see `.env.example`) with NEXTAUTH_SECRET,
 # GITHUB_ID, GITHUB_SECRET, FLUX_ACTIVITY_SECRET (and optional STRIPE_*).
@@ -41,10 +43,18 @@ services:
     labels:
       traefik.enable: "true"
       traefik.docker.network: flux-network
+      traefik.http.routers.flux-web-api.rule: (Host(`flux.vsl-base.com`) || Host(`api.flux.vsl-base.com`)) && PathPrefix(`/api`)
+      traefik.http.routers.flux-web-api.entrypoints: websecure
+      traefik.http.routers.flux-web-api.tls: "true"
+      traefik.http.routers.flux-web-api.tls.certresolver: myresolver
+      traefik.http.routers.flux-web-api.priority: "100"
+      traefik.http.routers.flux-web-api.service: flux-web
       traefik.http.routers.flux-web.rule: Host(`flux.vsl-base.com`) || Host(`api.flux.vsl-base.com`)
       traefik.http.routers.flux-web.entrypoints: websecure
       traefik.http.routers.flux-web.tls: "true"
       traefik.http.routers.flux-web.tls.certresolver: myresolver
+      traefik.http.routers.flux-web.priority: "1"
+      traefik.http.routers.flux-web.service: flux-web
       traefik.http.services.flux-web.loadbalancer.server.port: "3000"
 
 networks:
