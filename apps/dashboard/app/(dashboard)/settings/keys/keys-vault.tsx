@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useTransition } from "react";
 import { createApiKeyAction } from "./actions";
+import { deleteApiKeyAction, revokeApiKeyAction } from "@/src/lib/actions";
 
 export type KeyVaultRow = {
   id: string;
@@ -26,11 +27,17 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
   const [rows, setRows] = useState<KeyVaultRow[]>(initialRows);
   const [plaintext, setPlaintext] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    id: string;
+    kind: "revoke" | "delete";
+  } | null>(null);
   const [pending, startTransition] = useTransition();
 
   const onSubmit = useCallback(
     (formData: FormData) => {
       setFormError(null);
+      setActionError(null);
       startTransition(() => {
         void (async () => {
           const result = await createApiKeyAction(formData);
@@ -45,6 +52,51 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
     },
     [],
   );
+
+  const onRevoke = useCallback((id: string) => {
+    setActionError(null);
+    setConfirmAction((prev) => {
+      if (!prev || prev.id !== id || prev.kind !== "revoke") {
+        return { id, kind: "revoke" };
+      }
+      startTransition(() => {
+        void (async () => {
+          const result = await revokeApiKeyAction(id);
+          if (!result.ok) {
+            setActionError(result.error);
+            return;
+          }
+          const revokedAt = new Date().toISOString();
+          setRows((current) =>
+            current.map((k) => (k.id === id ? { ...k, revokedAt } : k)),
+          );
+          setConfirmAction(null);
+        })();
+      });
+      return prev;
+    });
+  }, []);
+
+  const onDelete = useCallback((id: string) => {
+    setActionError(null);
+    setConfirmAction((prev) => {
+      if (!prev || prev.id !== id || prev.kind !== "delete") {
+        return { id, kind: "delete" };
+      }
+      startTransition(() => {
+        void (async () => {
+          const result = await deleteApiKeyAction(id);
+          if (!result.ok) {
+            setActionError(result.error);
+            return;
+          }
+          setRows((current) => current.filter((k) => k.id !== id));
+          setConfirmAction(null);
+        })();
+      });
+      return prev;
+    });
+  }, []);
 
   return (
     <div className="space-y-8 text-center sm:text-left">
@@ -101,6 +153,11 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
         {formError ? (
           <p className="mt-3 font-mono text-xs text-red-400" role="alert">
             {formError}
+          </p>
+        ) : null}
+        {actionError ? (
+          <p className="mt-3 font-mono text-xs text-red-400" role="alert">
+            {actionError}
           </p>
         ) : null}
       </section>
@@ -160,14 +217,12 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
             {rows.map((k) => (
               <li
                 key={k.id}
-                className={`border border-zinc-700 bg-zinc-900/20 p-3 font-mono text-[11px] leading-relaxed ${
-                  k.revokedAt ? "opacity-50" : ""
-                }`}
+                className="border border-zinc-800 bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <span className="text-zinc-300">{k.name}</span>
-                  <span className="text-zinc-600">
-                    {k.revokedAt ? "REVOKED" : "ACTIVE"}
+                  <span className={k.revokedAt ? "text-red-400" : "text-emerald-400"}>
+                    {k.revokedAt ? "[ ● REVOKED ]" : "[ ● ACTIVE ]"}
                   </span>
                 </div>
                 <div className="mt-2 grid gap-1 text-zinc-500 sm:grid-cols-2">
@@ -187,6 +242,31 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
                     <span className="text-zinc-600">last_used </span>
                     <span>{fmt(k.lastUsedAt)}</span>
                   </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-zinc-800 pt-2">
+                  {!k.revokedAt ? (
+                    <button
+                      type="button"
+                      onClick={() => onRevoke(k.id)}
+                      disabled={pending}
+                      className="border border-amber-900/80 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-600 hover:border-amber-700 disabled:opacity-50"
+                    >
+                      {confirmAction?.id === k.id && confirmAction.kind === "revoke"
+                        ? "Click to Confirm"
+                        : "Revoke"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onDelete(k.id)}
+                      disabled={pending}
+                      className="border border-red-900/80 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-red-600 hover:border-red-700 disabled:opacity-50"
+                    >
+                      {confirmAction?.id === k.id && confirmAction.kind === "delete"
+                        ? "Click to Confirm"
+                        : "Delete"}
+                    </button>
+                  )}
                 </div>
               </li>
             ))}
