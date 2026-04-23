@@ -1,9 +1,11 @@
 "use server";
 
+import { createStreamableValue } from "ai/rsc";
 import { and, eq, isNull, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { apiKeys } from "@/src/db/schema";
 import { auth } from "@/src/lib/auth";
+import { queryFluxAI } from "@/src/lib/codex-ai";
 import { getDb, initSystemDb } from "@/src/lib/db";
 
 type ActionResult =
@@ -77,4 +79,36 @@ export async function deleteApiKeyAction(id: string): Promise<ActionResult> {
 
   revalidatePath("/settings/keys");
   return { ok: true };
+}
+
+/**
+ * Stream Flux Codex answers from Cloudflare Workers AI.
+ */
+export async function queryCodexAction(query: string) {
+  const trimmed = query.trim();
+  const stream = createStreamableValue("");
+
+  if (!trimmed) {
+    stream.update("Enter a non-empty question.");
+    stream.done();
+    return stream.value;
+  }
+
+  void (async () => {
+    let output = "";
+    try {
+      for await (const chunk of queryFluxAI(trimmed)) {
+        output += chunk;
+        stream.update(output);
+      }
+      stream.done();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Codex query failed.";
+      stream.update(output ? `${output}\n\n[error] ${message}` : `[error] ${message}`);
+      stream.done();
+    }
+  })();
+
+  return stream.value;
 }

@@ -2,9 +2,13 @@
 
 import { readStreamableValue } from "ai/rsc";
 import { useState, useTransition } from "react";
-import { queryCodexAction } from "@/src/actions/codex-query";
+import type { queryCodexAction as QueryCodexAction } from "@/src/lib/actions";
 
-export function CodexQueryPanel() {
+type Props = {
+  queryAction: typeof QueryCodexAction;
+};
+
+export function CodexQueryPanel({ queryAction }: Props) {
   const [query, setQuery] = useState("");
   const [output, setOutput] = useState("");
   const [pending, startTransition] = useTransition();
@@ -15,7 +19,7 @@ export function CodexQueryPanel() {
     if (!t || pending) return;
     startTransition(async () => {
       setOutput("");
-      const stream = await queryCodexAction(t);
+      const stream = await queryAction(t);
       for await (const v of readStreamableValue(stream)) {
         if (v !== undefined && v !== null) {
           setOutput(String(v));
@@ -67,11 +71,17 @@ export function CodexQueryPanel() {
       </p>
       <div className="mt-4 min-h-[8rem] rounded border border-dashed border-zinc-200 bg-zinc-50/80 p-3 text-[12px] leading-relaxed text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-200">
         {output ? (
-          <pre className="whitespace-pre-wrap break-words font-mono text-[12px]">
+          <pre
+            className="whitespace-pre-wrap break-words text-[12px]"
+            style={{ fontFamily: "var(--font-geist-mono)" }}
+          >
             {output}
           </pre>
         ) : (
-          <p className="font-mono text-[11px] text-zinc-500 dark:text-zinc-600">
+          <p
+            className="text-[11px] text-zinc-500 dark:text-zinc-600"
+            style={{ fontFamily: "var(--font-geist-mono)" }}
+          >
             {pending
               ? "…"
               : "Response stream appears here (Geist Mono)."}

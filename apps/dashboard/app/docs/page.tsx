@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CodexManual } from "@/src/components/docs/codex-manual";
 import { CodexQueryPanel } from "@/src/components/codex-query-panel";
+import { queryCodexAction } from "@/src/lib/actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -72,7 +73,7 @@ export default function DocsPage() {
               Terminal_session · public_read
             </span>
           </div>
-          <CodexQueryPanel />
+          <CodexQueryPanel queryAction={queryCodexAction} />
         </div>
       </div>
     </main>
