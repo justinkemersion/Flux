@@ -49,12 +49,21 @@ services:
       traefik.http.routers.flux-web-api.tls.certresolver: myresolver
       traefik.http.routers.flux-web-api.priority: "100"
       traefik.http.routers.flux-web-api.service: flux-web
+      # HTTP entrypoint mirror: required when an upstream proxy forwards to Traefik over plain HTTP.
+      traefik.http.routers.flux-web-api-http.rule: (Host(`flux.vsl-base.com`) || Host(`api.flux.vsl-base.com`)) && PathPrefix(`/api`)
+      traefik.http.routers.flux-web-api-http.entrypoints: web
+      traefik.http.routers.flux-web-api-http.priority: "100"
+      traefik.http.routers.flux-web-api-http.service: flux-web
       traefik.http.routers.flux-web.rule: Host(`flux.vsl-base.com`) || Host(`api.flux.vsl-base.com`)
       traefik.http.routers.flux-web.entrypoints: websecure
       traefik.http.routers.flux-web.tls: "true"
       traefik.http.routers.flux-web.tls.certresolver: myresolver
       traefik.http.routers.flux-web.priority: "1"
       traefik.http.routers.flux-web.service: flux-web
+      traefik.http.routers.flux-web-http.rule: Host(`flux.vsl-base.com`) || Host(`api.flux.vsl-base.com`)
+      traefik.http.routers.flux-web-http.entrypoints: web
+      traefik.http.routers.flux-web-http.priority: "1"
+      traefik.http.routers.flux-web-http.service: flux-web
       traefik.http.services.flux-web.loadbalancer.server.port: "3000"
 
 networks:
