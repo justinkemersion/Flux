@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import { and, eq } from "drizzle-orm";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import { projects } from "@/src/db/schema";
+import { auth } from "@/src/lib/auth";
 import {
   authenticateCliApiKey,
   extractBearerToken,
@@ -50,8 +51,10 @@ export async function GET(req: Request, context: Ctx): Promise<Response> {
   await initSystemDb();
   const db = getDb();
   const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
+  const cliAuth = await authenticateCliApiKey(db, secret);
+  const session = cliAuth ? null : await auth();
+  const userId = cliAuth?.userId ?? session?.user?.id ?? null;
+  if (!userId) {
     return jsonError("Unauthorized", 401);
   }
 
@@ -67,7 +70,7 @@ export async function GET(req: Request, context: Ctx): Promise<Response> {
   const [project] = await db
     .select({ slug: projects.slug, hash: projects.hash })
     .from(projects)
-    .where(and(eq(projects.userId, auth.userId), eq(projects.hash, hash)))
+    .where(and(eq(projects.userId, userId), eq(projects.hash, hash)))
     .limit(1);
   if (!project) {
     return jsonError("Project not found", 404);
