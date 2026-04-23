@@ -10,7 +10,7 @@
 # a misbehaving static/catch-all on the same host cannot serve index.html for /api/*. Redeploy to apply.
 #
 # Required: place a `.env` next to this file (see `.env.example`) with NEXTAUTH_SECRET,
-# GITHUB_ID, GITHUB_SECRET, FLUX_ACTIVITY_SECRET (and optional STRIPE_*).
+# GITHUB_ID, GITHUB_SECRET, FLUX_ACTIVITY_SECRET (and optional STRIPE_*, CLOUDFLARE_* for /docs Codex AI).
 
 services:
   flux-web:
