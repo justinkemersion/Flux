@@ -172,7 +172,7 @@ The dashboard is the first **product UI** on top of `@flux/core`.
 |-------|------|
 | **Next.js (App Router)** | UI under `app/`, Route Handlers under `app/api/`. |
 | **`instrumentation.ts`** | On Node server start, imports **`initSystemDb()`** — provisions or starts the **`flux-system`** Docker project and ensures Drizzle/Auth tables exist. Logs **`[flux] System DB ready.`** or a clear failure if Docker is unreachable. |
-| **`proxy.ts`** | Wraps **Auth.js** `auth` with a **matcher** for **`/projects/:path*`** (auth protection for the projects area). |
+| **`middleware.ts`** | Wraps **Auth.js** `auth` with a **matcher** that runs on most paths but **excludes** **`/api/cli/*`** (Bearer CLI API), static assets, **`/install`**, etc., so the CLI is never sent an HTML login response. |
 | **Auth.js (`next-auth` v5)** | GitHub OAuth; sessions persisted via **`@auth/drizzle-adapter`** into **`flux-system`**. |
 | **Drizzle + `pg`** | Schema in `src/db/schema.ts`; migrations can be managed with `drizzle-kit` if you adopt it. |
 | **`@flux/core`** | `getProjectManager()` provisions tenant projects and drives start/stop/JWT/env updates from API routes (`app/api/projects/...`). |
