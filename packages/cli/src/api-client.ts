@@ -490,6 +490,56 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // GET /cli/v1/projects/:hash/dump?schemaOnly=&dataOnly=&clean=&publicOnly=
+  // ---------------------------------------------------------------------------
+  async getProjectDumpStream(input: {
+    hash: string;
+    schemaOnly?: boolean;
+    dataOnly?: boolean;
+    clean?: boolean;
+    publicOnly?: boolean;
+  }): Promise<ReadableStream<Uint8Array>> {
+    if (input.schemaOnly === true && input.dataOnly === true) {
+      throw new Error("schema-only and data-only cannot both be enabled.");
+    }
+    const token = this.tokenOrThrow();
+    const hash = input.hash.trim().toLowerCase();
+    const u = new URL(`${this.baseUrl}/cli/v1/projects/${encodeURIComponent(hash)}/dump`);
+    if (input.schemaOnly === true) u.searchParams.set("schemaOnly", "1");
+    if (input.dataOnly === true) u.searchParams.set("dataOnly", "1");
+    if (input.clean === true) u.searchParams.set("clean", "1");
+    if (input.publicOnly === true) u.searchParams.set("publicOnly", "1");
+
+    const res = await fetch(u, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = `Request failed (${String(res.status)})`;
+      try {
+        const j = JSON.parse(text) as { error?: unknown };
+        if (typeof j.error === "string" && j.error.trim().length > 0) {
+          msg = j.error;
+        }
+      } catch {
+        if (text.trim().length > 0) msg = text.trim().slice(0, 500);
+      }
+      throw new Error(msg);
+    }
+    if (!res.body) {
+      throw new Error("CLI dump: empty response body.");
+    }
+    return res.body;
+  }
+
+  // ---------------------------------------------------------------------------
   // DELETE /cli/v1/projects/:hash — atomic nuke (see deploy catalog + orphan `force`)
   // ---------------------------------------------------------------------------
   async nukeProject(

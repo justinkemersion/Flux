@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createHmac, randomBytes } from "node:crypto";
 import { freemem, homedir, loadavg, totalmem } from "node:os";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import Docker from "dockerode";
 import jwt from "jsonwebtoken";
 
@@ -73,6 +73,13 @@ export type FluxNodeStats = {
   memoryUsage: number;
   /** 1-minute load average (Unix); `0` if unavailable. */
   cpuLoad: number;
+};
+
+export type ProjectDumpOptions = {
+  schemaOnly?: boolean;
+  dataOnly?: boolean;
+  clean?: boolean;
+  publicOnly?: boolean;
 };
 
 export const FLUX_NETWORK_NAME = "flux-network";
@@ -2290,6 +2297,86 @@ export class ProjectManager {
       anonKey: keys.anonKey,
       serviceRoleKey: keys.serviceRoleKey,
     };
+  }
+
+  /**
+   * Streams a plain SQL `pg_dump` from the running tenant Postgres container.
+   *
+   * Flags:
+   * - `schemaOnly` => `-s`
+   * - `dataOnly` => `-a`
+   * - `clean` => `-c --if-exists`
+   * - `publicOnly` => `-n public`
+   */
+  async getProjectDumpStream(
+    slug: string,
+    hash: string,
+    options?: ProjectDumpOptions,
+  ): Promise<Readable> {
+    if (options?.schemaOnly === true && options?.dataOnly === true) {
+      throw new Error("schemaOnly and dataOnly cannot both be true.");
+    }
+    const creds = await this.resolveRunningPostgresCredentials(slug, hash);
+    const args = ["-U", POSTGRES_USER, "-d", "postgres"] as string[];
+    if (options?.schemaOnly === true) args.push("-s");
+    if (options?.dataOnly === true) args.push("-a");
+    if (options?.clean === true) args.push("-c", "--if-exists");
+    if (options?.publicOnly === true) args.push("-n", "public");
+
+    const exec = await this.docker.getContainer(creds.containerId).exec({
+      AttachStdout: true,
+      AttachStderr: true,
+      Cmd: ["pg_dump", ...args],
+      Env: [`PGPASSWORD=${creds.password}`],
+    });
+
+    const io = await exec.start({
+      hijack: true,
+      stdin: false,
+    });
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const stderrChunks: Buffer[] = [];
+    stderr.on("data", (chunk: Buffer | string | Uint8Array) => {
+      stderrChunks.push(
+        Buffer.isBuffer(chunk)
+          ? chunk
+          : typeof chunk === "string"
+            ? Buffer.from(chunk, "utf8")
+            : Buffer.from(chunk),
+      );
+    });
+
+    this.docker.modem.demuxStream(
+      io as unknown as NodeJS.ReadWriteStream,
+      stdout,
+      stderr,
+    );
+
+    const finalize = async (): Promise<void> => {
+      const state = await exec.inspect();
+      const code = state.ExitCode ?? 1;
+      if (code !== 0) {
+        const stderrText = Buffer.concat(stderrChunks).toString("utf8").trim();
+        stdout.destroy(
+          new Error(
+            stderrText.length > 0
+              ? `pg_dump failed (${String(code)}): ${stderrText}`
+              : `pg_dump failed (${String(code)}).`,
+          ),
+        );
+        return;
+      }
+      stdout.end();
+    };
+    io.on("end", () => {
+      void finalize();
+    });
+    io.on("error", (err: Error) => {
+      stdout.destroy(err);
+    });
+
+    return stdout;
   }
 
   /**

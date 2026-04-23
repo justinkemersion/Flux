@@ -56,6 +56,8 @@ export const FLUX_CODEX_JSON = {
     list: "GET /api/cli/v1/list — list projects for the authenticated account.",
     push:
       "POST /api/cli/v1/push — apply a SQL file to a project's database in a transaction and notify PostgREST to reload the schema cache.",
+    dump:
+      "GET /api/cli/v1/projects/:hash/dump?schemaOnly=&dataOnly=&clean=&publicOnly= — stream pg_dump SQL (stdout-safe for CLI redirection) with optional schema/data/public scope and clean replay flags.",
     logs:
       "GET /api/cli/v1/logs?slug=&hash=&service=api|db — stream container logs (SSE) for the PostgREST or Postgres container.",
     reap:

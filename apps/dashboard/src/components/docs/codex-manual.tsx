@@ -23,6 +23,7 @@ const navIds = [
   { id: "install", label: "Install" },
   { id: "control-plane", label: "Control_plane" },
   { id: "cli", label: "CLI_↔_API" },
+  { id: "data-sovereignty", label: "Data_sovereignty" },
   { id: "lifecycle", label: "Lifecycle" },
   { id: "determinism", label: "Determinism" },
 ] as const;
@@ -167,6 +168,7 @@ export function CodexManual() {
                     ["create", cmds.create],
                     ["list", cmds.list],
                     ["push", cmds.push],
+                    ["dump", cmds.dump],
                     ["logs", cmds.logs],
                   ] as const
                 ).map(([name, desc]) => (
@@ -195,6 +197,50 @@ export function CodexManual() {
             <code className="text-zinc-600 dark:text-zinc-500">next build</code>
             .
           </p>
+        </section>
+
+        <section id="data-sovereignty" className="scroll-mt-8">
+          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+            Data_sovereignty
+          </h2>
+          <p className="mt-3 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            Export SQL using <code className="text-zinc-700 dark:text-zinc-300">flux dump [name]</code>. The CLI writes progress to stderr and SQL to stdout so redirection is safe:
+            <code className="ml-1 text-zinc-700 dark:text-zinc-300">flux dump myapp --hash a1b2c3d &gt; myapp.sql</code>.
+          </p>
+          <dl className="mt-5 space-y-3 border-t border-zinc-200/80 pt-2 dark:border-zinc-800/80">
+            <div>
+              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                --schema-only
+              </dt>
+              <dd className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                Schema-only export (<code className="text-zinc-700 dark:text-zinc-300">pg_dump -s</code>).
+              </dd>
+            </div>
+            <div>
+              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                --data-only
+              </dt>
+              <dd className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                Data-only export (<code className="text-zinc-700 dark:text-zinc-300">pg_dump -a</code>).
+              </dd>
+            </div>
+            <div>
+              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                --clean
+              </dt>
+              <dd className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                Include drop statements for replay into existing targets (<code className="text-zinc-700 dark:text-zinc-300">pg_dump -c --if-exists</code>).
+              </dd>
+            </div>
+            <div>
+              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                --public-only
+              </dt>
+              <dd className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                Restrict export to the <code className="text-zinc-700 dark:text-zinc-300">public</code> schema (<code className="text-zinc-700 dark:text-zinc-300">pg_dump -n public</code>).
+              </dd>
+            </div>
+          </dl>
         </section>
 
         <section id="lifecycle" className="scroll-mt-8">

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { access } from "node:fs/promises";
+import { once } from "node:events";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
+import { Readable } from "node:stream";
 import type {
   FluxProjectEnvEntry,
   FluxProjectSummary,
@@ -566,6 +568,45 @@ async function cmdKeys(
   console.log();
 }
 
+async function cmdDump(
+  name: string | undefined,
+  projectOpt: string | undefined,
+  cliHash: string | undefined,
+  opts: {
+    schemaOnly?: boolean;
+    dataOnly?: boolean;
+    clean?: boolean;
+    publicOnly?: boolean;
+  },
+  flux: FluxJson | null,
+): Promise<void> {
+  const fromCli = projectOpt?.trim() || name;
+  const slug = resolveOptionalName(
+    fromCli,
+    flux,
+    "positional [name] or -p, --project",
+  );
+  const hash = resolveHash(cliHash, flux);
+  process.stderr.write(`Dumping data for ${slug} (${hash})...\n`);
+  const client = getApiClient();
+  const webStream = await client.getProjectDumpStream({
+    hash,
+    schemaOnly: opts.schemaOnly === true,
+    dataOnly: opts.dataOnly === true,
+    clean: opts.clean === true,
+    publicOnly: opts.publicOnly === true,
+  });
+  const nodeStream = Readable.fromWeb(
+    webStream as import("node:stream/web").ReadableStream,
+  );
+  for await (const chunk of nodeStream) {
+    if (!process.stdout.write(chunk)) {
+      await once(process.stdout, "drain");
+    }
+  }
+  process.stderr.write("Dump complete.\n");
+}
+
 async function cmdList(): Promise<void> {
   const client = getApiClient();
   const rows = await client.listProjects();
@@ -1071,6 +1112,54 @@ async function main(): Promise<void> {
         opts.project,
         s as "api" | "db",
         opts.hash,
+        flux,
+      );
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
+  const dumpCmd = program
+    .command("dump")
+    .description("Stream a project SQL dump to stdout (redirect to file)")
+    .argument(
+      "[name]",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option(
+      "-p, --project <name>",
+      "Project slug (overrides positional if set)",
+    )
+    .option("-s, --schema-only", "Schema only (pg_dump -s)", false)
+    .option("-d, --data-only", "Data only (pg_dump -a)", false)
+    .option("-c, --clean", "Include DROP statements (pg_dump -c --if-exists)", false)
+    .option("--public-only", "Dump only public schema (pg_dump -n public)", false)
+    .option("--hash <hex>", hashFlagDesc);
+
+  dumpCmd.action(async (name: string | undefined) => {
+    try {
+      const opts = dumpCmd.opts<{
+        project?: string;
+        schemaOnly?: boolean;
+        dataOnly?: boolean;
+        clean?: boolean;
+        publicOnly?: boolean;
+        hash?: string;
+      }>();
+      if (opts.schemaOnly === true && opts.dataOnly === true) {
+        throw new Error("--schema-only and --data-only cannot be used together.");
+      }
+      const flux = await readFluxJson(process.cwd());
+      await cmdDump(
+        name,
+        opts.project,
+        opts.hash,
+        {
+          schemaOnly: opts.schemaOnly === true,
+          dataOnly: opts.dataOnly === true,
+          clean: opts.clean === true,
+          publicOnly: opts.publicOnly === true,
+        },
         flux,
       );
     } catch (err: unknown) {
