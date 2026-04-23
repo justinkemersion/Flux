@@ -4,6 +4,7 @@ import { readStreamableValue } from "ai/rsc";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { CodexSuggestions } from "@/src/components/codex-suggestions";
 import type { queryCodexAction as QueryCodexAction } from "@/src/lib/actions";
+import { CODEX_OFFLINE_TERMINAL_MESSAGE } from "@/src/lib/codex-offline-message";
 
 type Props = {
   queryAction: typeof QueryCodexAction;
@@ -29,11 +30,16 @@ export function CodexQueryPanel({ queryAction }: Props) {
       if (!t || pending) return;
       startTransition(async () => {
         setOutput("");
-        const stream = await queryAction(t);
-        for await (const v of readStreamableValue(stream)) {
-          if (v !== undefined && v !== null) {
-            setOutput(String(v));
+        try {
+          const stream = await queryAction(t);
+          for await (const v of readStreamableValue(stream)) {
+            if (v !== undefined && v !== null) {
+              setOutput(String(v));
+            }
           }
+        } catch (err) {
+          console.error("[CodexQueryPanel] stream / action failed:", err);
+          setOutput(CODEX_OFFLINE_TERMINAL_MESSAGE);
         }
       });
     },
@@ -111,7 +117,15 @@ export function CodexQueryPanel({ queryAction }: Props) {
       </div>
       <div className="mt-4 min-h-[8rem] border border-dashed border-zinc-800 bg-zinc-950/60 p-3 text-[12px] leading-relaxed text-zinc-200">
         {output ? (
-          <pre className="whitespace-pre-wrap break-words text-[12px]">{output}</pre>
+          <pre
+            className={
+              output === CODEX_OFFLINE_TERMINAL_MESSAGE
+                ? "whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-600"
+                : "whitespace-pre-wrap break-words text-[12px] text-zinc-200"
+            }
+          >
+            {output}
+          </pre>
         ) : (
           <p className="text-[11px] text-zinc-600">
             {pending ? "…" : "Response stream appears here (Geist Mono)."}

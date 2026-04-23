@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { apiKeys } from "@/src/db/schema";
 import { auth } from "@/src/lib/auth";
 import { queryFluxAI } from "@/src/lib/codex-ai";
+import { CODEX_OFFLINE_TERMINAL_MESSAGE } from "@/src/lib/codex-offline-message";
 import { getDb, initSystemDb } from "@/src/lib/db";
 
 type ActionResult =
@@ -103,9 +104,8 @@ export async function queryCodexAction(query: string) {
       }
       stream.done();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Codex query failed.";
-      stream.update(output ? `${output}\n\n[error] ${message}` : `[error] ${message}`);
+      console.error("[queryCodexAction] Workers AI / Codex stream failed:", error);
+      stream.update(CODEX_OFFLINE_TERMINAL_MESSAGE);
       stream.done();
     }
   })();
