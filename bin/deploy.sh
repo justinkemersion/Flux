@@ -85,7 +85,8 @@ else
 
   if command -v curl >/dev/null 2>&1; then
     HTTP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" -H "Host: ${CHECK_HOST}" "http://127.0.0.1/" || echo "000")"
-    if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" || "$HTTP_CODE" == "307" ]]; then
+    # 301/308: common HTTP→HTTPS at the edge; 302/307: temporary redirects; 200: direct hit.
+    if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "301" || "$HTTP_CODE" == "302" || "$HTTP_CODE" == "307" || "$HTTP_CODE" == "308" ]]; then
       echo "  route: OK (http://127.0.0.1 Host=${CHECK_HOST} -> ${HTTP_CODE})"
     else
       echo "  WARN: Gateway route probe failed (http code ${HTTP_CODE}) for Host=${CHECK_HOST}."
