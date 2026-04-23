@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ZINC='\033[38;5;245m'
+EMERALD='\033[38;5;82m'
+AMBER='\033[38;5;214m'
+RESET='\033[0m'
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+log_info() {
+  printf "${ZINC}:: %s${RESET}\n" "$*"
+}
+
+log_pass() {
+  printf "${EMERALD}✔ %s${RESET}\n" "$*"
+}
+
+log_fail() {
+  printf "${AMBER}✖ %s${RESET}\n" "$*"
+}
+
+strip_ansi() {
+  sed -E 's/\x1b\[[0-9;]*m//g'
+}
+
+extract_test_target() {
+  local listed cleaned first
+  listed="$(flux list 2>/dev/null || true)"
+  cleaned="$(printf "%s\n" "$listed" | strip_ansi)"
+  first="$(
+    printf "%s\n" "$cleaned" \
+      | awk '/^[[:space:]]*[a-z0-9][a-z0-9-]*[[:space:]]+[a-f0-9]{7}[[:space:]]+/ { print $1 "|" $2; exit }'
+  )"
+  if [[ -z "$first" ]]; then
+    return 1
+  fi
+  printf "%s" "$first"
+}
+
+has_non_public_table_ref() {
+  local file="$1"
+  awk '
+    /^CREATE TABLE / {
+      obj=$3;
+      gsub(/[";]/, "", obj);
+      if (obj !~ /^public\./) { found=1; exit 0 }
+    }
+    /^INSERT INTO / {
+      obj=$3;
+      gsub(/[";(]/, "", obj);
+      if (obj !~ /^public\./) { found=1; exit 0 }
+    }
+    /^COPY / {
+      obj=$2;
+      gsub(/["(]/, "", obj);
+      if (obj !~ /^public\./) { found=1; exit 0 }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$file"
+}
+
+declare -A RESULT=(
+  ["A"]="FAIL"
+  ["B"]="FAIL"
+  ["C"]="FAIL"
+  ["D"]="FAIL"
+)
+declare -A DETAIL=(
+  ["A"]="Not run"
+  ["B"]="Not run"
+  ["C"]="Not run"
+  ["D"]="Not run"
+)
+
+if ! command -v flux >/dev/null 2>&1; then
+  log_fail "flux CLI not found in PATH."
+  exit 1
+fi
+
+target="${1:-}"
+if [[ -n "$target" ]]; then
+  slug="$target"
+  hash="${2:-}"
+  if [[ -z "$hash" ]]; then
+    log_info "No hash argument provided; auto-resolving from flux list for slug=$slug."
+    match="$(flux list 2>/dev/null | strip_ansi | awk -v s="$slug" '$1==s { print $2; exit }')"
+    if [[ -z "$match" ]]; then
+      log_fail "Unable to resolve hash for slug '$slug' from flux list."
+      exit 1
+    fi
+    hash="$match"
+  fi
+else
+  pair="$(extract_test_target || true)"
+  if [[ -z "$pair" ]]; then
+    log_fail "Could not identify a test project via flux list."
+    log_info "Pass explicit target: bin/flux-smoke-test <slug> <hash>"
+    exit 1
+  fi
+  slug="${pair%%|*}"
+  hash="${pair##*|}"
+fi
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+log_info "Target project: $slug ($hash)"
+
+# Test A: schema-only
+schema_file="$tmpdir/schema.sql"
+if flux dump "$slug" --hash "$hash" --schema-only >"$schema_file" 2>"$tmpdir/schema.err"; then
+  if rg -q "CREATE TABLE" "$schema_file" && ! rg -q "COPY|INSERT INTO" "$schema_file"; then
+    RESULT["A"]="PASS"
+    DETAIL["A"]="Contains CREATE TABLE; excludes COPY/INSERT"
+    log_pass "Test A (Schema Only)"
+  else
+    DETAIL["A"]="Expected CREATE TABLE and no COPY/INSERT"
+    log_fail "Test A (Schema Only)"
+  fi
+else
+  DETAIL["A"]="flux dump --schema-only failed"
+  log_fail "Test A (Schema Only)"
+fi
+
+# Test B: data-only
+data_file="$tmpdir/data.sql"
+if flux dump "$slug" --hash "$hash" --data-only >"$data_file" 2>"$tmpdir/data.err"; then
+  if rg -q "COPY|INSERT INTO" "$data_file" && ! rg -q "CREATE TABLE" "$data_file"; then
+    RESULT["B"]="PASS"
+    DETAIL["B"]="Contains COPY/INSERT; excludes CREATE TABLE"
+    log_pass "Test B (Data Only)"
+  else
+    DETAIL["B"]="Expected COPY/INSERT and no CREATE TABLE"
+    log_fail "Test B (Data Only)"
+  fi
+else
+  DETAIL["B"]="flux dump --data-only failed"
+  log_fail "Test B (Data Only)"
+fi
+
+# Test C: clean
+clean_file="$tmpdir/clean.sql"
+if flux dump "$slug" --hash "$hash" --clean >"$clean_file" 2>"$tmpdir/clean.err"; then
+  if rg -q "DROP TABLE IF EXISTS" "$clean_file"; then
+    RESULT["C"]="PASS"
+    DETAIL["C"]="Contains DROP TABLE IF EXISTS"
+    log_pass "Test C (Clean Sweep)"
+  else
+    DETAIL["C"]="Expected DROP TABLE IF EXISTS"
+    log_fail "Test C (Clean Sweep)"
+  fi
+else
+  DETAIL["C"]="flux dump --clean failed"
+  log_fail "Test C (Clean Sweep)"
+fi
+
+# Test D: public-only
+public_file="$tmpdir/public.sql"
+if flux dump "$slug" --hash "$hash" --public-only >"$public_file" 2>"$tmpdir/public.err"; then
+  if has_non_public_table_ref "$public_file"; then
+    DETAIL["D"]="Found non-public table reference"
+    log_fail "Test D (Public Sync)"
+  else
+    RESULT["D"]="PASS"
+    DETAIL["D"]="All table refs are public.* (CREATE/COPY/INSERT)"
+    log_pass "Test D (Public Sync)"
+  fi
+else
+  DETAIL["D"]="flux dump --public-only failed"
+  log_fail "Test D (Public Sync)"
+fi
+
+printf "\n${ZINC}Summary${RESET}\n"
+printf "${ZINC}%-7s %-16s %-8s %s${RESET}\n" "Test" "Mode" "Result" "Detail"
+printf "${ZINC}%-7s %-16s %-8s %s${RESET}\n" "-----" "----------------" "--------" "------------------------------"
+
+print_row() {
+  local id="$1" mode="$2" result="${RESULT[$id]}" detail="${DETAIL[$id]}" color="$AMBER"
+  if [[ "$result" == "PASS" ]]; then
+    color="$EMERALD"
+  fi
+  printf "${ZINC}%-7s %-16s ${color}%-8s${RESET} %s\n" "$id" "$mode" "$result" "$detail"
+}
+
+print_row "A" "Schema Only"
+print_row "B" "Data Only"
+print_row "C" "Clean Sweep"
+print_row "D" "Public Sync"
+
+if [[ "${RESULT[A]}" == "PASS" && "${RESULT[B]}" == "PASS" && "${RESULT[C]}" == "PASS" && "${RESULT[D]}" == "PASS" ]]; then
+  exit 0
+fi
+exit 1
