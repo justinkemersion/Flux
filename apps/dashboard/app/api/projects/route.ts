@@ -46,62 +46,79 @@ function describeError(err: unknown): string {
 }
 
 export async function GET(): Promise<Response> {
-  const session = await auth();
-  if (!session?.user?.id) return jsonError("Unauthorized", 401);
-
-  await initSystemDb();
-  const db = getDb();
-  const pm = getProjectManager();
-
-  const [userRow] = await db
-    .select({ plan: users.plan })
-    .from(users)
-    .where(eq(users.id, session.user.id));
-
-  const plan: "hobby" | "pro" =
-    userRow?.plan === "pro" ? "pro" : "hobby";
-
-  const userProjects = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.userId, session.user.id));
-
-  let summaries: Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>;
   try {
-    summaries = await pm.getProjectSummariesForUser(session.user.id, {
-      loadSlugRefsForUser: async (userId) =>
-        db
-          .select({ slug: projects.slug, hash: projects.hash })
-          .from(projects)
-          .where(eq(projects.userId, userId)),
-      isProduction: process.env.NODE_ENV === "production",
+    const session = await auth();
+    if (!session?.user?.id) return jsonError("Unauthorized", 401);
+
+    await initSystemDb();
+    const db = getDb();
+    const pm = getProjectManager();
+
+    const [userRow] = await db
+      .select({ plan: users.plan })
+      .from(users)
+      .where(eq(users.id, session.user.id));
+
+    const plan: "hobby" | "pro" =
+      userRow?.plan === "pro" ? "pro" : "hobby";
+
+    const userProjects = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.userId, session.user.id));
+
+    let summaries: Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>;
+    try {
+      summaries = await pm.getProjectSummariesForUser(session.user.id, {
+        loadSlugRefsForUser: async (userId) =>
+          db
+            .select({ slug: projects.slug, hash: projects.hash })
+            .from(projects)
+            .where(eq(projects.userId, userId)),
+        isProduction: process.env.NODE_ENV === "production",
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return jsonError(`Docker status unavailable: ${msg}`, 503);
+    }
+    const summaryBySlug = new Map(summaries.map((s) => [s.slug, s]));
+
+    const projectsPayload = userProjects.map((p) => {
+      const s = summaryBySlug.get(p.slug);
+      const createdAt =
+        p.createdAt instanceof Date
+          ? p.createdAt.toISOString()
+          : p.createdAt;
+      return {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        hash: p.hash,
+        status: s?.status ?? "missing",
+        apiUrl:
+          s?.apiUrl ??
+          fluxApiUrlForSlug(
+            p.slug,
+            p.hash,
+            process.env.NODE_ENV === "production",
+          ),
+        createdAt,
+        healthStatus: p.healthStatus ?? null,
+        lastHeartbeatAt: p.lastHeartbeatAt
+          ? p.lastHeartbeatAt.toISOString()
+          : null,
+      };
     });
+
+    return Response.json({ projects: projectsPayload, plan });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return jsonError(`Docker status unavailable: ${msg}`, 503);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[flux] GET /api/projects failed:", err);
+    return jsonError(
+      `Projects API error: ${message}. If the control plane or Docker is still starting, retry in a few seconds.`,
+      500,
+    );
   }
-  const summaryBySlug = new Map(summaries.map((s) => [s.slug, s]));
-
-  const projectsPayload = userProjects.map((p) => {
-    const s = summaryBySlug.get(p.slug);
-    return {
-      id: p.id,
-      name: p.name,
-      slug: p.slug,
-      hash: p.hash,
-      status: s?.status ?? "missing",
-      apiUrl:
-        s?.apiUrl ??
-        fluxApiUrlForSlug(p.slug, p.hash, process.env.NODE_ENV === "production"),
-      createdAt: p.createdAt,
-      healthStatus: p.healthStatus ?? null,
-      lastHeartbeatAt: p.lastHeartbeatAt
-        ? p.lastHeartbeatAt.toISOString()
-        : null,
-    };
-  });
-
-  return Response.json({ projects: projectsPayload, plan });
 }
 
 export async function POST(req: Request): Promise<Response> {

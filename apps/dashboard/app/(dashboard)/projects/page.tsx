@@ -56,12 +56,20 @@ export default function ProjectsPage() {
       // Read body once. `res.json()` throws if the body is HTML (e.g. proxy) or not JSON — the
       // same symptom as "JSON.parse: unexpected character at line 1 column 1".
       const text = await res.text();
+      const ct = res.headers.get("content-type")?.split(";")[0]?.trim() ?? "unknown";
+      const preview = text.replace(/\s+/g, " ").trim().slice(0, 160);
       let payload: unknown;
       try {
         payload = text.trim() ? (JSON.parse(text) as unknown) : null;
       } catch {
+        const hint =
+          text.trim().startsWith("<")
+            ? " (response looks like HTML — check reverse proxy: /api must forward to the Next.js server)"
+            : preview
+              ? `: ${preview}${text.length > 160 ? "…" : ""}`
+              : " (empty body)";
         throw new Error(
-          "The projects API did not return valid JSON. If you use a reverse proxy, ensure /api is forwarded to this Next.js app, not a static file or other host.",
+          `The projects API did not return valid JSON (HTTP ${String(res.status)}, ${ct})${hint}. If you use a reverse proxy, ensure /api is forwarded to this Next.js app.`,
         );
       }
       if (!res.ok) {
