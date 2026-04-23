@@ -401,10 +401,7 @@ export default function ProjectsPage() {
             >
               <X className="h-5 w-5" />
             </button>
-            <ProjectMeshReadout
-              slug={detailProject.slug}
-              hash={detailProject.hash}
-            />
+            <ProjectMeshReadout project={detailProject} />
             <ProjectCard
               key={detailProject.id}
               project={detailProject}

@@ -2,6 +2,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { fluxApiUrlForSlug } from "@flux/core";
 import { projectHeartbeatLog, projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
+import { getProjectManager } from "@/src/lib/flux";
 
 const INTERVAL_MS = 2 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5_000;
@@ -92,8 +93,53 @@ export async function pruneTelemetry(): Promise<void> {
 }
 
 /**
- * Fetches all catalog projects, probes their PostgREST base URL, and records
- * `health_status` + `last_heartbeat_at` in flux-system.
+ * One immediate mesh sample for a project (e.g. right after `provision` + catalog insert) so the UI
+ * is not blank until the next 2m tick.
+ */
+export async function probeAndRecordProjectHeartbeat(
+  projectId: string,
+  slug: string,
+  hash: string,
+): Promise<void> {
+  await initSystemDb();
+  const db = getDb();
+  const pm = getProjectManager();
+  const isProd = process.env.NODE_ENV === "production";
+  const [summary] = await pm.getProjectSummariesForSlugs(
+    [{ slug, hash }],
+    { isProduction: isProd },
+  );
+  const now = new Date();
+  if (summary?.status === "stopped") {
+    await db
+      .update(projects)
+      .set({ healthStatus: "stopped", lastHeartbeatAt: now })
+      .where(eq(projects.id, projectId));
+    await db.insert(projectHeartbeatLog).values({
+      projectId,
+      recordedAt: now,
+      healthStatus: "stopped",
+    });
+    return;
+  }
+  const apiUrl = fluxApiUrlForSlug(slug, hash, isProd);
+  const ok = await probeApiUrl(apiUrl);
+  const status = ok ? "running" : "error";
+  await db
+    .update(projects)
+    .set({ healthStatus: status, lastHeartbeatAt: now })
+    .where(eq(projects.id, projectId));
+  await db.insert(projectHeartbeatLog).values({
+    projectId,
+    recordedAt: now,
+    healthStatus: status,
+  });
+}
+
+/**
+ * Fetches all catalog projects; if Docker reports the stack **stopped**, records `health_status`
+ * = `stopped` and skips HTTP. Otherwise probes PostgREST and records `health_status` +
+ * `last_heartbeat_at` in flux-system.
  */
 export async function runFleetMonitorTick(): Promise<void> {
   await initSystemDb();
@@ -107,9 +153,30 @@ export async function runFleetMonitorTick(): Promise<void> {
     .from(projects);
   if (rows.length > 0) {
     const isProd = process.env.NODE_ENV === "production";
+    const pm = getProjectManager();
+    const summaries = await pm.getProjectSummariesForSlugs(
+      rows.map((r) => ({ slug: r.slug, hash: r.hash })),
+      { isProduction: isProd },
+    );
+    const bySlugHash = new Map(
+      summaries.map((s) => [`${s.slug}\0${s.hash}`, s] as const),
+    );
     const now = new Date();
     await Promise.all(
       rows.map(async (row) => {
+        const s = bySlugHash.get(`${row.slug}\0${row.hash}`);
+        if (s?.status === "stopped") {
+          await db
+            .update(projects)
+            .set({ healthStatus: "stopped", lastHeartbeatAt: now })
+            .where(eq(projects.id, row.id));
+          await db.insert(projectHeartbeatLog).values({
+            projectId: row.id,
+            recordedAt: now,
+            healthStatus: "stopped",
+          });
+          return;
+        }
         const apiUrl = fluxApiUrlForSlug(row.slug, row.hash, isProd);
         const ok = await probeApiUrl(apiUrl);
         const status = ok ? "running" : "error";

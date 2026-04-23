@@ -651,6 +651,8 @@ export function ProjectCard({
             <MeshTelemetryPill
               healthStatus={p.healthStatus}
               lastHeartbeatAt={p.lastHeartbeatAt}
+              createdAt={p.createdAt}
+              stackStatus={p.status}
             />
             {currentStatus === "missing" || currentStatus === "corrupted" ? (
               <button

@@ -3,6 +3,7 @@ import { auth } from "@/src/lib/auth";
 import { projects, users } from "@/src/db/schema";
 import { fluxApiUrlForSlug, slugifyProjectName } from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
+import { probeAndRecordProjectHeartbeat } from "@/src/lib/fleet-monitor";
 import { getProjectManager } from "@/src/lib/flux";
 
 export const runtime = "nodejs";
@@ -213,6 +214,19 @@ export async function POST(req: Request): Promise<Response> {
         userId: session.user.id,
       })
       .returning();
+
+    try {
+      await probeAndRecordProjectHeartbeat(
+        dbProject.id,
+        project.slug,
+        project.hash,
+      );
+    } catch (probeErr: unknown) {
+      console.error(
+        "[flux] projects POST: immediate mesh probe failed (non-fatal):",
+        probeErr,
+      );
+    }
 
     return Response.json({
       ownerId: session.user.id,

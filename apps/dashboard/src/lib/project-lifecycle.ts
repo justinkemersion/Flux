@@ -25,7 +25,7 @@ async function applyProjectPowerForRow(
       await pm.stopProject(project.slug, project.hash);
       await db
         .update(projects)
-        .set({ healthStatus: null })
+        .set({ healthStatus: "stopped" })
         .where(eq(projects.id, project.id));
     }
   } catch (err: unknown) {

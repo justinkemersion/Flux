@@ -1,24 +1,54 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import type { FluxProjectSummary } from "@flux/core/standalone";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type FleetTelemetryLevel,
+  deriveTelemetryDisplay,
+} from "@/src/lib/fleet-telemetry-display";
 
 type HeartbeatEntry = {
   recordedAt: string;
   healthStatus: string;
 };
 
-type Props = { slug: string; pollMs?: number };
+type Props = {
+  slug: string;
+  pollMs?: number;
+  createdAt: string;
+  stackStatus: FluxProjectSummary["status"];
+  healthStatus: string | null | undefined;
+  lastHeartbeatAt: string | null | undefined;
+};
 
 function isSuccess(status: string): boolean {
   return status === "running";
 }
 
 /**
- * High-density block strip: emerald = probe OK, red = failure (newest to the right).
+ * High-density block strip: emerald = probe OK, red = failure, dim zinc voids = pending (initializing).
  */
-export function TelemetrySparkline({ slug, pollMs = 8000 }: Props) {
+export function TelemetrySparkline({
+  slug,
+  pollMs = 8000,
+  createdAt,
+  stackStatus,
+  healthStatus,
+  lastHeartbeatAt,
+}: Props) {
   const [entries, setEntries] = useState<HeartbeatEntry[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  const meshLevel: FleetTelemetryLevel = useMemo(
+    () =>
+      deriveTelemetryDisplay({
+        healthStatus,
+        lastHeartbeatAt,
+        createdAt,
+        stackStatus,
+      }),
+    [healthStatus, lastHeartbeatAt, createdAt, stackStatus],
+  );
 
   const load = useCallback(async () => {
     setErr(null);
@@ -79,27 +109,39 @@ export function TelemetrySparkline({ slug, pollMs = 8000 }: Props) {
       }))
     : [];
   const pad = Math.max(0, slotCount - blocks.length);
+  const pendingPad =
+    meshLevel === "initializing" && blocks.length === 0 && !err;
 
   return (
     <div className="border border-zinc-800 bg-zinc-950/80 p-3">
       <div className="mb-2 flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
         <span>MESH_TELEMETRY</span>
         <span className="text-zinc-600">
-          {err ? "SYNC_ERR" : `${String(blocks.length)}/${String(slotCount)}`}
+          {err
+            ? "SYNC_ERR"
+            : pendingPad
+              ? "PENDING_FIRST_PROBE"
+              : `${String(blocks.length)}/${String(slotCount)}`}
         </span>
       </div>
       {err ? (
         <p className="font-mono text-xs text-red-400">{err}</p>
       ) : null}
       <div
-        className="grid gap-px bg-zinc-800"
+        className="grid gap-px border border-zinc-800/80 bg-zinc-800"
         style={{
           gridTemplateColumns: `repeat(${String(slotCount)}, minmax(0, 1fr))`,
         }}
         aria-label="Last twenty mesh probes, oldest to newest"
       >
         {Array.from({ length: pad }, (_, i) => (
-          <div key={`void-${i}`} className="h-3 bg-zinc-900" title="—" />
+          <div
+            key={`void-${i}`}
+            className={`h-3 ${
+              pendingPad ? "bg-zinc-700/50" : "bg-zinc-900"
+            }`}
+            title={pendingPad ? "Pending" : "—"}
+          />
         ))}
         {blocks.map((b) => (
           <div

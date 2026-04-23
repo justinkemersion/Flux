@@ -36,71 +36,38 @@ function fleetStatusLabel(status: DisplayStatus): string {
 }
 
 function StatusTag({
-  status,
+  displayStatus,
   project,
 }: {
-  status: DisplayStatus;
+  displayStatus: DisplayStatus;
   project: ProjectRow;
 }) {
-  const isRunning = status === "running";
-  const isTransition = status === "transitioning";
-  const hasMesh = project.lastHeartbeatAt != null || project.healthStatus != null;
-  if (hasMesh) {
-    const m = deriveTelemetryDisplay(
-      project.healthStatus,
-      project.lastHeartbeatAt,
-    );
-    const dotClass =
-      m === "operational"
-        ? "bg-emerald-500"
-        : m === "stale"
-          ? "bg-amber-500"
+  const m = deriveTelemetryDisplay({
+    healthStatus: project.healthStatus,
+    lastHeartbeatAt: project.lastHeartbeatAt,
+    createdAt: project.createdAt,
+    stackStatus: project.status,
+  });
+  const dotClass =
+    m === "operational"
+      ? "bg-emerald-500"
+      : m === "initializing"
+        ? "bg-zinc-500"
+        : m === "standby"
+          ? "bg-zinc-600"
           : "bg-red-500";
-    return (
-      <span className="inline-flex max-w-[min(100%,16rem)] flex-col items-end gap-0.5">
-        <span className="inline-flex items-center justify-end gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-200">
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`}
-            aria-hidden
-          />
-          <span className="text-right">
-            {fleetTelemetryLabel(m)}
-          </span>
-        </span>
-        <span className="text-right font-mono text-[9px] uppercase tracking-[0.1em] text-zinc-500">
-          stack {fleetStatusLabel(status)}
-        </span>
-      </span>
-    );
-  }
   return (
-    <span className="inline-flex max-w-[min(100%,14rem)] items-center justify-end gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-400">
-      {isRunning ? (
+    <span className="inline-flex max-w-[min(100%,16rem)] flex-col items-end gap-0.5">
+      <span className="inline-flex items-center justify-end gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-200">
         <span
-          className="relative flex h-2 w-2 shrink-0"
-          aria-hidden
-        >
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/40" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-        </span>
-      ) : isTransition ? (
-        <Loader2
-          className="h-3 w-3 shrink-0 animate-spin text-zinc-500"
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`}
           aria-hidden
         />
-      ) : (
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${
-            status === "stopped"
-              ? "bg-zinc-600"
-              : status === "partial"
-                ? "bg-amber-500"
-                : "bg-red-500"
-          }`}
-          aria-hidden
-        />
-      )}
-      <span className="truncate text-right">{fleetStatusLabel(status)}</span>
+        <span className="text-right">{fleetTelemetryLabel(m)}</span>
+      </span>
+      <span className="text-right font-mono text-[9px] uppercase tracking-[0.1em] text-zinc-500">
+        stack {fleetStatusLabel(displayStatus)}
+      </span>
     </span>
   );
 }
@@ -294,7 +261,7 @@ export function ProjectSummaryCard({
         </div>
 
         <div className="flex shrink-0 justify-end sm:pt-0.5">
-          <StatusTag status={displayStatus} project={p} />
+          <StatusTag displayStatus={displayStatus} project={p} />
         </div>
       </div>
 

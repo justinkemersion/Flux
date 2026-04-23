@@ -126,7 +126,7 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
           MESH_READOUT / {project.slug}
         </span>
       </div>
-      <ProjectMeshReadout slug={project.slug} hash={project.hash} />
+      <ProjectMeshReadout project={project} />
     </div>
   );
 }

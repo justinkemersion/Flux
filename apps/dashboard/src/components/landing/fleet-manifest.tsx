@@ -13,13 +13,15 @@ const focus =
 
 const dot: Record<FleetTelemetryLevel, string> = {
   operational: "bg-emerald-500",
-  stale: "bg-amber-500",
+  initializing: "bg-zinc-500",
+  standby: "bg-zinc-600",
   offline: "bg-red-500",
 };
 
 const label: Record<FleetTelemetryLevel, string> = {
   operational: "text-emerald-400/95",
-  stale: "text-amber-400/95",
+  initializing: "text-zinc-500/95",
+  standby: "text-zinc-500/80",
   offline: "text-red-400/95",
 };
 
@@ -102,7 +104,7 @@ export function FleetManifest({ initialShowcase }: Props) {
                 </h3>
                 <div
                   className={`flex max-w-[min(100%,11rem)] flex-col items-end gap-0.5 text-right font-mono text-[10px] uppercase leading-tight tracking-[0.1em] ${label[p.level]}`}
-                  title="Mesh level from catalog health_status and last_heartbeat (≤5m = Operational)"
+                  title="Mesh: catalog + Docker (5m window for green)"
                 >
                   <span className="inline-flex items-center gap-1.5">
                     <span
