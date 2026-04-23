@@ -7,6 +7,10 @@ import {
   useState,
   type ReactElement,
 } from "react";
+import {
+  errorMessageFromJsonBody,
+  readResponseJson,
+} from "@/src/lib/fetch-json";
 
 type OverviewHealth = "running" | "degraded" | "error";
 
@@ -45,18 +49,16 @@ export function FleetHealthGrid(): ReactElement {
     setErr(null);
     try {
       const res = await fetch("/api/fleet/overview", { cache: "no-store" });
-      const text = await res.text();
-      const body: unknown = text.trim() ? (JSON.parse(text) as unknown) : null;
+      const body: unknown = await readResponseJson(res, {
+        apiLabel: "fleet overview API",
+      });
       if (!res.ok) {
-        const msg =
-          body &&
-          typeof body === "object" &&
-          body !== null &&
-          "error" in body &&
-          typeof (body as { error: unknown }).error === "string"
-            ? (body as { error: string }).error
-            : `Overview failed (${String(res.status)})`;
-        throw new Error(msg);
+        throw new Error(
+          errorMessageFromJsonBody(
+            body,
+            `Overview failed (${String(res.status)})`,
+          ),
+        );
       }
       setData(body as OverviewPayload);
     } catch (e) {

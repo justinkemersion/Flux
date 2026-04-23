@@ -12,6 +12,10 @@ import {
   type ProjectRow,
 } from "@/src/components/projects/project-card";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
+import {
+  errorMessageFromJsonBody,
+  readResponseJson,
+} from "@/src/lib/fetch-json";
 
 /**
  * Deep link for `flux open <slug>` — Mesh Readout for a single project.
@@ -30,18 +34,16 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
     setErr(null);
     try {
       const res = await fetch("/api/projects");
-      const text = await res.text();
-      const payload: unknown = text.trim() ? JSON.parse(text) as unknown : null;
+      const payload: unknown = await readResponseJson(res, {
+        apiLabel: "projects API",
+      });
       if (!res.ok) {
-        const msg =
-          payload &&
-          typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof (payload as { error: unknown }).error === "string"
-            ? (payload as { error: string }).error
-            : `Request failed (${String(res.status)})`;
-        throw new Error(msg);
+        throw new Error(
+          errorMessageFromJsonBody(
+            payload,
+            `Request failed (${String(res.status)})`,
+          ),
+        );
       }
       if (
         !payload ||

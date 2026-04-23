@@ -6,6 +6,10 @@ import {
   type FleetTelemetryLevel,
   deriveTelemetryDisplay,
 } from "@/src/lib/fleet-telemetry-display";
+import {
+  errorMessageFromJsonBody,
+  readResponseJson,
+} from "@/src/lib/fetch-json";
 
 type HeartbeatEntry = {
   recordedAt: string;
@@ -57,16 +61,16 @@ export function TelemetrySparkline({
         `/api/projects/${encodeURIComponent(slug)}/history`,
         { cache: "no-store" },
       );
-      const data: unknown = await res.json().catch(() => ({}));
+      const data: unknown = await readResponseJson(res, {
+        apiLabel: "project history API",
+      });
       if (!res.ok) {
-        const msg =
-          typeof data === "object" &&
-          data !== null &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : `load failed (${String(res.status)})`;
-        throw new Error(msg);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `load failed (${String(res.status)})`,
+          ),
+        );
       }
       if (
         !data ||

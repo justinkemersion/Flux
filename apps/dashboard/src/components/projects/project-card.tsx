@@ -20,6 +20,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  errorMessageFromJsonBody,
+  readResponseJson,
+} from "@/src/lib/fetch-json";
 
 type ServerStatus =
   | "running"
@@ -431,14 +435,18 @@ export function ProjectCard({
       const res = await fetch(
         `/api/projects/${encodeURIComponent(p.slug)}/logs?service=${logsService}`,
       );
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        logs?: string;
-      };
+      const data = (await readResponseJson(res, {
+        apiLabel: "project logs API",
+      })) as { error?: string; logs?: string } | null;
       if (!res.ok) {
-        throw new Error(data.error ?? `Request failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Request failed (${String(res.status)})`,
+          ),
+        );
       }
-      setLogsText(data.logs ?? "");
+      setLogsText((data as { logs?: string } | null)?.logs ?? "");
     } catch (err) {
       setLogsError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -470,9 +478,16 @@ export function ProjectCard({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ action: "stop" as const }),
             });
+      const data = (await readResponseJson(res, {
+        apiLabel: "project power API",
+      })) as { error?: string } | null;
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Action failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Action failed (${String(res.status)})`,
+          ),
+        );
       }
       setCurrentStatus(action === "start" ? "running" : "stopped");
     } catch (err) {
@@ -500,9 +515,16 @@ export function ProjectCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jwtSecret: trimmed }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      const data = (await readResponseJson(res, {
+        apiLabel: "project settings API",
+      })) as { error?: string } | null;
       if (!res.ok) {
-        throw new Error(data.error ?? `Save failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Save failed (${String(res.status)})`,
+          ),
+        );
       }
       setSettingsSuccess(true);
       setLastSavedJwtSecret(trimmed);
@@ -541,9 +563,16 @@ export function ProjectCard({
       const res = await fetch(`/api/projects/${p.slug}/repair`, {
         method: "POST",
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      const data = (await readResponseJson(res, {
+        apiLabel: "project repair API",
+      })) as { error?: string } | null;
       if (!res.ok) {
-        throw new Error(data.error ?? `Repair failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Repair failed (${String(res.status)})`,
+          ),
+        );
       }
       onRepaired?.();
     } catch (err) {
@@ -559,16 +588,24 @@ export function ProjectCard({
     setRevealError(null);
     try {
       const res = await fetch(`/api/projects/${p.slug}/credentials`);
-      const data = (await res.json().catch(() => ({}))) as {
+      const data = (await readResponseJson(res, {
+        apiLabel: "project credentials API",
+      })) as {
         error?: string;
         anonKey?: string;
         serviceRoleKey?: string;
         postgresConnectionString?: string;
-      };
+      } | null;
       if (!res.ok) {
-        throw new Error(data.error ?? `Reveal failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Reveal failed (${String(res.status)})`,
+          ),
+        );
       }
       if (
+        !data ||
         typeof data.anonKey !== "string" ||
         typeof data.serviceRoleKey !== "string" ||
         typeof data.postgresConnectionString !== "string"
@@ -594,9 +631,16 @@ export function ProjectCard({
     setDeleteError(null);
     try {
       const res = await fetch(`/api/projects/${p.slug}`, { method: "DELETE" });
+      const data = (await readResponseJson(res, {
+        apiLabel: "project delete API",
+      })) as { error?: string } | null;
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Delete failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Delete failed (${String(res.status)})`,
+          ),
+        );
       }
       setDeleteOpen(false);
       onDelete();

@@ -9,6 +9,10 @@ import {
   fleetTelemetryLabel,
 } from "@/src/lib/fleet-telemetry-display";
 import { projectApiInterface } from "@/src/lib/routing-identity";
+import {
+  errorMessageFromJsonBody,
+  readResponseJson,
+} from "@/src/lib/fetch-json";
 
 type ServerStatus = ProjectRow["status"];
 
@@ -128,10 +132,15 @@ export function ProjectSummaryCard({
         `/api/projects/${encodeURIComponent(p.slug)}/start`,
         { method: "POST" },
       );
+      const data = (await readResponseJson(res, {
+        apiLabel: "project start API",
+      })) as { error?: string } | null;
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(
-          data.error ?? `Start failed (${String(res.status)})`,
+          errorMessageFromJsonBody(
+            data,
+            `Start failed (${String(res.status)})`,
+          ),
         );
       }
       setDisplayStatus("running");
@@ -158,9 +167,16 @@ export function ProjectSummaryCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "stop" }),
       });
+      const data = (await readResponseJson(res, {
+        apiLabel: "project stop API",
+      })) as { error?: string } | null;
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Stop failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Stop failed (${String(res.status)})`,
+          ),
+        );
       }
       setDisplayStatus("stopped");
       onPowerChanged?.();
@@ -188,9 +204,16 @@ export function ProjectSummaryCard({
         `/api/projects/${encodeURIComponent(p.slug)}/repair`,
         { method: "POST" },
       );
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      const data = (await readResponseJson(res, {
+        apiLabel: "project repair API",
+      })) as { error?: string } | null;
       if (!res.ok) {
-        throw new Error(data.error ?? `Repair failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Repair failed (${String(res.status)})`,
+          ),
+        );
       }
       onRepaired?.();
     } catch (err) {

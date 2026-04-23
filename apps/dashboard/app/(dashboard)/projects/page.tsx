@@ -22,6 +22,10 @@ import { FleetHealthGrid } from "@/src/components/fleet/fleet-health-grid";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
 import { ProjectsFleetBar } from "@/src/components/projects/projects-fleet-bar";
 import { ProjectSummaryCard } from "@/src/components/projects/project-summary-card";
+import {
+  errorMessageFromJsonBody,
+  readResponseJson,
+} from "@/src/lib/fetch-json";
 
 export default function ProjectsPage() {
   const { data: session } = useSession();
@@ -53,35 +57,16 @@ export default function ProjectsPage() {
     setLoadError(null);
     try {
       const res = await fetch("/api/projects");
-      // Read body once. `res.json()` throws if the body is HTML (e.g. proxy) or not JSON — the
-      // same symptom as "JSON.parse: unexpected character at line 1 column 1".
-      const text = await res.text();
-      const ct = res.headers.get("content-type")?.split(";")[0]?.trim() ?? "unknown";
-      const preview = text.replace(/\s+/g, " ").trim().slice(0, 160);
-      let payload: unknown;
-      try {
-        payload = text.trim() ? (JSON.parse(text) as unknown) : null;
-      } catch {
-        const hint =
-          text.trim().startsWith("<")
-            ? " (response looks like HTML — check reverse proxy: /api must forward to the Next.js server)"
-            : preview
-              ? `: ${preview}${text.length > 160 ? "…" : ""}`
-              : " (empty body)";
-        throw new Error(
-          `The projects API did not return valid JSON (HTTP ${String(res.status)}, ${ct})${hint}. If you use a reverse proxy, ensure /api is forwarded to this Next.js app.`,
-        );
-      }
+      const payload: unknown = await readResponseJson(res, {
+        apiLabel: "projects API",
+      });
       if (!res.ok) {
-        const msg =
-          payload &&
-          typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof (payload as { error: unknown }).error === "string"
-            ? (payload as { error: string }).error
-            : `Request failed (${String(res.status)})`;
-        throw new Error(msg);
+        throw new Error(
+          errorMessageFromJsonBody(
+            payload,
+            `Request failed (${String(res.status)})`,
+          ),
+        );
       }
       if (
         !payload ||
@@ -227,14 +212,18 @@ export default function ProjectsPage() {
     setBillingError(null);
     try {
       const res = await fetch("/api/billing/checkout", { method: "POST" });
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        url?: string;
-      };
+      const data = (await readResponseJson(res, {
+        apiLabel: "billing checkout API",
+      })) as { error?: string; url?: string } | null;
       if (!res.ok) {
-        throw new Error(data.error ?? `Checkout failed (${String(res.status)})`);
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Checkout failed (${String(res.status)})`,
+          ),
+        );
       }
-      if (typeof data.url === "string") {
+      if (data && typeof data.url === "string") {
         window.location.href = data.url;
         return;
       }
@@ -257,15 +246,14 @@ export default function ProjectsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
       });
-      const data: unknown = await res.json().catch(() => ({}));
+      const data: unknown = await readResponseJson(res, {
+        apiLabel: "projects API (create)",
+      });
       if (!res.ok) {
-        const msg =
-          typeof data === "object" &&
-          data !== null &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : `Create failed (${String(res.status)})`;
+        const msg = errorMessageFromJsonBody(
+          data,
+          `Create failed (${String(res.status)})`,
+        );
         if (res.status === 403 && msg === HOBBY_LIMIT_API_MESSAGE) {
           setCreateLimitBanner("hobby");
           return;

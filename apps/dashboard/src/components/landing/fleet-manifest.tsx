@@ -7,6 +7,7 @@ import {
   type FleetTelemetryLevel,
   fleetTelemetryLabel,
 } from "@/src/lib/fleet-telemetry-display";
+import { readResponseJson } from "@/src/lib/fetch-json";
 
 const focus =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
@@ -50,7 +51,9 @@ export function FleetManifest({ initialShowcase }: Props) {
       try {
         const res = await fetch("/api/fleet/telemetry", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const data = (await res.json()) as TelemetryResponse;
+        const data = (await readResponseJson(res, {
+          apiLabel: "fleet telemetry API",
+        })) as TelemetryResponse;
         if (!data.items?.length) return;
         setShowcase((prev) =>
           prev.map((card) => {

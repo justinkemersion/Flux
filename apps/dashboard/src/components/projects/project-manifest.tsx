@@ -6,6 +6,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  errorMessageFromJsonBody,
+  readResponseJson,
+} from "@/src/lib/fetch-json";
 
 type PasswordSource = "container" | "derived" | "unavailable";
 
@@ -110,16 +114,16 @@ export function ProjectManifest({ slug }: Props) {
         `/api/projects/${encodeURIComponent(slug)}/manifest`,
         { cache: "no-store" },
       );
-      const payload: unknown = await res.json().catch(() => ({}));
+      const payload: unknown = await readResponseJson(res, {
+        apiLabel: "project manifest API",
+      });
       if (!res.ok) {
-        const msg =
-          typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof (payload as { error: unknown }).error === "string"
-            ? (payload as { error: string }).error
-            : `load failed (${String(res.status)})`;
-        throw new Error(msg);
+        throw new Error(
+          errorMessageFromJsonBody(
+            payload,
+            `load failed (${String(res.status)})`,
+          ),
+        );
       }
       setData(payload as ManifestPayload);
     } catch (e) {
