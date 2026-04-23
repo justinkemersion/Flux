@@ -2,7 +2,7 @@
  * Source of truth for `GET /api/cli/v1/codex` and the Codex AI system prompt.
  */
 export const FLUX_CODEX_JSON = {
-  version: 1,
+  version: 2,
   title: "Flux Codex — Core Rules",
   deterministicPassword: {
     summary:
@@ -47,6 +47,40 @@ export const FLUX_CODEX_JSON = {
       "**Fleet** status comes from the catalog + Docker: mesh heartbeat history (telemetry sparkline), and project rows with health_status / last_heartbeat. Use the overview to spot degraded or error projects before the CLI.",
     meshReadout:
       "Opening a project in the UI shows the **Mesh Readout**: connection manifest (API URL, Postgres), live log stream, and the heartbeat block strip. For deep diagnosis (not just `flux logs`), direct users to the Dashboard project detail or `flux open <name>` to open the Mesh view in the browser when available.",
+  },
+  /**
+   * Beginner flow for full-stack developers using the Flux CLI.
+   */
+  cliStart: {
+    installation: {
+      command: "curl -sL https://flux.vsl-base.com/install | bash",
+      requirements: ["Node.js 20+", "curl"],
+      notes: [
+        "The installer writes `flux` to ~/.local/bin by default.",
+        "Ensure ~/.local/bin is on PATH if `flux` is not found.",
+      ],
+    },
+    authentication: {
+      env: {
+        FLUX_API_BASE: "https://flux.vsl-base.com/api",
+        FLUX_API_TOKEN: "flx_live_…",
+      },
+      command: "flux login",
+      note: "Create API keys in Dashboard Settings -> API keys.",
+    },
+    firstProject: {
+      command: "flux create \"my-app\"",
+      followUp: "flux push ./schema.sql",
+      result:
+        "Provision an isolated Postgres database and PostgREST API endpoint for the project.",
+    },
+    accessingData: {
+      apiUrl:
+        "Use the API URL returned by `flux create` as your app's REST base URL.",
+      auth:
+        "Send the project API key (`anon` or `service_role`) in request headers as required by your app/backend.",
+      example: "GET /your_table",
+    },
   },
   commands: {
     authVerify:
