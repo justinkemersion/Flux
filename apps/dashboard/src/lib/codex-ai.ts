@@ -31,9 +31,8 @@ export async function* queryFluxAI(
     JSON.stringify(FLUX_CODEX_JSON, null, 2),
   ].join("\n");
 
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodeURIComponent(
-    MODEL,
-  )}`;
+  // Workers AI model identifiers contain `/`; keep the raw segment in-path.
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`;
 
   const res = await fetch(url, {
     method: "POST",
