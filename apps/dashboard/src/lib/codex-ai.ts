@@ -1,4 +1,5 @@
 import { FLUX_CODEX_JSON } from "@/src/lib/flux-codex-static";
+import { getFleetReliability, getNodeStats } from "@/src/lib/fleet-monitor";
 
 const MODEL = "@cf/meta/llama-3-8b-instruct" as const;
 
@@ -16,12 +17,15 @@ export async function* queryFluxAI(
     );
   }
 
+  const telemetrySection = await buildTelemetrySection();
+
   const systemPrompt = [
     "You are Flux Codex Diagnostics.",
     "Use only the provided Flux technical specification as source of truth.",
     "Functional Aesthetic: respond with short, surgical, technical answers.",
     "If a request is outside the provided spec, explicitly refuse and state the scope limit.",
     "Do not speculate on non-Flux infrastructure or external systems.",
+    telemetrySection,
     "",
     "Flux Technical Spec JSON (canonical):",
     JSON.stringify(FLUX_CODEX_JSON, null, 2),
@@ -72,6 +76,33 @@ export async function* queryFluxAI(
   }
 
   yield* parseWorkersAiSse(res.body);
+}
+
+async function buildTelemetrySection(): Promise<string> {
+  try {
+    const [node, reliability] = await Promise.all([
+      getNodeStats(),
+      getFleetReliability(),
+    ]);
+
+    const uptime =
+      reliability.percent == null
+        ? "n/a"
+        : `${reliability.percent.toFixed(1)}%`;
+
+    return [
+      "",
+      "CURRENT_FLEET_STATE",
+      `CPU Load: ${node.cpuLoad.toFixed(2)}`,
+      `RAM Usage: ${node.memoryUsage.toFixed(1)}%`,
+      `Container Count: ${String(node.containerCount)}`,
+      `24H Reliability: ${uptime}`,
+      "You are aware of the current infrastructure status. Use these numbers if the user asks about health, load, or uptime.",
+    ].join("\n");
+  } catch {
+    // Telemetry is best-effort; keep Codex available with static spec only.
+    return "";
+  }
 }
 
 async function* parseWorkersAiSse(

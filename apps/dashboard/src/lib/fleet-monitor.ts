@@ -53,6 +53,14 @@ export async function getFleetReliability(): Promise<FleetReliability> {
   };
 }
 
+/**
+ * Snapshot node telemetry from the Docker host used by the control plane.
+ */
+export async function getNodeStats() {
+  const pm = getProjectManager();
+  return pm.getNodeStats();
+}
+
 function isProbeSuccess(status: number): boolean {
   return status >= 200 && status < 400;
 }
