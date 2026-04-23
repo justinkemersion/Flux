@@ -1,7 +1,8 @@
 "use client";
 
 import { readStreamableValue } from "ai/rsc";
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
+import { CodexSuggestions } from "@/src/components/codex-suggestions";
 import type { queryCodexAction as QueryCodexAction } from "@/src/lib/actions";
 
 type Props = {
@@ -13,19 +14,31 @@ export function CodexQueryPanel({ queryAction }: Props) {
   const [output, setOutput] = useState("");
   const [pending, startTransition] = useTransition();
 
+  const runQuery = useCallback(
+    (text: string) => {
+      const t = text.trim();
+      if (!t || pending) return;
+      startTransition(async () => {
+        setOutput("");
+        const stream = await queryAction(t);
+        for await (const v of readStreamableValue(stream)) {
+          if (v !== undefined && v !== null) {
+            setOutput(String(v));
+          }
+        }
+      });
+    },
+    [pending, queryAction],
+  );
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const t = query.trim();
-    if (!t || pending) return;
-    startTransition(async () => {
-      setOutput("");
-      const stream = await queryAction(t);
-      for await (const v of readStreamableValue(stream)) {
-        if (v !== undefined && v !== null) {
-          setOutput(String(v));
-        }
-      }
-    });
+    runQuery(query);
+  }
+
+  function onSuggestionPick(question: string) {
+    setQuery(question);
+    runQuery(question);
   }
 
   return (
@@ -34,7 +47,7 @@ export function CodexQueryPanel({ queryAction }: Props) {
         htmlFor="codex-query"
         className="block text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500"
       >
-        Natural_language_interface
+        Ask the Codex
       </label>
       <input
         id="codex-query"
@@ -63,6 +76,7 @@ export function CodexQueryPanel({ queryAction }: Props) {
           </code>
         </span>
       </div>
+      <CodexSuggestions disabled={pending} onPick={onSuggestionPick} />
       <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-600">
         Static reference:{" "}
         <code className="rounded bg-zinc-100 px-1 py-0.5 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">

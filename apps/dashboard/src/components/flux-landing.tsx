@@ -36,11 +36,12 @@ export function FluxLanding({ fleetShowcase, reliability }: Props) {
               id="flux-hero-heading"
               className="mt-3 font-sans text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl md:text-6xl"
             >
-              Deterministic Orchestration
+              From zero to database in one command
             </h1>
             <p className="mt-6 max-w-2xl font-sans text-lg leading-relaxed text-zinc-400 sm:text-xl">
-              Isolated PostgreSQL and PostgREST per project. One engine, one
-              contract, zero noisy neighbors.
+              Each project gets isolated Postgres and a PostgREST API. Install
+              the CLI, run <code className="text-zinc-300">flux create</code>, and
+              manage stacks from here or the terminal—fast and yours.
             </p>
             <div className="mt-10">
               <LandingCtas />
@@ -62,24 +63,24 @@ export function FluxLanding({ fleetShowcase, reliability }: Props) {
             id="doc-ref-heading"
             className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500"
           >
-            Documentation_reference
+            Documentation
           </h2>
           <p className="mt-2 max-w-2xl font-sans text-xs leading-relaxed text-zinc-500">
-            Codex: surgical technical spec on{" "}
+            Step-by-step guide on{" "}
             <Link
               href="/docs"
               className={`text-zinc-300 underline-offset-2 transition-colors duration-200 ease-linear hover:text-white hover:underline ${focusLink} rounded-sm`}
             >
               /docs
             </Link>
-            . Jump to the sections you need for first flight.
+            : install, log in, create a project, and call your API.
           </p>
           <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
             {(
               [
-                { href: "/docs#install", k: "install", t: "Install · env · CLI bundle" },
-                { href: "/docs#determinism", k: "determinism", t: "Slugs, hashes, naming" },
-                { href: "/docs#lifecycle", k: "lifecycle", t: "Start · stop · repair · nuke" },
+                { href: "/docs#install", k: "install", t: "Install the CLI (curl)" },
+                { href: "/docs#authentication", k: "auth", t: "Log in with flux login" },
+                { href: "/docs#create", k: "create", t: "Create your first database" },
               ] as const
             ).map((item) => (
               <li key={item.k}>
@@ -99,12 +100,12 @@ export function FluxLanding({ fleetShowcase, reliability }: Props) {
           </ul>
           <div className="mt-6">
             <p className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
-              First_flight
+              Quick start
             </p>
             <CodeBlock
               size="comfortable"
               label="bash"
-              code={`# After FLUX_API_BASE + FLUX_API_TOKEN (see /docs#install)
+              code={`# Set FLUX_API_BASE + FLUX_API_TOKEN (see /docs#authentication)
 flux login
 flux create "my-app"
 flux push ./schema.sql`}
@@ -121,7 +122,7 @@ flux push ./schema.sql`}
             id="install-heading"
             className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500"
           >
-            CLI install
+            Install the CLI
           </h2>
           <p className="mt-3 max-w-2xl font-sans text-sm leading-relaxed text-zinc-400">
             You need <strong className="font-medium text-zinc-300">Node.js 20+</strong> and{" "}
@@ -167,10 +168,9 @@ flux list`}
               href="/docs#install"
               className={`text-zinc-300 underline-offset-2 transition-colors duration-200 ease-linear hover:text-white hover:underline ${focusLink} rounded-sm`}
             >
-              Full install &amp; API reference
+              Full docs on /docs
             </Link>
-            {" · "}
-            same contract as the machine-readable Codex.
+            {" — "}includes auth, create, and how to use your API URL.
           </p>
         </section>
 
@@ -178,7 +178,7 @@ flux list`}
           className="mt-auto border-t border-zinc-800/60 pt-16 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500/50 sm:pt-20"
           aria-label="Platform credits"
         >
-          ENGINEERED_ON_DEBIAN // POWERED_BY_DOCKER // ORCHESTRATED_BY_FLUX
+          Built on Debian · Docker · Flux
         </p>
       </main>
     </div>

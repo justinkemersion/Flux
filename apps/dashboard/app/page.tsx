@@ -4,9 +4,9 @@ import { getLandingFleetShowcase } from "@/src/lib/fleet-showcase";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Flux — Deterministic Orchestration",
+  title: "Flux — From zero to database in one command",
   description:
-    "Flux infrastructure: isolated PostgreSQL and PostgREST, deterministic orchestration. flux.vsl-base.com",
+    "Isolated Postgres and a REST API per project. Install the CLI, run create, and manage your stack from the terminal or dashboard.",
 };
 
 export const dynamic = "force-dynamic";

@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://flux.vsl-base.com"),
   title: "Flux",
   description:
-    "Deterministic orchestration: isolated PostgreSQL and PostgREST per project. flux.vsl-base.com",
+    "Isolated Postgres and a REST API per project. Install the CLI, create a database, manage your stack. flux.vsl-base.com",
 };
 
 export default async function RootLayout({
