@@ -9,6 +9,8 @@ RESET='\033[0m'
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+declare -a FLUX_CMD=()
+
 log_info() {
   printf "${ZINC}:: %s${RESET}\n" "$*"
 }
@@ -21,13 +23,55 @@ log_fail() {
   printf "${AMBER}✖ %s${RESET}\n" "$*"
 }
 
+first_line() {
+  local file="$1"
+  awk 'NF { print; exit }' "$file"
+}
+
+last_error_line() {
+  local file="$1"
+  awk '
+    NF {
+      line=$0
+      gsub(/\x1b\[[0-9;]*m/, "", line)
+      if (line ~ /^Dumping data for /) next
+      if (line ~ /^Dump complete\./) next
+      keep=line
+    }
+    END {
+      if (keep != "") print keep
+    }
+  ' "$file"
+}
+
+schema_dump_has_ddl() {
+  local file="$1"
+  rg -q "CREATE TABLE|CREATE VIEW|CREATE MATERIALIZED VIEW|CREATE FUNCTION|CREATE TYPE|CREATE SCHEMA|CREATE SEQUENCE|CREATE INDEX|CREATE EXTENSION|ALTER TABLE|COMMENT ON|GRANT " "$file"
+}
+
+schema_dump_excerpt() {
+  local file="$1"
+  awk '
+    NF == 0 { next }
+    /^--/ { next }
+    /^SET / { next }
+    /^SELECT pg_catalog\.set_config/ { next }
+    /^\\connect/ { next }
+    {
+      print
+      count++
+      if (count >= 3) exit
+    }
+  ' "$file" | paste -sd ' | ' -
+}
+
 strip_ansi() {
   sed -E 's/\x1b\[[0-9;]*m//g'
 }
 
 extract_test_target() {
   local listed cleaned first
-  listed="$(flux list 2>/dev/null || true)"
+  listed="$(run_flux list 2>/dev/null || true)"
   cleaned="$(printf "%s\n" "$listed" | strip_ansi)"
   first="$(
     printf "%s\n" "$cleaned" \
@@ -74,10 +118,22 @@ declare -A DETAIL=(
   ["D"]="Not run"
 )
 
-if ! command -v flux >/dev/null 2>&1; then
-  log_fail "flux CLI not found in PATH."
+if command -v pnpm >/dev/null 2>&1 && pnpm --filter @flux/cli exec tsx src/index.ts --help >/dev/null 2>&1; then
+  FLUX_CMD=(pnpm --filter @flux/cli exec tsx src/index.ts)
+elif [[ -f "$ROOT_DIR/packages/cli/dist/index.js" ]]; then
+  FLUX_CMD=(node "$ROOT_DIR/packages/cli/dist/index.js")
+elif command -v pnpm >/dev/null 2>&1 && pnpm --filter @flux/cli exec flux --version >/dev/null 2>&1; then
+  FLUX_CMD=(pnpm --filter @flux/cli exec flux)
+elif command -v flux >/dev/null 2>&1; then
+  FLUX_CMD=(flux)
+else
+  log_fail "No usable flux CLI found (pnpm tsx source, dist build, pnpm exec, or PATH)."
   exit 1
 fi
+
+run_flux() {
+  "${FLUX_CMD[@]}" "$@"
+}
 
 target="${1:-}"
 if [[ -n "$target" ]]; then
@@ -85,7 +141,7 @@ if [[ -n "$target" ]]; then
   hash="${2:-}"
   if [[ -z "$hash" ]]; then
     log_info "No hash argument provided; auto-resolving from flux list for slug=$slug."
-    match="$(flux list 2>/dev/null | strip_ansi | awk -v s="$slug" '$1==s { print $2; exit }')"
+    match="$(run_flux list 2>/dev/null | strip_ansi | awk -v s="$slug" '$1==s { print $2; exit }')"
     if [[ -z "$match" ]]; then
       log_fail "Unable to resolve hash for slug '$slug' from flux list."
       exit 1
@@ -110,23 +166,42 @@ log_info "Target project: $slug ($hash)"
 
 # Test A: schema-only
 schema_file="$tmpdir/schema.sql"
-if flux dump "$slug" --hash "$hash" --schema-only >"$schema_file" 2>"$tmpdir/schema.err"; then
-  if rg -q "CREATE TABLE" "$schema_file" && ! rg -q "COPY|INSERT INTO" "$schema_file"; then
+if run_flux dump "$slug" --hash "$hash" --schema-only >"$schema_file" 2>"$tmpdir/schema.err"; then
+  has_ddl="0"
+  has_data_tokens="0"
+  if schema_dump_has_ddl "$schema_file"; then
+    has_ddl="1"
+  fi
+  if rg -q "COPY|INSERT INTO" "$schema_file"; then
+    has_data_tokens="1"
+  fi
+  if [[ "$has_ddl" == "1" && "$has_data_tokens" == "0" ]]; then
     RESULT["A"]="PASS"
-    DETAIL["A"]="Contains CREATE TABLE; excludes COPY/INSERT"
+    DETAIL["A"]="Contains schema DDL; excludes COPY/INSERT"
     log_pass "Test A (Schema Only)"
   else
-    DETAIL["A"]="Expected CREATE TABLE and no COPY/INSERT"
+    sample="$(schema_dump_excerpt "$schema_file")"
+    if [[ "$has_ddl" != "1" ]]; then
+      if [[ -z "$sample" ]]; then
+        DETAIL["A"]="Schema-only dump appears empty/non-DDL"
+      else
+        DETAIL["A"]="Schema-only missing DDL markers (sample: ${sample})"
+      fi
+    elif [[ "$has_data_tokens" == "1" ]]; then
+      DETAIL["A"]="Schema-only unexpectedly contains COPY/INSERT tokens"
+    else
+      DETAIL["A"]="Schema-only validation failed (sample: ${sample})"
+    fi
     log_fail "Test A (Schema Only)"
   fi
 else
-  DETAIL["A"]="flux dump --schema-only failed"
+  DETAIL["A"]="dump failed: $(last_error_line "$tmpdir/schema.err")"
   log_fail "Test A (Schema Only)"
 fi
 
 # Test B: data-only
 data_file="$tmpdir/data.sql"
-if flux dump "$slug" --hash "$hash" --data-only >"$data_file" 2>"$tmpdir/data.err"; then
+if run_flux dump "$slug" --hash "$hash" --data-only >"$data_file" 2>"$tmpdir/data.err"; then
   if rg -q "COPY|INSERT INTO" "$data_file" && ! rg -q "CREATE TABLE" "$data_file"; then
     RESULT["B"]="PASS"
     DETAIL["B"]="Contains COPY/INSERT; excludes CREATE TABLE"
@@ -136,13 +211,13 @@ if flux dump "$slug" --hash "$hash" --data-only >"$data_file" 2>"$tmpdir/data.er
     log_fail "Test B (Data Only)"
   fi
 else
-  DETAIL["B"]="flux dump --data-only failed"
+  DETAIL["B"]="dump failed: $(last_error_line "$tmpdir/data.err")"
   log_fail "Test B (Data Only)"
 fi
 
 # Test C: clean
 clean_file="$tmpdir/clean.sql"
-if flux dump "$slug" --hash "$hash" --clean >"$clean_file" 2>"$tmpdir/clean.err"; then
+if run_flux dump "$slug" --hash "$hash" --clean >"$clean_file" 2>"$tmpdir/clean.err"; then
   if rg -q "DROP TABLE IF EXISTS" "$clean_file"; then
     RESULT["C"]="PASS"
     DETAIL["C"]="Contains DROP TABLE IF EXISTS"
@@ -152,13 +227,13 @@ if flux dump "$slug" --hash "$hash" --clean >"$clean_file" 2>"$tmpdir/clean.err"
     log_fail "Test C (Clean Sweep)"
   fi
 else
-  DETAIL["C"]="flux dump --clean failed"
+  DETAIL["C"]="dump failed: $(last_error_line "$tmpdir/clean.err")"
   log_fail "Test C (Clean Sweep)"
 fi
 
 # Test D: public-only
 public_file="$tmpdir/public.sql"
-if flux dump "$slug" --hash "$hash" --public-only >"$public_file" 2>"$tmpdir/public.err"; then
+if run_flux dump "$slug" --hash "$hash" --public-only >"$public_file" 2>"$tmpdir/public.err"; then
   if has_non_public_table_ref "$public_file"; then
     DETAIL["D"]="Found non-public table reference"
     log_fail "Test D (Public Sync)"
@@ -168,7 +243,7 @@ if flux dump "$slug" --hash "$hash" --public-only >"$public_file" 2>"$tmpdir/pub
     log_pass "Test D (Public Sync)"
   fi
 else
-  DETAIL["D"]="flux dump --public-only failed"
+  DETAIL["D"]="dump failed: $(last_error_line "$tmpdir/public.err")"
   log_fail "Test D (Public Sync)"
 fi
 
@@ -177,7 +252,12 @@ printf "${ZINC}%-7s %-16s %-8s %s${RESET}\n" "Test" "Mode" "Result" "Detail"
 printf "${ZINC}%-7s %-16s %-8s %s${RESET}\n" "-----" "----------------" "--------" "------------------------------"
 
 print_row() {
-  local id="$1" mode="$2" result="${RESULT[$id]}" detail="${DETAIL[$id]}" color="$AMBER"
+  local id mode result detail color
+  id="$1"
+  mode="$2"
+  result="${RESULT[$id]}"
+  detail="${DETAIL[$id]}"
+  color="$AMBER"
   if [[ "$result" == "PASS" ]]; then
     color="$EMERALD"
   fi
