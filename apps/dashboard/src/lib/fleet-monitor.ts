@@ -93,20 +93,24 @@ export async function pruneTelemetry(): Promise<void> {
 }
 
 /**
- * One immediate mesh sample for a project (e.g. right after `provision` + catalog insert) so the UI
- * is not blank until the next 2m tick.
+ * One immediate mesh sample by catalog `id` (e.g. right after insert) so the UI is not "Offline"
+ * for the first 2m tick. Resolves `slug` / `hash` from `projects` then runs the same path as a tick.
  */
-export async function probeAndRecordProjectHeartbeat(
-  projectId: string,
-  slug: string,
-  hash: string,
-): Promise<void> {
+export async function probeSingleProject(projectId: string): Promise<void> {
   await initSystemDb();
   const db = getDb();
+  const [row] = await db
+    .select({ slug: projects.slug, hash: projects.hash })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!row) {
+    throw new Error(`probeSingleProject: no project row for id ${projectId}`);
+  }
   const pm = getProjectManager();
   const isProd = process.env.NODE_ENV === "production";
   const [summary] = await pm.getProjectSummariesForSlugs(
-    [{ slug, hash }],
+    [{ slug: row.slug, hash: row.hash }],
     { isProduction: isProd },
   );
   const now = new Date();
@@ -122,7 +126,7 @@ export async function probeAndRecordProjectHeartbeat(
     });
     return;
   }
-  const apiUrl = fluxApiUrlForSlug(slug, hash, isProd);
+  const apiUrl = fluxApiUrlForSlug(row.slug, row.hash, isProd);
   const ok = await probeApiUrl(apiUrl);
   const status = ok ? "running" : "error";
   await db

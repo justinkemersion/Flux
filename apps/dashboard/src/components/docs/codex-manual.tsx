@@ -23,8 +23,8 @@ const navIds = [
   { id: "install", label: "Install" },
   { id: "control-plane", label: "Control_plane" },
   { id: "cli", label: "CLI_↔_API" },
-  { id: "lifecycle-operations", label: "Lifecycle" },
-  { id: "core-rules", label: "Core_rules" },
+  { id: "lifecycle", label: "Lifecycle" },
+  { id: "determinism", label: "Determinism" },
 ] as const;
 
 function DocNav() {
@@ -197,7 +197,7 @@ export function CodexManual() {
           </p>
         </section>
 
-        <section id="lifecycle-operations" className="scroll-mt-8">
+        <section id="lifecycle" className="scroll-mt-8">
           <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
             Lifecycle_operations
           </h2>
@@ -257,9 +257,9 @@ export function CodexManual() {
           </dl>
         </section>
 
-        <section id="core-rules" className="scroll-mt-8">
+        <section id="determinism" className="scroll-mt-8">
           <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
-            Core_rules
+            Determinism_and_naming
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
             Naming:{" "}

@@ -55,6 +55,64 @@ export function FluxLanding({ fleetShowcase, reliability }: Props) {
         <FleetManifest initialShowcase={fleetShowcase} />
 
         <section
+          className="mt-16 border-t border-zinc-800 pt-14"
+          aria-labelledby="doc-ref-heading"
+        >
+          <h2
+            id="doc-ref-heading"
+            className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500"
+          >
+            Documentation_reference
+          </h2>
+          <p className="mt-2 max-w-2xl font-sans text-xs leading-relaxed text-zinc-500">
+            Codex: surgical technical spec on{" "}
+            <Link
+              href="/docs"
+              className={`text-zinc-300 underline-offset-2 transition-colors duration-200 ease-linear hover:text-white hover:underline ${focusLink} rounded-sm`}
+            >
+              /docs
+            </Link>
+            . Jump to the sections you need for first flight.
+          </p>
+          <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+            {(
+              [
+                { href: "/docs#install", k: "install", t: "Install · env · CLI bundle" },
+                { href: "/docs#determinism", k: "determinism", t: "Slugs, hashes, naming" },
+                { href: "/docs#lifecycle", k: "lifecycle", t: "Start · stop · repair · nuke" },
+              ] as const
+            ).map((item) => (
+              <li key={item.k}>
+                <Link
+                  href={item.href}
+                  className={`group block border border-zinc-800 bg-zinc-950 px-3 py-2.5 transition-[border-color,background-color] duration-200 ease-linear hover:border-zinc-600 hover:bg-zinc-900/40 ${focusLink} rounded-sm`}
+                >
+                  <p className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-400 group-hover:text-zinc-200">
+                    #{item.k}
+                  </p>
+                  <p className="mt-1 font-mono text-[9px] leading-relaxed text-zinc-600 group-hover:text-zinc-500">
+                    {item.t}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-6">
+            <p className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+              First_flight
+            </p>
+            <CodeBlock
+              size="comfortable"
+              label="bash"
+              code={`# After FLUX_API_BASE + FLUX_API_TOKEN (see /docs#install)
+flux login
+flux create "my-app"
+flux push ./schema.sql`}
+            />
+          </div>
+        </section>
+
+        <section
           id="install"
           aria-labelledby="install-heading"
           className="mt-20 border-t border-zinc-800 pt-16"

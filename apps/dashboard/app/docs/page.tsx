@@ -38,10 +38,16 @@ export default function DocsPage() {
               #install
             </a>
             <a
-              href="#lifecycle-operations"
+              href="#lifecycle"
               className="text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-700 dark:hover:text-zinc-300"
             >
               #lifecycle
+            </a>
+            <a
+              href="#determinism"
+              className="text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              #determinism
             </a>
             <Link
               href="/api/auth/signin?callbackUrl=%2Fdocs"

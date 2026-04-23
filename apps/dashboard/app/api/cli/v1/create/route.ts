@@ -8,7 +8,7 @@ import { projects, users } from "@/src/db/schema";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
-import { probeAndRecordProjectHeartbeat } from "@/src/lib/fleet-monitor";
+import { probeSingleProject } from "@/src/lib/fleet-monitor";
 
 export const runtime = "nodejs";
 
@@ -186,11 +186,7 @@ export async function POST(req: Request): Promise<Response> {
       })
       .returning({ id: projects.id });
     try {
-      await probeAndRecordProjectHeartbeat(
-        dbRow.id,
-        project.slug,
-        project.hash,
-      );
+      await probeSingleProject(dbRow.id);
     } catch (probeErr: unknown) {
       console.error(
         "[flux] cli create: immediate mesh probe failed (non-fatal):",
