@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { fluxApiUrlForSlug } from "@flux/core";
 import { projectHeartbeatLog, projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
@@ -13,6 +13,44 @@ const ANSI_GRAY = "\x1b[90m";
 const ANSI_RESET = "\x1b[0m";
 
 let started = false;
+
+export type FleetReliability = {
+  /** 0–100, or null when there are no samples in the window. */
+  percent: number | null;
+  successCount: number;
+  totalCount: number;
+  windowHours: 24;
+};
+
+/**
+ * Share of successful mesh probes in the last 24h (`project_heartbeat_log`, `health_status = 'running'`
+ * over all rows in the window). Used for the public landing reliability strip and fleet API.
+ */
+export async function getFleetReliability(): Promise<FleetReliability> {
+  await initSystemDb();
+  const db = getDb();
+  const inWindow = sql`${projectHeartbeatLog.recordedAt} >= (now() - interval '24 hours')`;
+  const [t] = await db
+    .select({ c: count() })
+    .from(projectHeartbeatLog)
+    .where(inWindow);
+  const [s] = await db
+    .select({ c: count() })
+    .from(projectHeartbeatLog)
+    .where(
+      and(inWindow, eq(projectHeartbeatLog.healthStatus, "running")),
+    );
+  const totalCount = Number(t?.c ?? 0);
+  const successCount = Number(s?.c ?? 0);
+  const percent =
+    totalCount === 0 ? null : (successCount / totalCount) * 100;
+  return {
+    percent,
+    successCount,
+    totalCount,
+    windowHours: 24,
+  };
+}
 
 function isProbeSuccess(status: number): boolean {
   return status >= 200 && status < 400;

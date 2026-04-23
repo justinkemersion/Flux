@@ -2,7 +2,9 @@
 
 import { CodeBlock } from "@/src/components/docs/code-block";
 import { FleetManifest } from "@/src/components/landing/fleet-manifest";
+import { ReliabilityBadge } from "@/src/components/landing/reliability-badge";
 import type { FleetShowcaseCard } from "@/src/lib/fleet-showcase";
+import type { FleetReliability } from "@/src/lib/fleet-monitor";
 import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
 
@@ -17,14 +19,16 @@ const focusLink =
 
 type Props = {
   fleetShowcase: FleetShowcaseCard[];
+  reliability: FleetReliability;
 };
 
-export function FluxLanding({ fleetShowcase }: Props) {
+export function FluxLanding({ fleetShowcase, reliability }: Props) {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-zinc-950 text-zinc-100">
       <div className="flux-hero-grid border-b border-zinc-800/80">
         <div className="mx-auto w-full max-w-5xl px-6 py-16 sm:px-10 sm:py-20 md:py-24">
-          <div className="max-w-3xl">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 max-w-3xl flex-1">
             <p className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-400">
               Platform
             </p>
@@ -41,12 +45,14 @@ export function FluxLanding({ fleetShowcase }: Props) {
             <div className="mt-10">
               <LandingCtas />
             </div>
+            </div>
+            <ReliabilityBadge reliability={reliability} />
           </div>
         </div>
       </div>
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col bg-zinc-950 px-6 py-16 text-zinc-100 sm:px-10 sm:py-20">
-        <FleetManifest showcase={fleetShowcase} />
+        <FleetManifest initialShowcase={fleetShowcase} />
 
         <section
           id="install"

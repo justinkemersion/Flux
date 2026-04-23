@@ -12,6 +12,7 @@ export async function register(): Promise<void> {
       const { startFleetMonitor } = await import("./src/lib/fleet-monitor");
       startFleetMonitor();
       console.log("[flux] Fleet monitor started (2m interval).");
+      console.log("FLUX_CONTROL_PLANE: V1.0_STABLE_ONLINE");
     } catch (err) {
       console.error(
         "[flux] System DB initialisation failed — auth and project APIs will be unavailable until Docker is reachable:",

@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import type { FleetShowcaseCard } from "@/src/lib/fleet-showcase";
 import {
   type FleetTelemetryLevel,
@@ -21,10 +24,56 @@ const label: Record<FleetTelemetryLevel, string> = {
 };
 
 type Props = {
-  showcase: FleetShowcaseCard[];
+  initialShowcase: FleetShowcaseCard[];
 };
 
-export function FleetManifest({ showcase }: Props) {
+type TelemetryResponse = {
+  items: Array<{ slug: string; level: FleetTelemetryLevel }>;
+};
+
+/**
+ * Live mesh readout: initial data from RSC, then polls `/api/fleet/telemetry` so status dots
+ * track `health_status` + heartbeat age without a full page reload.
+ */
+export function FleetManifest({ initialShowcase }: Props) {
+  const [showcase, setShowcase] = useState(initialShowcase);
+
+  useEffect(() => {
+    setShowcase(initialShowcase);
+  }, [initialShowcase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function syncFromMesh(): Promise<void> {
+      try {
+        const res = await fetch("/api/fleet/telemetry", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as TelemetryResponse;
+        if (!data.items?.length) return;
+        setShowcase((prev) =>
+          prev.map((card) => {
+            const hit = data.items.find((i) => i.slug === card.slug);
+            if (!hit) return card;
+            return { ...card, level: hit.level };
+          }),
+        );
+      } catch {
+        /* offline or CORS */
+      }
+    }
+    void syncFromMesh();
+    const id = window.setInterval(
+      () => {
+        void syncFromMesh();
+      },
+      90_000,
+    );
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
   return (
     <section
       aria-labelledby="fleet-heading"
@@ -38,27 +87,30 @@ export function FleetManifest({ showcase }: Props) {
       </h2>
       <p className="mt-2 max-w-2xl font-sans text-xs leading-relaxed text-zinc-500">
         Live tenant stacks on the public mesh: isolated engines, one contract, deterministic
-        operations. Mesh status from PostgREST probes (2m).
+        operations. Mesh status from PostgREST probes and catalog{" "}
+        <code className="font-mono text-[10px] text-zinc-400">health_status</code> (2m).
       </p>
       <ul className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
         {showcase.map((p) => (
           <li key={p.name}>
             <article
-              className="flex h-full flex-col border border-zinc-800 bg-zinc-950/30 p-5 transition-[border-color,background-color] duration-200 ease-linear md:p-6"
+              className="flex h-full flex-col border border-zinc-800 bg-zinc-950/80 p-5 transition-[border-color,background-color] duration-200 ease-linear md:p-6"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <h3 className="font-sans text-lg font-semibold tracking-tight text-zinc-100">
                   {p.name}
                 </h3>
                 <div
-                  className={`flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] ${label[p.level]}`}
-                  title="Mesh probe: running + fresh heartbeat = Operational"
+                  className={`flex max-w-[min(100%,11rem)] flex-col items-end gap-0.5 text-right font-mono text-[10px] uppercase leading-tight tracking-[0.1em] ${label[p.level]}`}
+                  title="Mesh level from catalog health_status and last_heartbeat (≤5m = Operational)"
                 >
-                  <span
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot[p.level]}`}
-                    aria-hidden
-                  />
-                  <span>Status: {fleetTelemetryLabel(p.level)}</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot[p.level]}`}
+                      aria-hidden
+                    />
+                    {fleetTelemetryLabel(p.level)}
+                  </span>
                 </div>
               </div>
               <p className="mt-1 font-mono text-xs text-zinc-400">
@@ -74,10 +126,10 @@ export function FleetManifest({ showcase }: Props) {
               <p className="mt-3 font-sans text-sm leading-relaxed text-zinc-300">
                 {p.description}
               </p>
-              <dl className="mt-4 space-y-1 font-mono text-[10px] leading-relaxed text-zinc-400">
+              <dl className="mt-4 space-y-1 font-mono text-[10px] leading-relaxed text-zinc-500">
                 <div>
-                  <dt className="inline text-zinc-500">Region: </dt>
-                  <dd className="inline">Hetzner NBG1</dd>
+                  <dt className="inline text-zinc-600">Region: </dt>
+                  <dd className="inline text-zinc-400">Hetzner NBG1</dd>
                 </div>
               </dl>
             </article>
@@ -86,7 +138,7 @@ export function FleetManifest({ showcase }: Props) {
         <li>
           <Link
             href="/docs#install"
-            className={`group flex h-full min-h-[12rem] flex-col justify-between border border-dashed border-zinc-800 bg-transparent p-5 transition-[border-color,background-color] duration-200 ease-linear hover:border-zinc-600 hover:bg-zinc-900/20 md:p-6 ${focus} rounded-none`}
+            className={`group flex h-full min-h-[12rem] flex-col justify-between border border-dashed border-zinc-800 bg-zinc-950/20 p-5 transition-[border-color,background-color] duration-200 ease-linear hover:border-zinc-600 hover:bg-zinc-900/30 md:p-6 ${focus} rounded-none`}
           >
             <div>
               <p className="font-sans text-lg font-semibold tracking-tight text-zinc-200 transition-colors duration-200 ease-linear group-hover:text-white">
@@ -97,7 +149,7 @@ export function FleetManifest({ showcase }: Props) {
                 one pass.
               </p>
             </div>
-            <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-400 transition-colors duration-200 ease-linear group-hover:text-zinc-300">
+            <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500 transition-colors duration-200 ease-linear group-hover:text-zinc-300">
               View CLI install instructions →
             </p>
           </Link>

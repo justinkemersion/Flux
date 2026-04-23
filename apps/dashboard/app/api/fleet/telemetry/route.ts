@@ -3,6 +3,7 @@ import { projects } from "@/src/db/schema";
 import { LANDING_FLEET_SLUGS } from "@/src/lib/fleet-showcase";
 import { deriveTelemetryDisplay, fleetTelemetryLabel } from "@/src/lib/fleet-telemetry-display";
 import { getDb, initSystemDb } from "@/src/lib/db";
+import { getFleetReliability } from "@/src/lib/fleet-monitor";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,7 @@ export const runtime = "nodejs";
  */
 export async function GET() {
   await initSystemDb();
+  const reliability = await getFleetReliability();
   const db = getDb();
   const slugs = [...LANDING_FLEET_SLUGS];
   const rows = await db
@@ -41,7 +43,16 @@ export async function GET() {
   });
 
   return Response.json(
-    { items, generatedAt: new Date().toISOString() },
+    {
+      items,
+      generatedAt: new Date().toISOString(),
+      reliability: {
+        windowHours: reliability.windowHours,
+        percent: reliability.percent,
+        successCount: reliability.successCount,
+        totalCount: reliability.totalCount,
+      },
+    },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

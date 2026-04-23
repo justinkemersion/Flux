@@ -79,7 +79,8 @@ export const FLUX_NETWORK_NAME = "flux-network";
 
 /**
  * Docker labels: Flux-managed Postgres / PostgREST (filter from Traefik, dashboard, etc.).
- * Legacy `vessel.*` keys are stripped on label reconcile; new containers use the `flux.*` namespace.
+ * Third-party namespaced keys from a historical engine are stripped on label reconcile; new
+ * containers use the `flux.*` namespace.
  */
 export const FLUX_MANAGED_LABEL = "flux.managed" as const;
 export const FLUX_MANAGED_VALUE = "true" as const;
@@ -88,6 +89,7 @@ export const FLUX_PROJECT_SLUG_LABEL = "flux.project.slug" as const;
 export const FLUX_PURPOSE_TENANT = "tenant" as const;
 export const FLUX_PURPOSE_CONTROL_PLANE = "control-plane" as const;
 
+/** String literals for historical engine labels; must match what appears on live containers. */
 const LEGACY_UMBRELLA_DOCKER_LABEL_KEYS: ReadonlySet<string> = new Set([
   "vessel.managed",
   "vessel.purpose",
