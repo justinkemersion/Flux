@@ -6,14 +6,12 @@ export const FLUX_CODEX_JSON = {
   title: "Flux Codex — Core Rules",
   deterministicPassword: {
     summary:
-      "Tenant Postgres passwords for dev/staging may be derived from a server secret and tenant volume name using HMAC-SHA256 (see @flux/core deriveTenantPostgresPasswordFromSecret).",
+      "Tenant Postgres passwords for dev/staging: HMAC-SHA256 where the HMAC *key* is the master server secret and the *message* is the UTF-8 tenant data volume name (see @flux/core deriveTenantPostgresPasswordFromSecret).",
     algorithm: "HMAC-SHA256",
-    inputs: [
-      "Server-side FLUX_DEV_POSTGRES_PASSWORD or FLUX_PROJECT_PASSWORD_SECRET",
-      "Docker volume name flux-{hash}-{slug}-db-data (tenant PG data directory)",
-    ],
+    hmacKey: "FLUX_DEV_POSTGRES_PASSWORD or FLUX_PROJECT_PASSWORD_SECRET (trimmed, as the HMAC key in Node’s createHmac).",
+    hmacMessage: "Exact Docker volume name, e.g. flux-{hash}-{slug}-db-data (tenant PG data).",
     output:
-      "Hex digest of the HMAC truncated to 32 characters used as the Postgres superuser password when the secret is set (must match the running container if checked).",
+      "Hex encoding of the digest, first 32 characters, used as POSTGRES_PASSWORD (must match the running container if checked).",
     note: "Production stacks may use a random password instead; the control plane reads it from the running container for operations.",
   },
   hashingConvention: {
@@ -21,6 +19,23 @@ export const FLUX_CODEX_JSON = {
     description:
       "Docker container names and related identifiers use a flux- prefix, a 7-character lowercase hex hash segment, and the URL-safe project slug, joined with hyphens.",
     examples: ["flux-a1b2c3d-myapp", "flux-0f1e2d3-demo"],
+  },
+  /**
+   * The Determinism rule: what users control vs what the orchestrator stamps.
+   */
+  determinism: {
+    slug: "The project slug is user-chosen (normalized to a URL-safe name in the engine).",
+    hash: "A 7-character lowercase hex id is assigned by the orchestrator at provision time; it is not user-editable. It appears in hostnames, Docker resource names, and Traefik labels.",
+  },
+  lifecycleOperations: {
+    stop:
+      "STOP: halt PostgREST and Postgres containers (API first, then DB). **Standby** — data volumes and catalog row remain; project is not decommissioned.",
+    start:
+      "START: start DB, wait for readiness, then start PostgREST. **Operational** — resumes existing infrastructure; does not re-provision from scratch.",
+    repair:
+      "REPAIR: re-provision the tenant from the current environment when the stack is missing, partial, or corrupt. **Destructive** to that project’s on-disk data — new empty database for the same slug/hash metadata.",
+    nuke:
+      "NUKE: atomic infrastructure purge — remove both tenant containers, delete the named data volume, remove per-tenant network, then delete the catalog row. **Irreversible**; not the same as STOP (power).",
   },
   /**
    * Dashboard: operators use the same auth session. Point users to UI for at-a-glance and deep checks.

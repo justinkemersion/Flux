@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CodexManual } from "@/src/components/codex-manual";
+import { CodexManual } from "@/src/components/docs/codex-manual";
 import { CodexQueryPanel } from "@/src/components/codex-query-panel";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function DocsPage() {
   return (
-    <main className="mx-auto min-h-[calc(100vh-4rem)] w-full max-w-3xl px-4 py-10 sm:px-8">
+    <main className="mx-auto min-h-[calc(100vh-4rem)] w-full max-w-5xl px-4 py-10 sm:px-8">
       <div className="font-mono text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-300">
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
           <div>
@@ -36,6 +36,12 @@ export default function DocsPage() {
               className="text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-700 dark:hover:text-zinc-300"
             >
               #install
+            </a>
+            <a
+              href="#lifecycle-operations"
+              className="text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              #lifecycle
             </a>
             <Link
               href="/api/auth/signin?callbackUrl=%2Fdocs"

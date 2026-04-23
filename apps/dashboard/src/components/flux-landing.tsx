@@ -1,5 +1,6 @@
 "use client";
 
+import { CodeBlock } from "@/src/components/docs/code-block";
 import { FleetManifest } from "@/src/components/landing/fleet-manifest";
 import type { FleetShowcaseCard } from "@/src/lib/fleet-showcase";
 import Link from "next/link";
@@ -75,13 +76,11 @@ export function FluxLanding({ fleetShowcase }: Props) {
             </Link>{" "}
             before the commands below.
           </p>
-          <div
-            className="mt-6 overflow-x-auto border border-zinc-800 bg-black/50 p-4 font-mono text-sm leading-relaxed text-zinc-300"
-            role="region"
-            aria-label="Install Flux CLI"
-          >
-            <pre className="whitespace-pre text-[12px] sm:text-[13px]">
-{`# One-liner (optional: FLUX_ORIGIN, or bash -s for install directory)
+          <div className="mt-6" role="region" aria-label="Install Flux CLI">
+            <CodeBlock
+              size="comfortable"
+              label="bash"
+              code={`# One-liner (optional: FLUX_ORIGIN, or bash -s for install directory)
 curl -sL https://flux.vsl-base.com/install | bash
 # FLUX_ORIGIN=https://your-host curl -sL $FLUX_ORIGIN/install | bash
 # curl -sL https://flux.vsl-base.com/install | bash -s /usr/local/bin
@@ -91,7 +90,7 @@ export FLUX_API_TOKEN="flx_live_…"
 
 flux create "My project"
 flux list`}
-            </pre>
+            />
           </div>
           <p className="mt-4 max-w-2xl font-sans text-xs text-zinc-500">
             If the download returns{" "}
