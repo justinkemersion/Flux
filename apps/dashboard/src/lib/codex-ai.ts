@@ -1,5 +1,9 @@
 import { FLUX_CODEX_JSON } from "@/src/lib/flux-codex-static";
-import { getFleetReliability, getNodeStats } from "@/src/lib/fleet-monitor";
+import {
+  type FleetReliability,
+  getFleetReliability,
+  getNodeStats,
+} from "@/src/lib/fleet-monitor";
 
 const MODEL = "@cf/meta/llama-3-8b-instruct" as const;
 
@@ -80,11 +84,32 @@ export async function* queryFluxAI(
   yield* parseWorkersAiSse(res.body);
 }
 
+/** Docker `info` can hang when DOCKER_HOST is wrong or the daemon is wedged — never block Codex. */
+const CODEX_TELEMETRY_BUDGET_MS = 2_500;
+
+const FALLBACK_NODE_STATS = {
+  containerCount: 0,
+  memoryUsage: 0,
+  cpuLoad: 0,
+} as const;
+
+const FALLBACK_FLEET_RELIABILITY: FleetReliability = {
+  percent: null,
+  successCount: 0,
+  totalCount: 0,
+  windowHours: 24,
+};
+
 async function buildTelemetrySection(): Promise<string> {
   try {
     const [node, reliability] = await Promise.all([
-      getNodeStats(),
-      getFleetReliability(),
+      withTimeout(getNodeStats(), CODEX_TELEMETRY_BUDGET_MS, FALLBACK_NODE_STATS, "getNodeStats"),
+      withTimeout(
+        getFleetReliability(),
+        CODEX_TELEMETRY_BUDGET_MS,
+        FALLBACK_FLEET_RELIABILITY,
+        "getFleetReliability",
+      ),
     ]);
 
     const uptime =
@@ -105,6 +130,28 @@ async function buildTelemetrySection(): Promise<string> {
     // Telemetry is best-effort; keep Codex available with static spec only.
     return "";
   }
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(
+        `[queryFluxAI] telemetry ${label} exceeded ${String(ms)}ms; using fallback for Codex prompt`,
+      );
+      resolve(fallback);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  });
 }
 
 async function* parseWorkersAiSse(
