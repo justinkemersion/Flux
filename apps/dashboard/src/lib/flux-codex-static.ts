@@ -2,7 +2,7 @@
  * Source of truth for `GET /api/cli/v1/codex` and the Codex AI system prompt.
  */
 export const FLUX_CODEX_JSON = {
-  version: 2,
+  version: 3,
   title: "Flux Codex — Core Rules",
   deterministicPassword: {
     summary:
@@ -26,6 +26,71 @@ export const FLUX_CODEX_JSON = {
   determinism: {
     slug: "The project slug is user-chosen (normalized to a URL-safe name in the engine).",
     hash: "A 7-character lowercase hex id is assigned by the orchestrator at provision time; it is not user-editable. It appears in hostnames, Docker resource names, and Traefik labels.",
+  },
+  /**
+   * Execution modes (v1 vs v2) and product tiers (Free / Pro / Enterprise).
+   * Codex must use this section when users ask about tiers, plans, isolation, or roadmap.
+   * Full architecture: `docs/flux-v2-architecture.md` in the Flux monorepo.
+   */
+  executionModesAndTiers: {
+    overview:
+      "Flux supports two execution strategies in one product: **v1_dedicated** (isolated Postgres + PostgREST containers per project) and **v2_shared** (shared cluster, schema-per-tenant, pooled PostgREST behind a gateway). The CLI and dashboard stay the same; `flux-system.projects.mode` selects the engine. v1 and v2 coexist indefinitely—v2 is not a replacement for v1.",
+    v1Dedicated: {
+      modeKey: "v1_dedicated",
+      summary:
+        "One Docker Postgres container and one PostgREST container per project, per-tenant bridge network, Traefik labels for routing. Strongest isolation and the default path for Enterprise / compliance-style workloads.",
+      whenToChoose:
+        "SOC2/HIPAA-style boundaries, noisy-neighbor guarantees, or when regulations expect dedicated infrastructure.",
+    },
+    v2Shared: {
+      modeKey: "v2_shared",
+      summary:
+        "Shared PostgreSQL cluster with one schema per tenant (`t_<shortid>_api`) and one role per tenant. PostgREST runs as a small pool (2–4 instances); a gateway resolves hostname → tenant, mints short-lived JWTs, rate-limits, and proxies privately to PostgREST. PgBouncer uses transaction pooling—tenant SQL must be stateless across requests.",
+      whenToChoose:
+        "Cost-efficient scale, many small tenants, prototypes, and apps that accept cluster-level blast radius mitigated by statement timeouts, connection limits, and gateway rate limits.",
+    },
+    tierHierarchy:
+      "Tiers describe **where data lives** and **how tight operational guardrails are**—not different products. **Free** and **Pro** both target the shared path (`v2_shared`); Pro adds stricter limits. **Enterprise** defaults to dedicated stacks (`v1_dedicated`) for isolation and compliance. Changing tier or mode is explicit in the system database, not inferred only from marketing labels.",
+    tiers: {
+      free: {
+        name: "Free",
+        engineMode: "v2_shared",
+        isolation:
+          "Logical: schema + dedicated DB role per tenant on a shared cluster. Accepts cluster-level blast radius; mitigations include rate limits, statement timeouts, and per-role connection caps.",
+        differentiatorsVsPro:
+          "Same shared execution path as Pro; Pro tightens caps (rate limits, query cost discipline) for production-style traffic.",
+        differentiatorsVsEnterprise:
+          "Enterprise gets dedicated containers per project (v1_dedicated)—harder isolation boundary and compliance posture; Free stays on shared infrastructure.",
+        useCases:
+          "Side projects, learning Flux, early MVPs, experiments with low traffic.",
+      },
+      pro: {
+        name: "Pro",
+        engineMode: "v2_shared",
+        isolation:
+          "Same logical isolation as Free (schema-per-tenant on shared cluster). Stronger operational guardrails: per-tenant rate limiting before the database, stricter connection discipline, statement timeouts tuned for shared reality.",
+        differentiatorsVsFree:
+          "Same engine mode; higher limits and tighter enforcement so production apps are less likely to disturb neighbors.",
+        differentiatorsVsEnterprise:
+          "Still shared infrastructure—no dedicated metal per tenant. Enterprise moves to v1_dedicated when isolation or compliance demands it.",
+        useCases:
+          "Production apps on shared economics, SaaS with moderate scale, teams that outgrew Free limits but do not need dedicated stacks.",
+      },
+      enterprise: {
+        name: "Enterprise",
+        engineMode: "v1_dedicated (default)",
+        isolation:
+          "Dedicated Postgres and PostgREST per project—container boundary, not just schema scoping. This is the compliance boundary when shared infra is unacceptable.",
+        differentiatorsVsFreePro:
+          "Isolated stacks instead of pooled cluster; higher per-tenant resource cost; maps to the existing Flux mesh model users see today for dedicated tenants.",
+        useCases:
+          "Regulated industries, HIPAA/SOC2-style requirements, large noisy workloads, or any case where shared-cluster blast radius is unacceptable.",
+      },
+    },
+    cliFuture:
+      "Planned CLI shape: `flux create my-app` defaults toward v2_shared; `flux create my-app --mode v1_dedicated` requests a dedicated stack. Until wired end-to-end, provisioning may still reflect the host's current engine rollout—Codex should say 'check dashboard / host docs' if behavior differs.",
+    codexInferenceNote:
+      "Flux Codex (this assistant) is a resource-constrained control-plane component: inference is rate-limited. It is not unbounded LLM access.",
   },
   lifecycleOperations: {
     stop:

@@ -41,6 +41,21 @@ const STARTERS: CodexStarter[] = [
     query:
       "What is the recommended way to export or back up data from a Flux tenant PostgreSQL database?",
   },
+  {
+    label: "[ TIER_FREE ]",
+    query:
+      "Explain the Flux **Free** tier in plain, ordinary language. Where does it sit versus Pro and Enterprise in the tier hierarchy? What execution mode does it map to (v1_dedicated vs v2_shared)? What isolation do I actually get, what are sensible use cases, and what tradeoffs should I expect compared to the other tiers?",
+  },
+  {
+    label: "[ TIER_PRO ]",
+    query:
+      "Explain the Flux **Pro** tier in plain, ordinary language. How is it different from Free and Enterprise in the hierarchy? Same execution path as Free or not? What extra guardrails exist, who is it for, and when would I step up to Enterprise instead?",
+  },
+  {
+    label: "[ TIER_ENTERPRISE ]",
+    query:
+      "Explain the Flux **Enterprise** tier in plain, ordinary language. How does it differ from Free and Pro—especially isolation and compliance? What execution mode does it default to, what workloads belong here, and when is shared (v2) ever the wrong choice?",
+  },
 ];
 
 type Props = {

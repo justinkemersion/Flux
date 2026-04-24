@@ -28,6 +28,8 @@ const navIds = [
   { id: "authentication", label: "Authentication" },
   { id: "create", label: "Create a project" },
   { id: "accessing-data", label: "Accessing data" },
+  { id: "execution-modes", label: "v1 & v2 engines" },
+  { id: "tiers-plans", label: "Plans & tiers" },
   { id: "managing", label: "Managing projects" },
   { id: "advanced", label: "Advanced" },
 ] as const;
@@ -187,6 +189,141 @@ export function CodexManual() {
           <p className="mt-3 font-sans text-sm text-zinc-500">
             From the browser or server, call that URL like any REST API—for example list rows with{" "}
             <code className="text-zinc-600 dark:text-zinc-500">GET /your_table</code>.
+          </p>
+        </section>
+
+        <section id="execution-modes" className="scroll-mt-8">
+          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+            v1 &amp; v2 engines
+          </h2>
+          <p className="mt-1 font-sans text-sm font-medium text-zinc-700 dark:text-zinc-200">
+            Two execution strategies, one CLI
+          </p>
+          <p className="mt-3 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            {FLUX_CODEX_JSON.executionModesAndTiers.overview}
+          </p>
+          <dl className="mt-6 space-y-5 border-t border-zinc-200/80 pt-5 dark:border-zinc-800/80">
+            <div>
+              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-emerald-600/90 dark:text-emerald-400/85">
+                {FLUX_CODEX_JSON.executionModesAndTiers.v2Shared.modeKey}
+              </dt>
+              <dd className="mt-1.5 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {FLUX_CODEX_JSON.executionModesAndTiers.v2Shared.summary}
+              </dd>
+              <dd className="mt-2 font-sans text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">When it fits: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.v2Shared.whenToChoose}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                {FLUX_CODEX_JSON.executionModesAndTiers.v1Dedicated.modeKey}
+              </dt>
+              <dd className="mt-1.5 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {FLUX_CODEX_JSON.executionModesAndTiers.v1Dedicated.summary}
+              </dd>
+              <dd className="mt-2 font-sans text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">When it fits: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.v1Dedicated.whenToChoose}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-5 font-sans text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
+            Authoritative architecture (invariants, JWT contract, gateway, Redis guardrails): see{" "}
+            <code className="text-zinc-600 dark:text-zinc-400">docs/flux-v2-architecture.md</code>{" "}
+            in the Flux repository.
+          </p>
+        </section>
+
+        <section id="tiers-plans" className="scroll-mt-8">
+          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+            Plans &amp; tiers
+          </h2>
+          <p className="mt-1 font-sans text-sm font-medium text-zinc-700 dark:text-zinc-200">
+            Free, Pro, and Enterprise
+          </p>
+          <p className="mt-3 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            {FLUX_CODEX_JSON.executionModesAndTiers.tierHierarchy}
+          </p>
+          <dl className="mt-6 space-y-5 border-t border-zinc-200/80 pt-5 dark:border-zinc-800/80">
+            <div>
+              <dt className="font-sans text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.name}{" "}
+                <span className="font-mono text-[10px] font-normal uppercase tracking-[0.12em] text-zinc-500">
+                  ({FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.engineMode})
+                </span>
+              </dt>
+              <dd className="mt-1.5 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.isolation}
+              </dd>
+              <dd className="mt-2 text-sm text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">vs Pro: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.differentiatorsVsPro}
+              </dd>
+              <dd className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">vs Enterprise: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.differentiatorsVsEnterprise}
+              </dd>
+              <dd className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">Use cases: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.useCases}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-sans text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.name}{" "}
+                <span className="font-mono text-[10px] font-normal uppercase tracking-[0.12em] text-zinc-500">
+                  ({FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.engineMode})
+                </span>
+              </dt>
+              <dd className="mt-1.5 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.isolation}
+              </dd>
+              <dd className="mt-2 text-sm text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">vs Free: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.differentiatorsVsFree}
+              </dd>
+              <dd className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">vs Enterprise: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.differentiatorsVsEnterprise}
+              </dd>
+              <dd className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">Use cases: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.useCases}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-sans text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.enterprise.name}{" "}
+                <span className="font-mono text-[10px] font-normal tracking-[0.06em] text-zinc-500">
+                  ({FLUX_CODEX_JSON.executionModesAndTiers.tiers.enterprise.engineMode})
+                </span>
+              </dt>
+              <dd className="mt-1.5 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.enterprise.isolation}
+              </dd>
+              <dd className="mt-2 text-sm text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">vs Free/Pro: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.enterprise.differentiatorsVsFreePro}
+              </dd>
+              <dd className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">Use cases: </span>
+                {FLUX_CODEX_JSON.executionModesAndTiers.tiers.enterprise.useCases}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-5 font-sans text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
+            {FLUX_CODEX_JSON.executionModesAndTiers.cliFuture}
+          </p>
+          <p className="mt-3 font-sans text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
+            {FLUX_CODEX_JSON.executionModesAndTiers.codexInferenceNote}
+          </p>
+          <p className="mt-4 font-sans text-sm text-zinc-500">
+            On the home page, use the Codex starters{" "}
+            <code className="text-zinc-600 dark:text-zinc-400">[ TIER_FREE ]</code>,{" "}
+            <code className="text-zinc-600 dark:text-zinc-400">[ TIER_PRO ]</code>, or{" "}
+            <code className="text-zinc-600 dark:text-zinc-400">[ TIER_ENTERPRISE ]</code> for a
+            conversational walkthrough of each tier.
           </p>
         </section>
 
