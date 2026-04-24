@@ -19,42 +19,25 @@ const focusSecondary =
 const focusLink =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
 
-const tierPlans = [
+/** Operational matrix: Free/Pro → v2_shared; Enterprise → v1_dedicated (current dedicated stack). */
+const planExecutionMatrix = [
   {
     id: "free",
-    name: "Free",
-    tag: "Shared path",
-    summary:
-      "PostgreSQL with logical isolation (schema-per-tenant), pooled PostgREST, and a gateway-first HTTP edge—built to keep cold start and unit economics sane.",
-    bullets: [
-      "Shared cluster, not noisy one-container-per-row sprawl",
-      "Runtime JWTs minted at the edge; PostgREST stays private",
-      "Best for experiments, prototypes, and early traffic",
-    ],
+    tier: "Free",
+    engine: "v2_shared" as const,
+    body: "PostgreSQL with logical isolation (schema-per-tenant), pooled PostgREST, and a gateway-first HTTP edge—built to keep cold start and unit economics sane.",
   },
   {
     id: "pro",
-    name: "Pro",
-    tag: "Same platform, harder guardrails",
-    summary:
-      "Everything in Free with stricter operational limits: per-tenant rate limits, connection discipline, and statement timeouts aligned with shared-infrastructure reality.",
-    bullets: [
-      "Stronger caps on connections and query cost",
-      "Per-project rate limiting before traffic hits the database",
-      "Still schema isolation—no fantasy per-tenant metal",
-    ],
+    tier: "Pro",
+    engine: "v2_shared" as const,
+    body: "Everything in Free with stricter operational limits: per-tenant rate limits, connection discipline, and statement timeouts aligned with shared-infrastructure reality.",
   },
   {
     id: "enterprise",
-    name: "Enterprise",
-    tag: "Dedicated stacks",
-    summary:
-      "Dedicated Postgres and PostgREST per project—the isolation and compliance boundary when shared infrastructure is not the right tradeoff.",
-    bullets: [
-      "Your own database container and API surface per tenant",
-      "Ideal for SOC2-style, HIPAA-style, or noisy-neighbor guarantees",
-      "Coexists indefinitely with shared tiers; not a different product fork",
-    ],
+    tier: "Enterprise",
+    engine: "v1_dedicated" as const,
+    body: "Dedicated Postgres and PostgREST per project—the isolation and compliance boundary when shared infrastructure is not the right tradeoff.",
   },
 ] as const;
 
@@ -127,57 +110,64 @@ export function FluxLanding({ fleetShowcase, reliability, queryCodexAction }: Pr
         </div>
 
         <section
-          className="mt-16 border-t border-zinc-800 pt-14"
-          aria-labelledby="plans-heading"
+          className="mt-16 border-t border-zinc-900 bg-zinc-950 pt-12"
+          aria-labelledby="plans-matrix-headline"
         >
-          <h2
-            id="plans-heading"
-            className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500"
+          <p
+            className="font-mono text-[10px] font-medium uppercase leading-none tracking-[0.2em] text-zinc-500"
+            style={{ fontFamily: "var(--font-geist-mono)" }}
           >
-            Plans & execution
-          </h2>
-          <p className="mt-2 max-w-2xl font-sans text-xs leading-relaxed text-zinc-500">
-            Tiers describe{" "}
-            <span className="text-zinc-400">where your data lives</span> and{" "}
-            <span className="text-zinc-400">how hard the guardrails squeeze</span>—not different
-            products. New projects default toward the shared path; enterprise workloads keep
-            dedicated Postgres and PostgREST when that is the right isolation story.
+            PLANS & EXECUTION
           </p>
-          <ul className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-5">
-            {tierPlans.map((tier) => (
-              <li key={tier.id}>
-                <article className="flex h-full flex-col border border-zinc-800 bg-zinc-950/80 p-5 md:p-6">
-                  <p
-                    className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500"
-                    style={{ fontFamily: "var(--font-geist-mono)" }}
-                  >
-                    {tier.tag}
+          <h2
+            id="plans-matrix-headline"
+            className="mt-4 max-w-4xl font-sans text-lg font-semibold leading-snug tracking-tight text-zinc-100 sm:text-[1.125rem] md:max-w-3xl"
+          >
+            Tiers describe where your data lives and how hard the guardrails squeeze—not different
+            products.
+          </h2>
+          <p
+            className="mt-3 max-w-3xl font-sans text-sm font-normal leading-relaxed text-zinc-400"
+          >
+            New projects default toward the shared path; enterprise workloads keep dedicated
+            Postgres and PostgREST when that is the right isolation story.
+          </p>
+
+          <ul
+            className="mt-7 grid grid-cols-1 gap-px bg-zinc-900 p-px lg:mt-8 lg:grid-cols-3"
+            role="list"
+          >
+            {planExecutionMatrix.map((row) => (
+              <li key={row.id} className="min-w-0 bg-zinc-950">
+                <article
+                  className="group flex h-full min-h-0 flex-col rounded-[2px] border border-zinc-900 bg-zinc-950 p-3 transition-[border-color] duration-150 hover:border-zinc-700 sm:p-4"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1.5">
+                    <h3 className="font-sans text-sm font-bold tracking-tight text-zinc-100 sm:text-[0.9375rem]">
+                      {row.tier}
+                    </h3>
+                    <p
+                      className="max-w-[11rem] text-right font-mono text-[9px] font-normal leading-tight tracking-wide text-zinc-400 sm:max-w-none"
+                      style={{ fontFamily: "var(--font-geist-mono)" }}
+                      title={
+                        row.engine === "v1_dedicated"
+                          ? "Maps to the dedicated (per-project) engine: isolated Postgres and PostgREST (v1_dedicated)."
+                          : "Maps to the shared-cluster engine: schema-per-tenant, pooled data plane (v2_shared)."
+                      }
+                    >
+                      {row.engine}
+                    </p>
+                  </div>
+                  <p className="mt-2.5 font-sans text-xs font-normal leading-[1.55] text-zinc-400 sm:text-[13px] sm:leading-relaxed">
+                    {row.body}
                   </p>
-                  <h3 className="mt-2 font-sans text-lg font-semibold tracking-tight text-zinc-100">
-                    {tier.name}
-                  </h3>
-                  <p className="mt-3 font-sans text-sm leading-relaxed text-zinc-400">
-                    {tier.summary}
-                  </p>
-                  <ul className="mt-4 space-y-2 border-t border-zinc-800/80 pt-4">
-                    {tier.bullets.map((b) => (
-                      <li
-                        key={b}
-                        className="flex gap-2 font-sans text-xs leading-relaxed text-zinc-500"
-                      >
-                        <span className="shrink-0 font-mono text-zinc-600" aria-hidden>
-                          ·
-                        </span>
-                        <span>{b}</span>
-                      </li>
-                    ))}
-                  </ul>
                 </article>
               </li>
             ))}
           </ul>
+
           <p
-            className="mt-6 max-w-2xl font-mono text-[10px] leading-relaxed tracking-[0.06em] text-zinc-600"
+            className="mt-6 max-w-4xl border-t border-zinc-900 pt-5 font-mono text-[10px] font-normal leading-relaxed tracking-[0.04em] text-zinc-400"
             style={{ fontFamily: "var(--font-geist-mono)" }}
           >
             Invariants we design around: tenant UUID is truth; slugs are UI; runtime JWTs only
