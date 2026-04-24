@@ -19,6 +19,45 @@ const focusSecondary =
 const focusLink =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
 
+const tierPlans = [
+  {
+    id: "free",
+    name: "Free",
+    tag: "Shared path",
+    summary:
+      "PostgreSQL with logical isolation (schema-per-tenant), pooled PostgREST, and a gateway-first HTTP edge—built to keep cold start and unit economics sane.",
+    bullets: [
+      "Shared cluster, not noisy one-container-per-row sprawl",
+      "Runtime JWTs minted at the edge; PostgREST stays private",
+      "Best for experiments, prototypes, and early traffic",
+    ],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    tag: "Same platform, harder guardrails",
+    summary:
+      "Everything in Free with stricter operational limits: per-tenant rate limits, connection discipline, and statement timeouts aligned with shared-infrastructure reality.",
+    bullets: [
+      "Stronger caps on connections and query cost",
+      "Per-project rate limiting before traffic hits the database",
+      "Still schema isolation—no fantasy per-tenant metal",
+    ],
+  },
+  {
+    id: "enterprise",
+    name: "Enterprise",
+    tag: "Dedicated stacks",
+    summary:
+      "Dedicated Postgres and PostgREST per project—the isolation and compliance boundary when shared infrastructure is not the right tradeoff.",
+    bullets: [
+      "Your own database container and API surface per tenant",
+      "Ideal for SOC2-style, HIPAA-style, or noisy-neighbor guarantees",
+      "Coexists indefinitely with shared tiers; not a different product fork",
+    ],
+  },
+] as const;
+
 type Props = {
   fleetShowcase: FleetShowcaseCard[];
   reliability: FleetReliability;
@@ -41,29 +80,30 @@ export function FluxLanding({ fleetShowcase, reliability, queryCodexAction }: Pr
                   className="text-[10px] font-medium uppercase tracking-[0.24em] text-zinc-500"
                   style={{ fontFamily: "var(--font-geist-mono)" }}
                 >
-                  Backbone
+                  Control plane · Data plane
                 </p>
                 <h1
                   id="flux-hero-heading"
                   className="mt-3 font-sans text-3xl font-semibold leading-[1.08] tracking-tight text-white sm:text-4xl md:text-[2.65rem]"
                 >
-                  Flux: The Backbone of Your Platform.
+                  Postgres-backed APIs, from shared pools to dedicated stacks.
                 </h1>
                 <p
                   className="mt-5 max-w-2xl text-[13px] font-medium leading-snug tracking-tight text-zinc-300 sm:text-sm"
                   style={{ fontFamily: "var(--font-geist-mono)" }}
                 >
-                  Enterprise Postgres. Instant REST. Zero Ceremony.
+                  One CLI and dashboard. Two execution modes: efficient multi-tenant
+                  infrastructure, or isolated containers when the job demands it.
                 </p>
                 <p
                   className="mt-5 max-w-2xl text-[12px] leading-relaxed tracking-[0.01em] text-zinc-500 sm:text-[13px]"
                   style={{ fontFamily: "var(--font-geist-mono)" }}
                 >
-                  Built for solo developers and teams who want to cut through the
-                  SaaS bloat. No complex UI maps, no proprietary lock-in. Just
-                  isolated PostgreSQL 16 and a high-performance PostgREST API,
-                  orchestrated with surgical precision. Get back to the bigger
-                  picture.
+                  Flux orchestrates PostgreSQL with PostgREST and keeps the contract
+                  boring: schema-scoped tenants, short-lived JWTs at the gateway,
+                  PgBouncer-friendly stateless SQL, and explicit tiers instead of
+                  surprise rewrites. Ship the product; let the platform absorb
+                  scaling tradeoffs you can reason about.
                 </p>
                 <div className="mt-10">
                   <LandingCtas />
@@ -85,6 +125,66 @@ export function FluxLanding({ fleetShowcase, reliability, queryCodexAction }: Pr
             <FleetManifest initialShowcase={fleetShowcase} />
           </div>
         </div>
+
+        <section
+          className="mt-16 border-t border-zinc-800 pt-14"
+          aria-labelledby="plans-heading"
+        >
+          <h2
+            id="plans-heading"
+            className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500"
+          >
+            Plans & execution
+          </h2>
+          <p className="mt-2 max-w-2xl font-sans text-xs leading-relaxed text-zinc-500">
+            Tiers describe{" "}
+            <span className="text-zinc-400">where your data lives</span> and{" "}
+            <span className="text-zinc-400">how hard the guardrails squeeze</span>—not different
+            products. New projects default toward the shared path; enterprise workloads keep
+            dedicated Postgres and PostgREST when that is the right isolation story.
+          </p>
+          <ul className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-5">
+            {tierPlans.map((tier) => (
+              <li key={tier.id}>
+                <article className="flex h-full flex-col border border-zinc-800 bg-zinc-950/80 p-5 md:p-6">
+                  <p
+                    className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500"
+                    style={{ fontFamily: "var(--font-geist-mono)" }}
+                  >
+                    {tier.tag}
+                  </p>
+                  <h3 className="mt-2 font-sans text-lg font-semibold tracking-tight text-zinc-100">
+                    {tier.name}
+                  </h3>
+                  <p className="mt-3 font-sans text-sm leading-relaxed text-zinc-400">
+                    {tier.summary}
+                  </p>
+                  <ul className="mt-4 space-y-2 border-t border-zinc-800/80 pt-4">
+                    {tier.bullets.map((b) => (
+                      <li
+                        key={b}
+                        className="flex gap-2 font-sans text-xs leading-relaxed text-zinc-500"
+                      >
+                        <span className="shrink-0 font-mono text-zinc-600" aria-hidden>
+                          ·
+                        </span>
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              </li>
+            ))}
+          </ul>
+          <p
+            className="mt-6 max-w-2xl font-mono text-[10px] leading-relaxed tracking-[0.06em] text-zinc-600"
+            style={{ fontFamily: "var(--font-geist-mono)" }}
+          >
+            Invariants we design around: tenant UUID is truth; slugs are UI; runtime JWTs only
+            from the gateway; Redis is cache and best-effort telemetry—not authority; PostgREST
+            never faces the public internet directly.
+          </p>
+        </section>
 
         <section
           className="mt-16 border-t border-zinc-800 pt-14"

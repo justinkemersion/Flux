@@ -88,11 +88,13 @@ export function FleetManifest({ initialShowcase }: Props) {
         id="fleet-heading"
         className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500"
       >
-        Flux infrastructure
+        Live mesh
       </h2>
       <p className="mt-2 max-w-2xl font-sans text-xs leading-relaxed text-zinc-500">
-        Live tenant stacks on the public mesh: isolated engines, one contract, deterministic
-        operations. Mesh status from PostgREST probes and catalog{" "}
+        Dedicated tenant stacks on the public mesh today—Postgres + PostgREST per project, one
+        contract, deterministic operations. Flux is also moving toward pooled, schema-isolated
+        tiers so the same CLI can target efficient shared infrastructure or dedicated engines.
+        Status from PostgREST probes and catalog{" "}
         <code className="font-mono text-[10px] text-zinc-400">health_status</code> (2m).
       </p>
       <ul className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
@@ -147,11 +149,11 @@ export function FleetManifest({ initialShowcase }: Props) {
           >
             <div>
               <p className="font-sans text-lg font-semibold tracking-tight text-zinc-200 transition-colors duration-200 ease-linear group-hover:text-white">
-                Ready to Provision?
+                Ready to provision?
               </p>
               <p className="mt-2 font-sans text-sm leading-relaxed text-zinc-400">
-                Install the CLI, authenticate, and create an isolated stack in
-                one pass.
+                Install the CLI, authenticate, and create a project—shared or dedicated execution
+                is selected by tier and mode, not by a different product surface.
               </p>
             </div>
             <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500 transition-colors duration-200 ease-linear group-hover:text-zinc-300">
