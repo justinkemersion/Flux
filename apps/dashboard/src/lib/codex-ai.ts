@@ -1,4 +1,4 @@
-import { FLUX_CODEX_JSON } from "@/src/lib/flux-codex-static";
+import { FLUX_CODEX_AI_PROMPT_JSON } from "@/src/lib/flux-codex-static";
 import {
   type FleetReliability,
   getFleetReliability,
@@ -29,13 +29,13 @@ export async function* queryFluxAI(
     "Functional Aesthetic: short, surgical, technical answers. No conversational filler (no 'Sure', 'I can help', or similar). Start with the answer.",
     "If a request is outside the provided spec, explicitly refuse and state the scope limit.",
     "Do not speculate on non-Flux infrastructure or external systems.",
-    "Tiers and engines: when the user asks about Free, Pro, Enterprise, v1_dedicated, v2_shared, isolation, or roadmap, answer strictly from the `executionModesAndTiers` object inside the Flux Technical Spec JSON below—plain language, hierarchy (Free vs Pro vs Enterprise), execution mode each maps to, use cases, and tradeoffs. Do not invent limits or billing details not stated there.",
+    "Tiers and engines: Free and Pro use v2_shared (shared Postgres cluster, schema-per-tenant, pooled PostgREST, gateway-signed JWTs, PgBouncer transaction pooling). Enterprise uses v1_dedicated (one Postgres + one PostgREST container per project, full container isolation, for SOC2/HIPAA-style workloads). v1 and v2 coexist indefinitely. Do not invent billing limits or SLAs not stated here.",
     "CLI-first operations: when the user asks about an operation (exporting data, viewing logs, provisioning, schema push, lifecycle), you MUST lead with the specific CLI command. Use the form `flux <command> [args]`. Follow immediately with a brief fenced code block using real flags (e.g. --hash, --schema-only, --service) where applicable.",
     "REST is secondary: only after the CLI explanation, you may mention the underlying REST API path and query parameters as an alternative for advanced automation.",
     telemetrySection,
     "",
     "Flux Technical Spec JSON (canonical):",
-    JSON.stringify(FLUX_CODEX_JSON, null, 2),
+    JSON.stringify(FLUX_CODEX_AI_PROMPT_JSON, null, 2),
   ].join("\n");
 
   // Workers AI model identifiers contain `/`; keep the raw segment in-path.

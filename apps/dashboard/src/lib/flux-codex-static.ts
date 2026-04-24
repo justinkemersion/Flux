@@ -1,5 +1,9 @@
 /**
  * Source of truth for `GET /api/cli/v1/codex` and the Codex AI system prompt.
+ *
+ * IMPORTANT: Do NOT inject the full object into the AI system prompt.
+ * Use FLUX_CODEX_AI_PROMPT_JSON instead — it strips executionModesAndTiers
+ * to keep the serialized payload under the Llama 3 8B context limit (~8192 tokens).
  */
 export const FLUX_CODEX_JSON = {
   version: 3,
@@ -180,3 +184,16 @@ export const FLUX_CODEX_JSON = {
       "POST /api/cli/v1/reap — destroy a project and tear down its containers and volumes (when implemented).",
   },
 } as const;
+
+/**
+ * Subset of FLUX_CODEX_JSON safe to inject into the AI system prompt.
+ *
+ * executionModesAndTiers is intentionally excluded: when serialized with
+ * JSON.stringify(null, 2) it adds ~900 tokens and pushes the system prompt
+ * past the Llama 3 8B context window, causing the model to return no tokens.
+ * Tier/engine guidance is handled via inline rules in the system prompt instead.
+ */
+export const FLUX_CODEX_AI_PROMPT_JSON: Omit<
+  typeof FLUX_CODEX_JSON,
+  "executionModesAndTiers"
+> = (({ executionModesAndTiers: _dropped, ...rest }) => rest)(FLUX_CODEX_JSON);
