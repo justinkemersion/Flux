@@ -5,9 +5,9 @@ import { queryCodexAction } from "@/src/lib/actions";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Flux — Postgres, REST, and execution modes that scale with you",
+  title: "Flux: The Backbone of Your Platform",
   description:
-    "Schema-isolated PostgreSQL with PostgREST, a security-first gateway path, and dedicated stacks when you need them. One CLI and dashboard across tiers.",
+    "Enterprise Postgres, instant PostgREST, two execution modes. One CLI, one dashboard—shared infrastructure for scale or isolated stacks for compliance. PostgreSQL 16 + PostgREST 12.",
 };
 
 export const dynamic = "force-dynamic";

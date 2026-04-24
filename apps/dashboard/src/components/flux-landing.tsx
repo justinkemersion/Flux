@@ -63,30 +63,34 @@ export function FluxLanding({ fleetShowcase, reliability, queryCodexAction }: Pr
                   className="text-[10px] font-medium uppercase tracking-[0.24em] text-zinc-500"
                   style={{ fontFamily: "var(--font-geist-mono)" }}
                 >
-                  Control plane · Data plane
+                  AD
                 </p>
                 <h1
                   id="flux-hero-heading"
                   className="mt-3 font-sans text-3xl font-semibold leading-[1.08] tracking-tight text-white sm:text-4xl md:text-[2.65rem]"
                 >
-                  Postgres-backed APIs, from shared pools to dedicated stacks.
+                  Flux: The Backbone of Your Platform.
                 </h1>
                 <p
                   className="mt-5 max-w-2xl text-[13px] font-medium leading-snug tracking-tight text-zinc-300 sm:text-sm"
                   style={{ fontFamily: "var(--font-geist-mono)" }}
                 >
-                  One CLI and dashboard. Two execution modes: efficient multi-tenant
-                  infrastructure, or isolated containers when the job demands it.
+                  Enterprise Postgres. Instant REST. Total Strategy Choice.
                 </p>
                 <p
                   className="mt-5 max-w-2xl text-[12px] leading-relaxed tracking-[0.01em] text-zinc-500 sm:text-[13px]"
                   style={{ fontFamily: "var(--font-geist-mono)" }}
                 >
-                  Flux orchestrates PostgreSQL with PostgREST and keeps the contract
-                  boring: schema-scoped tenants, short-lived JWTs at the gateway,
-                  PgBouncer-friendly stateless SQL, and explicit tiers instead of
-                  surprise rewrites. Ship the product; let the platform absorb
-                  scaling tradeoffs you can reason about.
+                  One CLI, one dashboard, two execution modes. Deploy high-density shared
+                  infrastructure for scale, or isolated container stacks for compliance. Flux
+                  orchestrates PostgreSQL 16 + PostgREST 12 and keeps the contract boring:
+                  schema-scoped tenants, gateway-signed JWTs, and PgBouncer-ready stateless SQL.
+                </p>
+                <p
+                  className="mt-4 max-w-2xl text-[12px] font-medium leading-relaxed tracking-[0.01em] text-zinc-400 sm:text-[13px]"
+                  style={{ fontFamily: "var(--font-geist-mono)" }}
+                >
+                  You ship the product; the platform absorbs the trade-offs.
                 </p>
                 <div className="mt-10">
                   <LandingCtas />
