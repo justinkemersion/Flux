@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { CodexSuggestions } from "@/src/components/codex-suggestions";
 import type { queryCodexAction as QueryCodexAction } from "@/src/lib/actions";
 import { CODEX_OFFLINE_TERMINAL_MESSAGE } from "@/src/lib/codex-offline-message";
+import { CODEX_INFERENCE_QUOTA_EXCEEDED_MESSAGE } from "@/src/lib/codex-inference-messages";
 
 type Props = {
   queryAction: typeof QueryCodexAction;
@@ -121,7 +122,9 @@ export function CodexQueryPanel({ queryAction }: Props) {
             className={
               output === CODEX_OFFLINE_TERMINAL_MESSAGE
                 ? "whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-600"
-                : "whitespace-pre-wrap break-words text-[12px] text-zinc-200"
+                : output === CODEX_INFERENCE_QUOTA_EXCEEDED_MESSAGE
+                  ? "whitespace-pre-wrap break-words text-[11px] leading-relaxed text-amber-600/90"
+                  : "whitespace-pre-wrap break-words text-[12px] text-zinc-200"
             }
           >
             {output}
@@ -133,7 +136,8 @@ export function CodexQueryPanel({ queryAction }: Props) {
         )}
       </div>
       <p className="mt-3 text-[10px] leading-relaxed text-zinc-600/90">
-        Powered by Cloudflare Workers AI · Deterministic Context Injection
+        Codex is a resource-constrained component of the backbone—governed inference, not
+        unbounded LLM access. Powered by Cloudflare Workers AI · deterministic context injection
       </p>
     </form>
   );

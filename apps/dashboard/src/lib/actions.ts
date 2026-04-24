@@ -3,8 +3,11 @@
 import { createStreamableValue } from "ai/rsc";
 import { and, eq, isNull, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { apiKeys } from "@/src/db/schema";
 import { auth } from "@/src/lib/auth";
+import { acquireCodexInferenceSlot, extractClientIpFromHeaders } from "@/src/lib/ai-throttler";
+import { CODEX_INFERENCE_QUOTA_EXCEEDED_MESSAGE } from "@/src/lib/codex-inference-messages";
 import { queryFluxAI } from "@/src/lib/codex-ai";
 import { CODEX_OFFLINE_TERMINAL_MESSAGE } from "@/src/lib/codex-offline-message";
 import { getDb, initSystemDb } from "@/src/lib/db";
@@ -91,6 +94,21 @@ export async function queryCodexAction(query: string) {
 
   if (!trimmed) {
     stream.update("Enter a non-empty question.");
+    stream.done();
+    return stream.value;
+  }
+
+  const h = await headers();
+  const clientIp = extractClientIpFromHeaders(h);
+  const session = await auth();
+  const slot = await acquireCodexInferenceSlot({
+    userId: session?.user?.id,
+    clientIp,
+    // Future: pass project / billing tier when flux-system exposes it (v2 squeeze per plan).
+  });
+
+  if (!slot.allowed) {
+    stream.update(CODEX_INFERENCE_QUOTA_EXCEEDED_MESSAGE);
     stream.done();
     return stream.value;
   }
