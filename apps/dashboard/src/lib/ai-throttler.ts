@@ -24,6 +24,9 @@ export const CODEX_INFERENCE_TIER_LIMITS: Record<string, number> = {
 
 const KEY_PREFIX = "codex:infer:1h";
 
+/** Hard cap for Redis command round-trip; beyond this we fail-open so Codex never hangs. */
+const CODEX_REDIS_COMMAND_MS = 400;
+
 type GlobalWithRedis = typeof globalThis & { __fluxCodexRedis?: Redis | null };
 
 function getRedisUrl(): string | undefined {
@@ -51,9 +54,19 @@ function getSharedRedis(): Redis | null {
     return shared;
   }
   const client = new Redis(url, {
-    maxRetriesPerRequest: 2,
+    // Never block Codex on a wedged or unreachable Redis (wrong URL, Docker DNS, firewall).
+    maxRetriesPerRequest: 1,
     enableReadyCheck: true,
-    lazyConnect: false,
+    lazyConnect: true,
+    commandTimeout: CODEX_REDIS_COMMAND_MS,
+    socketTimeout: CODEX_REDIS_COMMAND_MS,
+    connectTimeout: CODEX_REDIS_COMMAND_MS,
+    retryStrategy(times) {
+      if (times > 2) {
+        return null;
+      }
+      return Math.min(times * 80, 200);
+    },
   });
   g.__fluxCodexRedis = client;
   shared = client;
@@ -121,9 +134,13 @@ export async function acquireCodexInferenceSlot(params: {
   }
 
   try {
-    const n = await client.incr(key);
+    const n = await withTimeout(client.incr(key), CODEX_REDIS_COMMAND_MS + 50, "incr");
     if (n === 1) {
-      await client.expire(key, CODEX_INFERENCE_WINDOW_SEC);
+      await withTimeout(
+        client.expire(key, CODEX_INFERENCE_WINDOW_SEC),
+        CODEX_REDIS_COMMAND_MS + 50,
+        "expire",
+      );
     }
     if (n > limit) {
       return { allowed: false, reason: "quota" };
@@ -136,4 +153,22 @@ export async function acquireCodexInferenceSlot(params: {
     );
     return { allowed: true, failOpen: true };
   }
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Redis ${label} exceeded ${String(ms)}ms`));
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  });
 }

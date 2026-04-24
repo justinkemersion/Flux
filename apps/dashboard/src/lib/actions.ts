@@ -98,14 +98,22 @@ export async function queryCodexAction(query: string) {
     return stream.value;
   }
 
-  const h = await headers();
-  const clientIp = extractClientIpFromHeaders(h);
-  const session = await auth();
-  const slot = await acquireCodexInferenceSlot({
-    userId: session?.user?.id,
-    clientIp,
-    // Future: pass project / billing tier when flux-system exposes it (v2 squeeze per plan).
-  });
+  let slot: Awaited<ReturnType<typeof acquireCodexInferenceSlot>>;
+  try {
+    const h = await headers();
+    const clientIp = extractClientIpFromHeaders(h);
+    const session = await auth();
+    slot = await acquireCodexInferenceSlot({
+      userId: session?.user?.id,
+      clientIp,
+      // Future: pass project / billing tier when flux-system exposes it (v2 squeeze per plan).
+    });
+  } catch (preflightErr) {
+    console.error("[queryCodexAction] Codex preflight failed (headers/auth/throttle):", preflightErr);
+    stream.update(CODEX_OFFLINE_TERMINAL_MESSAGE);
+    stream.done();
+    return stream.value;
+  }
 
   if (!slot.allowed) {
     stream.update(CODEX_INFERENCE_QUOTA_EXCEEDED_MESSAGE);
