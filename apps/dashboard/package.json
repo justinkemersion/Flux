@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "pnpm --filter @flux/cli run build && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:codex": "tsx scripts/test-codex.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",

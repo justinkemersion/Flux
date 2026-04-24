@@ -12,6 +12,14 @@ import { queryFluxAI } from "@/src/lib/codex-ai";
 import { CODEX_OFFLINE_TERMINAL_MESSAGE } from "@/src/lib/codex-offline-message";
 import { getDb, initSystemDb } from "@/src/lib/db";
 
+// ---------------------------------------------------------------------------
+// NOTE: queryCodexAction intentionally does NOT call auth() or initSystemDb().
+// The Codex panel is public (landing page). auth() bootstraps the system DB
+// via Docker, which hangs when Docker is busy/unreachable and prevents the
+// stream from ever being returned to the client.
+// IP-based throttling is sufficient for the public Codex panel.
+// ---------------------------------------------------------------------------
+
 type ActionResult =
   | { ok: true }
   | { ok: false; error: string };
@@ -102,14 +110,14 @@ export async function queryCodexAction(query: string) {
   try {
     const h = await headers();
     const clientIp = extractClientIpFromHeaders(h);
-    const session = await auth();
+    // No auth() here — Codex is public. auth() calls initSystemDb() → Docker,
+    // which can block the server action indefinitely when Docker is slow.
     slot = await acquireCodexInferenceSlot({
-      userId: session?.user?.id,
       clientIp,
       // Future: pass project / billing tier when flux-system exposes it (v2 squeeze per plan).
     });
   } catch (preflightErr) {
-    console.error("[queryCodexAction] Codex preflight failed (headers/auth/throttle):", preflightErr);
+    console.error("[queryCodexAction] Codex preflight failed:", preflightErr);
     stream.update(CODEX_OFFLINE_TERMINAL_MESSAGE);
     stream.done();
     return stream.value;
