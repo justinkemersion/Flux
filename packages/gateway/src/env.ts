@@ -5,7 +5,11 @@ const envSchema = z.object({
   FLUX_SYSTEM_DATABASE_URL: z.string().min(1),
   FLUX_GATEWAY_JWT_SECRET: z
     .string()
-    .min(32, "FLUX_GATEWAY_JWT_SECRET must be at least 32 characters"),
+    .min(32, "FLUX_GATEWAY_JWT_SECRET must be at least 32 characters")
+    .refine(
+      (s) => s !== "REPLACE_THIS" && !s.startsWith("change-me"),
+      "FLUX_GATEWAY_JWT_SECRET must not be the placeholder value from .env.example",
+    ),
   FLUX_POSTGREST_POOL_URL: z.string().url(),
   /** Base domain for subdomain-slug fallback, e.g. `flux.localhost` or `flux.example.com`. */
   FLUX_BASE_DOMAIN: z.string().min(1),

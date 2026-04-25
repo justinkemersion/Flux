@@ -62,8 +62,10 @@ export function createApp(): Hono {
 
     const { resolution: tenant, cacheSource } = resolved;
 
-    // 2. Mode check — v1_dedicated projects are not routed through the gateway
-    if (tenant.mode === "v1_dedicated") {
+    // 2. Mode check — fail-closed: only v2_shared is routed through this gateway.
+    // Any other value (including unknown future modes) is rejected with 502 rather
+    // than accidentally proxied, preventing unintended cross-tenant exposure.
+    if (tenant.mode !== "v2_shared") {
       // TODO: optional v1 routing support via proxy to the dedicated API container.
       log({
         host: rawHost,
@@ -76,8 +78,7 @@ export function createApp(): Hono {
       });
       return c.json(
         {
-          error:
-            "project uses dedicated containers; gateway routing not supported for v1_dedicated",
+          error: `project mode "${tenant.mode}" is not routed through this gateway`,
         },
         502,
       );

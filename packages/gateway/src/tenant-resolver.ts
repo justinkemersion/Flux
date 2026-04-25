@@ -3,6 +3,7 @@ import { safeRedis } from "./redis.ts";
 import { memGet, memSet, memDel } from "./cache.ts";
 import { tenantIdToShortid } from "./shortid.ts";
 import { env } from "./env.ts";
+import { z } from "zod";
 import type { TenantResolution, ProjectMode } from "./types.ts";
 
 export type { TenantResolution, ProjectMode };
@@ -17,6 +18,19 @@ export interface ResolvedTenant {
 }
 
 const REDIS_CACHE_TTL_SEC = 300;
+
+/**
+ * Zod schema for values stored in the Redis tenant-resolution cache.
+ * Validates on read to prevent a compromised Redis instance from injecting
+ * a crafted TenantResolution that routes one tenant's traffic to another.
+ */
+const tenantResolutionSchema = z.object({
+  projectId: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  shortid: z.string().min(1),
+  mode: z.enum(["v1_dedicated", "v2_shared"]),
+  slug: z.string().min(1),
+});
 
 /**
  * Normalizes a raw Host header value for use as a cache key and DB lookup.
@@ -59,11 +73,16 @@ export async function resolveTenant(
   const cached = await safeRedis((r) => r.get(cacheKey));
   if (cached) {
     try {
-      const parsed = JSON.parse(cached) as TenantResolution;
-      memSet(cacheKey, parsed);
-      return { resolution: parsed, cacheSource: "redis" };
+      const result = tenantResolutionSchema.safeParse(JSON.parse(cached));
+      if (result.success) {
+        memSet(cacheKey, result.data);
+        return { resolution: result.data, cacheSource: "redis" };
+      }
+      // Malformed or tampered cache entry — evict and fall through to DB.
+      console.warn("[gateway] Redis cache entry failed schema validation; evicting:", cacheKey);
+      await safeRedis((r) => r.del(cacheKey));
     } catch {
-      // malformed cache entry — fall through to DB
+      // JSON.parse failure — fall through to DB
     }
   }
 
@@ -78,13 +97,21 @@ export async function resolveTenant(
   const baseDomain = env.FLUX_BASE_DOMAIN.toLowerCase();
   if (host !== baseDomain && host.endsWith(`.${baseDomain}`)) {
     const prefix = host.slice(0, host.length - baseDomain.length - 1);
-    // Only use the first label — ignore nested subdomains
-    const slug = prefix.split(".")[0];
-    if (slug) {
-      const slugRow = await queryBySlug(slug);
-      if (slugRow) {
-        await cacheResolution(cacheKey, slugRow);
-        return { resolution: slugRow, cacheSource: "db" };
+    // Subdomain format: <slug>-<hash> (e.g. myapp-a1b2c3d.flux.localhost).
+    // The 7-hex hash is globally unique per project, so the lookup is fully
+    // deterministic even when two users share the same slug.
+    // Only the first label is used — nested subdomains are ignored.
+    const label = prefix.split(".")[0] ?? "";
+    const lastDash = label.lastIndexOf("-");
+    if (lastDash > 0) {
+      const slug = label.slice(0, lastDash);
+      const hash = label.slice(lastDash + 1);
+      if (slug && hash) {
+        const slugRow = await queryBySlugAndHash(slug, hash);
+        if (slugRow) {
+          await cacheResolution(cacheKey, slugRow);
+          return { resolution: slugRow, cacheSource: "db" };
+        }
       }
     }
   }
@@ -138,17 +165,23 @@ async function queryByExactDomain(
   return toResolution(row.tenant_id, row.project_id, row.slug, row.mode);
 }
 
-async function queryBySlug(slug: string): Promise<TenantResolution | null> {
+async function queryBySlugAndHash(
+  slug: string,
+  hash: string,
+): Promise<TenantResolution | null> {
   const { rows } = await getPool().query<{
     id: string;
     slug: string;
     mode: string;
   }>(
+    // Filter by both slug AND hash so the lookup is deterministic regardless
+    // of how many users share the same slug across the platform.
     `SELECT id, slug, mode
      FROM   projects
      WHERE  slug = $1
+       AND  hash = $2
      LIMIT  1`,
-    [slug],
+    [slug, hash],
   );
   const row = rows[0];
   if (!row) return null;
