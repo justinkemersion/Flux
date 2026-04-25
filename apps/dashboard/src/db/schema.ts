@@ -105,6 +105,11 @@ export const projects = pgTable(
     lastHeartbeatAt: timestamp("last_heartbeat_at", { mode: "date" }),
     /** Last probe outcome: `running` (2xx/3xx) or `error`. */
     healthStatus: text("health_status"),
+    /** Execution engine: v1_dedicated (one container per project) or v2_shared (shared cluster). */
+    mode: text("mode")
+      .notNull()
+      .default("v1_dedicated")
+      .$type<"v1_dedicated" | "v2_shared">(),
   },
   (t) => [uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug)],
 );
@@ -143,4 +148,23 @@ export const apiKeys = pgTable(
     revokedAt: timestamp("revoked_at", { mode: "date" }),
   },
   (t) => [index("flux_api_keys_user_id_idx").on(t.userId)],
+);
+
+/**
+ * Custom-domain → project mapping used by the @flux/gateway for tenant resolution.
+ * Every CRUD operation on this table must evict the Redis key `hostname:<normalizedHost>`
+ * to prevent stale routing. See packages/gateway — cache invalidation contract.
+ */
+export const domains = pgTable(
+  "domains",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Normalized (lowercase, no port) hostname, e.g. `myapp.example.com`. */
+    hostname: text("hostname").notNull().unique(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [index("domains_project_id_idx").on(t.projectId)],
 );

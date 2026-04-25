@@ -212,6 +212,22 @@ async function _init(): Promise<void> {
     CREATE INDEX IF NOT EXISTS flux_api_keys_user_id_idx ON flux_api_keys (user_id);
   `);
 
+  // v2: execution engine mode per project (v1_dedicated | v2_shared).
+  await pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'v1_dedicated';
+  `);
+
+  // v2: custom-domain → project mapping used by the gateway for tenant resolution.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS domains (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      hostname   TEXT NOT NULL UNIQUE,
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS domains_project_id_idx ON domains (project_id);
+  `);
+
   db = drizzle(pool, { schema });
 }
 
