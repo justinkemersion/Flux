@@ -3,14 +3,34 @@ import { env } from "./env.ts";
 import type { TenantResolution } from "./types.ts";
 
 /**
+ * Headers that must never be forwarded between hops.
+ * RFC 7230 §6.1 + de-facto HTTP/1.1 proxy conventions.
+ * These are stripped from both the incoming request and the upstream response.
+ */
+const HOP_BY_HOP = new Set([
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+  "upgrade",
+  "te",
+  "trailer",
+  "proxy-authorization",
+  "proxy-authenticate",
+]);
+
+/**
  * Forwards an incoming Hono request to the PostgREST pool.
  *
- * - Preserves method, path, query string, body, and original headers.
+ * - Preserves method, path, query string, and all non-hop-by-hop headers.
+ *   content-type, content-length, and set-cookie are explicitly preserved
+ *   by the allow-all-except-hop-by-hop approach.
  * - Replaces `Authorization` with the gateway-minted JWT (invariant 3).
  * - Adds `x-forwarded-host` and `x-tenant-id` for debugging.
- * - Streams the upstream response back to the client.
- * - Enforces an AbortController timeout to prevent gateway pileups when
- *   PostgREST hangs (FLUX_POSTGREST_TIMEOUT_MS, default 8s).
+ * - Streams request body as a pass-through ReadableStream — never buffers.
+ * - Streams upstream response body back to the client — never buffers.
+ * - Strips hop-by-hop headers from the upstream response before returning.
+ * - Enforces an AbortController timeout (FLUX_POSTGREST_TIMEOUT_MS, default 8s)
+ *   to prevent gateway thread pileups when PostgREST hangs.
  */
 export async function proxyRequest(
   c: Context,
@@ -21,49 +41,48 @@ export async function proxyRequest(
   const poolUrl: string = env.FLUX_POSTGREST_POOL_URL;
   const upstream = new URL(url.pathname + url.search, poolUrl);
 
-  // Clone and sanitize headers — strip hop-by-hop headers
-  const headers = new Headers();
+  // --- Forward headers (strip hop-by-hop, strip host) ---
+  const reqHeaders = new Headers();
   for (const [name, value] of c.req.raw.headers.entries()) {
-    const lower = name.toLowerCase();
-    if (
-      lower === "host" ||
-      lower === "connection" ||
-      lower === "keep-alive" ||
-      lower === "transfer-encoding" ||
-      lower === "upgrade" ||
-      lower === "te" ||
-      lower === "trailer" ||
-      lower === "proxy-authorization" ||
-      lower === "proxy-authenticate"
-    ) {
-      continue;
-    }
-    headers.set(name, value);
+    if (name.toLowerCase() === "host") continue;
+    if (HOP_BY_HOP.has(name.toLowerCase())) continue;
+    reqHeaders.set(name, value);
   }
+  // Inject gateway-controlled headers (override anything the client sent)
+  reqHeaders.set("authorization", `Bearer ${jwt}`);
+  reqHeaders.set("x-forwarded-host", url.hostname);
+  reqHeaders.set("x-tenant-id", tenant.tenantId);
 
-  // Inject gateway-controlled headers
-  headers.set("authorization", `Bearer ${jwt}`);
-  headers.set("x-forwarded-host", url.hostname);
-  headers.set("x-tenant-id", tenant.tenantId);
+  // --- Body: pass-through stream, never buffer ---
+  const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD";
 
   const timeoutMs: number = env.FLUX_POSTGREST_TIMEOUT_MS;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD";
     const upstreamRes = await fetch(upstream.toString(), {
       method: c.req.method,
-      headers,
+      headers: reqHeaders,
       body: hasBody ? c.req.raw.body : undefined,
       signal: controller.signal,
-      // Node 18+ requires duplex when body is a ReadableStream
+      // Node 18+ requires duplex:"half" when forwarding a streaming body
       ...(hasBody ? { duplex: "half" as const } : {}),
     } as RequestInit);
 
+    // --- Response headers: strip hop-by-hop from upstream response ---
+    // content-type, content-length, set-cookie, etc. are preserved because
+    // the allow-all-except-hop-by-hop set covers them.
+    const resHeaders = new Headers();
+    for (const [name, value] of upstreamRes.headers.entries()) {
+      if (HOP_BY_HOP.has(name.toLowerCase())) continue;
+      resHeaders.set(name, value);
+    }
+
+    // Stream response body — no buffering
     return new Response(upstreamRes.body, {
       status: upstreamRes.status,
-      headers: upstreamRes.headers,
+      headers: resHeaders,
     });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
@@ -71,6 +90,7 @@ export async function proxyRequest(
     }
     throw err;
   } finally {
+    // Always cancel the timeout to prevent dangling timers under load
     clearTimeout(timer);
   }
 }

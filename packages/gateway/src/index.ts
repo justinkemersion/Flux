@@ -12,3 +12,4 @@ export { mintJwt } from "./jwt-issuer.ts";
 export { acquireRateSlot } from "./rate-limiter.ts";
 export { trackActivity } from "./activity-tracker.ts";
 export type { TenantResolution, ProjectMode } from "./types.ts";
+export type { CacheSource, ResolvedTenant } from "./tenant-resolver.ts";

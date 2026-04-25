@@ -7,6 +7,15 @@ import type { TenantResolution, ProjectMode } from "./types.ts";
 
 export type { TenantResolution, ProjectMode };
 
+/** Where in the lookup chain the tenant resolution was satisfied. */
+export type CacheSource = "memory" | "redis" | "db" | null;
+
+export interface ResolvedTenant {
+  resolution: TenantResolution;
+  /** How the resolution was satisfied — useful for structured logs and latency analysis. */
+  cacheSource: CacheSource;
+}
+
 const REDIS_CACHE_TTL_SEC = 300;
 
 /**
@@ -18,7 +27,7 @@ export function normalizeHost(raw: string): string {
 }
 
 /**
- * Resolves a normalized hostname to a TenantResolution.
+ * Resolves a normalized hostname to a ResolvedTenant.
  *
  * Resolution order (per architecture spec):
  *  1. In-memory cache (TTL 8s) — protects against Redis-down DB hammering.
@@ -30,16 +39,21 @@ export function normalizeHost(raw: string): string {
  *
  * Cache invalidation: domain CRUD operations MUST call evictHostname(hostname)
  * to evict both memory and Redis to prevent stale routing.
+ *
+ * Stale-routing window: after a domain update + Redis eviction, in-memory
+ * cache may still serve the old resolution for up to 8s. This is acceptable
+ * by design — the window is bounded and the fail-open model is preferred over
+ * a synchronous cross-process cache flush.
  */
 export async function resolveTenant(
   rawHost: string,
-): Promise<TenantResolution | null> {
+): Promise<ResolvedTenant | null> {
   const host = normalizeHost(rawHost);
   const cacheKey = `hostname:${host}`;
 
   // 1. In-memory cache
   const mem = memGet(cacheKey);
-  if (mem) return mem;
+  if (mem) return { resolution: mem, cacheSource: "memory" };
 
   // 2. Redis cache
   const cached = await safeRedis((r) => r.get(cacheKey));
@@ -47,7 +61,7 @@ export async function resolveTenant(
     try {
       const parsed = JSON.parse(cached) as TenantResolution;
       memSet(cacheKey, parsed);
-      return parsed;
+      return { resolution: parsed, cacheSource: "redis" };
     } catch {
       // malformed cache entry — fall through to DB
     }
@@ -57,7 +71,7 @@ export async function resolveTenant(
   const domainRow = await queryByExactDomain(host);
   if (domainRow) {
     await cacheResolution(cacheKey, domainRow);
-    return domainRow;
+    return { resolution: domainRow, cacheSource: "db" };
   }
 
   // 4. Subdomain slug fallback — only for Flux-managed subdomains
@@ -70,7 +84,7 @@ export async function resolveTenant(
       const slugRow = await queryBySlug(slug);
       if (slugRow) {
         await cacheResolution(cacheKey, slugRow);
-        return slugRow;
+        return { resolution: slugRow, cacheSource: "db" };
       }
     }
   }
