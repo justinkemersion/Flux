@@ -6,9 +6,23 @@ import { trackActivity } from "./activity-tracker.ts";
 import { proxyRequest } from "./proxy.ts";
 import { pingDb } from "./db.ts";
 import { getRedis } from "./redis.ts";
+import logger from "./logger.ts";
 
 export function createApp(): Hono {
   const app = new Hono();
+
+  /**
+   * Upstream concurrency semaphore.
+   *
+   * Without a cap, 10k concurrent slow PostgREST queries queue up in undici,
+   * exhaust the pg pool, and eventually crash the process.  Above MAX_INFLIGHT
+   * we return 503 immediately — shedding load at the gateway is far less
+   * destructive than cascading failures downstream.
+   *
+   * Tune upward when PostgREST / PgBouncer capacity warrants it.
+   */
+  const MAX_INFLIGHT = 1_000;
+  let inflightCount = 0;
 
   // ------------------------------------------------------------------ Health
   app.get("/health", async (c) => {
@@ -43,7 +57,7 @@ export function createApp(): Hono {
 
     // 1. Resolve tenant
     const resolved = await resolveTenant(rawHost).catch((err) => {
-      console.error("[gateway] tenant resolution error:", err);
+      logger.error({ host: rawHost, err }, "tenant resolution error");
       return null;
     });
 
@@ -99,13 +113,28 @@ export function createApp(): Hono {
       return c.json({ error: "rate limit exceeded" }, 429);
     }
 
-    // 4. Mint JWT
+    // 4. Concurrency cap — shed load rather than queue and cascade
+    if (inflightCount >= MAX_INFLIGHT) {
+      log({
+        host: rawHost,
+        tenantId: tenant.tenantId,
+        mode: tenant.mode,
+        status: 503,
+        start,
+        rateLimited: false,
+        cache: cacheSource,
+      });
+      return c.json({ error: "gateway overloaded, retry later" }, 503);
+    }
+
+    // 5. Mint JWT
     const jwt = await mintJwt(tenant);
 
-    // 5. Activity tracking — fire-and-forget; never awaited
+    // 6. Activity tracking — fire-and-forget; never awaited
     trackActivity(tenant.tenantId);
 
-    // 6. Proxy
+    // 7. Proxy
+    inflightCount++;
     try {
       const res = await proxyRequest(c, jwt, tenant);
       log({
@@ -119,7 +148,7 @@ export function createApp(): Hono {
       });
       return res;
     } catch (err) {
-      console.error("[gateway] proxy error:", err);
+      logger.error({ host: rawHost, tenantId: tenant.tenantId, err }, "proxy error");
       log({
         host: rawHost,
         tenantId: tenant.tenantId,
@@ -130,6 +159,8 @@ export function createApp(): Hono {
         cache: cacheSource,
       });
       return c.json({ error: "upstream error" }, 502);
+    } finally {
+      inflightCount--;
     }
   });
 
@@ -157,16 +188,13 @@ function log({
   rateLimited,
   cache,
 }: LogEntry): void {
-  if (process.env.NODE_ENV === "test") return;
-  console.log(
-    JSON.stringify({
-      host,
-      tenantId,
-      mode,
-      status,
-      duration_ms: Date.now() - start,
-      rate_limited: rateLimited,
-      cache,
-    }),
-  );
+  logger.info({
+    host,
+    tenantId,
+    mode,
+    status,
+    duration_ms: Date.now() - start,
+    rate_limited: rateLimited,
+    cache,
+  });
 }

@@ -1,6 +1,17 @@
 import type { Context } from "hono";
+import { Agent, fetch } from "undici";
 import { env } from "./env.ts";
 import type { TenantResolution } from "./types.ts";
+
+/**
+ * Shared undici Agent for all upstream PostgREST requests.
+ *
+ * Node's built-in fetch defaults to ~10 sockets per origin via undici.
+ * At 10k rps with 10ms upstream latency that's ~100 connections in-flight,
+ * which immediately queues.  256 connections gives comfortable headroom
+ * and scales with PostgREST's own connection pool.
+ */
+const upstreamAgent = new Agent({ connections: 256 });
 
 /**
  * Headers that must never be forwarded between hops.
@@ -64,11 +75,11 @@ export async function proxyRequest(
     const upstreamRes = await fetch(upstream.toString(), {
       method: c.req.method,
       headers: reqHeaders,
-      body: hasBody ? c.req.raw.body : undefined,
+      body: hasBody ? (c.req.raw.body as BodyInit) : undefined,
       signal: controller.signal,
-      // Node 18+ requires duplex:"half" when forwarding a streaming body
-      ...(hasBody ? { duplex: "half" as const } : {}),
-    } as RequestInit);
+      dispatcher: upstreamAgent,
+      // undici handles duplex streaming natively — no workaround needed
+    } as Parameters<typeof fetch>[1]);
 
     // --- Response headers: strip hop-by-hop from upstream response ---
     // content-type, content-length, set-cookie, etc. are preserved because
@@ -80,7 +91,7 @@ export async function proxyRequest(
     }
 
     // Stream response body — no buffering
-    return new Response(upstreamRes.body, {
+    return new Response(upstreamRes.body as unknown as BodyInit, {
       status: upstreamRes.status,
       headers: resHeaders,
     });

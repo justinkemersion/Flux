@@ -2,6 +2,11 @@ import { SignJWT } from "jose";
 import { env } from "./env.ts";
 
 const encoder = new TextEncoder();
+/**
+ * Encoded once at module load — re-encoding on every call wastes CPU for no
+ * reason since the secret never changes at runtime.
+ */
+const SECRET_BYTES = encoder.encode(env.FLUX_GATEWAY_JWT_SECRET);
 
 /**
  * Mints a short-lived HS256 JWT for a resolved tenant.
@@ -17,7 +22,6 @@ export async function mintJwt(tenant: {
   tenantId: string;
   shortid: string;
 }): Promise<string> {
-  const secret = encoder.encode(env.FLUX_GATEWAY_JWT_SECRET);
   const now = Math.floor(Date.now() / 1000);
   const ttl = env.FLUX_GATEWAY_JWT_TTL_SEC;
 
@@ -29,5 +33,5 @@ export async function mintJwt(tenant: {
     .setIssuedAt(now)
     .setNotBefore(now - 5)
     .setExpirationTime(now + ttl)
-    .sign(secret);
+    .sign(SECRET_BYTES);
 }

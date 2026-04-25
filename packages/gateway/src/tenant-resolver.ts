@@ -20,6 +20,21 @@ export interface ResolvedTenant {
 const REDIS_CACHE_TTL_SEC = 300;
 
 /**
+ * In-flight deduplication map (single-flight pattern).
+ *
+ * When N concurrent requests arrive for the same uncached hostname they all
+ * race to the resolver.  Without coalescing each one would issue its own DB
+ * query, producing a stampede that (a) floods the pg pool, (b) amplifies under
+ * Redis outages, and (c) causes the thundering-herd on cold deploy.
+ *
+ * With coalescing: the first request creates the Promise and inserts it here;
+ * subsequent requests return the same Promise.  One DB round-trip fans out to
+ * all waiters.  The entry is removed when the Promise settles (success or error)
+ * so the next request after a miss gets a fresh lookup rather than a stale one.
+ */
+const inflight = new Map<string, Promise<ResolvedTenant | null>>();
+
+/**
  * Zod schema for values stored in the Redis tenant-resolution cache.
  * Validates on read to prevent a compromised Redis instance from injecting
  * a crafted TenantResolution that routes one tenant's traffic to another.
@@ -63,11 +78,26 @@ export async function resolveTenant(
   rawHost: string,
 ): Promise<ResolvedTenant | null> {
   const host = normalizeHost(rawHost);
-  const cacheKey = `hostname:${host}`;
 
-  // 1. In-memory cache
-  const mem = memGet(cacheKey);
+  // In-memory hit — no coalescing needed, no async work at all.
+  const mem = memGet(`hostname:${host}`);
   if (mem) return { resolution: mem, cacheSource: "memory" };
+
+  // Single-flight: collapse concurrent misses for the same host into one lookup.
+  const existing = inflight.get(host);
+  if (existing) return existing;
+
+  const p = resolveUncached(host).finally(() => inflight.delete(host));
+  inflight.set(host, p);
+  return p;
+}
+
+/**
+ * The actual multi-layer lookup.  Only called when the in-memory cache misses
+ * and no in-flight promise exists for this hostname.
+ */
+async function resolveUncached(host: string): Promise<ResolvedTenant | null> {
+  const cacheKey = `hostname:${host}`;
 
   // 2. Redis cache
   const cached = await safeRedis((r) => r.get(cacheKey));
