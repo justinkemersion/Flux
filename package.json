@@ -9,7 +9,8 @@
     "perf:gateway:warm": "k6 run perf/k6/scenarios/warm-steady.js",
     "perf:gateway:overload": "k6 run perf/k6/scenarios/overload.js",
     "perf:gateway:summary": "node perf/k6/summarize-results.mjs",
-    "perf:gateway:truth": "k6 run perf/k6/scenarios/arch-truth-test.js"
+    "perf:gateway:truth": "k6 run perf/k6/scenarios/arch-truth-test.js",
+    "perf:gateway:score": "node perf/k6/score-run.mjs"
   },
   "keywords": [],
   "author": "",
