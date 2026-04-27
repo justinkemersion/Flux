@@ -4,7 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "perf:gateway:matrix": "bash perf/k6/run-matrix.sh",
+    "perf:gateway:warm": "k6 run perf/k6/scenarios/warm-steady.js",
+    "perf:gateway:overload": "k6 run perf/k6/scenarios/overload.js",
+    "perf:gateway:summary": "node perf/k6/summarize-results.mjs"
   },
   "keywords": [],
   "author": "",
