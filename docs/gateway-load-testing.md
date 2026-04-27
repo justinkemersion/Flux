@@ -157,3 +157,17 @@ CI gate (exit 2 if score < 80 after Tier 0 passes):
 ```bash
 node perf/k6/score-run.mjs --summary run.json --fail-below 80
 ```
+
+### Truth test + overload + score (one command)
+
+Runs [`perf/k6/scenarios/arch-truth-test.js`](../perf/k6/scenarios/arch-truth-test.js), then [`perf/k6/scenarios/overload-smoke.js`](../perf/k6/scenarios/overload-smoke.js), then writes **`scorecard.md`** and **`scorecard.json`** (same stem; JSON includes `meta` with input paths).
+
+```bash
+LOAD_TEST_HEADER=true LOAD_TEST_KEY=your-secret \
+UPSTREAM_BASE="https://api.<slug>.<hash>.example.com" \
+KNOWN_HOST="api.<slug>.<hash>.example.com" \
+FLUX_BASE_DOMAIN="example.com" \
+pnpm perf:gateway:truth-score
+```
+
+Optional: `STAMP=...` or `RESULTS_DIR=...` to control the output folder under `perf/results/`.

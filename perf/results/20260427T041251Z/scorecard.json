@@ -1,0 +1,54 @@
+{
+  "tier0": "PASS",
+  "score": 81.9,
+  "verdict": "Safe but needs tuning",
+  "verdictCode": "WARN",
+  "deductions": {
+    "correctness": 3.1,
+    "latency": 0,
+    "shedding": 15,
+    "stability": 0
+  },
+  "tiers": {
+    "correctness": {
+      "weight": 40,
+      "score": 36.9,
+      "notes": [
+        "unexpected handling: 0.308% → -3.1 (cap 40)"
+      ]
+    },
+    "latency": {
+      "weight": 30,
+      "score": 30,
+      "notes": []
+    },
+    "shedding": {
+      "weight": 20,
+      "score": 5,
+      "notes": [
+        "no 503 shedding but p95>3s under overload → -15 (queueing)"
+      ],
+      "measured": true
+    },
+    "stability": {
+      "weight": 10,
+      "score": 10,
+      "notes": [
+        "No stability side-signals (set STABILITY_* env to penalize)."
+      ]
+    }
+  },
+  "primaryIssue": "Largest automated deduction: load shedding (15.0 pts).",
+  "caveats": [
+    "No baseline summary — Tier 2 tail-vs-baseline comparison skipped.",
+    "Tenant/JWT invariant checks require explicit probes (TENANT_INVARIANT_FAIL=1 if violated)."
+  ],
+  "meta": {
+    "generatedAt": "2026-04-27T04:15:24.089Z",
+    "summaries": [
+      "/home/justin/Projects/flux/perf/results/20260427T041251Z/arch-truth.summary.json"
+    ],
+    "baselineSummary": null,
+    "overloadSummary": "/home/justin/Projects/flux/perf/results/20260427T041251Z/overload.summary.json"
+  }
+}

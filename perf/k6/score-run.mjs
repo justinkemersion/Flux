@@ -11,7 +11,7 @@
  * Exit codes: 0 pass, 1 Tier-0 hard fail, 2 score below --fail-below (Tier-0 passed)
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 function parseArgs(argv) {
   const out = { summaries: [], baseline: null, overload: null, outPath: null, failBelow: null, json: false };
@@ -303,7 +303,7 @@ function main() {
       verdict: vb.label,
       verdictCode: vb.emoji,
     };
-    emit(block, args);
+    emit(envelope(block, args), args);
     process.exit(1);
   }
 
@@ -322,6 +322,12 @@ function main() {
     score: Math.round(score * 10) / 10,
     verdict: vb.label,
     verdictCode: vb.emoji,
+    deductions: {
+      correctness: Math.round(t1.deduction * 10) / 10,
+      latency: Math.round(t2.deduction * 10) / 10,
+      shedding: Math.round(t3.deduction * 10) / 10,
+      stability: Math.round(t4.deduction * 10) / 10,
+    },
     tiers: {
       correctness: { weight: 40, score: Math.round(t1.score * 10) / 10, notes: t1.notes },
       latency: { weight: 30, score: Math.round(t2.score * 10) / 10, notes: t2.notes },
@@ -337,7 +343,7 @@ function main() {
     caveats: buildCaveats(t3, args),
   };
 
-  emit(block, args);
+  emit(envelope(block, args), args);
 
   if (args.failBelow != null && Number.isFinite(args.failBelow) && score < args.failBelow) {
     process.exit(2);
@@ -364,15 +370,37 @@ function buildCaveats(t3, args) {
   return c;
 }
 
+function envelope(block, args) {
+  return {
+    ...block,
+    meta: {
+      generatedAt: new Date().toISOString(),
+      summaries: args.summaries,
+      baselineSummary: args.baseline ?? null,
+      overloadSummary: args.overload ?? null,
+    },
+  };
+}
+
+function mdPathToJsonPath(mdPath) {
+  if (mdPath.endsWith(".md")) return mdPath.slice(0, -3) + ".json";
+  return `${dirname(mdPath)}/scorecard.json`;
+}
+
 function emit(block, args) {
   if (args.json) {
     console.log(JSON.stringify(block, null, 2));
     return;
   }
   const md = renderMarkdown(block);
-  if (args.outPath) writeFileSync(args.outPath, md, "utf8");
+  if (args.outPath) {
+    writeFileSync(args.outPath, md, "utf8");
+    const jsonPath = mdPathToJsonPath(args.outPath);
+    writeFileSync(jsonPath, JSON.stringify(block, null, 2), "utf8");
+    console.error(`[score-run] wrote ${args.outPath}`);
+    console.error(`[score-run] wrote ${jsonPath}`);
+  }
   console.log(md);
-  if (args.outPath) console.error(`[score-run] wrote ${args.outPath}`);
 }
 
 function renderMarkdown(b) {
