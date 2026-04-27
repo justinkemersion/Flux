@@ -21,6 +21,18 @@ const envSchema = z.object({
   FLUX_GATEWAY_RATE_WINDOW_SEC: z.coerce.number().int().positive().default(60),
   FLUX_GATEWAY_JWT_TTL_SEC: z.coerce.number().int().positive().default(300),
   FLUX_POSTGREST_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
+  FLUX_GATEWAY_MAX_INFLIGHT: z.coerce.number().int().positive().default(1000),
+  FLUX_GATEWAY_ADAPTIVE_INFLIGHT: z
+    .union([z.literal("0"), z.literal("1")])
+    .default("0")
+    .transform((v) => v === "1"),
+  FLUX_GATEWAY_ADAPTIVE_MIN_INFLIGHT: z.coerce.number().int().positive().default(100),
+  FLUX_GATEWAY_ADAPTIVE_HARD_MAX_INFLIGHT: z.coerce.number().int().positive().default(2000),
+  FLUX_GATEWAY_ADAPTIVE_TARGET_P95_MS: z.coerce.number().int().positive().default(500),
+  FLUX_GATEWAY_ADAPTIVE_UP_STEP: z.coerce.number().int().positive().default(50),
+  FLUX_GATEWAY_ADAPTIVE_DOWN_FACTOR: z.coerce.number().positive().max(0.99).default(0.9),
+  FLUX_GATEWAY_ADAPTIVE_SAMPLE_SIZE: z.coerce.number().int().positive().default(200),
+  FLUX_GATEWAY_ADAPTIVE_TICK_MS: z.coerce.number().int().positive().default(1000),
 });
 
 function parseEnv() {

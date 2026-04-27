@@ -7,6 +7,12 @@ import { proxyRequest } from "./proxy.ts";
 import { pingDb } from "./db.ts";
 import { getRedis } from "./redis.ts";
 import logger from "./logger.ts";
+import {
+  AdaptiveInflightLimiter,
+  FixedInflightLimiter,
+  type InflightLimiter,
+} from "./inflight-limiter.ts";
+import { env } from "./env.ts";
 
 export function createApp(): Hono {
   const app = new Hono();
@@ -21,8 +27,27 @@ export function createApp(): Hono {
    *
    * Tune upward when PostgREST / PgBouncer capacity warrants it.
    */
-  const MAX_INFLIGHT = 1_000;
-  let inflightCount = 0;
+  const limiter: InflightLimiter = env.FLUX_GATEWAY_ADAPTIVE_INFLIGHT
+    ? new AdaptiveInflightLimiter({
+        initialCap: env.FLUX_GATEWAY_MAX_INFLIGHT,
+        minCap: env.FLUX_GATEWAY_ADAPTIVE_MIN_INFLIGHT,
+        hardMax: env.FLUX_GATEWAY_ADAPTIVE_HARD_MAX_INFLIGHT,
+        targetLatencyMs: env.FLUX_GATEWAY_ADAPTIVE_TARGET_P95_MS,
+        upStep: env.FLUX_GATEWAY_ADAPTIVE_UP_STEP,
+        downFactor: env.FLUX_GATEWAY_ADAPTIVE_DOWN_FACTOR,
+        maxSamples: env.FLUX_GATEWAY_ADAPTIVE_SAMPLE_SIZE,
+      })
+    : new FixedInflightLimiter(env.FLUX_GATEWAY_MAX_INFLIGHT);
+
+  if (limiter instanceof AdaptiveInflightLimiter) {
+    setInterval(() => {
+      limiter.tick();
+      logger.debug(
+        { inflight: limiter.getCurrent(), cap: limiter.getCap() },
+        "adaptive inflight limiter tick",
+      );
+    }, env.FLUX_GATEWAY_ADAPTIVE_TICK_MS).unref();
+  }
 
   // ------------------------------------------------------------------ Health
   app.get("/health", async (c) => {
@@ -114,7 +139,7 @@ export function createApp(): Hono {
     }
 
     // 4. Concurrency cap — shed load rather than queue and cascade
-    if (inflightCount >= MAX_INFLIGHT) {
+    if (!limiter.tryAcquire()) {
       log({
         host: rawHost,
         tenantId: tenant.tenantId,
@@ -124,18 +149,21 @@ export function createApp(): Hono {
         rateLimited: false,
         cache: cacheSource,
       });
-      return c.json({ error: "gateway overloaded, retry later" }, 503);
+      return c.json(
+        {
+          error: "gateway overloaded, retry later",
+          inflight: limiter.getCurrent(),
+          cap: limiter.getCap(),
+        },
+        503,
+      );
     }
 
-    // 5. Mint JWT
-    const jwt = await mintJwt(tenant);
-
-    // 6. Activity tracking — fire-and-forget; never awaited
-    trackActivity(tenant.tenantId);
-
-    // 7. Proxy
-    inflightCount++;
+    // 5. Mint JWT + 6. Activity tracking + 7. Proxy
+    const proxyStart = Date.now();
     try {
+      const jwt = await mintJwt(tenant);
+      trackActivity(tenant.tenantId);
       const res = await proxyRequest(c, jwt, tenant);
       log({
         host: rawHost,
@@ -160,7 +188,7 @@ export function createApp(): Hono {
       });
       return c.json({ error: "upstream error" }, 502);
     } finally {
-      inflightCount--;
+      limiter.release(Date.now() - proxyStart);
     }
   });
 
