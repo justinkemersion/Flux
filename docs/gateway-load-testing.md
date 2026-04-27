@@ -26,6 +26,37 @@ This runbook executes the Flux gateway stress matrix against the current `@flux/
 - Host traffic models: `perf/k6/lib/hosts.js`
 - Scenario files: `perf/k6/scenarios/*.js`
 - Matrix runner: `perf/k6/run-matrix.sh`
+- **Architecture “truth” test** (isolate gateway vs resolver vs PostgREST/DB): `perf/k6/scenarios/arch-truth-test.js`
+
+### Architecture truth test (`arch-truth-test.js`)
+
+This script runs named scenarios in parallel (optional stagger) so you can slice metrics by `arch_scenario`, `arch_layer`, and `mix` tags.
+
+| Scenario | Intent |
+|----------|--------|
+| `gateway_only` | Minimal path on `GATEWAY_BASE` (often `/` or `/health`) — tune `TRUTH_PATH_GATEWAY` |
+| `resolver_hot` | Same tenant repeatedly (`KNOWN_HOST`) — hot cache / routing |
+| `resolver_cold` | Random `<slug>-<hash>.<FLUX_BASE_DOMAIN>` Host — cold resolver / single-flight |
+| `upstream_light` | Light read on `TRUTH_PATH_UPSTREAM_LIGHT` |
+| `upstream_heavy` | Heavier read on `TRUTH_PATH_UPSTREAM_HEAVY` |
+| `overload_shed` | Ramp until you see `503` vs pure timeouts |
+
+Important:
+
+- Point **`UPSTREAM_BASE`** (or `BASE_URL`) at the **edge URL** you are testing (gateway or pool URL). For Host-based routing, set **`KNOWN_HOST`** (or `HOST`) to the tenant host; for cold resolver traffic, set **`FLUX_BASE_DOMAIN`** (e.g. `vsl-base.com`). Wildcard TLS must allow the cold host if you override `Host`.
+- Set **`TRUTH_PATH_UPSTREAM_LIGHT`** (and optionally `TRUTH_PATH_UPSTREAM_HEAVY`) to a real table path (e.g. `/rest/v1/your_table?limit=1`) — default `/` is only a smoke default.
+- Run a **subset** while tuning: `TRUTH_SCENARIOS=gateway_only,upstream_light`
+- Lower rates for smoke: e.g. `GATEWAY_ONLY_RATE=10` `GATEWAY_ONLY_DURATION=30s`
+
+```bash
+pnpm perf:gateway:truth
+# or
+TRUTH_SCENARIOS=gateway_only,upstream_light \
+UPSTREAM_BASE="https://api.example.com" \
+KNOWN_HOST="api.example.com" \
+TRUTH_PATH_UPSTREAM_LIGHT="/rest/v1/items?limit=1" \
+k6 run perf/k6/scenarios/arch-truth-test.js
+```
 
 ## Quick Start
 

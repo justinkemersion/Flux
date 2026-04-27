@@ -8,7 +8,8 @@
     "perf:gateway:matrix": "bash perf/k6/run-matrix.sh",
     "perf:gateway:warm": "k6 run perf/k6/scenarios/warm-steady.js",
     "perf:gateway:overload": "k6 run perf/k6/scenarios/overload.js",
-    "perf:gateway:summary": "node perf/k6/summarize-results.mjs"
+    "perf:gateway:summary": "node perf/k6/summarize-results.mjs",
+    "perf:gateway:truth": "k6 run perf/k6/scenarios/arch-truth-test.js"
   },
   "keywords": [],
   "author": "",
