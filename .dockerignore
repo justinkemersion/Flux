@@ -1,7 +1,16 @@
-**/node_modules
+# Build context for `docker build -f packages/gateway/Dockerfile` (see packages/gateway/Dockerfile).
+node_modules
 **/.next
-**/.git
-**/.env*
-**/*.md
-.DS_Store
-scratch/letsencrypt
+.git
+.gitignore
+dist
+**/*.tsbuildinfo
+*.log
+.env
+**/.env
+!.env.example
+database-backups
+tmp
+temp
+coverage
+.perf

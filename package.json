@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "docker:build:gateway": "docker build -f packages/gateway/Dockerfile -t flux-gateway .",
     "test": "echo \"Error: no test specified\" && exit 1",
     "perf:gateway:matrix": "bash perf/k6/run-matrix.sh",
     "perf:gateway:warm": "k6 run perf/k6/scenarios/warm-steady.js",
