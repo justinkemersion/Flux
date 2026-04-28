@@ -4,6 +4,11 @@
 # Why: .env files are not in git; production/staging secrets live on the server.
 #      This script pushes only an explicit whitelist (never the whole tree).
 #
+# Server checkout (production):
+#   Canonical clone: /srv/platform/flux — matches APP_DIR in packages/cli/deploy-flux-web.sh.
+#   FLUX_REMOTE_REPO_ROOT defaults to that path; override if your checkout lives elsewhere.
+#   The same host may use /srv/infra, /srv/apps/<name>, etc.; those trees are not synced here.
+#
 # Usage:
 #   ./bin/sync-env-remote.sh              # dry-run using defaults below
 #   ./bin/sync-env-remote.sh --apply      # write using defaults
@@ -13,7 +18,7 @@
 # Defaults are editable in this file (or override with env when invoking):
 #   FLUX_SYNC_SSH_USER, FLUX_SYNC_SSH_HOST — built into user@host
 #   FLUX_SYNC_REMOTE — if set, overrides user@host entirely
-#   FLUX_REMOTE_REPO_ROOT — path on remote (default ~/Projects/flux)
+#   FLUX_REMOTE_REPO_ROOT — path on remote (default /srv/platform/flux)
 #
 # Default is dry-run (rsync -n). Pass --apply to write files on the remote.
 #
@@ -31,18 +36,18 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Defaults — edit once; or override per run: FLUX_SYNC_SSH_HOST=other ./bin/...
 # ---------------------------------------------------------------------------
-FLUX_SYNC_SSH_USER="${FLUX_SYNC_SSH_USER:-justin}"
+FLUX_SYNC_SSH_USER="${FLUX_SYNC_SSH_USER:-root}"
 FLUX_SYNC_SSH_HOST="${FLUX_SYNC_SSH_HOST:-178.104.205.138}"
 # Full ssh target (user@host). Set explicitly to override the two vars above.
 FLUX_SYNC_REMOTE="${FLUX_SYNC_REMOTE:-${FLUX_SYNC_SSH_USER}@${FLUX_SYNC_SSH_HOST}}"
-FLUX_REMOTE_REPO_ROOT="${FLUX_REMOTE_REPO_ROOT:-~/Projects/flux}"
+FLUX_REMOTE_REPO_ROOT="${FLUX_REMOTE_REPO_ROOT:-/srv/platform/flux}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 show_help() {
-  sed -n '3,28p' "$0" | sed 's/^# *//'
+  sed -n '3,33p' "$0" | sed 's/^# *//'
 }
 
 APPLY=0
@@ -100,7 +105,7 @@ for f in "${FILES[@]}"; do
 done
 
 # rsync --relative sends ./docker/web/.env preserving path segments from .
-# so remote receives .../Projects/flux/docker/web/.env when REMOTE_ROOT is ~/Projects/flux
+# so remote receives .../srv/platform/flux/docker/web/.env when REMOTE_ROOT is /srv/platform/flux
 args=()
 for f in "${FILES[@]}"; do
   [[ -f "$REPO_ROOT/$f" ]] || continue

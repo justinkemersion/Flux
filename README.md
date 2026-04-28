@@ -137,6 +137,17 @@ Treat it as an operator-level source of truth.
 
 ## Production deploy workflow (internal)
 
+### Server filesystem layout (production host)
+
+On the primary Docker host the Flux monorepo is checked out at **`/srv/platform/flux`**. That matches **`APP_DIR`** in **`packages/cli/deploy-flux-web.sh`** and the default **`FLUX_REMOTE_REPO_ROOT`** in **`bin/sync-env-remote.sh`**. **`bin/deploy*.sh`** scripts assume **`$REPO_ROOT`** is that clone when you run them on the server.
+
+Other top-level trees often live alongside it and are **not** this repo, for example:
+
+- **`/srv/infra`** — shared infrastructure (Traefik, certificates, etc.) when kept outside the Flux tree.
+- **`/srv/apps/<name>`** — separate applications (example: **`packages/cli/deploy-yeastcoast.sh`** uses **`/srv/apps/yeast-coast`**).
+
+If your host uses a different path, set **`FLUX_REMOTE_REPO_ROOT`** / **`APP_DIR`** to the real checkout before env sync or deploy.
+
 ### Canonical order
 
 Run in this order on the server:
