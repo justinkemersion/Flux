@@ -38,8 +38,9 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 
-# k6 captured stdout from perf wrappers (keep *.summary.json / scorecard.*)
-perf/results/**/*.stdout.txt
+# Perf results are generated artifacts; keep local by default.
+perf/results/**
+!perf/results/.gitkeep
 
 # Test coverage
 coverage/
