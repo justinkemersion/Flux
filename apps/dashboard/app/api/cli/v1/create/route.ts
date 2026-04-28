@@ -68,7 +68,7 @@ async function allocateUniqueProjectHash(
 /**
  * POST /api/cli/v1/create
  * Authorization: Bearer flx_live_…
- * Body: `{ "name": string, "stripSupabaseRestPrefix"?: boolean }`
+ * Body: `{ "name": string, "stripSupabaseRestPrefix"?: boolean, "mode"?: "v1_dedicated" | "v2_shared" }`
  *
  * Order: validate → limits → allocate hash → **Docker provision** → **DB insert** only on success.
  * If insert fails after provision, nuke containers (same ghost-stack rollback as session POST).
@@ -111,6 +111,15 @@ export async function POST(req: Request): Promise<Response> {
       .stripSupabaseRestPrefix;
   }
 
+  let requestedMode: "v1_dedicated" | "v2_shared" | undefined;
+  if ("mode" in body) {
+    const mode = (body as { mode?: unknown }).mode;
+    if (mode !== "v1_dedicated" && mode !== "v2_shared") {
+      return jsonError('Expected "mode" to be "v1_dedicated" or "v2_shared"', 400);
+    }
+    requestedMode = mode;
+  }
+
   let slug: string;
   try {
     slug = slugifyProjectName(rawName);
@@ -144,6 +153,14 @@ export async function POST(req: Request): Promise<Response> {
   }
   if (plan === "pro" && projectCount >= PRO_PROJECT_LIMIT) {
     return jsonError(PRO_LIMIT_ERROR, 403);
+  }
+
+  // Privileged mode selection: only Pro accounts can choose non-default mode.
+  if (requestedMode && requestedMode !== "v1_dedicated" && plan !== "pro") {
+    return jsonError(
+      'Choosing mode "v2_shared" requires a Pro account.',
+      403,
+    );
   }
 
   const projectHash = await allocateUniqueProjectHash(db, slug);
@@ -183,6 +200,7 @@ export async function POST(req: Request): Promise<Response> {
         slug: project.slug,
         hash: project.hash,
         userId: auth.userId,
+        ...(requestedMode ? { mode: requestedMode } : {}),
       })
       .returning({ id: projects.id });
     try {

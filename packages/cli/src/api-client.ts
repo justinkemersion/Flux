@@ -46,6 +46,7 @@ const pushSqlResponseSchema = z.object({
 
 export type CreateProjectSecrets = z.infer<typeof createProjectSecretsSchema>;
 export type CreateProjectResult = z.infer<typeof createProjectResponseSchema>;
+export type CreateProjectMode = "v1_dedicated" | "v2_shared";
 
 /**
  * Base URL: `https://flux.vsl-base.com/api` (Flux control plane) or `process.env.FLUX_API_BASE` (no trailing slash).
@@ -178,19 +179,27 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------------
-  // POST /api/cli/v1/create — body: { name, stripSupabaseRestPrefix? }
+  // POST /api/cli/v1/create — body: { name, stripSupabaseRestPrefix?, mode? }
   // ---------------------------------------------------------------------------
   async createProject(input: {
     name: string;
     stripSupabaseRestPrefix: boolean;
+    mode?: CreateProjectMode;
   }): Promise<CreateProjectResult> {
     const token = this.tokenOrThrow();
     const url = `${this.baseUrl}/cli/v1/create`;
-    const body: { name: string; stripSupabaseRestPrefix?: boolean } = {
+    const body: {
+      name: string;
+      stripSupabaseRestPrefix?: boolean;
+      mode?: CreateProjectMode;
+    } = {
       name: input.name.trim(),
     };
     if (input.stripSupabaseRestPrefix === false) {
       body.stripSupabaseRestPrefix = false;
+    }
+    if (input.mode) {
+      body.mode = input.mode;
     }
     const res = await fetch(url, {
       method: "POST",

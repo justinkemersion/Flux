@@ -14,7 +14,11 @@ import chalk from "chalk";
 import { Command } from "commander";
 import open from "open";
 import ora from "ora";
-import { type CreateProjectResult, getApiClient } from "./api-client";
+import {
+  type CreateProjectMode,
+  type CreateProjectResult,
+  getApiClient,
+} from "./api-client";
 import { saveConfig } from "./config";
 import { type FluxJson, readFluxJson } from "./flux-config";
 import {
@@ -285,7 +289,7 @@ async function cmdLogs(
 
 async function cmdCreate(
   name: string,
-  options: { noSupabaseRestPath?: boolean; hash?: string },
+  options: { noSupabaseRestPath?: boolean; hash?: string; mode?: CreateProjectMode },
 ): Promise<void> {
   if (options.hash?.trim()) {
     console.log(
@@ -301,6 +305,7 @@ async function cmdCreate(
     const result = await client.createProject({
       name,
       stripSupabaseRestPrefix: options.noSupabaseRestPath !== true,
+      ...(options.mode ? { mode: options.mode } : {}),
     });
     spin.succeed("Created");
     printProjectSummaryCard(result, name);
@@ -861,15 +866,27 @@ async function main(): Promise<void> {
       "--hash <hex>",
       "Ignored for remote API (server allocates hash); reserved for local control plane",
     )
+    .option(
+      "--mode <mode>",
+      "Project execution mode: v1_dedicated (default) or v2_shared (subject to account privileges)",
+    )
     .action(async (name: string) => {
       try {
         const opts = createCmd.opts<{
           noSupabaseRestPath?: boolean;
           hash?: string;
+          mode?: string;
         }>();
+        const mode = opts.mode?.trim().toLowerCase();
+        if (mode && mode !== "v1_dedicated" && mode !== "v2_shared") {
+          throw new Error(
+            `Invalid --mode "${opts.mode}". Use "v1_dedicated" or "v2_shared".`,
+          );
+        }
         await cmdCreate(name, {
           noSupabaseRestPath: opts.noSupabaseRestPath === true,
           ...(opts.hash ? { hash: opts.hash } : {}),
+          ...(mode ? { mode: mode as CreateProjectMode } : {}),
         });
       } catch (err: unknown) {
         printErrorAndExit(err);
