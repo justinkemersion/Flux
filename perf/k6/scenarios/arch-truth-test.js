@@ -14,6 +14,7 @@
  */
 import http from "k6/http";
 import { check } from "k6";
+import { Rate } from "k6/metrics";
 
 const UPSTREAM_BASE = __ENV.UPSTREAM_BASE || __ENV.BASE_URL || "http://localhost:4000";
 const GATEWAY_BASE = __ENV.GATEWAY_BASE || UPSTREAM_BASE;
@@ -40,6 +41,14 @@ const ALL_SCENARIOS = [
   "upstream_heavy",
   "overload_shed",
 ];
+
+// Resolver-hot status decomposition: quickly tells whether failures are routing
+// misses (404) or gateway protection behavior (429/503) at higher rates.
+const resolverHotStatus200 = new Rate("resolver_hot_status_200");
+const resolverHotStatus404 = new Rate("resolver_hot_status_404");
+const resolverHotStatus429 = new Rate("resolver_hot_status_429");
+const resolverHotStatus503 = new Rate("resolver_hot_status_503");
+const resolverHotStatusOther = new Rate("resolver_hot_status_other");
 
 function loadTestHeaders() {
   const h = {};
@@ -138,6 +147,11 @@ export function resolverHot() {
     scenario: "resolver_hot",
     mix: "hot_cache",
   });
+  resolverHotStatus200.add(res.status === 200);
+  resolverHotStatus404.add(res.status === 404);
+  resolverHotStatus429.add(res.status === 429);
+  resolverHotStatus503.add(res.status === 503);
+  resolverHotStatusOther.add(![200, 404, 429, 503].includes(res.status));
   check(res, {
     "hot ok": (r) => r.status === 200,
   });
