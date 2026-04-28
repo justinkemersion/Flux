@@ -499,6 +499,45 @@ function isPlatformSystemStackSlug(slug: string): boolean {
   return slug === "flux-system";
 }
 
+/**
+ * Loopback bind for optional `flux-system` host port maps so Postgres / PostgREST are not exposed on
+ * all interfaces.
+ */
+const FLUX_SYSTEM_HOST_PORT_BIND = "127.0.0.1";
+
+/**
+ * Parses `FLUX_SYSTEM_POSTGRES_PUBLISH_PORT` / `FLUX_SYSTEM_POSTGREST_PUBLISH_PORT` when set.
+ * Must be a decimal TCP port 1–65535.
+ */
+function parseFluxSystemHostPublishPortEnv(envName: string): string | undefined {
+  const raw = process.env[envName]?.trim();
+  if (!raw) return undefined;
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new Error(
+      `${envName} must be empty or a decimal TCP port number (1–65535).`,
+    );
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) {
+    throw new Error(
+      `${envName} must be empty or a decimal TCP port number (1–65535).`,
+    );
+  }
+  return String(n);
+}
+
+/** Host port for `flux-system` Postgres (`127.0.0.1:<port>` → container `5432/tcp`), or unset. */
+function fluxSystemPostgresHostPublishPort(slug: string): string | undefined {
+  if (!isPlatformSystemStackSlug(slug)) return undefined;
+  return parseFluxSystemHostPublishPortEnv("FLUX_SYSTEM_POSTGRES_PUBLISH_PORT");
+}
+
+/** Host port for `flux-system` PostgREST (`127.0.0.1:<port>` → container `3000/tcp`), or unset. */
+function fluxSystemPostgrestHostPublishPort(slug: string): string | undefined {
+  if (!isPlatformSystemStackSlug(slug)) return undefined;
+  return parseFluxSystemHostPublishPortEnv("FLUX_SYSTEM_POSTGREST_PUBLISH_PORT");
+}
+
 /** Purpose + slug metadata for Flux-managed DB/API containers (see {@link FLUX_MANAGED_LABEL}). */
 function fluxContainerMetadataLabels(slug: string): Record<string, string> {
   const out: Record<string, string> = {
@@ -1627,9 +1666,12 @@ export class ProjectManager {
    * HTTPS apps matching `*.domain`, extras, and `flux-<hash>-<slug>-stripprefix` for `/rest/v1` (Supabase JS).
    * Disable strip with {@link ProvisionOptions.stripSupabaseRestPrefix} `false` if clients use PostgREST at the URL root only.
    *
-   * Postgres is **not** published on the Docker host: bootstrap SQL and health checks use
+   * Postgres is **not** published on the Docker host by default: bootstrap SQL and health checks use
    * **`docker exec`** (`pg_isready`, `psql`) inside the DB container so provisioning works with
-   * remote Engine endpoints (no `localhost:5432` from the control plane).
+   * remote Engine endpoints (no `localhost:5432` from the control plane). For **`flux-system`** only,
+   * set **`FLUX_SYSTEM_POSTGRES_PUBLISH_PORT`** (e.g. `15432`) to map `127.0.0.1:<port>→5432` so
+   * host-run tools (`@flux/gateway` with `pnpm start`, `psql`) can reach the catalog DB. Likewise
+   * **`FLUX_SYSTEM_POSTGREST_PUBLISH_PORT`** maps `127.0.0.1:<port>→3000` for `FLUX_POSTGREST_POOL_URL`.
    *
    * `PGRST_DB_URI` points at the Postgres service name; PostgREST resolves it on the private network.
    * Internal readiness uses `pg_isready` in-container before applying {@link BOOTSTRAP_SQL}.
@@ -1868,6 +1910,7 @@ export class ProjectManager {
       }
     } else {
       log?.(`Creating PostgREST container ${apiContainerName}…`);
+      const systemPgrstHostPort = fluxSystemPostgrestHostPublishPort(slug);
       apiContainer = await this.docker.createContainer({
         name: apiContainerName,
         Image: POSTGREST_IMAGE,
@@ -1883,6 +1926,18 @@ export class ProjectManager {
           ...tenantStackHostMemoryConfig(),
           NanoCpus: fluxTenantCpuNanoCpus(),
           RestartPolicy: FLUX_TENANT_RESTART_POLICY,
+          ...(systemPgrstHostPort
+            ? {
+                PortBindings: {
+                  "3000/tcp": [
+                    {
+                      HostIp: FLUX_SYSTEM_HOST_PORT_BIND,
+                      HostPort: systemPgrstHostPort,
+                    },
+                  ],
+                },
+              }
+            : {}),
         },
         NetworkingConfig: {
           EndpointsConfig: {
@@ -2127,12 +2182,27 @@ export class ProjectManager {
       RestartPolicy: FLUX_TENANT_RESTART_POLICY,
     };
     if (isPlatformSystemStackSlug(opts.slug)) {
+      const systemPgHostPort = fluxSystemPostgresHostPublishPort(opts.slug);
+      const hostConfig = systemPgHostPort
+        ? {
+            ...hostBase,
+            PortBindings: {
+              "5432/tcp": [
+                {
+                  HostIp: FLUX_SYSTEM_HOST_PORT_BIND,
+                  HostPort: systemPgHostPort,
+                },
+              ],
+            },
+          }
+        : hostBase;
       return await this.docker.createContainer({
         name: opts.name,
         Image: POSTGRES_IMAGE,
         Labels: fluxContainerMetadataLabels(opts.slug),
         Env: [`POSTGRES_PASSWORD=${opts.password}`],
-        HostConfig: hostBase,
+        ...(systemPgHostPort ? { ExposedPorts: { "5432/tcp": {} } } : {}),
+        HostConfig: hostConfig,
         NetworkingConfig: {
           EndpointsConfig: {
             [FLUX_NETWORK_NAME]: {},
@@ -2206,6 +2276,26 @@ export class ProjectManager {
         ...fluxContainerMetadataLabels(slug),
       };
 
+    const systemPgrstHostPort = fluxSystemPostgrestHostPublishPort(slug);
+    const priorPgrstPortBindings = inspect.HostConfig?.PortBindings;
+    const pgrstPortBindings =
+      systemPgrstHostPort != null
+        ? {
+            "3000/tcp": [
+              {
+                HostIp: FLUX_SYSTEM_HOST_PORT_BIND,
+                HostPort: systemPgrstHostPort,
+              },
+            ],
+          }
+        : priorPgrstPortBindings;
+    const pgrstPortBindingsEffective =
+      pgrstPortBindings &&
+      typeof pgrstPortBindings === "object" &&
+      Object.keys(pgrstPortBindings).length > 0
+        ? pgrstPortBindings
+        : undefined;
+
     const created = await this.docker.createContainer({
       name: apiName,
       Image: inspect.Config.Image,
@@ -2217,6 +2307,9 @@ export class ProjectManager {
         MemoryReservation: memoryReservation,
         NanoCpus: nanoCpus,
         RestartPolicy: FLUX_TENANT_RESTART_POLICY,
+        ...(pgrstPortBindingsEffective
+          ? { PortBindings: pgrstPortBindingsEffective }
+          : {}),
       },
       NetworkingConfig: {
         EndpointsConfig: {
