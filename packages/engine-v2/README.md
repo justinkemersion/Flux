@@ -8,8 +8,15 @@ in transaction mode.
 
 ## Current status
 
-**Placeholder package.** Implementation begins once the engine interface in `@flux/core` is
-locked and the gateway package provides runtime JWT issuance.
+Implemented bootstrap path for shared-cluster tenant provisioning:
+
+- derive `shortid` from `tenant_id` using shared standalone utility
+- create/ensure tenant schema + role (`t_<shortid>_api`, `t_<shortid>_role`)
+- apply role guardrails (`statement_timeout`, `CONNECTION LIMIT`)
+- grant schema usage and role inheritance to `authenticator`
+- execute against shared cluster via `FLUX_SHARED_POSTGRES_URL`
+
+JWT issuance remains in `@flux/gateway`; this package only handles Postgres-side setup.
 
 ## Naming convention
 

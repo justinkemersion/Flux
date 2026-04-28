@@ -10,6 +10,8 @@ import { deriveShortId } from "@flux/core/standalone";
 const { Client } = pg;
 
 const DEFAULT_AUTHENTICATOR_ROLE = "authenticator";
+const DEFAULT_CONNECTION_LIMIT = 25;
+const DEFAULT_STATEMENT_TIMEOUT_MS = 15_000;
 
 export type ProvisionProjectInput = {
   tenantId: string;
@@ -40,6 +42,16 @@ function requireSharedPostgresUrl(): string {
   return value;
 }
 
+function parsePositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer when set.`);
+  }
+  return value;
+}
+
 export function deriveTenantIdentity(tenantId: string): TenantIdentity {
   const shortId = deriveShortId(tenantId);
   if (!/^[a-f0-9]{12}$/.test(shortId)) {
@@ -60,6 +72,14 @@ export function buildTenantBootstrapSql(identity: TenantIdentity): string {
   const role = quoteIdent(identity.role);
   const roleLiteral = identity.role.replaceAll("'", "''");
   const authenticator = quoteIdent(DEFAULT_AUTHENTICATOR_ROLE);
+  const connectionLimit = parsePositiveIntEnv(
+    "FLUX_V2_ROLE_CONNECTION_LIMIT",
+    DEFAULT_CONNECTION_LIMIT,
+  );
+  const statementTimeoutMs = parsePositiveIntEnv(
+    "FLUX_V2_ROLE_STATEMENT_TIMEOUT_MS",
+    DEFAULT_STATEMENT_TIMEOUT_MS,
+  );
 
   return `
 CREATE SCHEMA IF NOT EXISTS ${schema};
@@ -74,6 +94,8 @@ END
 $flux$;
 GRANT USAGE ON SCHEMA ${schema} TO ${role};
 ALTER ROLE ${role} SET search_path = ${schema}, public;
+ALTER ROLE ${role} CONNECTION LIMIT ${String(connectionLimit)};
+ALTER ROLE ${role} SET statement_timeout = '${String(statementTimeoutMs)}ms';
 GRANT ${role} TO ${authenticator};
 `.trim();
 }

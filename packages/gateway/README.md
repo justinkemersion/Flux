@@ -4,8 +4,14 @@ Flux request gateway: resolve → rate-limit → sign JWT → proxy to PostgREST
 
 ## Current status
 
-**Placeholder package.** Implementation tracked separately; this package establishes the
-workspace boundary and documents the contracts that the gateway implementation must satisfy.
+Implemented Node gateway request path with:
+
+- hostname -> tenant resolution (memory + Redis + DB fallback)
+- mode gating (`v2_shared` only)
+- per-tenant rate limiting and inflight load shedding
+- runtime JWT minting with local reuse cache
+- streamed proxying to pooled PostgREST with upstream timeout handling
+- best-effort activity tracking and structured request logging
 
 ## Contracts
 
