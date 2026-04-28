@@ -4,7 +4,7 @@ import { env } from "./env.ts";
 
 const app = createApp();
 
-serve(
+const server = serve(
   {
     fetch: app.fetch,
     hostname: "0.0.0.0",
@@ -22,3 +22,6 @@ serve(
     );
   },
 );
+
+// Keep socket timeout above upstream timeout so gateway does not cut requests early.
+server.setTimeout(env.FLUX_GATEWAY_SOCKET_TIMEOUT_MS);

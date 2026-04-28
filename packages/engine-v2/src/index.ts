@@ -12,6 +12,7 @@ const { Client } = pg;
 const DEFAULT_AUTHENTICATOR_ROLE = "authenticator";
 const DEFAULT_CONNECTION_LIMIT = 25;
 const DEFAULT_STATEMENT_TIMEOUT_MS = 15_000;
+const DEFAULT_ROLE_DATABASE_NAME = "postgres";
 
 /**
  * Thrown by provisionProject when two different tenant UUIDs hash to the same
@@ -108,6 +109,9 @@ export function buildTenantBootstrapSql(
     "FLUX_V2_ROLE_STATEMENT_TIMEOUT_MS",
     DEFAULT_STATEMENT_TIMEOUT_MS,
   );
+  const roleDatabaseName =
+    process.env.FLUX_V2_ROLE_DATABASE_NAME?.trim() || DEFAULT_ROLE_DATABASE_NAME;
+  const roleDatabase = quoteIdent(roleDatabaseName);
   // Store tenantId on the schema as an ownership marker.  Used by
   // checkTenantOwnership to detect fatal shortId collisions between tenants.
   // UUIDs contain only [0-9a-f-] so single-quote escaping is purely defensive.
@@ -135,17 +139,23 @@ CREATE SCHEMA IF NOT EXISTS ${schema};
 COMMENT ON SCHEMA ${schema} IS 'tenant:${tenantIdLiteral}';
 DO $flux$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '${roleLiteral}'
-  ) THEN
-    CREATE ROLE ${role};
-  END IF;
+  BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '${roleLiteral}'
+    ) THEN
+      CREATE ROLE ${role};
+    END IF;
+  EXCEPTION
+    WHEN duplicate_object THEN
+      -- Concurrent repair/provision attempts may race role creation.
+      NULL;
+  END;
 END
 $flux$;
 GRANT USAGE ON SCHEMA ${schema} TO ${role};
 ALTER ROLE ${role} SET search_path = ${schema};
 ALTER ROLE ${role} CONNECTION LIMIT ${String(connectionLimit)};
-ALTER ROLE ${role} SET statement_timeout = '${String(statementTimeoutMs)}ms';
+ALTER ROLE ${role} IN DATABASE ${roleDatabase} SET statement_timeout = '${String(statementTimeoutMs)}ms';
 GRANT ${role} TO ${authenticator};
 SELECT pg_notify('pgrst', 'reload config');
 `.trim();

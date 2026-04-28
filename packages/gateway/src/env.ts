@@ -29,6 +29,7 @@ const envSchema = z.object({
   FLUX_GATEWAY_RATE_WINDOW_SEC: z.coerce.number().int().positive().default(60),
   FLUX_GATEWAY_JWT_TTL_SEC: z.coerce.number().int().positive().default(300),
   FLUX_POSTGREST_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
+  FLUX_GATEWAY_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(9000),
   FLUX_GATEWAY_MAX_INFLIGHT: z.coerce.number().int().positive().default(1000),
   FLUX_GATEWAY_ADAPTIVE_INFLIGHT: z
     .union([z.literal("0"), z.literal("1")])
