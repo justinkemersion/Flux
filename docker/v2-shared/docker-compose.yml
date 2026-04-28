@@ -34,23 +34,24 @@ services:
       - flux-v2-shared
 
   pgbouncer:
-    image: bitnami/pgbouncer:1.24.1
+    image: edoburu/pgbouncer:v1.24.1-p1
     container_name: flux-pgbouncer
     restart: unless-stopped
     depends_on:
       postgres-v2:
         condition: service_healthy
     environment:
-      POSTGRESQL_HOST: postgres-v2
-      POSTGRESQL_PORT: 5432
-      POSTGRESQL_USERNAME: ${PGB_BACKEND_USER:-postgres}
-      POSTGRESQL_PASSWORD: ${PGB_BACKEND_PASSWORD:?set PGB_BACKEND_PASSWORD}
-      PGBOUNCER_DATABASE: ${PGB_DATABASE:-postgres}
-      PGBOUNCER_POOL_MODE: transaction
-      PGBOUNCER_MAX_CLIENT_CONN: ${PGB_MAX_CLIENT_CONN:-1000}
-      PGBOUNCER_DEFAULT_POOL_SIZE: ${PGB_DEFAULT_POOL_SIZE:-100}
-      PGBOUNCER_AUTH_TYPE: ${PGB_AUTH_TYPE:-scram-sha-256}
-      PGBOUNCER_ADMIN_USERS: ${PGB_ADMIN_USERS:-postgres}
+      DB_HOST: postgres-v2
+      DB_PORT: 5432
+      DB_USER: ${PGB_BACKEND_USER:-postgres}
+      DB_PASSWORD: ${PGB_BACKEND_PASSWORD:?set PGB_BACKEND_PASSWORD}
+      DB_NAME: ${PGB_DATABASE:-postgres}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: ${PGB_MAX_CLIENT_CONN:-1000}
+      DEFAULT_POOL_SIZE: ${PGB_DEFAULT_POOL_SIZE:-100}
+      AUTH_TYPE: ${PGB_AUTH_TYPE:-scram-sha-256}
+      ADMIN_USERS: ${PGB_ADMIN_USERS:-postgres}
+      LISTEN_PORT: 6432
     networks:
       - flux-v2-shared
 
