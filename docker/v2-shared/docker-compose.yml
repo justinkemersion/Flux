@@ -30,8 +30,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    # flux-v2-shared: private network for inter-service comms within this stack.
+    # flux-network: shared external network required so flux-web (dashboard) can
+    #   reach flux-postgres-v2 via FLUX_SHARED_POSTGRES_URL for engine-v2 DDL
+    #   bootstrapping.  postgres-v2 has no Traefik labels and no published ports,
+    #   so it is not reachable from outside the Docker host.
     networks:
       - flux-v2-shared
+      - flux-network
 
   pgbouncer:
     image: edoburu/pgbouncer:v1.24.1-p1
@@ -52,8 +58,13 @@ services:
       AUTH_TYPE: ${PGB_AUTH_TYPE:-scram-sha-256}
       ADMIN_USERS: ${PGB_ADMIN_USERS:-postgres}
       LISTEN_PORT: 6432
+    # flux-v2-shared: communicates with postgres-v2 on the private stack network.
+    # flux-network: allows flux-web to reach pgbouncer:6432 as an alternative
+    #   bootstrap connection point if FLUX_SHARED_POSTGRES_URL is configured to
+    #   use PgBouncer instead of the raw postgres port.
     networks:
       - flux-v2-shared
+      - flux-network
 
   postgrest-pool:
     image: postgrest/postgrest:v12.2.12

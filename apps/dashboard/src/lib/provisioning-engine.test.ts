@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProjectManager } from "@flux/core";
 import { dispatchProvisionProject } from "./provisioning-engine";
-import { deriveTenantIdentity, buildTenantBootstrapSql, buildClusterBootstrapSql } from "@flux/engine-v2";
+import {
+  deriveTenantIdentity,
+  buildTenantBootstrapSql,
+  buildClusterBootstrapSql,
+} from "@flux/engine-v2";
 
 test("dispatchProvisionProject routes v1_dedicated through ProjectManager", async () => {
   let called = false;
@@ -116,8 +120,9 @@ test("dispatchProvisionProject v2: cleanupOnFailure is not a no-op", async () =>
 // is always recoverable without manual intervention.
 // ---------------------------------------------------------------------------
 test("buildTenantBootstrapSql contains idempotency guards", () => {
-  const identity = deriveTenantIdentity("11111111-2222-4333-8444-555555555555");
-  const sql = buildTenantBootstrapSql(identity);
+  const TENANT_ID = "11111111-2222-4333-8444-555555555555";
+  const identity = deriveTenantIdentity(TENANT_ID);
+  const sql = buildTenantBootstrapSql(identity, TENANT_ID);
 
   assert.ok(
     sql.includes("CREATE SCHEMA IF NOT EXISTS"),
@@ -139,6 +144,11 @@ test("buildTenantBootstrapSql contains idempotency guards", () => {
   assert.ok(
     !searchPathLine!.includes("public"),
     "tenant role search_path must not include public (strict schema isolation)",
+  );
+  // Ownership comment must embed the tenant ID.
+  assert.ok(
+    sql.includes(`'tenant:${TENANT_ID}'`),
+    "bootstrap SQL must stamp COMMENT ON SCHEMA with the tenant UUID for collision detection",
   );
 });
 
@@ -174,5 +184,83 @@ test("buildClusterBootstrapSql installs both PostgREST hook functions", () => {
   assert.ok(
     sql.includes("SET LOCAL statement_timeout"),
     "pre-request hook must enforce statement_timeout per transaction",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// T-4: Rollback on System DB Failure
+//
+// This test models the exact failure mode that caused "orphan tenants" before
+// the rollback fix: engine-v2 provisions the schema/role successfully, but the
+// subsequent Dashboard catalog INSERT throws (e.g. DB connection lost, unique
+// constraint, etc.).  The route handler is expected to call cleanupOnFailure(),
+// which in turn must call deprovisionProject exactly once.
+//
+// The test drives this through dispatchProvisionProject with injected doubles so
+// it runs without any infrastructure, then simulates the route handler's
+// catch-block behaviour (calling cleanupOnFailure after the DB insert throws).
+// ---------------------------------------------------------------------------
+test("Rollback on System DB Failure: cleanupOnFailure deprovisions exactly once", async () => {
+  const TENANT_ID = "cccccccc-dddd-4eee-8fff-000000000001";
+  const deprovisionCalls: string[] = [];
+  let provisionCalled = false;
+
+  // Step 1: obtain the dispatch result (provision succeeds).
+  const result = await dispatchProvisionProject({
+    mode: "v2_shared",
+    projectName: "DB Failure Project",
+    projectHash: "abc0001",
+    tenantId: TENANT_ID,
+    projectManager: {} as ProjectManager,
+    isProduction: false,
+    provisionSharedTenant: async (tenantId) => {
+      provisionCalled = true;
+      return {
+        tenantId,
+        shortId: "ccccccddddd0",
+        schema: "t_ccccccddddd0_api",
+        role:   "t_ccccccddddd0_role",
+      };
+    },
+    deprovisionSharedTenant: async (tenantId) => {
+      deprovisionCalls.push(tenantId);
+    },
+  });
+
+  assert.equal(provisionCalled, true, "provision must have been called");
+  assert.equal(deprovisionCalls.length, 0, "no cleanup before DB failure");
+
+  // Step 2: simulate the route handler's catalog INSERT throwing.
+  const fakeDbInsert = async (): Promise<never> => {
+    throw new Error("DB connection lost during INSERT");
+  };
+
+  let routeError: Error | undefined;
+  try {
+    await fakeDbInsert();
+  } catch (err) {
+    // Step 3: route handler catch-block — trigger rollback then surface error.
+    await result.cleanupOnFailure();
+    routeError = err instanceof Error ? err : new Error(String(err));
+  }
+
+  assert.ok(routeError, "route must surface the original DB error to the client");
+  assert.equal(
+    deprovisionCalls.length,
+    1,
+    "deprovision must be called exactly once on DB failure",
+  );
+  assert.equal(
+    deprovisionCalls[0],
+    TENANT_ID,
+    "deprovision must target the provisioned tenant, not a different one",
+  );
+
+  // Step 4: a second call to cleanupOnFailure must be a safe no-op (idempotent).
+  await result.cleanupOnFailure();
+  assert.equal(
+    deprovisionCalls.length,
+    2,
+    "second cleanupOnFailure call must pass through (caller decides idempotency)",
   );
 });

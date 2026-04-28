@@ -13,6 +13,31 @@ const DEFAULT_AUTHENTICATOR_ROLE = "authenticator";
 const DEFAULT_CONNECTION_LIMIT = 25;
 const DEFAULT_STATEMENT_TIMEOUT_MS = 15_000;
 
+/**
+ * Thrown by provisionProject when two different tenant UUIDs hash to the same
+ * 12-hex shortId — an astronomically unlikely but fatal naming collision.
+ * The caller must NOT attempt a retry with the same tenantId; the tenant UUID
+ * itself must be re-generated.
+ */
+export class TenantShortIdCollisionError extends Error {
+  readonly shortId: string;
+  readonly requestedTenantId: string;
+  readonly existingTenantId: string;
+
+  constructor(shortId: string, requestedTenantId: string, existingTenantId: string) {
+    super(
+      `ShortId collision: schema "t_${shortId}_api" is already owned by tenant ` +
+      `"${existingTenantId}", but provisioning was requested for a different tenant ` +
+      `"${requestedTenantId}". The two UUIDs share the same 12-hex prefix. ` +
+      `Re-generate the project UUID to obtain a fresh shortId.`,
+    );
+    this.name = "TenantShortIdCollisionError";
+    this.shortId = shortId;
+    this.requestedTenantId = requestedTenantId;
+    this.existingTenantId = existingTenantId;
+  }
+}
+
 export type ProvisionProjectInput = {
   tenantId: string;
 };
@@ -67,7 +92,10 @@ export function deriveTenantIdentity(tenantId: string): TenantIdentity {
   };
 }
 
-export function buildTenantBootstrapSql(identity: TenantIdentity): string {
+export function buildTenantBootstrapSql(
+  identity: TenantIdentity,
+  tenantId: string,
+): string {
   const schema = quoteIdent(identity.schema);
   const role = quoteIdent(identity.role);
   const roleLiteral = identity.role.replaceAll("'", "''");
@@ -80,17 +108,27 @@ export function buildTenantBootstrapSql(identity: TenantIdentity): string {
     "FLUX_V2_ROLE_STATEMENT_TIMEOUT_MS",
     DEFAULT_STATEMENT_TIMEOUT_MS,
   );
+  // Store tenantId on the schema as an ownership marker.  Used by
+  // checkTenantOwnership to detect fatal shortId collisions between tenants.
+  // UUIDs contain only [0-9a-f-] so single-quote escaping is purely defensive.
+  const tenantIdLiteral = tenantId.replaceAll("'", "''");
 
-  // Note: search_path intentionally omits "public" — strict schema isolation.
-  // Runtime enforcement is handled by the pre-request hook (flux_set_tenant_context),
-  // which works correctly in PgBouncer transaction mode.  ALTER ROLE SET is a
-  // defence-in-depth fallback for any direct (non-pooled) session connections only.
+  // search_path intentionally omits "public" — strict schema isolation.
+  // Runtime enforcement via flux_set_tenant_context (pre-request hook) which
+  // uses SET LOCAL and works correctly in PgBouncer transaction-pooling mode.
+  // ALTER ROLE SET is a defence-in-depth fallback for direct session connections.
   //
-  // Note: CREATE ROLE is non-transactional DDL in PostgreSQL and cannot be wrapped
-  // in an explicit BEGIN/COMMIT block.  The IF NOT EXISTS guard makes each statement
-  // individually idempotent; partial execution is recoverable via the repair route.
+  // CREATE ROLE is non-transactional DDL; the IF NOT EXISTS DO block makes
+  // role creation individually idempotent without requiring a transaction wrapper.
+  //
+  // The ALTER ROLE + GRANT statements below are intentionally OUTSIDE the
+  // IF NOT EXISTS block: they are unconditional re-applications that act as
+  // idempotent guardrails on every repair run, resetting CONNECTION LIMIT and
+  // statement_timeout to their current configured values even when the role
+  // already exists.
   return `
 CREATE SCHEMA IF NOT EXISTS ${schema};
+COMMENT ON SCHEMA ${schema} IS 'tenant:${tenantIdLiteral}';
 DO $flux$
 BEGIN
   IF NOT EXISTS (
@@ -183,6 +221,25 @@ $$;
 `.trim();
 }
 
+/**
+ * Opens a short-lived pg.Client, runs one parameterised query, and closes.
+ * Used for read-only pre-flight checks that must not share a connection with
+ * the DDL execution path (avoids implicit transaction state leakage).
+ */
+async function querySharedPostgres<T extends Record<string, unknown>>(
+  sql: string,
+  params: unknown[],
+): Promise<T[]> {
+  const client = new Client({ connectionString: requireSharedPostgresUrl() });
+  await client.connect();
+  try {
+    const { rows } = await client.query<T>(sql, params);
+    return rows;
+  } finally {
+    await client.end();
+  }
+}
+
 export async function executeBootstrapSql(sql: string): Promise<void> {
   const client = new Client({
     connectionString: requireSharedPostgresUrl(),
@@ -193,6 +250,40 @@ export async function executeBootstrapSql(sql: string): Promise<void> {
   } finally {
     await client.end();
   }
+}
+
+/**
+ * Pre-flight ownership check for provisionProject.
+ *
+ * Reads the COMMENT stored on the schema (if it already exists) and compares
+ * it against the requesting tenant's ID.  Throws TenantShortIdCollisionError
+ * when the schema exists and is owned by a DIFFERENT tenant.
+ *
+ * Note on TOCTOU: the collision probability between two distinct UUIDs sharing
+ * the same 12-hex prefix is ~1/2^48 — negligible.  The check guards against
+ * programming errors (stale state, double-provision), not concurrent races.
+ */
+export async function checkTenantOwnership(
+  tenantId: string,
+  identity: { shortId: string; schema: string },
+): Promise<void> {
+  const rows = await querySharedPostgres<{ tenant_comment: string | null }>(
+    `SELECT obj_description(oid, 'pg_namespace') AS tenant_comment
+     FROM   pg_catalog.pg_namespace
+     WHERE  nspname = $1`,
+    [identity.schema],
+  );
+
+  if (rows.length === 0) return; // schema doesn't exist yet — fresh provision
+
+  const raw = rows[0]!.tenant_comment ?? "";
+  if (!raw.startsWith("tenant:")) return; // no ownership marker — treat as ours (legacy)
+
+  const existingTenantId = raw.slice("tenant:".length);
+  if (existingTenantId !== tenantId) {
+    throw new TenantShortIdCollisionError(identity.shortId, tenantId, existingTenantId);
+  }
+  // Same tenant ID — idempotent re-provision or repair; proceed normally.
 }
 
 /**
@@ -260,10 +351,17 @@ export async function provisionProject(
   input: ProvisionProjectInput,
 ): Promise<ProvisionProjectResult> {
   const identity = deriveTenantIdentity(input.tenantId);
-  const sql = buildTenantBootstrapSql(identity);
+
+  // Pre-flight: detect fatal shortId collisions before running any DDL.
+  // Throws TenantShortIdCollisionError when the schema exists but is owned
+  // by a different tenant UUID — caller must not retry with the same tenantId.
+  await checkTenantOwnership(input.tenantId, identity);
+
+  const sql = buildTenantBootstrapSql(identity, input.tenantId);
   try {
     await executeBootstrapSql(sql);
   } catch (error: unknown) {
+    if (error instanceof TenantShortIdCollisionError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Failed provisioning shared tenant bootstrap for tenant "${input.tenantId}" (shortId "${identity.shortId}"): ${message}`,

@@ -1,11 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { auth } from "@/src/lib/auth";
-import { projects } from "@/src/db/schema";
+import { domains, projects } from "@/src/db/schema";
 import { fluxApiUrlForSlug } from "@flux/core";
+import { deprovisionProject } from "@flux/engine-v2";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import { applyProjectPowerAction } from "@/src/lib/project-lifecycle";
+import { evictHostnames } from "@/src/lib/gateway-cache";
 
 export const runtime = "nodejs";
 
@@ -177,8 +179,15 @@ export async function PATCH(
 
 /**
  * DELETE /api/projects/[slug]
- * Verifies ownership, removes Docker containers + volume, then deletes the DB record.
+ * Verifies ownership, tears down all project infrastructure, evicts gateway
+ * hostname caches to prevent zombie routing, then deletes the DB record.
  * This is irreversible.
+ *
+ * Cache eviction contract:
+ *   All custom-domain hostnames associated with the project are evicted from
+ *   the gateway Redis cache BEFORE the DB row is deleted.  The DB delete then
+ *   cascade-removes all domain rows.  If eviction fails (Redis down) we still
+ *   proceed — the gateway TTL bounds the zombie-routing window to ≤60 s.
  */
 export async function DELETE(
   _req: NextRequest,
@@ -194,12 +203,31 @@ export async function DELETE(
   const project = await resolveOwnedProject(slug, session.user.id);
   if (!project) return jsonError("Project not found", 404);
 
-  const pm = getProjectManager();
+  // 1. Collect all custom-domain hostnames before deleting anything.
+  //    We need them for cache eviction; the cascade-delete will remove the rows.
+  const projectDomains = await db
+    .select({ hostname: domains.hostname })
+    .from(domains)
+    .where(eq(domains.projectId, project.id));
+  const hostnames = projectDomains.map((d) => d.hostname);
+
   try {
-    await pm.nukeProject(slug, {
-      acknowledgeDataLoss: true,
-      hash: project.hash,
-    });
+    // 2. Evict gateway hostname caches (fail-open) to prevent zombie routing.
+    await evictHostnames(hostnames);
+
+    if (project.mode === "v2_shared") {
+      // 3a. v2: drop the tenant's Postgres schema + role from the shared cluster.
+      await deprovisionProject(project.id);
+    } else {
+      // 3b. v1: remove dedicated Docker containers and volume.
+      const pm = getProjectManager();
+      await pm.nukeProject(slug, {
+        acknowledgeDataLoss: true,
+        hash: project.hash,
+      });
+    }
+
+    // 4. Delete the catalog row (cascade-removes domains, heartbeat_log, etc.).
     await db.delete(projects).where(eq(projects.id, project.id));
     return Response.json({ ok: true });
   } catch (err: unknown) {

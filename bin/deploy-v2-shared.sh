@@ -56,6 +56,29 @@ for req in SHARED_POSTGRES_PASSWORD PGB_BACKEND_PASSWORD PGRST_DB_PASSWORD FLUX_
   fi
 done
 
+# ---------------------------------------------------------------------------
+# Weak-password guard — reject known placeholder / default values that should
+# never appear in a real deployment.  Prevents accidental exposure when someone
+# deploys without updating the .env template.
+#
+# Set FLUX_ALLOW_WEAK_PASSWORDS=1 ONLY for isolated local development; never
+# set it on a server accessible from the internet.
+# ---------------------------------------------------------------------------
+if [[ "${FLUX_ALLOW_WEAK_PASSWORDS:-}" != "1" ]]; then
+  _weak_re='^(postgres|password|secret|changeme|change_me|change-me|CHANGE_ME|CHANGE_ME_STRONG_DB_PASSWORD|CHANGE_ME_MIN_32_CHARS|default|test|1234|12345|123456)$'
+  for _pw_var in SHARED_POSTGRES_PASSWORD PGB_BACKEND_PASSWORD PGRST_DB_PASSWORD FLUX_GATEWAY_JWT_SECRET; do
+    _pw_val="${!_pw_var}"
+    if [[ "$_pw_val" =~ $_weak_re ]]; then
+      echo "  ERROR: ${_pw_var} is set to a known placeholder value (\"${_pw_val}\")." >&2
+      echo "         Generate a strong secret before deploying." >&2
+      echo "           openssl rand -hex 32   # for passwords" >&2
+      echo "           openssl rand -base64 48 # for JWT secrets" >&2
+      echo "         Set FLUX_ALLOW_WEAK_PASSWORDS=1 to bypass (local dev only)." >&2
+      exit 1
+    fi
+  done
+fi
+
 if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
   echo "--- v2 Shared Deploy: Git sync (ff-only) ---"
   if [[ ! -d "$REPO_ROOT/.git" ]]; then
