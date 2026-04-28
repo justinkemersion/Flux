@@ -81,7 +81,13 @@ services:
       # notification so new tenants become visible without restarting PostgREST.
       PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public}
       PGRST_DB_ANON_ROLE: ${PGRST_DB_ANON_ROLE:-authenticator}
-      PGRST_DB_URI: postgres://${PGRST_DB_USER:-authenticator}:${PGRST_DB_PASSWORD:?set PGRST_DB_PASSWORD}@pgbouncer:6432/${PGRST_DB_NAME:-postgres}
+      # PostgREST connects directly to Postgres (not through PgBouncer) so that
+      # its LISTEN/NOTIFY subscription on the "pgrst" channel survives across
+      # requests.  PgBouncer transaction mode drops the connection after each
+      # transaction, silently killing the LISTEN — new tenant schemas would
+      # never be picked up without a manual restart.  PostgREST's own pool
+      # (PGRST_DB_POOL) handles connection multiplexing instead.
+      PGRST_DB_URI: postgres://${PGRST_DB_USER:-authenticator}:${PGRST_DB_PASSWORD:?set PGRST_DB_PASSWORD}@${PGRST_DB_HOST:-postgres-v2}:${PGRST_DB_PORT:-5432}/${PGRST_DB_NAME:-postgres}
       # Handshake: same secret material as gateway FLUX_GATEWAY_JWT_SECRET.
       PGRST_JWT_SECRET: ${FLUX_GATEWAY_JWT_SECRET:?set FLUX_GATEWAY_JWT_SECRET}
       # Pre-config hook: dynamically builds db-schemas from pg_namespace on reload.
