@@ -1,10 +1,15 @@
 import { and, count, eq } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
 import { projects, users } from "@/src/db/schema";
-import { fluxApiUrlForSlug, slugifyProjectName } from "@flux/core";
+import {
+  fluxApiUrlForSlug,
+  generateProjectHash,
+  slugifyProjectName,
+} from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { probeSingleProject } from "@/src/lib/fleet-monitor";
 import { getProjectManager } from "@/src/lib/flux";
+import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
 
 export const runtime = "nodejs";
 
@@ -14,6 +19,7 @@ const HOBBY_LIMIT_ERROR =
   "Project limit reached. Please upgrade to Pro.";
 const PRO_LIMIT_ERROR =
   "Project limit reached (10 projects on Pro).";
+const HASH_ALLOC_ATTEMPTS = 32;
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
@@ -43,6 +49,22 @@ function describeError(err: unknown): string {
   }
   if (typeof e?.message === "string") return e.message;
   return String(err);
+}
+
+async function allocateUniqueProjectHash(
+  db: ReturnType<typeof getDb>,
+  slug: string,
+): Promise<string | null> {
+  for (let i = 0; i < HASH_ALLOC_ATTEMPTS; i++) {
+    const hash = generateProjectHash();
+    const clash = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.slug, slug), eq(projects.hash, hash)))
+      .limit(1);
+    if (clash.length === 0) return hash;
+  }
+  return null;
 }
 
 export async function GET(): Promise<Response> {
@@ -163,6 +185,15 @@ export async function POST(req: Request): Promise<Response> {
       .stripSupabaseRestPrefix;
   }
 
+  let requestedMode: "v1_dedicated" | "v2_shared" | undefined;
+  if ("mode" in body) {
+    const mode = (body as { mode?: unknown }).mode;
+    if (mode !== "v1_dedicated" && mode !== "v2_shared") {
+      return jsonError('Expected "mode" to be "v1_dedicated" or "v2_shared"', 400);
+    }
+    requestedMode = mode;
+  }
+
   await initSystemDb();
   const db = getDb();
   const pm = getProjectManager();
@@ -204,9 +235,31 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(PRO_LIMIT_ERROR, 403);
   }
 
-  let project: Awaited<ReturnType<typeof pm.provisionProject>>;
+  if (requestedMode && requestedMode !== "v1_dedicated" && plan !== "pro") {
+    return jsonError(
+      'Choosing mode "v2_shared" requires a Pro account.',
+      403,
+    );
+  }
+
+  const projectHash = await allocateUniqueProjectHash(db, slug);
+  if (projectHash === null) {
+    return jsonError(
+      "Could not allocate a unique project hash; retry the request.",
+      503,
+    );
+  }
+
+  const tenantId = crypto.randomUUID();
+  const mode: "v1_dedicated" | "v2_shared" = requestedMode ?? "v1_dedicated";
+  let project: Awaited<ReturnType<typeof dispatchProvisionProject>>;
   try {
-    project = await pm.provisionProject(rawName, {
+    project = await dispatchProvisionProject({
+      mode,
+      projectName: rawName,
+      projectHash,
+      tenantId,
+      projectManager: pm,
       ...(customJwtSecret ? { customJwtSecret } : {}),
       ...(stripSupabaseRestPrefix !== undefined
         ? { stripSupabaseRestPrefix }
@@ -225,10 +278,12 @@ export async function POST(req: Request): Promise<Response> {
     const [dbProject] = await db
       .insert(projects)
       .values({
+        id: tenantId,
         name: project.name,
         slug: project.slug,
         hash: project.hash,
         userId: session.user.id,
+        mode,
       })
       .returning();
 
@@ -249,15 +304,14 @@ export async function POST(req: Request): Promise<Response> {
         slug: dbProject.slug,
         apiUrl: project.apiUrl,
         stripSupabaseRestPrefix: project.stripSupabaseRestPrefix,
+        mode: dbProject.mode,
         createdAt: dbProject.createdAt,
       },
     });
   } catch (err: unknown) {
     // Ghost-container rollback: the Docker stack came up but the catalog insert failed.
     // Tear down the just-provisioned containers + volume so they do not leak.
-    await pm
-      .nukeContainersOnly(project.slug, project.hash)
-      .catch(() => undefined);
+    await project.cleanupOnFailure();
     const message = describeError(err);
     console.error(
       `[flux] projects.insert failed after provisioning slug=${project.slug} hash=${project.hash}: ${message}`,

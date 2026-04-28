@@ -39,6 +39,9 @@ export default function ProjectsPage() {
   const [fetching, setFetching] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
+  const [createMode, setCreateMode] = useState<"v1_dedicated" | "v2_shared">(
+    "v1_dedicated",
+  );
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createLimitBanner, setCreateLimitBanner] = useState<
@@ -199,6 +202,7 @@ export default function ProjectsPage() {
     setCreateLimitBanner(null);
     setBillingError(null);
     setName("");
+    setCreateMode("v1_dedicated");
     setCreateOpen(true);
   }
 
@@ -244,7 +248,7 @@ export default function ProjectsPage() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({ name: name.trim(), mode: createMode }),
       });
       const data: unknown = await readResponseJson(res, {
         apiLabel: "projects API (create)",
@@ -520,6 +524,33 @@ export default function ProjectsPage() {
                   required
                   disabled={creating}
                 />
+                <label
+                  htmlFor="project-mode"
+                  className="mt-4 block text-sm font-medium text-zinc-200"
+                >
+                  Mode
+                </label>
+                <select
+                  id="project-mode"
+                  value={createMode}
+                  onChange={(e) =>
+                    setCreateMode(
+                      e.target.value === "v2_shared" ? "v2_shared" : "v1_dedicated",
+                    )
+                  }
+                  className="mt-2 w-full rounded-md border border-zinc-700 bg-black px-3 py-2.5 text-sm text-zinc-100 outline-none transition-shadow focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/25"
+                  disabled={creating}
+                >
+                  <option value="v1_dedicated">v1_dedicated (isolated stack)</option>
+                  <option value="v2_shared" disabled={userPlan !== "pro"}>
+                    v2_shared (shared cluster)
+                  </option>
+                </select>
+                {userPlan !== "pro" ? (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    v2_shared selection requires Pro.
+                  </p>
+                ) : null}
                 {createError ? (
                   <p className="mt-2 text-sm text-red-400">{createError}</p>
                 ) : null}

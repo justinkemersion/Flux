@@ -9,6 +9,7 @@ import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-aut
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import { probeSingleProject } from "@/src/lib/fleet-monitor";
+import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
 
 export const runtime = "nodejs";
 
@@ -172,18 +173,21 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const pm = getProjectManager();
-  let project: Awaited<ReturnType<typeof pm.provisionProject>>;
+  const tenantId = crypto.randomUUID();
+  const mode: "v1_dedicated" | "v2_shared" = requestedMode ?? "v1_dedicated";
+  let project: Awaited<ReturnType<typeof dispatchProvisionProject>>;
   try {
-    project = await pm.provisionProject(
-      rawName,
-      {
-        ...(stripSupabaseRestPrefix !== undefined
-          ? { stripSupabaseRestPrefix }
-          : {}),
-        isProduction: process.env.NODE_ENV === "production",
-      },
+    project = await dispatchProvisionProject({
+      mode,
+      projectName: rawName,
       projectHash,
-    );
+      tenantId,
+      projectManager: pm,
+      ...(stripSupabaseRestPrefix !== undefined
+        ? { stripSupabaseRestPrefix }
+        : {}),
+      isProduction: process.env.NODE_ENV === "production",
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("Invalid project name")) {
@@ -199,8 +203,9 @@ export async function POST(req: Request): Promise<Response> {
         name: project.name,
         slug: project.slug,
         hash: project.hash,
+        id: tenantId,
         userId: auth.userId,
-        ...(requestedMode ? { mode: requestedMode } : {}),
+        mode,
       })
       .returning({ id: projects.id });
     try {
@@ -212,9 +217,7 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
   } catch (err: unknown) {
-    await pm
-      .nukeContainersOnly(project.slug, project.hash)
-      .catch(() => undefined);
+    await project.cleanupOnFailure();
     const message = describeError(err);
     console.error(
       `[flux] cli create: projects.insert failed after provision slug=${project.slug} hash=${project.hash}: ${message}`,
@@ -232,13 +235,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const payload = {
     summary,
-    secrets: {
-      pgrstJwtSecret: project.jwtSecret,
-      postgresPassword: project.postgresPassword,
-      postgresContainerHost: project.postgres.containerName,
-      note:
-        "PGRST_JWT_SECRET is the HS256 key PostgREST uses for JWT verification. postgresPassword is the tenant superuser; postgresContainerHost is Docker DNS on the tenant bridge (not a public host). With FLUX_DEV_POSTGRES_PASSWORD set, the DB password is derived from the volume name.",
-    },
+    secrets: project.secrets,
   };
 
   return Response.json(payload, {

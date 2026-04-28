@@ -13,6 +13,8 @@
     "@auth/drizzle-adapter": "^1.11.1",
     "@flux/cli": "workspace:*",
     "@flux/core": "workspace:*",
+    "@flux/engine-v2": "workspace:*",
+    "@flux/gateway": "workspace:*",
     "ai": "^4.3.19",
     "drizzle-orm": "^0.45.2",
     "framer-motion": "^12.38.0",
@@ -36,6 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
