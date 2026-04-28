@@ -58,6 +58,8 @@ Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **p
 | **`flux-<hash>-<slug>-db`** | **PostgreSQL 16.2** (Alpine), volume **`flux-<hash>-<slug>-db-data`**. **No host port** — bootstrap and admin SQL use **`docker exec`**. For tenants, the DB is only on the **private** network above. |
 | **`flux-<hash>-<slug>-api`** | **PostgREST** — on **`flux-network`** and the private net; **Traefik** routes the public host to **3000**. |
 
+The Traefik **`flux-gateway`** container is **not** created by `provisionProject`; start it with Compose from **`docker/traefik/docker-compose.yml`** (and the `letsencrypt` volume next to that file). `@flux/core` only checks that a running container named **`flux-gateway`** exists.
+
 Provisioning (`ProjectManager.provisionProject`) ensures **`flux-network`** and the per-tenant private network, ensures the **Traefik** gateway is running, creates the volume and Postgres container, runs **`BOOTSTRAP_SQL`**, then creates the PostgREST container with Traefik labels so the tenant **HTTPS/HTTP** API URL resolves.
 
 ### HTTP path to a tenant API

@@ -581,7 +581,7 @@ export const FLUX_DEFAULT_DOMAIN = "vsl-base.com";
 
 /**
  * Default Traefik ACME `certificatesresolvers.<name>`; must match the edge gateway compose
- * (e.g. `scratch/docker-compose.yml` uses `myresolver`). Overridden by `FLUX_TRAEFIK_CERTRESOLVER`, or
+ * (e.g. `docker/traefik/docker-compose.yml` uses `myresolver`). Overridden by `FLUX_TRAEFIK_CERTRESOLVER`, or
  * set implicitly when `FLUX_DOMAIN` enables HTTPS edge routing.
  */
 export const FLUX_TRAEFIK_ACME_RESOLVER = "myresolver" as const;

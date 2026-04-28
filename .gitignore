@@ -9,6 +9,12 @@ build/
 *.d.ts
 *.d.ts.map
 
+# Local ad-hoc scripts / scratch work (not part of the Traefik or gateway stacks)
+scratch/
+
+# Traefik ACME store (path next to docker/traefik/docker-compose.yml)
+docker/traefik/letsencrypt/
+
 # Environment & secrets
 .env
 .env.*

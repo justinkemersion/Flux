@@ -1,5 +1,9 @@
-# Traefik for Flux: attach to the same bridge the control plane / tenants use.
-# Requires `flux-network` to already exist (Flux creates it on first provision, or: docker network create flux-network).
+# Traefik edge proxy for Flux (container name: flux-gateway).
+# Run from this directory so ./letsencrypt resolves next to this file.
+# Requires `flux-network` (Flux creates it on first provision, or: docker network create flux-network).
+#
+#   docker compose up -d
+#
 # Control plane: `FLUX_DOMAIN` or remote `DOCKER_HOST` (e.g. ssh://) enables myresolver (see @flux/core);
 #    `FLUX_TRAEFIK_NO_EDGE=1` if you need `web` labels only. Override resolver with `FLUX_TRAEFIK_CERTRESOLVER`.
 #
