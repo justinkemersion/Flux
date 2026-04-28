@@ -5,6 +5,7 @@
 #   FLUX_DEPLOY_GIT_SYNC=1        — run `git pull --ff-only` first.
 #   FLUX_DEPLOY_PRUNE_BUILDER=1   — also run `docker builder prune -f`.
 #   FLUX_V2_COMPOSE_FILE          — compose file override.
+#   FLUX_V2_ENV_FILE              — env file to source (default: docker/v2-shared/.env).
 #   FLUX_V2_POSTGRES_CONTAINER    — default: flux-postgres-v2
 #   FLUX_V2_PGBOUNCER_CONTAINER   — default: flux-pgbouncer
 #   FLUX_V2_POSTGREST_CONTAINER   — default: flux-postgrest-pool
@@ -22,6 +23,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 COMPOSE_FILE="${FLUX_V2_COMPOSE_FILE:-docker/v2-shared/docker-compose.yml}"
+ENV_FILE="${FLUX_V2_ENV_FILE:-docker/v2-shared/.env}"
 COMPOSE="docker compose -f ${COMPOSE_FILE}"
 PG_CONTAINER="${FLUX_V2_POSTGRES_CONTAINER:-flux-postgres-v2}"
 PGB_CONTAINER="${FLUX_V2_PGBOUNCER_CONTAINER:-flux-pgbouncer}"
@@ -31,6 +33,17 @@ PGRST_URL="${FLUX_V2_POSTGREST_URL:-http://127.0.0.1:3000/}"
 echo "--- v2 Shared Deploy: Initializing ---"
 echo "  repo: $REPO_ROOT"
 echo "  compose: $COMPOSE_FILE"
+echo "  env: $ENV_FILE"
+
+if [[ -f "$ENV_FILE" ]]; then
+  # Export everything from env file so both this script and docker compose interpolation see it.
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+else
+  echo "  WARN: env file not found at ${ENV_FILE}; using current shell environment only."
+fi
 
 for req in SHARED_POSTGRES_PASSWORD PGB_BACKEND_PASSWORD PGRST_DB_PASSWORD FLUX_GATEWAY_JWT_SECRET; do
   if [[ -z "${!req:-}" ]]; then
