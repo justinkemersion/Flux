@@ -7,6 +7,20 @@ const encoder = new TextEncoder();
  * reason since the secret never changes at runtime.
  */
 const SECRET_BYTES = encoder.encode(env.FLUX_GATEWAY_JWT_SECRET);
+const JWT_CACHE_MAX_TTL_SEC = 300;
+
+type JwtCacheEntry = {
+  token: string;
+  expiresAtSec: number;
+};
+
+/**
+ * Local token reuse cache keyed by tenant UUID.
+ *
+ * Reuses an already-signed JWT while it is still valid to avoid paying signing
+ * cost on every request for hot tenants.
+ */
+const jwtCache = new Map<string, JwtCacheEntry>();
 
 /**
  * Mints a short-lived HS256 JWT for a resolved tenant.
@@ -23,15 +37,25 @@ export async function mintJwt(tenant: {
   shortid: string;
 }): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const ttl = env.FLUX_GATEWAY_JWT_TTL_SEC;
+  const cached = jwtCache.get(tenant.tenantId);
+  if (cached && cached.expiresAtSec > now) {
+    return cached.token;
+  }
 
-  return new SignJWT({
+  const ttl = env.FLUX_GATEWAY_JWT_TTL_SEC;
+  const effectiveTtl = Math.min(ttl, JWT_CACHE_MAX_TTL_SEC);
+  const expiresAtSec = now + effectiveTtl;
+
+  const token = await new SignJWT({
     role: `t_${tenant.shortid}_role`,
     tenant_id: tenant.tenantId,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt(now)
     .setNotBefore(now - 5)
-    .setExpirationTime(now + ttl)
+    .setExpirationTime(expiresAtSec)
     .sign(SECRET_BYTES);
+
+  jwtCache.set(tenant.tenantId, { token, expiresAtSec });
+  return token;
 }

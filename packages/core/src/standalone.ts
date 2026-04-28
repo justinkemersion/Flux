@@ -47,6 +47,15 @@ export function slugifyProjectName(name: string): string {
   return slug;
 }
 
+/**
+ * Deterministic tenant identifier used for v2 shared-cluster schema/role names.
+ *
+ * Algorithm: remove UUID hyphens, lower-case, then take the first 12 hex chars.
+ */
+export function deriveShortId(tenantId: string): string {
+  return tenantId.replace(/-/g, "").slice(0, 12).toLowerCase();
+}
+
 /** Row returned for project list / summaries. */
 export interface FluxProjectSummary {
   /** Normalized project slug (from container names). */

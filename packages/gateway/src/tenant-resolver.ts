@@ -17,7 +17,7 @@ export interface ResolvedTenant {
   cacheSource: CacheSource;
 }
 
-const REDIS_CACHE_TTL_SEC = 300;
+const REDIS_CACHE_TTL_SEC = 60;
 
 /**
  * In-flight deduplication map (single-flight pattern).
@@ -59,8 +59,8 @@ export function normalizeHost(raw: string): string {
  * Resolves a normalized hostname to a ResolvedTenant.
  *
  * Resolution order (per architecture spec):
- *  1. In-memory cache (TTL 8s) — protects against Redis-down DB hammering.
- *  2. Redis cache key `hostname:<normalizedHost>` (TTL 5m).
+ *  1. In-memory cache (TTL 60s) — protects against Redis-down DB hammering.
+ *  2. Redis cache key `hostname:<normalizedHost>` (TTL 60s).
  *  3. DB: exact match in `domains` table — covers all custom domains (apex, www, etc.).
  *  4. DB: Flux subdomain fallbacks when host ends with FLUX_BASE_DOMAIN:
  *     a) Production Traefik shape `api.<slug>.<7-hex-hash>.<base>` (matches @flux/core
@@ -73,7 +73,7 @@ export function normalizeHost(raw: string): string {
  * to evict both memory and Redis to prevent stale routing.
  *
  * Stale-routing window: after a domain update + Redis eviction, in-memory
- * cache may still serve the old resolution for up to 8s. This is acceptable
+ * cache may still serve the old resolution for up to 60s. This is acceptable
  * by design — the window is bounded and the fail-open model is preferred over
  * a synchronous cross-process cache flush.
  */

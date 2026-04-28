@@ -5,7 +5,7 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-const TTL_MS = 8_000;
+const TTL_MS = 60_000;
 /**
  * Maximum number of entries before LRU eviction kicks in.
  *
