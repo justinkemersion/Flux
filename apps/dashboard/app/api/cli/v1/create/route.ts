@@ -69,7 +69,7 @@ async function allocateUniqueProjectHash(
 /**
  * POST /api/cli/v1/create
  * Authorization: Bearer flx_live_…
- * Body: `{ "name": string, "stripSupabaseRestPrefix"?: boolean, "mode"?: "v1_dedicated" | "v2_shared" }`
+ * Body: `{ "name": string, "stripSupabaseRestPrefix"?: boolean, "mode"?: "v1_dedicated" | "v2_shared" }` — defaults to `v2_shared`
  *
  * Order: validate → limits → allocate hash → **Docker provision** → **DB insert** only on success.
  * If insert fails after provision, nuke containers (same ghost-stack rollback as session POST).
@@ -156,10 +156,10 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(PRO_LIMIT_ERROR, 403);
   }
 
-  // Privileged mode selection: only Pro accounts can choose non-default mode.
-  if (requestedMode && requestedMode !== "v1_dedicated" && plan !== "pro") {
+  // Privileged mode selection: v1_dedicated (Isolated) is a Pro-only tier.
+  if (requestedMode === "v1_dedicated" && plan !== "pro") {
     return jsonError(
-      'Choosing mode "v2_shared" requires a Pro account.',
+      "Isolated dedicated stacks require a Pro subscription.",
       403,
     );
   }
@@ -174,7 +174,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const pm = getProjectManager();
   const tenantId = crypto.randomUUID();
-  const mode: "v1_dedicated" | "v2_shared" = requestedMode ?? "v1_dedicated";
+  const mode: "v1_dedicated" | "v2_shared" = requestedMode ?? "v2_shared";
   let project: Awaited<ReturnType<typeof dispatchProvisionProject>>;
   try {
     project = await dispatchProvisionProject({

@@ -273,9 +273,9 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(PRO_LIMIT_ERROR, 403);
   }
 
-  if (requestedMode && requestedMode !== "v1_dedicated" && plan !== "pro") {
+  if (requestedMode === "v1_dedicated" && plan !== "pro") {
     return jsonError(
-      'Choosing mode "v2_shared" requires a Pro account.',
+      "Isolated dedicated stacks require a Pro subscription.",
       403,
     );
   }
@@ -289,7 +289,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const tenantId = crypto.randomUUID();
-  const mode: "v1_dedicated" | "v2_shared" = requestedMode ?? "v1_dedicated";
+  const mode: "v1_dedicated" | "v2_shared" = requestedMode ?? "v2_shared";
   let project: Awaited<ReturnType<typeof dispatchProvisionProject>>;
   try {
     project = await dispatchProvisionProject({

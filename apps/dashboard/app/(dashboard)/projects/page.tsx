@@ -40,7 +40,7 @@ export default function ProjectsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [createMode, setCreateMode] = useState<"v1_dedicated" | "v2_shared">(
-    "v1_dedicated",
+    "v2_shared",
   );
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -202,7 +202,7 @@ export default function ProjectsPage() {
     setCreateLimitBanner(null);
     setBillingError(null);
     setName("");
-    setCreateMode("v1_dedicated");
+    setCreateMode("v2_shared");
     setCreateOpen(true);
   }
 
@@ -535,20 +535,22 @@ export default function ProjectsPage() {
                   value={createMode}
                   onChange={(e) =>
                     setCreateMode(
-                      e.target.value === "v2_shared" ? "v2_shared" : "v1_dedicated",
+                      e.target.value === "v1_dedicated" ? "v1_dedicated" : "v2_shared",
                     )
                   }
                   className="mt-2 w-full rounded-md border border-zinc-700 bg-black px-3 py-2.5 text-sm text-zinc-100 outline-none transition-shadow focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/25"
                   disabled={creating}
                 >
-                  <option value="v1_dedicated">v1_dedicated (isolated stack)</option>
-                  <option value="v2_shared" disabled={userPlan !== "pro"}>
-                    v2_shared (shared cluster)
+                  <option value="v2_shared">
+                    v2_shared — Pooled Stack (Standard · High Density)
+                  </option>
+                  <option value="v1_dedicated" disabled={userPlan !== "pro"}>
+                    v1_dedicated — Isolated Stack (Pro · Dedicated Resources)
                   </option>
                 </select>
                 {userPlan !== "pro" ? (
                   <p className="mt-2 text-xs text-zinc-500">
-                    v2_shared selection requires Pro.
+                    Isolated dedicated stacks require a Pro subscription.
                   </p>
                 ) : null}
                 {createError ? (

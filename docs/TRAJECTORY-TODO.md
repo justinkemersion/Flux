@@ -73,6 +73,17 @@ Not intended for public docs or marketing consumption.
   - includes remediation hint (“regenerate tenant UUID / retry create”)
   - covered by route-level test
 
+### 3b) Rotate all development and remote secrets after infra stabilization
+- **Priority:** P0
+- **Status:** todo
+- **Owner:** platform
+- **Why:** current dev/remote secret reuse is intentional short-term risk and must be removed before steady-state use
+- **Scope:** gateway `.env`, v2 shared `.env`, system DB credentials, JWT secret
+- **Acceptance criteria:**
+  - generate new strong secrets for DB and JWT material
+  - update remote runtime + local templates with new values
+  - verify gateway/PostgREST JWT parity and successful end-to-end request flow
+
 ---
 
 ## P1 — Reliability & operability

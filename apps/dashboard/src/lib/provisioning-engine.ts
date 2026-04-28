@@ -64,8 +64,10 @@ export type DispatchProvisionResult = V1ProvisionResult | V2ProvisionResult;
 /**
  * Route-level mode dispatch for project provisioning.
  *
- * v1 path keeps existing Docker-per-tenant provisioning.
- * v2 path only performs shared-cluster bootstrap in engine-v2.
+ * v2_shared (Standard/Free): provisions a tenant schema/role in the shared
+ *   Postgres cluster via engine-v2. No per-project Docker containers.
+ * v1_dedicated (Pro/Isolated): spins up dedicated Docker containers
+ *   (Postgres + PostgREST) per tenant via the project manager.
  */
 export async function dispatchProvisionProject(
   input: DispatchProvisionInput,
