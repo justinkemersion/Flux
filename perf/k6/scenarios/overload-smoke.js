@@ -1,9 +1,29 @@
 /**
  * Short overload sample for Tier-3 scoring (paired with arch-truth-test).
  * Intentionally gentler than overload.js — tune via env if needed.
+ *
+ * When BASE_URL points at loopback, set HOST (or KNOWN_HOST) to your tenant hostname — same rule as arch-truth-test.
  */
 import { createOptions, requestGateway, stage } from "../lib/gateway.js";
 import { fixedHost } from "../lib/hosts.js";
+
+function upstreamHostnameLooksLoopback(base) {
+  try {
+    const h = new URL(base).hostname.toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "::1";
+  } catch {
+    return false;
+  }
+}
+
+const _baseUrl = __ENV.BASE_URL || "http://localhost:4000";
+const _explicitTenantHost = (__ENV.KNOWN_HOST || __ENV.HOST || "").trim();
+if (upstreamHostnameLooksLoopback(_baseUrl) && !_explicitTenantHost) {
+  throw new Error(
+    "[overload-smoke] BASE_URL is loopback but HOST/KNOWN_HOST is unset. " +
+      "Export HOST=api.<slug>.<hash>.<domain> (tenant Host header — same value as KNOWN_HOST for arch-truth).",
+  );
+}
 
 const hostPicker = fixedHost();
 

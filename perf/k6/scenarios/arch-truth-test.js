@@ -4,7 +4,8 @@
  *
  * Required for meaningful splits:
  * - Set UPSTREAM_BASE to the URL you want to load (gateway entry or PostgREST pool URL).
- * - Set KNOWN_HOST to the Host your tenant uses (often the same host as UPSTREAM_BASE); omit if URL host is already correct.
+ * - Set KNOWN_HOST (or HOST) to the tenant API hostname, e.g. api.<slug>.<hash>.<domain> (no https://).
+ *   Required when UPSTREAM_BASE is loopback — otherwise k6 sends Host: 127.0.0.1 and the gateway cannot resolve tenants.
  * - Set FLUX_BASE_DOMAIN for resolver_cold (e.g. vsl-base.com). Cold traffic uses Host: <random>-<hash>.<domain> against UPSTREAM_BASE.
  *
  * Optional: TRUTH_SCENARIOS=csv to run a subset. TRUTH_STAGGER_SEC to separate scenario start times.
@@ -16,7 +17,7 @@ import { check } from "k6";
 
 const UPSTREAM_BASE = __ENV.UPSTREAM_BASE || __ENV.BASE_URL || "http://localhost:4000";
 const GATEWAY_BASE = __ENV.GATEWAY_BASE || UPSTREAM_BASE;
-/** If set, sent as Host (tenant routing). If empty, request uses the hostname from the base URL. */
+/** Sent as Host for tenant routing where hostForKnown() applies; aliases: __ENV.HOST. */
 const KNOWN_HOST = (__ENV.KNOWN_HOST || __ENV.HOST || "").trim();
 const FLUX_BASE_DOMAIN = (__ENV.FLUX_BASE_DOMAIN || "vsl-base.com").toLowerCase();
 /** 7-char hex to form <slug>-<hash> first label (resolver miss). */
@@ -57,6 +58,37 @@ function parseScenarioFilter() {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+  );
+}
+
+/** Scenarios that call getTagged(..., hostForKnown()) — need real tenant Host on loopback. */
+const SCENARIOS_REQUIRING_KNOWN_HOST = new Set([
+  "gateway_only",
+  "resolver_hot",
+  "upstream_light",
+  "upstream_heavy",
+  "overload_shed",
+]);
+
+function upstreamHostnameLooksLoopback(base) {
+  try {
+    const h = new URL(base).hostname.toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function assertKnownHostWhenLoopback(scenarioFilter) {
+  const loopback =
+    upstreamHostnameLooksLoopback(UPSTREAM_BASE) || upstreamHostnameLooksLoopback(GATEWAY_BASE);
+  if (!loopback || KNOWN_HOST) return;
+  const needsTenantHost = [...scenarioFilter].some((s) => SCENARIOS_REQUIRING_KNOWN_HOST.has(s));
+  if (!needsTenantHost) return;
+  throw new Error(
+    "[arch-truth-test] UPSTREAM_BASE/BASE_URL uses loopback without KNOWN_HOST or HOST — " +
+      "k6 sends Host: 127.0.0.1 and the Flux gateway cannot resolve a tenant. " +
+      'Export KNOWN_HOST="api.<slug>.<hash>.your-base-domain" (no scheme).',
   );
 }
 
@@ -250,6 +282,7 @@ function __envVU(k, d) {
 }
 
 const filter = parseScenarioFilter();
+assertKnownHostWhenLoopback(filter);
 const _scenarios = buildScenarios(filter);
 if (Object.keys(_scenarios).length === 0) {
   throw new Error(
