@@ -18,6 +18,7 @@
   "packageManager": "pnpm@10.33.0",
   "dependencies": {
     "@hono/node-server": "^2.0.0",
+    "dotenv": "^17.4.2",
     "hono": "^4.7.11",
     "ioredis": "^5.6.1",
     "jose": "^5.10.0",
