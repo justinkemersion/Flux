@@ -48,16 +48,19 @@ const resolverHotStatus200 = new Rate("resolver_hot_status_200");
 const resolverHotStatus404 = new Rate("resolver_hot_status_404");
 const resolverHotStatus429 = new Rate("resolver_hot_status_429");
 const resolverHotStatus503 = new Rate("resolver_hot_status_503");
+const resolverHotStatus504 = new Rate("resolver_hot_status_504");
 const resolverHotStatusOther = new Rate("resolver_hot_status_other");
 const upstreamLightStatus200 = new Rate("upstream_light_status_200");
 const upstreamLightStatus404 = new Rate("upstream_light_status_404");
 const upstreamLightStatus429 = new Rate("upstream_light_status_429");
 const upstreamLightStatus503 = new Rate("upstream_light_status_503");
+const upstreamLightStatus504 = new Rate("upstream_light_status_504");
 const upstreamLightStatusOther = new Rate("upstream_light_status_other");
 const overloadShedStatus200 = new Rate("overload_shed_status_200");
 const overloadShedStatus404 = new Rate("overload_shed_status_404");
 const overloadShedStatus429 = new Rate("overload_shed_status_429");
 const overloadShedStatus503 = new Rate("overload_shed_status_503");
+const overloadShedStatus504 = new Rate("overload_shed_status_504");
 const overloadShedStatusOther = new Rate("overload_shed_status_other");
 
 function loadTestHeaders() {
@@ -161,7 +164,8 @@ export function resolverHot() {
   resolverHotStatus404.add(res.status === 404);
   resolverHotStatus429.add(res.status === 429);
   resolverHotStatus503.add(res.status === 503);
-  resolverHotStatusOther.add(![200, 404, 429, 503].includes(res.status));
+  resolverHotStatus504.add(res.status === 504);
+  resolverHotStatusOther.add(![200, 404, 429, 503, 504].includes(res.status));
   check(res, {
     "hot ok": (r) => r.status === 200,
   });
@@ -190,7 +194,8 @@ export function upstreamLight() {
   upstreamLightStatus404.add(res.status === 404);
   upstreamLightStatus429.add(res.status === 429);
   upstreamLightStatus503.add(res.status === 503);
-  upstreamLightStatusOther.add(![200, 404, 429, 503].includes(res.status));
+  upstreamLightStatus504.add(res.status === 504);
+  upstreamLightStatusOther.add(![200, 404, 429, 503, 504].includes(res.status));
   check(res, {
     "light ok": (r) => r.status === 200,
   });
@@ -219,7 +224,8 @@ export function overload() {
   overloadShedStatus404.add(res.status === 404);
   overloadShedStatus429.add(res.status === 429);
   overloadShedStatus503.add(res.status === 503);
-  overloadShedStatusOther.add(![200, 404, 429, 503].includes(res.status));
+  overloadShedStatus504.add(res.status === 504);
+  overloadShedStatusOther.add(![200, 404, 429, 503, 504].includes(res.status));
   check(res, {
     "ok or 503": (r) => r.status === 200 || r.status === 503,
   });
