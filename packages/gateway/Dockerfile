@@ -62,7 +62,8 @@ USER node
 
 EXPOSE 4000
 
+# http.get (not fetch): reliable from node -e; explicit 127.0.0.1 + server on 0.0.0.0 avoids IPv6-only bind misses.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "require('http').get('http://127.0.0.1:'+(process.env.PORT||4000)+'/health',(res)=>{res.resume();res.on('end',()=>process.exit(res.statusCode>=200&&res.statusCode<300?0:1));}).on('error',()=>process.exit(1));"
 
 CMD ["node", "server.mjs"]

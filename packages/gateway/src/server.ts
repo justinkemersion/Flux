@@ -7,6 +7,7 @@ const app = createApp();
 serve(
   {
     fetch: app.fetch,
+    hostname: "0.0.0.0",
     port: env.PORT,
   },
   (info) => {
