@@ -2,8 +2,12 @@
 #
 # Build from the monorepo root (needed for pnpm workspace + lockfile):
 #   docker build -f packages/gateway/Dockerfile -t flux-gateway .
+#   Or: docker compose -f packages/gateway/docker-compose.yml build
 #
 # Run (example — align container names, secrets, and pool URL with your engine):
+#   Prefer repeatability: docker compose -f packages/gateway/docker-compose.yml up -d --build
+#
+# Run (manual docker run):
 #   FLUX_GATEWAY_JWT_SECRET must equal PGRST_JWT_SECRET on the PostgREST pool (same HS256 key).
 #   Prefer one shared env_file or compose variable for both services.
 #   docker run -d \

@@ -1,0 +1,33 @@
+# @flux/gateway (Node) — HTTP :4000, joins the same bridge as Traefik and PostgREST.
+# This is not the Traefik edge container (that remains scratch/docker-compose.yml, name flux-gateway).
+#
+# Prerequisites
+#   - docker network create flux-network   (or let Flux create it on first provision)
+#   - packages/gateway/.env (copy from .env.example; do not commit)
+#
+# From monorepo root:
+#   docker compose -f packages/gateway/docker-compose.yml up -d --build
+#   docker compose -f packages/gateway/docker-compose.yml ps
+#   docker compose -f packages/gateway/docker-compose.yml down
+#
+# Ports: host side GATEWAY_HOST_PORT (default 4000); container side uses PORT from .env (default 4000).
+# Compose loads .env in this directory for ${VAR} interpolation in this file.
+
+services:
+  flux-node-gateway:
+    build:
+      context: ../..
+      dockerfile: packages/gateway/Dockerfile
+    image: flux-gateway:latest
+    container_name: flux-node-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${GATEWAY_HOST_PORT:-4000}:${PORT:-4000}"
+    networks:
+      - flux-network
+
+networks:
+  flux-network:
+    external: true
