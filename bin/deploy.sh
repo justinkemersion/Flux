@@ -65,11 +65,11 @@ docker ps --filter "name=^${CONTAINER_NAME}\$" --format 'table {{.Names}}\t{{.St
 
 # 6. Ingress / router verification (Traefik labels + network + Host probe)
 echo "--- Flux Deploy: Verifying gateway route ---"
-if ! docker ps --format '{{.Names}}' | rg -q "^${GATEWAY_NAME}$"; then
+if ! docker ps --format '{{.Names}}' | grep -qxF "${GATEWAY_NAME}"; then
   echo "  WARN: Gateway container '${GATEWAY_NAME}' is not running."
   echo "        Traefik must be up to route ${CHECK_HOST}."
 else
-  if docker inspect "$CONTAINER_NAME" --format '{{json .NetworkSettings.Networks}}' | rg -q "\"flux-network\""; then
+  if docker inspect "$CONTAINER_NAME" --format '{{json .NetworkSettings.Networks}}' | grep -q "\"flux-network\""; then
     echo "  network: ${CONTAINER_NAME} attached to flux-network"
   else
     echo "  WARN: ${CONTAINER_NAME} is not attached to flux-network."
