@@ -43,6 +43,15 @@ export async function GET(
   const project = await resolveOwnedProject(slug, session.user.id);
   if (!project) return jsonError("Project not found", 404);
 
+  if (project.mode === "v2_shared") {
+    const hint =
+      "v2_shared tenants use the shared PostgREST pool and cluster Postgres — there is no per-project api/db container. Inspect host logs for flux-postgrest-pool / gateway, or rely on your app and API traces.";
+    return Response.json({
+      logs: hint,
+      service,
+    });
+  }
+
   const pm = getProjectManager();
   try {
     const logs = await pm.getTenantContainerLogs(

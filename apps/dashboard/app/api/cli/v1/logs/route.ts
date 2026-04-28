@@ -53,7 +53,7 @@ export async function GET(req: Request): Promise<Response> {
   const service = serviceRaw as "api" | "db";
 
   const owned = await db
-    .select({ id: projects.id })
+    .select({ id: projects.id, mode: projects.mode })
     .from(projects)
     .where(
       and(
@@ -65,6 +65,28 @@ export async function GET(req: Request): Promise<Response> {
     .limit(1);
   if (owned.length === 0) {
     return jsonError("Project not found for this API key", 404);
+  }
+
+  if (owned[0]!.mode === "v2_shared") {
+    const enc = new TextEncoder();
+    const payload = JSON.stringify({
+      error:
+        "v2_shared projects have no dedicated Docker api/db containers; container log streaming does not apply.",
+    });
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode(`data: ${payload}\n\n`));
+        controller.close();
+      },
+    });
+    return new Response(body, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-store, no-transform, must-revalidate",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
   }
 
   const pm = getProjectManager();

@@ -35,6 +35,13 @@ export async function GET(
 
   if (!project) return jsonError("Project not found", 404);
 
+  if (project.mode === "v2_shared") {
+    return jsonError(
+      "Credentials for v2_shared tenants are not exposed here: there is no per-tenant PostgREST container or Docker Postgres superuser. Use the public API URL with JWTs from the Flux gateway (or your app’s auth flow).",
+      501,
+    );
+  }
+
   const pm = getProjectManager();
   try {
     const credentials = await pm.getProjectCredentials(slug, project.hash);

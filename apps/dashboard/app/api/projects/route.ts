@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, isNull, or } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
 import { projects, users } from "@/src/db/schema";
 import {
@@ -10,6 +10,7 @@ import { getDb, initSystemDb } from "@/src/lib/db";
 import { probeSingleProject } from "@/src/lib/fleet-monitor";
 import { getProjectManager } from "@/src/lib/flux";
 import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
+import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
 export const runtime = "nodejs";
 
@@ -105,7 +106,10 @@ export async function GET(): Promise<Response> {
               .select({ slug: projects.slug, hash: projects.hash })
               .from(projects)
               .where(
-                and(eq(projects.userId, userId), eq(projects.mode, "v1_dedicated")),
+                and(
+                  eq(projects.userId, userId),
+                  or(eq(projects.mode, "v1_dedicated"), isNull(projects.mode)),
+                ),
               ),
           isProduction: process.env.NODE_ENV === "production",
         });
@@ -126,15 +130,7 @@ export async function GET(): Promise<Response> {
           : p.createdAt;
 
       if (p.mode === "v2_shared") {
-        // v2 projects: derive status from DB heartbeat rather than Docker probes.
-        const status =
-          p.healthStatus === "healthy"
-            ? "running"
-            : p.healthStatus === "unhealthy"
-              ? "stopped"
-              : p.lastHeartbeatAt
-                ? "running"
-                : "unknown";
+        const status = statusFromV2CatalogHealth(p);
         return {
           id: p.id,
           name: p.name,

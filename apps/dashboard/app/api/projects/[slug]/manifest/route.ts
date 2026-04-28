@@ -51,6 +51,14 @@ export async function GET(
     isProd,
   );
 
+  if (project.mode === "v2_shared") {
+    return Response.json({
+      apiUrl,
+      postgresPassword: "",
+      passwordSource: "unavailable" as PasswordSource,
+    });
+  }
+
   const pm = getProjectManager();
   let postgresPassword: string;
   let passwordSource: PasswordSource = "unavailable";

@@ -108,7 +108,11 @@ export async function probeSingleProject(projectId: string): Promise<void> {
   await initSystemDb();
   const db = getDb();
   const [row] = await db
-    .select({ slug: projects.slug, hash: projects.hash })
+    .select({
+      slug: projects.slug,
+      hash: projects.hash,
+      mode: projects.mode,
+    })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
@@ -117,11 +121,28 @@ export async function probeSingleProject(projectId: string): Promise<void> {
   }
   const pm = getProjectManager();
   const isProd = process.env.NODE_ENV === "production";
+  const now = new Date();
+
+  if (row.mode === "v2_shared") {
+    const apiUrl = fluxApiUrlForSlug(row.slug, row.hash, isProd);
+    const ok = await probeApiUrl(apiUrl);
+    const status = ok ? "running" : "error";
+    await db
+      .update(projects)
+      .set({ healthStatus: status, lastHeartbeatAt: now })
+      .where(eq(projects.id, projectId));
+    await db.insert(projectHeartbeatLog).values({
+      projectId,
+      recordedAt: now,
+      healthStatus: status,
+    });
+    return;
+  }
+
   const [summary] = await pm.getProjectSummariesForSlugs(
     [{ slug: row.slug, hash: row.hash }],
     { isProduction: isProd },
   );
-  const now = new Date();
   if (summary?.status === "stopped") {
     await db
       .update(projects)
@@ -161,21 +182,48 @@ export async function runFleetMonitorTick(): Promise<void> {
       id: projects.id,
       slug: projects.slug,
       hash: projects.hash,
+      mode: projects.mode,
     })
     .from(projects);
   if (rows.length > 0) {
     const isProd = process.env.NODE_ENV === "production";
     const pm = getProjectManager();
-    const summaries = await pm.getProjectSummariesForSlugs(
-      rows.map((r) => ({ slug: r.slug, hash: r.hash })),
-      { isProduction: isProd },
-    );
-    const bySlugHash = new Map(
-      summaries.map((s) => [`${s.slug}\0${s.hash}`, s] as const),
-    );
+    const v1Rows = rows.filter((r) => r.mode !== "v2_shared");
+    let bySlugHash = new Map<
+      string,
+      Awaited<ReturnType<typeof pm.getProjectSummariesForSlugs>>[number]
+    >();
+    if (v1Rows.length > 0) {
+      const summaries = await pm.getProjectSummariesForSlugs(
+        v1Rows.map((r) => ({ slug: r.slug, hash: r.hash })),
+        { isProduction: isProd },
+      );
+      bySlugHash = new Map(
+        summaries.map((s) => [`${s.slug}\0${s.hash}`, s] as const),
+      );
+    }
     const now = new Date();
     await Promise.all(
       rows.map(async (row) => {
+        if (row.mode === "v2_shared") {
+          const apiUrl = fluxApiUrlForSlug(row.slug, row.hash, isProd);
+          const ok = await probeApiUrl(apiUrl);
+          const status = ok ? "running" : "error";
+          await db
+            .update(projects)
+            .set({
+              healthStatus: status,
+              lastHeartbeatAt: now,
+            })
+            .where(eq(projects.id, row.id));
+          await db.insert(projectHeartbeatLog).values({
+            projectId: row.id,
+            recordedAt: now,
+            healthStatus: status,
+          });
+          return;
+        }
+
         const s = bySlugHash.get(`${row.slug}\0${row.hash}`);
         if (s?.status === "stopped") {
           await db

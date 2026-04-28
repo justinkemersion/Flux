@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
+import { fluxApiUrlForSlug } from "@flux/core";
 import { projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
@@ -8,12 +9,59 @@ export type ProjectPowerAction = "start" | "stop";
 
 type ProjectRow = InferSelectModel<typeof projects>;
 
+const PROBE_TIMEOUT_MS = 5_000;
+
+async function probeTenantApiUrl(
+  slug: string,
+  hash: string,
+  isProduction: boolean,
+): Promise<boolean> {
+  const url = fluxApiUrlForSlug(slug, hash, isProduction);
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      redirect: "follow",
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    return res.status >= 200 && res.status < 400;
+  } catch {
+    return false;
+  }
+}
+
 async function applyProjectPowerForRow(
   project: ProjectRow,
   action: ProjectPowerAction,
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const db = getDb();
   const pm = getProjectManager();
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (project.mode === "v2_shared") {
+    const now = new Date();
+    if (action === "start") {
+      const ok = await probeTenantApiUrl(
+        project.slug,
+        project.hash,
+        isProduction,
+      );
+      await db
+        .update(projects)
+        .set({
+          healthStatus: ok ? "running" : "error",
+          lastHeartbeatAt: now,
+        })
+        .where(eq(projects.id, project.id));
+    } else {
+      await db
+        .update(projects)
+        .set({ healthStatus: "stopped", lastHeartbeatAt: now })
+        .where(eq(projects.id, project.id));
+    }
+    return { ok: true };
+  }
+
   try {
     if (action === "start") {
       await pm.startProjectInfrastructure(project.slug, project.hash);

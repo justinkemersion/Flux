@@ -93,6 +93,7 @@ export function ProjectSummaryCard({
   onPowerChanged,
   staggerIndex = 0,
 }: Props) {
+  const isV2Shared = p.mode === "v2_shared";
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [powerAction, setPowerAction] = useState<"start" | "stop" | null>(null);
@@ -190,11 +191,10 @@ export function ProjectSummaryCard({
   }
 
   async function runRepair(): Promise<void> {
-    if (
-      !window.confirm(
-        "Repair removes Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?",
-      )
-    ) {
+    const confirmMsg = isV2Shared
+      ? "Repair re-runs shared-cluster provisioning for this tenant. Continue?"
+      : "Repair removes Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?";
+    if (!window.confirm(confirmMsg)) {
       return;
     }
     setRepairBusy(true);
@@ -233,11 +233,13 @@ export function ProjectSummaryCard({
     "disabled:cursor-not-allowed disabled:opacity-40";
 
   const showStartButton =
-    displayStatus === "stopped" ||
-    (displayStatus === "transitioning" && powerAction === "start");
+    !isV2Shared &&
+    (displayStatus === "stopped" ||
+      (displayStatus === "transitioning" && powerAction === "start"));
   const showStopButton =
-    displayStatus === "running" ||
-    (displayStatus === "transitioning" && powerAction === "stop");
+    !isV2Shared &&
+    (displayStatus === "running" ||
+      (displayStatus === "transitioning" && powerAction === "stop"));
 
   return (
     <motion.article

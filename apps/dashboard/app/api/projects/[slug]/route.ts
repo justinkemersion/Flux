@@ -8,6 +8,7 @@ import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import { applyProjectPowerAction } from "@/src/lib/project-lifecycle";
 import { evictHostnames } from "@/src/lib/gateway-cache";
+import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
 export const runtime = "nodejs";
 
@@ -45,6 +46,25 @@ export async function GET(
   const project = await resolveOwnedProject(slug, session.user.id);
   if (!project) return jsonError("Project not found", 404);
 
+  const isProduction = process.env.NODE_ENV === "production";
+  const apiUrl = fluxApiUrlForSlug(slug, project.hash, isProduction);
+
+  if (project.mode === "v2_shared") {
+    return Response.json({
+      id: project.id,
+      name: project.name,
+      slug: project.slug,
+      mode: project.mode,
+      status: statusFromV2CatalogHealth(project),
+      apiUrl,
+      createdAt: project.createdAt,
+      healthStatus: project.healthStatus ?? null,
+      lastHeartbeatAt: project.lastHeartbeatAt
+        ? project.lastHeartbeatAt.toISOString()
+        : null,
+    });
+  }
+
   const pm = getProjectManager();
   let summary: Awaited<
     ReturnType<typeof pm.getProjectSummariesForSlugs>
@@ -52,7 +72,7 @@ export async function GET(
   try {
     const rows = await pm.getProjectSummariesForSlugs(
       [{ slug, hash: project.hash }],
-      { isProduction: process.env.NODE_ENV === "production" },
+      { isProduction },
     );
     summary = rows[0];
   } catch (err: unknown) {
@@ -64,14 +84,9 @@ export async function GET(
     id: project.id,
     name: project.name,
     slug: project.slug,
+    mode: project.mode,
     status: summary?.status ?? "missing",
-    apiUrl:
-      summary?.apiUrl ??
-      fluxApiUrlForSlug(
-        slug,
-        project.hash,
-        process.env.NODE_ENV === "production",
-      ),
+    apiUrl: summary?.apiUrl ?? apiUrl,
     createdAt: project.createdAt,
     healthStatus: project.healthStatus ?? null,
     lastHeartbeatAt: project.lastHeartbeatAt
@@ -167,6 +182,13 @@ export async function PATCH(
   await initSystemDb();
   const project = await resolveOwnedProject(slug, session.user.id);
   if (!project) return jsonError("Project not found", 404);
+
+  if (project.mode === "v2_shared") {
+    return jsonError(
+      "Rotating PostgREST JWT secrets is not supported for v2_shared projects from the dashboard; the pooled PostgREST deployment uses a shared gateway secret.",
+      400,
+    );
+  }
 
   const pm = getProjectManager();
   try {

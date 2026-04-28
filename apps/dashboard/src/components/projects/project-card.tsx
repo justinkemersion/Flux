@@ -38,6 +38,8 @@ export type ProjectRow = {
   slug: string;
   /** Catalog / Docker stack hash (7 hex), required for CLI `--hash` and hostnames. */
   hash: string;
+  /** When omitted, UI assumes v1_dedicated (legacy list payloads). */
+  mode?: "v1_dedicated" | "v2_shared";
   status: ServerStatus;
   apiUrl: string;
   createdAt: string;
@@ -348,10 +350,13 @@ export function ProjectCard({
   const [logsError, setLogsError] = useState<string | null>(null);
   const didAutoOpenSettings = useRef(false);
 
+  const isV2Shared = p.mode === "v2_shared";
+
   const canRevealCredentials =
-    p.status === "running" ||
-    p.status === "stopped" ||
-    p.status === "partial";
+    !isV2Shared &&
+    (p.status === "running" ||
+      p.status === "stopped" ||
+      p.status === "partial");
 
   const credentialsLoaded =
     (p.anonKey?.length ?? 0) > 0 &&
@@ -396,10 +401,10 @@ export function ProjectCard({
   }, []);
 
   useEffect(() => {
-    if (!autoOpenSettings || didAutoOpenSettings.current) return;
+    if (!autoOpenSettings || didAutoOpenSettings.current || isV2Shared) return;
     didAutoOpenSettings.current = true;
     openSettingsModal();
-  }, [autoOpenSettings, openSettingsModal]);
+  }, [autoOpenSettings, openSettingsModal, isV2Shared]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -550,11 +555,10 @@ export function ProjectCard({
   }
 
   async function runRepair(): Promise<void> {
-    if (
-      !window.confirm(
-        "Repair removes any Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?",
-      )
-    ) {
+    const confirmMsg = isV2Shared
+      ? "Repair re-runs shared-cluster provisioning for this tenant (schema + role). This is for recovery when the catalog and cluster are out of sync. Continue?"
+      : "Repair removes any Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?";
+    if (!window.confirm(confirmMsg)) {
       return;
     }
     setRepairBusy(true);
@@ -660,11 +664,13 @@ export function ProjectCard({
 
   /** Stack state drives power; mesh `healthStatus` is in MeshTelemetryPill. */
   const showStartButton =
-    currentStatus === "stopped" ||
-    (currentStatus === "transitioning" && powerIntent === "start");
+    !isV2Shared &&
+    (currentStatus === "stopped" ||
+      (currentStatus === "transitioning" && powerIntent === "start"));
   const showStopButton =
-    currentStatus === "running" ||
-    (currentStatus === "transitioning" && powerIntent === "stop");
+    !isV2Shared &&
+    (currentStatus === "running" ||
+      (currentStatus === "transitioning" && powerIntent === "stop"));
 
   const powerBtn =
     "inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition-[color,border-color,opacity] hover:border-zinc-500 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700";
@@ -698,7 +704,9 @@ export function ProjectCard({
               createdAt={p.createdAt}
               stackStatus={p.status}
             />
-            {currentStatus === "missing" || currentStatus === "corrupted" ? (
+            {currentStatus === "missing" ||
+            currentStatus === "corrupted" ||
+            (isV2Shared && p.healthStatus === "error") ? (
               <button
                 type="button"
                 onClick={() => void runRepair()}
@@ -751,15 +759,17 @@ export function ProjectCard({
                 )}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={openSettingsModal}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              aria-label={`Project settings for ${p.name}`}
-              title="Project settings"
-            >
-              <Settings className="h-4 w-4" aria-hidden />
-            </button>
+            {!isV2Shared ? (
+              <button
+                type="button"
+                onClick={openSettingsModal}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                aria-label={`Project settings for ${p.name}`}
+                title="Project settings"
+              >
+                <Settings className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={openDeleteModal}
@@ -782,8 +792,9 @@ export function ProjectCard({
                 How to connect
               </h2>
               <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-                Everything you need to reach Postgres and the REST API. Load
-                secrets once; they are not stored in the project list.
+                {isV2Shared
+                  ? "Pooled project: use the service URL with short-lived JWTs from the Flux gateway. Per-tenant Docker Postgres strings and static anon/service keys are not exposed from this UI."
+                  : "Everything you need to reach Postgres and the REST API. Load secrets once; they are not stored in the project list."}
               </p>
             </div>
             {!credentialsLoaded && canRevealCredentials ? (
@@ -848,13 +859,23 @@ export function ProjectCard({
 
           {!credentialsLoaded && !canRevealCredentials ? (
             <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-              Secrets stay hidden until the stack is healthy. Use{" "}
-              <strong className="font-medium">Repair</strong> if Docker is out of
-              sync, or <strong className="font-medium">Delete</strong> to remove
-              this project.
+              {isV2Shared ? (
+                <>
+                  Use the service URL above with gateway-issued JWTs. If the API
+                  stays unhealthy, try <strong className="font-medium">Repair</strong>{" "}
+                  or <strong className="font-medium">Delete</strong>.
+                </>
+              ) : (
+                <>
+                  Secrets stay hidden until the stack is healthy. Use{" "}
+                  <strong className="font-medium">Repair</strong> if Docker is out
+                  of sync, or <strong className="font-medium">Delete</strong> to
+                  remove this project.
+                </>
+              )}
             </p>
           ) : null}
-          {credentialsLoaded ? (
+          {credentialsLoaded && !isV2Shared ? (
             <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
               Update the JWT signing secret or CORS from project settings when
               your auth setup changes.
@@ -867,16 +888,18 @@ export function ProjectCard({
         </div>
 
         <div className="mt-6">
-          <button
-            type="button"
-            onClick={() => setLogsOpen((open) => !open)}
-            aria-expanded={logsOpen}
-            className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            {logsOpen ? "Hide logs" : "Show logs"}
-          </button>
+          {!isV2Shared ? (
+            <button
+              type="button"
+              onClick={() => setLogsOpen((open) => !open)}
+              aria-expanded={logsOpen}
+              className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              {logsOpen ? "Hide logs" : "Show logs"}
+            </button>
+          ) : null}
 
-          {logsOpen ? (
+          {!isV2Shared && logsOpen ? (
             <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40">
               <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
                 <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
@@ -1113,8 +1136,9 @@ export function ProjectCard({
                     Delete project
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    This permanently destroys all containers and database volumes
-                    for{" "}
+                    {isV2Shared
+                      ? "This permanently removes the shared-cluster tenant schema and role for"
+                      : "This permanently destroys all containers and database volumes for"}{" "}
                     <strong className="text-zinc-900 dark:text-zinc-100">
                       {p.name}
                     </strong>

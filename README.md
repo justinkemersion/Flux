@@ -11,6 +11,7 @@ The goal is to make it straightforward to run **many isolated backends** on a **
 - [What ships in this repo](#what-ships-in-this-repo)
 - [Architecture at a glance](#architecture-at-a-glance)
 - [v2 shared data plane wiring (internal)](#v2-shared-data-plane-wiring-internal)
+  - [Mode-split: dashboard behavior per mode](#mode-split-dashboard-behavior-per-mode)
 - [Production deploy workflow (internal)](#production-deploy-workflow-internal)
 - [Monorepo layout](#monorepo-layout)
 - [Core concepts](#core-concepts)
@@ -132,6 +133,65 @@ Treat it as an operator-level source of truth.
   - `DROP SCHEMA ... CASCADE`
   - `DROP ROLE ...` (guarded)
 - Project delete route also evicts `hostname:*` cache entries to avoid zombie routing.
+
+### Mode-split: dashboard behavior per mode
+
+Every project row in `flux-system.projects` carries a `mode` column (`v1_dedicated` | `v2_shared` | `NULL`). `NULL` is treated as `v1_dedicated` everywhere. The dashboard branches on this value before touching Docker so that v2 rows — which **never** have per-tenant containers — never generate spurious Docker errors.
+
+#### `projects.mode` values
+
+| Value | Meaning |
+|-------|---------|
+| `v1_dedicated` | Dedicated Docker stack: `flux-<hash>-<slug>-db` + `flux-<hash>-<slug>-api`. All Docker-based operations apply. |
+| `v2_shared` | Shared-cluster tenant. No per-tenant containers. All Docker operations are skipped or 4xx/5xx-ed. |
+| `NULL` | Legacy row; treated as `v1_dedicated` throughout. |
+
+#### API route behavior (v1 vs v2)
+
+| Route | v1_dedicated | v2_shared |
+|-------|-------------|-----------|
+| `GET /api/projects` | Docker `getProjectSummariesForSlugs` → status | Catalog `health_status` via `statusFromV2CatalogHealth` (no Docker) |
+| `GET /api/projects/[slug]` | Docker inspect → `status`, `apiUrl` | Catalog health only; includes `mode` in response |
+| `PUT /api/projects/[slug]` (start/stop) | `startProjectInfrastructure` / `stopProject` (Docker) | Start: HTTP probe → sets `running` or `error` in catalog. Stop: sets `stopped` in catalog only |
+| `PATCH /api/projects/[slug]` (JWT rotate) | Recreates PostgREST container with new secret | `400` — pooled PostgREST uses a shared gateway secret |
+| `GET /api/projects/[slug]/logs` | Docker `getTenantContainerLogs` | `200` JSON with explanatory hint string (no Docker call) |
+| `GET /api/projects/[slug]/logs/stream` | SSE stream from Docker container logs | SSE with single `data: {"error":"…"}` event, then closes |
+| `GET /api/cli/v1/logs` | SSE stream from Docker container logs | SSE with single `data: {"error":"…"}` event, then closes |
+| `GET /api/projects/[slug]/credentials` | Returns Postgres URI + anon/service JWTs from container env | `501` — no per-tenant container env to read |
+| `GET /api/projects/[slug]/manifest` | Reads Postgres superuser password from container env | `{ apiUrl, postgresPassword: "", passwordSource: "unavailable" }` |
+| `DELETE /api/projects/[slug]` | `nukeProject` (Docker containers + volume) | `deprovisionProject` (drop shared-cluster schema + role) |
+
+#### Fleet monitor (`src/lib/fleet-monitor.ts`)
+
+On every 2-minute tick (`runFleetMonitorTick`) and on the immediate post-create probe (`probeSingleProject`):
+
+- **v1_dedicated** — `getProjectSummariesForSlugs` (Docker inspect batch); if stopped, records `stopped`; otherwise HTTP probes the PostgREST URL and records `running` or `error`.
+- **v2_shared** — HTTP probe only (no Docker); records `running` or `error` directly in `projects.health_status`.
+
+`getProjectSummariesForSlugs` is **never called for v2 rows** — the Docker batch only runs when there is at least one v1 project in the catalog.
+
+#### `statusFromV2CatalogHealth` (`src/lib/v2-project-status.ts`)
+
+Maps `projects.health_status` to the frontend `ServerStatus` type used by both API list responses and UI badges:
+
+| `health_status` | `status` returned |
+|-----------------|-------------------|
+| `"running"` | `"running"` |
+| `"stopped"` | `"stopped"` |
+| `"error"` | `"partial"` |
+| `NULL` / anything else | `"partial"` |
+
+#### UI controls hidden for v2 (`project-card.tsx`, `project-summary-card.tsx`)
+
+| Control | v1_dedicated | v2_shared |
+|---------|-------------|-----------|
+| Start / Stop buttons | Shown | Hidden |
+| Settings (JWT rotate) | Shown | Hidden; `autoOpenSettings` prop also suppressed |
+| Load connection secrets | Shown (when stack healthy) | Hidden (`canRevealCredentials = false`) |
+| Container logs panel | Shown | Hidden |
+| Repair button | Shown when `missing` / `corrupted` | Shown when `healthStatus === "error"` |
+| Delete | "destroys all containers and volumes" copy | "removes shared-cluster tenant schema and role" copy |
+| "How to connect" description | Standard Postgres URI + anon/service JWT copy | Notes pooled project; instructs gateway JWT usage |
 
 ---
 
