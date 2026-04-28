@@ -9,7 +9,9 @@
 #   FLUX_V2_POSTGRES_CONTAINER    — default: flux-postgres-v2
 #   FLUX_V2_PGBOUNCER_CONTAINER   — default: flux-pgbouncer
 #   FLUX_V2_POSTGREST_CONTAINER   — default: flux-postgrest-pool
-#   FLUX_V2_POSTGREST_URL         — default: http://127.0.0.1:3000/
+#   FLUX_V2_POSTGREST_URL         — default: http://flux-postgrest-pool:3000/
+#   FLUX_V2_PROBE_CONTAINER       — default: flux-node-gateway (network probe origin)
+#   FLUX_V2_SKIP_POSTGREST_PROBE=1 — skip postgrest HTTP probe
 #
 # Required env vars for compose interpolation:
 #   SHARED_POSTGRES_PASSWORD
@@ -28,7 +30,8 @@ COMPOSE="docker compose -f ${COMPOSE_FILE}"
 PG_CONTAINER="${FLUX_V2_POSTGRES_CONTAINER:-flux-postgres-v2}"
 PGB_CONTAINER="${FLUX_V2_PGBOUNCER_CONTAINER:-flux-pgbouncer}"
 PGRST_CONTAINER="${FLUX_V2_POSTGREST_CONTAINER:-flux-postgrest-pool}"
-PGRST_URL="${FLUX_V2_POSTGREST_URL:-http://127.0.0.1:3000/}"
+PGRST_URL="${FLUX_V2_POSTGREST_URL:-http://flux-postgrest-pool:3000/}"
+PROBE_CONTAINER="${FLUX_V2_PROBE_CONTAINER:-flux-node-gateway}"
 
 echo "--- v2 Shared Deploy: Initializing ---"
 echo "  repo: $REPO_ROOT"
@@ -92,16 +95,36 @@ for container in "$PG_CONTAINER" "$PGB_CONTAINER" "$PGRST_CONTAINER"; do
   echo "  ${container}: running"
 done
 
-if command -v curl >/dev/null 2>&1; then
+if [[ "${FLUX_V2_SKIP_POSTGREST_PROBE:-}" == "1" ]]; then
+  echo "--- v2 Shared Deploy: PostgREST probe skipped (FLUX_V2_SKIP_POSTGREST_PROBE=1) ---"
+elif docker ps --format '{{.Names}}' | rg -q "^${PROBE_CONTAINER}$"; then
+  echo "--- v2 Shared Deploy: PostgREST probe (from ${PROBE_CONTAINER}) ---"
+  probe_status="$(
+    docker exec "$PROBE_CONTAINER" sh -lc \
+      'node -e "fetch(process.argv[1]).then((r)=>{process.stdout.write(String(r.status));}).catch(()=>process.exit(2));" "$1"' \
+      _ "$PGRST_URL" 2>/dev/null || true
+  )"
+  if [[ "$probe_status" == "200" || "$probe_status" == "401" ]]; then
+    echo "  postgrest: OK (${PGRST_URL} -> ${probe_status})"
+  elif [[ -z "$probe_status" ]]; then
+    echo "  WARN: postgrest probe failed from ${PROBE_CONTAINER}; no status returned."
+    echo "        (container may lack Node/fetch support; set FLUX_V2_SKIP_POSTGREST_PROBE=1 to skip)"
+  else
+    echo "  WARN: postgrest probe returned HTTP ${probe_status} at ${PGRST_URL}"
+  fi
+elif command -v curl >/dev/null 2>&1; then
   echo "--- v2 Shared Deploy: PostgREST probe ---"
-  code="$(curl -sS -o /dev/null -w "%{http_code}" "$PGRST_URL" || echo "000")"
+  code="$(curl -sS -o /dev/null -w "%{http_code}" "$PGRST_URL" 2>/dev/null || true)"
+  if [[ -z "$code" ]]; then
+    code="000"
+  fi
   if [[ "$code" != "200" && "$code" != "401" ]]; then
     echo "  WARN: postgrest probe returned HTTP ${code} at ${PGRST_URL}"
   else
     echo "  postgrest: OK (${PGRST_URL} -> ${code})"
   fi
 else
-  echo "  WARN: curl not found; skipped PostgREST HTTP probe."
+  echo "  WARN: neither probe container (${PROBE_CONTAINER}) nor host curl probe is available; skipped PostgREST probe."
 fi
 
 echo ""
