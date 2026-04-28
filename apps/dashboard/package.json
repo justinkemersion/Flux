@@ -7,7 +7,7 @@
     "build": "pnpm --filter @flux/cli run build && next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --tsconfig tsconfig.json --test 'src/**/*.test.ts'",
+    "test": "tsx --tsconfig tsconfig.json --test src/**/*.test.ts",
     "test:codex": "tsx scripts/test-codex.ts"
   },
   "dependencies": {
