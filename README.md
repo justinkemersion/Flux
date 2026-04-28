@@ -10,6 +10,8 @@ The goal is to make it straightforward to run **many isolated backends** on a **
 
 - [What ships in this repo](#what-ships-in-this-repo)
 - [Architecture at a glance](#architecture-at-a-glance)
+- [v2 shared data plane wiring (internal)](#v2-shared-data-plane-wiring-internal)
+- [Production deploy workflow (internal)](#production-deploy-workflow-internal)
 - [Monorepo layout](#monorepo-layout)
 - [Core concepts](#core-concepts)
 - [Supabase → Flux (migrations)](#supabase--flux-migrations)
@@ -21,7 +23,7 @@ The goal is to make it straightforward to run **many isolated backends** on a **
 - [CLI reference](#cli-reference)
 - [Security and operations](#security-and-operations)
 - [Docs and guides](#docs-and-guides)
-- [Roadmap](#roadmap)
+- [Trajectory TODOs (internal)](#trajectory-todos-internal)
 - [Contributing mindset](#contributing-mindset)
 
 ---
@@ -74,6 +76,104 @@ Tenant PostgREST is configured with **`PGRST_DB_SCHEMAS=api,public`** (`api` fir
 ### Schema changes and cache reload
 
 After SQL runs **inside the tenant Postgres container** via the Docker API (`executeSql`, `importSqlFile`, or `flux push`), Flux runs `NOTIFY pgrst, 'reload schema'` in Postgres, waits briefly, then sends **SIGUSR1** to the **`flux-<hash>-<slug>-api`** container so PostgREST reloads its schema cache. (This matches PostgREST’s documented signal behavior; do not assume **SIGHUP** for schema cache.)
+
+---
+
+## v2 shared data plane wiring (internal)
+
+This section describes the **actual running topology for v2** in this repo today.  
+Treat it as an operator-level source of truth.
+
+### Runtime components (v2 path)
+
+| Layer | Component | Purpose |
+|-------|-----------|---------|
+| Control plane | `apps/dashboard` + `@flux/core` + `@flux/engine-v2` | Create/delete projects, bootstrap tenant schema + role, persist catalog rows in `flux-system` |
+| Edge/data-plane ingress | `@flux/gateway` (`flux-node-gateway`) | Resolve host -> tenant, rate-limit, mint JWT, proxy to PostgREST pool |
+| Shared API pool | `postgrest-pool` (`flux-postgrest-pool`) | Shared PostgREST runtime behind gateway |
+| Shared DB pooler | `pgbouncer` (`flux-pgbouncer`) | Transaction pooling for shared Postgres cluster |
+| Shared cluster | `postgres-v2` (`flux-postgres-v2`) | All v2 tenant schemas + roles |
+
+### Network wiring
+
+`docker/v2-shared/docker-compose.yml` attaches services as follows:
+
+- `postgres-v2`: `flux-v2-shared` + `flux-network`
+- `pgbouncer`: `flux-v2-shared` + `flux-network`
+- `postgrest-pool`: `flux-v2-shared` + `flux-network`
+
+`docker/web/docker-compose.yml` attaches `flux-web` to:
+
+- `flux-network` (control-plane + Traefik)
+- `flux-v2-shared` (so `FLUX_SHARED_POSTGRES_URL` can resolve shared-cluster hosts)
+
+### JWT and schema isolation handshake
+
+1. Gateway resolves request host to `tenant_id`.
+2. Gateway signs short-lived HS256 JWT with `FLUX_GATEWAY_JWT_SECRET`.
+3. PostgREST verifies the same secret via `PGRST_JWT_SECRET`.
+4. Gateway injects:
+   - `Authorization: Bearer <jwt>`
+   - `Accept-Profile: t_<shortid>_api`
+   - `Content-Profile: t_<shortid>_api`
+5. PostgREST pre-request hook (`public.flux_set_tenant_context`) applies:
+   - `SET LOCAL search_path = t_<shortid>_api`
+   - `SET LOCAL statement_timeout = ...`
+
+### Provision/delete lifecycle (v2)
+
+- `provisionProject({ tenantId })`:
+  - derives `shortId` from immutable `tenantId`
+  - collision-checks ownership marker (`COMMENT ON SCHEMA ... IS 'tenant:<uuid>'`)
+  - creates schema + role idempotently
+  - reapplies guardrails every run (`CONNECTION LIMIT`, `statement_timeout`, `search_path`)
+  - emits `pg_notify('pgrst', 'reload config')`
+- `deprovisionProject(tenantId)`:
+  - `DROP SCHEMA ... CASCADE`
+  - `DROP ROLE ...` (guarded)
+- Project delete route also evicts `hostname:*` cache entries to avoid zombie routing.
+
+---
+
+## Production deploy workflow (internal)
+
+### Canonical order
+
+Run in this order on the server:
+
+1. `./bin/deploy-v2-shared.sh`
+2. `./bin/deploy-gateway.sh`
+3. `./bin/deploy.sh`
+
+Orchestrated equivalent:
+
+```bash
+./bin/deploy-all.sh
+```
+
+### Why this order matters
+
+- Data plane first: ensures Postgres/PgBouncer/PostgREST are healthy before gateway switches traffic.
+- Gateway second: ensures routing points to ready upstreams.
+- Dashboard last: control-plane UX comes up after infrastructure.
+
+### Health gates (must-pass)
+
+```bash
+curl -fsS http://127.0.0.1:4000/health && echo
+curl -fsS http://127.0.0.1:4000/health/deep && echo
+pnpm --filter dashboard test
+```
+
+### Failure triage quick map
+
+| Symptom | Likely root cause | First check |
+|--------|-------------------|-------------|
+| `flux-node-gateway` restart loop | runtime module resolution / env validation crash | `docker logs --since 5m flux-node-gateway` |
+| gateway `health` fails with reset | process crashed before listener stabilized | same logs + `docker inspect ... State` |
+| v2 provision fails in dashboard | `FLUX_SHARED_POSTGRES_URL` DNS/network mismatch | verify `flux-web` attached to `flux-v2-shared` and URL host |
+| PostgREST returns wrong schema data | missing profile headers / hook misconfig | gateway proxy headers + `PGRST_DB_PRE_REQUEST` |
+| stale custom-domain routing | Redis cache not evicted | domain CRUD/delete path calls `evictHostname(s)` |
 
 ---
 
@@ -317,17 +417,27 @@ pnpm run flux -- reap --hours 72
 - **`docs/production-security-audit.md`** — Production security posture, pinned images, and credential API behavior.
 - **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
 - **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
+- **`docs/flux-v2-architecture.md`** — v2 invariants, threat model, tiering, and implementation red flags.
+- **`docs/TRAJECTORY-TODO.md`** — internal execution roadmap and active priority backlog.
 
 ---
 
-## Roadmap
+## Trajectory TODOs (internal)
 
-| Direction | Notes |
-|-----------|--------|
-| **Dashboard depth** | More project detail, metrics, logs, and first-class env/JWT editing (partially present via APIs). |
-| **Production routing** | Today: **`*.flux.localhost`** via Traefik on the Docker host. Future: TLS, custom domains, and hosted DNS for `https://<project>.api.example.com`. |
-| **Auth & RLS** | Dashboard identity is Auth.js on **`flux-system`**; tenant APIs use PostgREST roles from **`BOOTSTRAP_SQL`**. Tighter RLS and claim mapping as apps grow. |
-| **Billing** | Stripe routes exist in the dashboard; extend webhooks and plan enforcement as needed. |
+The canonical backlog lives in:
+
+- `docs/TRAJECTORY-TODO.md`
+
+Operational policy:
+
+- Keep it **ranked by priority** (`P0`–`P3`).
+- Every item must include:
+  - owner
+  - status
+  - rationale / risk
+  - acceptance criteria
+- Update it after each meaningful deploy or architecture change.
+- If README and TODO doc diverge, treat `docs/TRAJECTORY-TODO.md` as the active source and reconcile immediately.
 
 ---
 
