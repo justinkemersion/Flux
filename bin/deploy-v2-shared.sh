@@ -227,8 +227,8 @@ BEGIN
 
   _schema := substring(_role FROM '^t_[0-9a-f]{12}') || '_api';
 
-  EXECUTE format('SET LOCAL search_path = %%I', _schema);
-  EXECUTE format('SET LOCAL statement_timeout = %%L', '${_stmt_timeout_ms}ms');
+  EXECUTE format('SET LOCAL search_path = %I', _schema);
+  EXECUTE format('SET LOCAL statement_timeout = %L', '${_stmt_timeout_ms}ms');
 END;
 \$\$;
 BOOTSTRAP_SQL
