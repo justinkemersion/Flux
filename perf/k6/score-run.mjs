@@ -90,16 +90,31 @@ function rate503(metrics) {
   return metricRate(metrics.status_503);
 }
 
+/** Tier 0 threshold for request duration tail (collapse / stuck upstream). */
+const TIER0_TAIL_MS_MAX = 8000;
+
+/**
+ * k6 `--summary-export` often includes p(95) but not p(99). Using `max` alone
+ * causes false Tier-0 fails from a single straggler when the bulk of traffic is healthy.
+ * Order: p(99) when present, else p(95), else max.
+ */
+function httpReqDurationTailMs(dur) {
+  if (!dur) return { ms: 0, source: null };
+  if (typeof dur["p(99)"] === "number") return { ms: dur["p(99)"], source: "p(99)" };
+  if (typeof dur["p(95)"] === "number") return { ms: dur["p(95)"], source: "p(95)" };
+  const m = percentile(dur, "max");
+  return { ms: m, source: "max" };
+}
+
 function tier0HardFail(metrics, root, flags) {
   const reasons = [];
   const dur = durationMetric(metrics);
-  const p99Explicit = dur && typeof dur["p(99)"] === "number" ? dur["p(99)"] : null;
-  const tailMs = p99Explicit ?? (dur ? percentile(dur, "max") : 0);
-  if (tailMs > 8000) {
+  const { ms: tailMs, source: tailSrc } = httpReqDurationTailMs(dur);
+  if (tailMs > TIER0_TAIL_MS_MAX) {
     reasons.push(
-      p99Explicit != null
-        ? `p(99) ${tailMs.toFixed(0)}ms > 8000ms (timeout collapse)`
-        : `max latency ${tailMs.toFixed(0)}ms > 8000ms (no p(99) in summary; using max)`,
+      tailSrc === "p(99)"
+        ? `p(99) ${tailMs.toFixed(0)}ms > ${TIER0_TAIL_MS_MAX}ms (timeout collapse)`
+        : `http_req_duration ${tailSrc ?? "tail"} ${tailMs.toFixed(0)}ms > ${TIER0_TAIL_MS_MAX}ms`,
     );
   }
 
@@ -144,7 +159,7 @@ function tier2Latency(metrics, baselineMetrics, flags) {
 
   const med = percentile(dur, "med");
   const p95 = percentile(dur, "p(95)");
-  const p99 = percentile(dur, "p(99)") || percentile(dur, "max");
+  const { ms: tailMs, source: tailSrc } = httpReqDurationTailMs(dur);
 
   let d = 0;
   const notes = [];
@@ -163,11 +178,13 @@ function tier2Latency(metrics, baselineMetrics, flags) {
       notes.push(`p95 ${p95.toFixed(0)}ms > 1000ms → -${pen} (-5 per +250ms bucket, ceil)`);
     }
   }
-  if (p99 > 2000) {
-    const pen = Math.ceil((p99 - 2000) / 500) * 10;
+  if (tailMs > 2000) {
+    const pen = Math.ceil((tailMs - 2000) / 500) * 10;
     if (pen > 0) {
       d += pen;
-      notes.push(`tail ${p99.toFixed(0)}ms > 2000ms → -${pen} (-10 per +500ms bucket, ceil; uses p(99) or max if absent)`);
+      notes.push(
+        `tail ${tailMs.toFixed(0)}ms (${tailSrc ?? "?"}) > 2000ms → -${pen} (-10 per +500ms bucket, ceil); order: p(99), p(95), max`,
+      );
     }
   }
 

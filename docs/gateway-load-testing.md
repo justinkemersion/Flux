@@ -138,9 +138,9 @@ If prerequisites fail, the baseline file is still created with a `blocked` statu
 
 Automated scorecard from k6 `--summary-export` JSON: [`perf/k6/score-run.mjs`](../perf/k6/score-run.mjs).
 
-- **Tier 0 (hard fail):** `other_5xx` rate > 0.5%, tail > 8s (`p(99)` if present else `max`), optional `TENANT_INVARIANT_FAIL=1`.
+- **Tier 0 (hard fail):** `other_5xx` rate > 0.5%, tail > 8s (order: `p(99)` if present in export, else `p(95)`, else `max` — omitting `p(99)` and using lone `max` produced false Tier-0 fails from single-straggler outliers), optional `TENANT_INVARIANT_FAIL=1`.
 - **Tier 1 (40 pts):** unexpected responses from `expected_status` or `checks`; env flags `RATE_LIMIT_LEAK=1`, `MODE_ISOLATION_FAIL=1`.
-- **Tier 2 (30 pts):** p50 / p95 / p99 vs targets (ceil bucket penalties); optional `--baseline-summary` for 2× p95 regression; `TAIL_COLLAPSE=1`.
+- **Tier 2 (30 pts):** p50 / p95 / tail vs targets using the **same tail order** as Tier 0 (`p(99)`, `p(95)`, `max`; ceil bucket penalties); optional `--baseline-summary` for 2× p95 regression; `TAIL_COLLAPSE=1`.
 - **Tier 3 (20 pts):** optional `--overload-summary` for 503 vs latency; otherwise **not measured** (full points, caveat in output).
 - **Tier 4 (10 pts):** `STABILITY_SPIKE=1`, `COLD_REGRESSION=1` when you have side signals.
 
