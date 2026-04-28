@@ -44,7 +44,7 @@ This script runs named scenarios in parallel (optional stagger) so you can slice
 
 Important:
 
-- Point **`UPSTREAM_BASE`** (or `BASE_URL`) at the **edge URL** you are testing (gateway or pool URL). For Host-based routing, set **`KNOWN_HOST`** (or `HOST`) to the tenant host; for cold resolver traffic, set **`FLUX_BASE_DOMAIN`** (e.g. `vsl-base.com`). Wildcard TLS must allow the cold host if you override `Host`.
+- Point **`UPSTREAM_BASE`** (or `BASE_URL`) at the **edge URL** you are testing (gateway or pool URL). For Host-based routing, set **`KNOWN_HOST`** (or `HOST`) to the tenant hostname (e.g. `api.<slug>.<hash>.vsl-base.com`, no scheme). **If you use loopback (`http://127.0.0.1:4000`), `KNOWN_HOST`/`HOST` is mandatory** — otherwise k6 sends `Host: 127.0.0.1` and the gateway cannot resolve tenants. For cold resolver traffic, set **`FLUX_BASE_DOMAIN`** (e.g. `vsl-base.com`). Wildcard TLS must allow the cold host if you override `Host`.
 - Set **`TRUTH_PATH_UPSTREAM_LIGHT`** (and optionally `TRUTH_PATH_UPSTREAM_HEAVY`) to a real table path (e.g. `/rest/v1/your_table?limit=1`) — default `/` is only a smoke default.
 - Run a **subset** while tuning: `TRUTH_SCENARIOS=gateway_only,upstream_light`
 - Lower rates for smoke: e.g. `GATEWAY_ONLY_RATE=10` `GATEWAY_ONLY_DURATION=30s`
