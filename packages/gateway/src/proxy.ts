@@ -36,7 +36,9 @@ const HOP_BY_HOP = new Set([
  *   content-type, content-length, and set-cookie are explicitly preserved
  *   by the allow-all-except-hop-by-hop approach.
  * - Replaces `Authorization` with the gateway-minted JWT (invariant 3).
- * - Adds `x-forwarded-host` and `x-tenant-id` for debugging.
+ * - Adds `x-forwarded-host` and `x-tenant-id` on the upstream request.
+ * - Adds `x-tenant-id` and `x-tenant-role` on the client response for routing/debug
+ *   (load tests, no log dependency).
  * - Streams request body as a pass-through ReadableStream — never buffers.
  * - Streams upstream response body back to the client — never buffers.
  * - Strips hop-by-hop headers from the upstream response before returning.
@@ -89,6 +91,8 @@ export async function proxyRequest(
       if (HOP_BY_HOP.has(name.toLowerCase())) continue;
       resHeaders.set(name, value);
     }
+    resHeaders.set("x-tenant-id", tenant.tenantId);
+    resHeaders.set("x-tenant-role", `t_${tenant.shortid}_role`);
 
     // Stream response body — no buffering
     return new Response(upstreamRes.body as unknown as BodyInit, {

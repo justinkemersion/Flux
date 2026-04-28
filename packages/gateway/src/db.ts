@@ -27,7 +27,7 @@ export function getPool(): pg.Pool {
   return _pool;
 }
 
-/** Lightweight DB connectivity check — used by /health. */
+/** Lightweight DB connectivity check — used by `GET /health/deep`. */
 export async function pingDb(): Promise<boolean> {
   try {
     await getPool().query("SELECT 1");

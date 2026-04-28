@@ -50,7 +50,11 @@ export function createApp(): Hono {
   }
 
   // ------------------------------------------------------------------ Health
-  app.get("/health", async (c) => {
+  // Liveness: no DB/Redis I/O — safe for Docker HEALTHCHECK / orchestrator restarts.
+  app.get("/health", (c) => c.json({ status: "ok" }, 200));
+
+  // Readiness: DB + optional Redis; 503 when system DB is unreachable.
+  app.get("/health/deep", async (c) => {
     const dbUp = await pingDb();
     const redisClient = getRedis();
 

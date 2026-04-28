@@ -78,7 +78,7 @@ HOST="api.<slug>.<hash>.vsl-base.com" \
 bash perf/k6/run-matrix.sh
 ```
 
-The health gate tries `BASE_URL/health` first, then `BASE_URL/`, using the same `x-load-test` headers when `LOAD_TEST_HEADER=true`.
+The matrix health gate tries `BASE_URL/health/deep` first (readiness), then `BASE_URL/`, using the same `x-load-test` headers when `LOAD_TEST_HEADER=true`. Override with `HEALTH_URL` (e.g. liveness-only `BASE_URL/health`).
 
 Run one scenario directly:
 

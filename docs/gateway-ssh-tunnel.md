@@ -60,10 +60,14 @@ redis-cli -h 127.0.0.1 -p 16379 ping
 Then:
 
 ```bash
+# Liveness (process up; always 200 if the gateway is listening)
 curl -sS "http://127.0.0.1:4000/health"
+
+# Readiness (system DB + optional Redis; 503 if the DB is unreachable)
+curl -sS "http://127.0.0.1:4000/health/deep"
 ```
 
-You want `"ok":true` and `"db":"up"` (Redis is reported but DB alone determines `ok` today).
+On `/health/deep` you want `"ok":true` and `"db":"up"` before treating the stack as ready (Redis is reported; `ok` follows the system DB only).
 
 ## 5. Run load tests against the local gateway
 
