@@ -62,8 +62,11 @@ export function normalizeHost(raw: string): string {
  *  1. In-memory cache (TTL 8s) — protects against Redis-down DB hammering.
  *  2. Redis cache key `hostname:<normalizedHost>` (TTL 5m).
  *  3. DB: exact match in `domains` table — covers all custom domains (apex, www, etc.).
- *  4. DB: subdomain slug fallback — only when host ends with FLUX_BASE_DOMAIN.
- *     Extracts first label as slug, queries `projects` table.
+ *  4. DB: Flux subdomain fallbacks when host ends with FLUX_BASE_DOMAIN:
+ *     a) Production Traefik shape `api.<slug>.<7-hex-hash>.<base>` (matches @flux/core
+ *        fluxTenantPostgrestHostname default prefix `api`).
+ *     b) Legacy / dev single-label `<slug>-<hash>.<base>` (first label only).
+ *     Both query `projects` by slug + hash.
  *  5. Returns null → caller responds 404.
  *
  * Cache invalidation: domain CRUD operations MUST call evictHostname(hostname)
@@ -123,19 +126,32 @@ async function resolveUncached(host: string): Promise<ResolvedTenant | null> {
     return { resolution: domainRow, cacheSource: "db" };
   }
 
-  // 4. Subdomain slug fallback — only for Flux-managed subdomains
+  // 4. Subdomain slug fallbacks — only for Flux-managed subdomains
   const baseDomain = env.FLUX_BASE_DOMAIN.toLowerCase();
   if (host !== baseDomain && host.endsWith(`.${baseDomain}`)) {
     const prefix = host.slice(0, host.length - baseDomain.length - 1);
-    // Subdomain format: <slug>-<hash> (e.g. myapp-a1b2c3d.flux.localhost).
-    // The 7-hex hash is globally unique per project, so the lookup is fully
-    // deterministic even when two users share the same slug.
-    // Only the first label is used — nested subdomains are ignored.
-    const label = prefix.split(".")[0] ?? "";
+    const parts = prefix.split(".");
+    // 4a. Traefik default: api.<slug>.<hash>.<base> → prefix is three labels (see FLUX_PROJECT_HASH_HEX_LEN in @flux/core).
+    const HASH_HEX_LEN = 7;
+    const hashPart = parts[2]?.toLowerCase() ?? "";
+    if (
+      parts.length === 3 &&
+      parts[0]!.toLowerCase() === "api" &&
+      new RegExp(`^[0-9a-f]{${HASH_HEX_LEN}}$`, "i").test(hashPart)
+    ) {
+      const slug = parts[1]!;
+      const slugRow = await queryBySlugAndHash(slug, hashPart);
+      if (slugRow) {
+        await cacheResolution(cacheKey, slugRow);
+        return { resolution: slugRow, cacheSource: "db" };
+      }
+    }
+    // 4b. Legacy single-label: <slug>-<hash>.<base> (e.g. myapp-a1b2c3d.flux.localhost).
+    const label = parts[0] ?? "";
     const lastDash = label.lastIndexOf("-");
     if (lastDash > 0) {
       const slug = label.slice(0, lastDash);
-      const hash = label.slice(lastDash + 1);
+      const hash = label.slice(lastDash + 1).toLowerCase();
       if (slug && hash) {
         const slugRow = await queryBySlugAndHash(slug, hash);
         if (slugRow) {
