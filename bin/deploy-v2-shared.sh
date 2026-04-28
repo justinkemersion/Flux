@@ -12,6 +12,7 @@
 #   FLUX_V2_PROBE_CONTAINER        — default: flux-node-gateway (network probe origin)
 #   FLUX_V2_SKIP_POSTGREST_PROBE=1 — skip postgrest HTTP probe
 #   FLUX_V2_SKIP_CLUSTER_BOOTSTRAP=1 — skip bootstrapSharedCluster (advanced: first-time only)
+#   FLUX_V2_SKIP_GLOBAL_DB_BOOTSTRAP=1 — skip global role bootstrap (advanced only)
 #
 # Required env vars for compose interpolation:
 #   SHARED_POSTGRES_PASSWORD
@@ -120,6 +121,50 @@ for container in "$PG_CONTAINER" "$PGB_CONTAINER" "$PGRST_CONTAINER"; do
 done
 
 # ---------------------------------------------------------------------------
+# Global database bootstrap — PostgREST entry roles
+#
+# This section manages cluster-wide roles required before tenant provisioning:
+#   - authenticator (LOGIN, password = PGRST_DB_PASSWORD)
+#   - anon          (NOLOGIN)
+# and grants authenticator the ability to switch to anon.
+#
+# Idempotent behavior:
+#   - creates roles if absent
+#   - re-applies login/no-login flags and authenticator password every run
+#   - re-applies GRANT anon TO authenticator every run
+# ---------------------------------------------------------------------------
+if [[ "${FLUX_V2_SKIP_GLOBAL_DB_BOOTSTRAP:-}" == "1" ]]; then
+  echo "--- v2 Shared Deploy: Global Database Bootstrap skipped (FLUX_V2_SKIP_GLOBAL_DB_BOOTSTRAP=1) ---"
+else
+  echo "--- v2 Shared Deploy: Global Database Bootstrap ---"
+  _pg_user="${SHARED_POSTGRES_USER:-postgres}"
+  _pg_db="${SHARED_POSTGRES_DB:-postgres}"
+  if docker exec -i "$PG_CONTAINER" \
+      psql -U "$_pg_user" -d "$_pg_db" -v ON_ERROR_STOP=1 -v "pgrst_db_password=${PGRST_DB_PASSWORD}" -q <<GLOBAL_BOOTSTRAP_SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'authenticator') THEN
+    CREATE ROLE authenticator LOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon NOLOGIN;
+  END IF;
+END
+\$\$;
+
+SELECT format('ALTER ROLE authenticator LOGIN PASSWORD %L', :'pgrst_db_password') \gexec
+ALTER ROLE anon NOLOGIN;
+GRANT anon TO authenticator;
+GLOBAL_BOOTSTRAP_SQL
+  then
+    echo "  global bootstrap: OK (authenticator + anon)"
+  else
+    echo "  ERROR: global bootstrap failed; PostgREST may not be able to SET ROLE anon." >&2
+    exit 1
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cluster bootstrap — installs the PostgREST pre-config and pre-request hooks
 # (flux_postgrest_config, flux_set_tenant_context) into the shared cluster's
 # public schema.  Uses CREATE OR REPLACE so it is safe to run on every deploy.
@@ -203,13 +248,15 @@ if [[ "${FLUX_V2_SKIP_POSTGREST_PROBE:-}" == "1" ]]; then
   echo "--- v2 Shared Deploy: PostgREST probe skipped (FLUX_V2_SKIP_POSTGREST_PROBE=1) ---"
 elif docker ps --format '{{.Names}}' | grep -qxF "${PROBE_CONTAINER}"; then
   echo "--- v2 Shared Deploy: PostgREST probe (from ${PROBE_CONTAINER}) ---"
+  # Prefer curl when available; fallback to node fetch for minimal images.
+  # 401 is expected for unauthenticated requests and is considered healthy.
   probe_status="$(
     docker exec "$PROBE_CONTAINER" sh -lc \
-      'node -e "fetch(process.argv[1]).then((r)=>{process.stdout.write(String(r.status));}).catch(()=>process.exit(2));" "$1"' \
+      'if command -v curl >/dev/null 2>&1; then curl -sS -o /dev/null -w "%{http_code}" "$1"; else node -e "fetch(process.argv[1]).then((r)=>{process.stdout.write(String(r.status));}).catch(()=>process.exit(2));" "$1"; fi' \
       _ "$PGRST_INTERNAL_URL" 2>/dev/null || true
   )"
   if [[ "$probe_status" == "200" || "$probe_status" == "401" ]]; then
-    echo "  postgrest: OK (${PGRST_INTERNAL_URL} -> ${probe_status})"
+    echo "  postgrest: OK (${PGRST_INTERNAL_URL} -> ${probe_status}; 401 unauth is healthy)"
   elif [[ -z "$probe_status" ]]; then
     echo "  WARN: postgrest probe failed from ${PROBE_CONTAINER}; no status returned."
     echo "        (container may lack Node/fetch support; set FLUX_V2_SKIP_POSTGREST_PROBE=1 to skip)"

@@ -121,6 +121,10 @@ export function buildTenantBootstrapSql(
   // CREATE ROLE is non-transactional DDL; the IF NOT EXISTS DO block makes
   // role creation individually idempotent without requiring a transaction wrapper.
   //
+  // IMPORTANT: this SQL assumes the cluster-level `authenticator` role already
+  // exists. That global role is created/managed by bin/deploy-v2-shared.sh in
+  // the "--- v2 Shared Deploy: Global Database Bootstrap ---" section.
+  //
   // The ALTER ROLE + GRANT statements below are intentionally OUTSIDE the
   // IF NOT EXISTS block: they are unconditional re-applications that act as
   // idempotent guardrails on every repair run, resetting CONNECTION LIMIT and
@@ -363,8 +367,15 @@ export async function provisionProject(
   } catch (error: unknown) {
     if (error instanceof TenantShortIdCollisionError) throw error;
     const message = error instanceof Error ? error.message : String(error);
+    const roleMissing =
+      /role\s+"?authenticator"?\s+does\s+not\s+exist/i.test(message) ||
+      /role\s+"?anon"?\s+does\s+not\s+exist/i.test(message) ||
+      /role\s+".*"\s+does\s+not\s+exist/i.test(message);
+    const bootstrapHint = roleMissing
+      ? " Hint: run ./bin/deploy-v2-shared.sh and confirm the 'Global Database Bootstrap' step completed (authenticator/anon roles)."
+      : "";
     throw new Error(
-      `Failed provisioning shared tenant bootstrap for tenant "${input.tenantId}" (shortId "${identity.shortId}"): ${message}`,
+      `Failed provisioning shared tenant bootstrap for tenant "${input.tenantId}" (shortId "${identity.shortId}"): ${message}${bootstrapHint}`,
     );
   }
   return {
