@@ -2,7 +2,6 @@ import { and, eq } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
 import { domains, projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
-import { evictHostname, normalizeHost } from "@flux/gateway";
 
 export const runtime = "nodejs";
 
@@ -10,6 +9,37 @@ type Ctx = { params: Promise<{ slug: string }> };
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
+}
+
+function normalizeHost(raw: string): string {
+  return raw.toLowerCase().split(":")[0]!;
+}
+
+/**
+ * Best-effort cache eviction for gateway hostname resolution keys.
+ * Fails open when Redis is unavailable; DB remains source of truth.
+ */
+async function evictHostname(hostname: string): Promise<void> {
+  const redisUrl =
+    process.env.FLUX_REDIS_URL?.trim() || process.env.REDIS_URL?.trim();
+  if (!redisUrl) return;
+  try {
+    const Redis = (await import("ioredis")).default;
+    const client = new Redis(redisUrl, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      connectTimeout: 1500,
+    });
+    try {
+      await client.connect();
+      await client.del(`hostname:${hostname}`);
+    } finally {
+      client.disconnect();
+    }
+  } catch {
+    // Fail-open: domain writes should not be blocked on cache infra.
+  }
 }
 
 async function resolveOwnedProjectId(

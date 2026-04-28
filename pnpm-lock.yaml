@@ -22,9 +22,6 @@ importers:
       '@flux/engine-v2':
         specifier: workspace:*
         version: link:../../packages/engine-v2
-      '@flux/gateway':
-        specifier: workspace:*
-        version: link:../../packages/gateway
       ai:
         specifier: ^4.3.19
         version: 4.3.19(react@19.2.4)(zod@4.3.6)
