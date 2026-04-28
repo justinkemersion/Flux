@@ -8,6 +8,7 @@ This runbook executes the Flux gateway stress matrix against the current `@flux/
 - Gateway reachable at `BASE_URL` (default: `http://localhost:4000`).
 - A valid tenant host in `HOST` format like `myapp-a1b2c3d.flux.localhost`.
 - Optional Docker access if you want automated `cold-start` and `redis-down` disruptions.
+- If Postgres/PostgREST/Redis live on a VPS and are not public: [SSH port forwards for local gateway dev](gateway-ssh-tunnel.md).
 
 ## Scenario Order
 
