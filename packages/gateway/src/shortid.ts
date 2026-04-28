@@ -1,16 +1,14 @@
 /**
  * Derives a deterministic short identifier from a tenant UUID.
  *
- * Algorithm: strip hyphens from the UUID, take the first 12 hex characters.
- * This gives a collision probability of ~1/2^48 — negligible for any
- * realistic number of tenants.
+ * Canonical implementation lives in @flux/core/standalone (deriveShortId).
+ * Re-exported here under the gateway-local name to keep call-sites unchanged
+ * while ensuring a single source of truth for the algorithm.
  *
- * Used for Postgres schema names (`t_<shortid>_api`) and role names
- * (`t_<shortid>_role`). Slug is never embedded in these identifiers.
+ * Algorithm: strip hyphens, take the first 12 hex chars → ~1/2^48 collision
+ * probability, negligible for any realistic tenant count.
  *
  * Example:
  *   "550e8400-e29b-41d4-a716-446655440000" → "550e8400e29b"
  */
-export function tenantIdToShortid(tenantId: string): string {
-  return tenantId.replace(/-/g, "").slice(0, 12).toLowerCase();
-}
+export { deriveShortId as tenantIdToShortid } from "@flux/core/standalone";

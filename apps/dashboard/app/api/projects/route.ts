@@ -89,41 +89,79 @@ export async function GET(): Promise<Response> {
       .from(projects)
       .where(eq(projects.userId, session.user.id));
 
-    let summaries: Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>;
-    try {
-      summaries = await pm.getProjectSummariesForUser(session.user.id, {
-        loadSlugRefsForUser: async (userId) =>
-          db
-            .select({ slug: projects.slug, hash: projects.hash })
-            .from(projects)
-            .where(eq(projects.userId, userId)),
-        isProduction: process.env.NODE_ENV === "production",
-      });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return jsonError(`Docker status unavailable: ${msg}`, 503);
-    }
-    const summaryBySlug = new Map(summaries.map((s) => [s.slug, s]));
+    // Only probe Docker for v1_dedicated projects — v2_shared projects have no
+    // dedicated containers and probing Docker for them wastes a roundtrip and
+    // produces misleading "missing" statuses.
+    const v1Projects = userProjects.filter((p) => p.mode !== "v2_shared");
 
+    let summaryBySlug = new Map<string, Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>[number]>();
+    if (v1Projects.length > 0) {
+      const v1Slugs = new Set(v1Projects.map((p) => p.slug));
+      let summaries: Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>;
+      try {
+        summaries = await pm.getProjectSummariesForUser(session.user.id, {
+          loadSlugRefsForUser: async (userId) =>
+            db
+              .select({ slug: projects.slug, hash: projects.hash })
+              .from(projects)
+              .where(
+                and(eq(projects.userId, userId), eq(projects.mode, "v1_dedicated")),
+              ),
+          isProduction: process.env.NODE_ENV === "production",
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return jsonError(`Docker status unavailable: ${msg}`, 503);
+      }
+      summaryBySlug = new Map(
+        summaries.filter((s) => v1Slugs.has(s.slug)).map((s) => [s.slug, s]),
+      );
+    }
+
+    const isProduction = process.env.NODE_ENV === "production";
     const projectsPayload = userProjects.map((p) => {
-      const s = summaryBySlug.get(p.slug);
       const createdAt =
         p.createdAt instanceof Date
           ? p.createdAt.toISOString()
           : p.createdAt;
+
+      if (p.mode === "v2_shared") {
+        // v2 projects: derive status from DB heartbeat rather than Docker probes.
+        const status =
+          p.healthStatus === "healthy"
+            ? "running"
+            : p.healthStatus === "unhealthy"
+              ? "stopped"
+              : p.lastHeartbeatAt
+                ? "running"
+                : "unknown";
+        return {
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          hash: p.hash,
+          mode: p.mode,
+          status,
+          apiUrl: fluxApiUrlForSlug(p.slug, p.hash, isProduction),
+          createdAt,
+          healthStatus: p.healthStatus ?? null,
+          lastHeartbeatAt: p.lastHeartbeatAt
+            ? p.lastHeartbeatAt.toISOString()
+            : null,
+        };
+      }
+
+      const s = summaryBySlug.get(p.slug);
       return {
         id: p.id,
         name: p.name,
         slug: p.slug,
         hash: p.hash,
+        mode: p.mode ?? "v1_dedicated",
         status: s?.status ?? "missing",
         apiUrl:
           s?.apiUrl ??
-          fluxApiUrlForSlug(
-            p.slug,
-            p.hash,
-            process.env.NODE_ENV === "production",
-          ),
+          fluxApiUrlForSlug(p.slug, p.hash, isProduction),
         createdAt,
         healthStatus: p.healthStatus ?? null,
         lastHeartbeatAt: p.lastHeartbeatAt

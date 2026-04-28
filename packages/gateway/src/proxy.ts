@@ -61,10 +61,18 @@ export async function proxyRequest(
     if (HOP_BY_HOP.has(name.toLowerCase())) continue;
     reqHeaders.set(name, value);
   }
-  // Inject gateway-controlled headers (override anything the client sent)
+  // Inject gateway-controlled headers (override anything the client sent).
   reqHeaders.set("authorization", `Bearer ${jwt}`);
   reqHeaders.set("x-forwarded-host", url.hostname);
   reqHeaders.set("x-tenant-id", tenant.tenantId);
+  // PostgREST v12 schema-based routing: tell PostgREST which tenant schema to
+  // expose for this request.  Without these headers PostgREST falls back to the
+  // first entry in db-schemas ("public") and all tenant queries hit the wrong
+  // schema.  Accept-Profile selects the schema for GET/HEAD; Content-Profile for
+  // POST/PATCH/PUT/DELETE with a body.  Setting both on every request is safe.
+  const tenantSchema = `t_${tenant.shortid}_api`;
+  reqHeaders.set("accept-profile", tenantSchema);
+  reqHeaders.set("content-profile", tenantSchema);
 
   // --- Body: pass-through stream, never buffer ---
   const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD";

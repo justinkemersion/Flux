@@ -2,16 +2,16 @@
 # Rebuild and restart the Flux v2 shared data-plane stack.
 # Run on the host where Docker runs after the repo is present at $REPO_ROOT.
 #
-#   FLUX_DEPLOY_GIT_SYNC=1        — run `git pull --ff-only` first.
-#   FLUX_DEPLOY_PRUNE_BUILDER=1   — also run `docker builder prune -f`.
-#   FLUX_V2_COMPOSE_FILE          — compose file override.
-#   FLUX_V2_ENV_FILE              — env file to source (default: docker/v2-shared/.env).
-#   FLUX_V2_POSTGRES_CONTAINER    — default: flux-postgres-v2
-#   FLUX_V2_PGBOUNCER_CONTAINER   — default: flux-pgbouncer
-#   FLUX_V2_POSTGREST_CONTAINER   — default: flux-postgrest-pool
-#   FLUX_V2_POSTGREST_URL         — default: http://flux-postgrest-pool:3000/
-#   FLUX_V2_PROBE_CONTAINER       — default: flux-node-gateway (network probe origin)
+#   FLUX_DEPLOY_GIT_SYNC=1         — run `git pull --ff-only` first.
+#   FLUX_DEPLOY_PRUNE_BUILDER=1    — also run `docker builder prune -f`.
+#   FLUX_V2_COMPOSE_FILE           — compose file override.
+#   FLUX_V2_ENV_FILE               — env file to source (default: docker/v2-shared/.env).
+#   FLUX_V2_POSTGRES_CONTAINER     — default: flux-postgres-v2
+#   FLUX_V2_PGBOUNCER_CONTAINER    — default: flux-pgbouncer
+#   FLUX_V2_POSTGREST_CONTAINER    — default: flux-postgrest-pool
+#   FLUX_V2_PROBE_CONTAINER        — default: flux-node-gateway (network probe origin)
 #   FLUX_V2_SKIP_POSTGREST_PROBE=1 — skip postgrest HTTP probe
+#   FLUX_V2_SKIP_CLUSTER_BOOTSTRAP=1 — skip bootstrapSharedCluster (advanced: first-time only)
 #
 # Required env vars for compose interpolation:
 #   SHARED_POSTGRES_PASSWORD
@@ -30,8 +30,9 @@ COMPOSE="docker compose -f ${COMPOSE_FILE}"
 PG_CONTAINER="${FLUX_V2_POSTGRES_CONTAINER:-flux-postgres-v2}"
 PGB_CONTAINER="${FLUX_V2_PGBOUNCER_CONTAINER:-flux-pgbouncer}"
 PGRST_CONTAINER="${FLUX_V2_POSTGREST_CONTAINER:-flux-postgrest-pool}"
-PGRST_URL="${FLUX_V2_POSTGREST_URL:-http://flux-postgrest-pool:3000/}"
 PROBE_CONTAINER="${FLUX_V2_PROBE_CONTAINER:-flux-node-gateway}"
+# Internal URL used only for exec-from-container probes; not used from the host.
+PGRST_INTERNAL_URL="${FLUX_V2_POSTGREST_URL:-http://flux-postgrest-pool:3000/}"
 
 echo "--- v2 Shared Deploy: Initializing ---"
 echo "  repo: $REPO_ROOT"
@@ -95,36 +96,109 @@ for container in "$PG_CONTAINER" "$PGB_CONTAINER" "$PGRST_CONTAINER"; do
   echo "  ${container}: running"
 done
 
+# ---------------------------------------------------------------------------
+# Cluster bootstrap — installs the PostgREST pre-config and pre-request hooks
+# (flux_postgrest_config, flux_set_tenant_context) into the shared cluster's
+# public schema.  Uses CREATE OR REPLACE so it is safe to run on every deploy.
+# Skip with FLUX_V2_SKIP_CLUSTER_BOOTSTRAP=1 only if you are certain the hooks
+# already exist and the PostgREST containers are not being rebuilt from scratch.
+# ---------------------------------------------------------------------------
+if [[ "${FLUX_V2_SKIP_CLUSTER_BOOTSTRAP:-}" == "1" ]]; then
+  echo "--- v2 Shared Deploy: Cluster bootstrap skipped (FLUX_V2_SKIP_CLUSTER_BOOTSTRAP=1) ---"
+else
+  echo "--- v2 Shared Deploy: Cluster bootstrap (PostgREST hooks) ---"
+  # Derive the statement timeout (ms) — mirrors FLUX_V2_ROLE_STATEMENT_TIMEOUT_MS default.
+  _stmt_timeout_ms="${FLUX_V2_ROLE_STATEMENT_TIMEOUT_MS:-15000}"
+  _pg_user="${SHARED_POSTGRES_USER:-postgres}"
+  _pg_db="${SHARED_POSTGRES_DB:-postgres}"
+  # Execute idempotent (CREATE OR REPLACE) SQL inside the already-running postgres
+  # container.  This avoids any dependency on a Node/TypeScript runtime on the host.
+  if docker exec -i "$PG_CONTAINER" \
+      psql -U "$_pg_user" -d "$_pg_db" -v ON_ERROR_STOP=1 -q <<BOOTSTRAP_SQL
+CREATE OR REPLACE FUNCTION public.flux_postgrest_config()
+  RETURNS void
+  LANGUAGE sql
+  SECURITY DEFINER
+  SET search_path = public
+AS \$\$
+  SELECT set_config(
+    'pgrst.db_schemas',
+    coalesce(
+      (
+        SELECT string_agg(nspname, ',' ORDER BY nspname)
+        FROM   pg_catalog.pg_namespace
+        WHERE  nspname ~ '^t_[0-9a-f]{12}_api\$'
+      ),
+      'public'
+    ),
+    true
+  );
+\$\$;
+
+CREATE OR REPLACE FUNCTION public.flux_set_tenant_context()
+  RETURNS void
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+AS \$\$
+DECLARE
+  _claims  json;
+  _role    text;
+  _schema  text;
+BEGIN
+  BEGIN
+    _claims := current_setting('request.jwt.claims', true)::json;
+  EXCEPTION WHEN others THEN
+    RETURN;
+  END;
+
+  _role := _claims->>'role';
+  IF _role IS NULL OR _role NOT LIKE 't_%_role' THEN
+    RETURN;
+  END IF;
+
+  _schema := substring(_role FROM '^t_[0-9a-f]{12}') || '_api';
+
+  EXECUTE format('SET LOCAL search_path = %%I', _schema);
+  EXECUTE format('SET LOCAL statement_timeout = %%L', '${_stmt_timeout_ms}ms');
+END;
+\$\$;
+BOOTSTRAP_SQL
+  then
+    echo "  cluster bootstrap: OK"
+  else
+    echo "  WARN: cluster bootstrap SQL failed; PostgREST hooks may be stale." >&2
+    echo "        Re-run the deploy or set FLUX_V2_SKIP_CLUSTER_BOOTSTRAP=1 to skip." >&2
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# PostgREST probe — exec from a container on flux-v2-shared so Docker DNS
+# resolves flux-postgrest-pool.  The host cannot reach expose:-only containers.
+# ---------------------------------------------------------------------------
 if [[ "${FLUX_V2_SKIP_POSTGREST_PROBE:-}" == "1" ]]; then
   echo "--- v2 Shared Deploy: PostgREST probe skipped (FLUX_V2_SKIP_POSTGREST_PROBE=1) ---"
-elif docker ps --format '{{.Names}}' | rg -q "^${PROBE_CONTAINER}$"; then
+elif docker ps --format '{{.Names}}' | grep -qxF "${PROBE_CONTAINER}"; then
   echo "--- v2 Shared Deploy: PostgREST probe (from ${PROBE_CONTAINER}) ---"
   probe_status="$(
     docker exec "$PROBE_CONTAINER" sh -lc \
       'node -e "fetch(process.argv[1]).then((r)=>{process.stdout.write(String(r.status));}).catch(()=>process.exit(2));" "$1"' \
-      _ "$PGRST_URL" 2>/dev/null || true
+      _ "$PGRST_INTERNAL_URL" 2>/dev/null || true
   )"
   if [[ "$probe_status" == "200" || "$probe_status" == "401" ]]; then
-    echo "  postgrest: OK (${PGRST_URL} -> ${probe_status})"
+    echo "  postgrest: OK (${PGRST_INTERNAL_URL} -> ${probe_status})"
   elif [[ -z "$probe_status" ]]; then
     echo "  WARN: postgrest probe failed from ${PROBE_CONTAINER}; no status returned."
     echo "        (container may lack Node/fetch support; set FLUX_V2_SKIP_POSTGREST_PROBE=1 to skip)"
   else
-    echo "  WARN: postgrest probe returned HTTP ${probe_status} at ${PGRST_URL}"
-  fi
-elif command -v curl >/dev/null 2>&1; then
-  echo "--- v2 Shared Deploy: PostgREST probe ---"
-  code="$(curl -sS -o /dev/null -w "%{http_code}" "$PGRST_URL" 2>/dev/null || true)"
-  if [[ -z "$code" ]]; then
-    code="000"
-  fi
-  if [[ "$code" != "200" && "$code" != "401" ]]; then
-    echo "  WARN: postgrest probe returned HTTP ${code} at ${PGRST_URL}"
-  else
-    echo "  postgrest: OK (${PGRST_URL} -> ${code})"
+    echo "  WARN: postgrest probe returned HTTP ${probe_status} at ${PGRST_INTERNAL_URL}"
   fi
 else
-  echo "  WARN: neither probe container (${PROBE_CONTAINER}) nor host curl probe is available; skipped PostgREST probe."
+  # NOTE: flux-postgrest-pool uses expose: not ports:, so it is unreachable from
+  # the host shell.  We skip silently rather than probing a Docker-internal hostname
+  # that will always fail DNS resolution on the host.
+  echo "  WARN: probe container ${PROBE_CONTAINER} not running; PostgREST probe skipped."
+  echo "        Start ${PROBE_CONTAINER} or set FLUX_V2_SKIP_POSTGREST_PROBE=1 to suppress."
 fi
 
 echo ""

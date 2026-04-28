@@ -63,12 +63,22 @@ services:
       pgbouncer:
         condition: service_started
     environment:
-      # Keep tenant schemas out of this list (security invariant).
+      # Dynamic schema list — populated at runtime by flux_postgrest_config().
+      # PGRST_DB_SCHEMAS is intentionally left unset here; the pre-config hook
+      # queries pg_namespace for all t_*_api schemas on every "reload config"
+      # notification so new tenants become visible without restarting PostgREST.
       PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public}
       PGRST_DB_ANON_ROLE: ${PGRST_DB_ANON_ROLE:-authenticator}
       PGRST_DB_URI: postgres://${PGRST_DB_USER:-authenticator}:${PGRST_DB_PASSWORD:?set PGRST_DB_PASSWORD}@pgbouncer:6432/${PGRST_DB_NAME:-postgres}
       # Handshake: same secret material as gateway FLUX_GATEWAY_JWT_SECRET.
       PGRST_JWT_SECRET: ${FLUX_GATEWAY_JWT_SECRET:?set FLUX_GATEWAY_JWT_SECRET}
+      # Pre-config hook: dynamically builds db-schemas from pg_namespace on reload.
+      # Installed by bootstrapSharedCluster() (run once via deploy-v2-shared.sh).
+      PGRST_DB_PRE_CONFIG: ${PGRST_DB_PRE_CONFIG:-public.flux_postgrest_config}
+      # Pre-request hook: sets SET LOCAL search_path + statement_timeout per
+      # transaction using the JWT role claim.  Works correctly in PgBouncer
+      # transaction-pooling mode (ALTER ROLE SET is a session-only mechanism).
+      PGRST_DB_PRE_REQUEST: ${PGRST_DB_PRE_REQUEST:-public.flux_set_tenant_context}
       PGRST_DB_CHANNEL_ENABLED: "true"
       PGRST_DB_POOL: ${PGRST_DB_POOL:-50}
       PGRST_SERVER_PORT: 3000

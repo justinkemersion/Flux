@@ -40,6 +40,7 @@ services:
       - "${DOCKER_GID:-996}"
     networks:
       - flux-network
+      - flux-v2-shared
     labels:
       traefik.enable: "true"
       traefik.docker.network: flux-network
@@ -68,4 +69,8 @@ services:
 
 networks:
   flux-network:
+    external: true
+  # Shared v2 data-plane network — required so flux-web can reach flux-postgres-v2
+  # for engine-v2 tenant bootstrap (FLUX_SHARED_POSTGRES_URL → flux-postgres-v2:5432).
+  flux-v2-shared:
     external: true

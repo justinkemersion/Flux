@@ -1,5 +1,6 @@
 import { fluxApiUrlForSlug, slugifyProjectName } from "@flux/core";
 import type { ProjectManager } from "@flux/core";
+import { deprovisionProject } from "@flux/engine-v2";
 import { getEngineV2 } from "@/src/lib/flux";
 
 export type ProjectMode = "v1_dedicated" | "v2_shared";
@@ -13,9 +14,12 @@ export type DispatchProvisionInput = {
   isProduction: boolean;
   customJwtSecret?: string;
   stripSupabaseRestPrefix?: boolean;
+  /** Injectable for tests — defaults to engine-v2 provisionProject. */
   provisionSharedTenant?: (
     tenantId: string,
   ) => Promise<{ tenantId: string; shortId: string; schema: string; role: string }>;
+  /** Injectable for tests — defaults to engine-v2 deprovisionProject. */
+  deprovisionSharedTenant?: (tenantId: string) => Promise<void>;
 };
 
 type BaseProvisionResult = {
@@ -106,6 +110,9 @@ export async function dispatchProvisionProject(
       const v2 = getEngineV2();
       return v2.provisionProject({ tenantId });
     });
+  const doDeprovision =
+    input.deprovisionSharedTenant ??
+    (async (tenantId: string) => deprovisionProject(tenantId));
   const tenant = await provisionSharedTenant(input.tenantId);
   return {
     mode: "v2_shared",
@@ -123,6 +130,19 @@ export async function dispatchProvisionProject(
       note:
         "v2_shared uses shared-cluster provisioning. Runtime JWT verification is configured on the pooled PostgREST deployment and must share FLUX_GATEWAY_JWT_SECRET/PGRST_JWT_SECRET.",
     },
-    cleanupOnFailure: async () => Promise.resolve(),
+    // Rollback: if the catalog INSERT fails after provisioning succeeds, drop the
+    // just-created schema + role from the shared cluster so they don't accumulate
+    // as orphans.  Errors here are logged but not re-thrown — the caller already
+    // has a failure to report and we must not mask it with a secondary one.
+    cleanupOnFailure: async () => {
+      try {
+        await doDeprovision(input.tenantId);
+      } catch (cleanupErr: unknown) {
+        console.error(
+          `[engine-v2] cleanupOnFailure: failed to deprovision tenant "${input.tenantId}" after catalog insert failure:`,
+          cleanupErr,
+        );
+      }
+    },
   };
 }
