@@ -55,15 +55,15 @@ run_stage() {
   if FLUX_DEPLOY_GIT_SYNC=0 "$script"; then
     echo "=== Stage OK: ${name} ==="
     return 0
+  else
+    local code=$?
+    echo "=== Stage FAILED (${code}): ${name} ===" >&2
+    if [[ "$CONTINUE_ON_WARN" == "1" ]]; then
+      echo "  WARN: continuing because FLUX_DEPLOY_CONTINUE_ON_WARN=1" >&2
+      return 0
+    fi
+    return "$code"
   fi
-
-  local code=$?
-  echo "=== Stage FAILED (${code}): ${name} ===" >&2
-  if [[ "$CONTINUE_ON_WARN" == "1" ]]; then
-    echo "  WARN: continuing because FLUX_DEPLOY_CONTINUE_ON_WARN=1" >&2
-    return 0
-  fi
-  return "$code"
 }
 
 run_stage "v2 shared data plane" "$SCRIPT_DIR/deploy-v2-shared.sh"
