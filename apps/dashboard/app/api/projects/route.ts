@@ -337,6 +337,7 @@ export async function POST(req: Request): Promise<Response> {
         id: dbProject.id,
         name: dbProject.name,
         slug: dbProject.slug,
+        hash: dbProject.hash,
         apiUrl: project.apiUrl,
         stripSupabaseRestPrefix: project.stripSupabaseRestPrefix,
         mode: dbProject.mode,

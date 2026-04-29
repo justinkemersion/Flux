@@ -24,6 +24,7 @@ import {
   errorMessageFromJsonBody,
   readResponseJson,
 } from "@/src/lib/fetch-json";
+import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
 
 type ServerStatus =
   | "running"
@@ -349,6 +350,7 @@ export function ProjectCard({
   const [repairBusy, setRepairBusy] = useState(false);
   const [repairError, setRepairError] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [gettingStartedOpen, setGettingStartedOpen] = useState(false);
   const [logsService, setLogsService] = useState<"api" | "db">("api");
   const [logsText, setLogsText] = useState("");
   const [logsLoading, setLogsLoading] = useState(false);
@@ -834,6 +836,15 @@ export function ProjectCard({
                 title="Project settings"
               >
                 <Settings className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
+            {isV2Shared ? (
+              <button
+                type="button"
+                onClick={() => setGettingStartedOpen(true)}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+              >
+                Getting Started
               </button>
             ) : null}
             <button
@@ -1393,6 +1404,14 @@ export function ProjectCard({
           </div>
         </div>
       ) : null}
+
+      <V2GettingStartedModal
+        open={isV2Shared && gettingStartedOpen}
+        onClose={() => setGettingStartedOpen(false)}
+        apiUrl={p.apiUrl}
+        slug={p.slug}
+        hash={p.hash}
+      />
     </>
   );
 }

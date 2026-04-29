@@ -18,6 +18,7 @@ import {
   ProjectCard,
   type ProjectRow,
 } from "@/src/components/projects/project-card";
+import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
 import { FleetHealthGrid } from "@/src/components/fleet/fleet-health-grid";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
 import { ProjectsFleetBar } from "@/src/components/projects/projects-fleet-bar";
@@ -51,6 +52,11 @@ export default function ProjectsPage() {
   const [billingError, setBillingError] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<"hobby" | "pro" | null>(null);
   const [detailSlug, setDetailSlug] = useState<string | null>(null);
+  const [v2GettingStartedProject, setV2GettingStartedProject] = useState<{
+    apiUrl: string;
+    slug: string;
+    hash: string;
+  } | null>(null);
 
   function closeProjectDetail(): void {
     setDetailSlug(null);
@@ -276,11 +282,39 @@ export default function ProjectsPage() {
         }
         throw new Error(msg);
       }
+      const createdProject =
+        data &&
+        typeof data === "object" &&
+        "project" in data &&
+        (data as { project?: unknown }).project &&
+        typeof (data as { project: { slug?: unknown } }).project === "object"
+          ? (data as {
+              project: {
+                apiUrl?: unknown;
+                slug?: unknown;
+                hash?: unknown;
+                mode?: unknown;
+              };
+            }).project
+          : null;
       setCreateOpen(false);
       setName("");
       setCreateLimitBanner(null);
       setFetching(true);
       await load();
+      if (
+        createdProject &&
+        createdProject.mode === "v2_shared" &&
+        typeof createdProject.apiUrl === "string" &&
+        typeof createdProject.slug === "string" &&
+        typeof createdProject.hash === "string"
+      ) {
+        setV2GettingStartedProject({
+          apiUrl: createdProject.apiUrl,
+          slug: createdProject.slug,
+          hash: createdProject.hash,
+        });
+      }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -589,6 +623,14 @@ export default function ProjectsPage() {
           </div>
         </div>
       ) : null}
+
+      <V2GettingStartedModal
+        open={Boolean(v2GettingStartedProject)}
+        onClose={() => setV2GettingStartedProject(null)}
+        apiUrl={v2GettingStartedProject?.apiUrl ?? ""}
+        slug={v2GettingStartedProject?.slug ?? ""}
+        hash={v2GettingStartedProject?.hash ?? ""}
+      />
     </div>
   );
 }

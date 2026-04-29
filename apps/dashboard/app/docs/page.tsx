@@ -60,6 +60,12 @@ export default function DocsPage() {
               #advanced
             </a>
             <Link
+              href="/docs/v2-first-request"
+              className="text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              #v2_first_request
+            </Link>
+            <Link
               href="/api/auth/signin?callbackUrl=%2Fdocs"
               className="text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-700 dark:hover:text-zinc-300"
             >

@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Copy } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 const copyBtnClass =
@@ -10,14 +11,84 @@ type CodeBlockProps = {
   code: string;
   /** e.g. bash, env — small label; omit for a minimal block */
   label?: string;
+  /** Enables lightweight in-app syntax highlighting */
+  language?: "plain" | "ts" | "bash";
   className?: string;
   /** Slightly more padding on the landing / hero */
   size?: "default" | "comfortable";
 };
 
+function highlightTsLine(line: string): ReactNode[] {
+  const tokenRegex =
+    /(".*?"|'.*?'|`.*?`|\b(?:const|let|var|await|async|return|fetch|headers|Authorization|cache|window)\b)/g;
+  const chunks = line.split(tokenRegex);
+  return chunks.map((chunk, i) => {
+    if (!chunk) return <span key={`${chunk}-${String(i)}`} />;
+    if (/^(".*?"|'.*?'|`.*?`)$/.test(chunk)) {
+      return (
+        <span key={`${chunk}-${String(i)}`} className="text-emerald-300">
+          {chunk}
+        </span>
+      );
+    }
+    if (
+      /^(const|let|var|await|async|return|fetch|headers|Authorization|cache|window)$/.test(
+        chunk,
+      )
+    ) {
+      return (
+        <span key={`${chunk}-${String(i)}`} className="text-sky-300">
+          {chunk}
+        </span>
+      );
+    }
+    return <span key={`${chunk}-${String(i)}`}>{chunk}</span>;
+  });
+}
+
+function highlightBashLine(line: string): ReactNode[] {
+  const tokenRegex = /(".*?"|'.*?'|\bcurl\b|-H)/g;
+  const chunks = line.split(tokenRegex);
+  return chunks.map((chunk, i) => {
+    if (!chunk) return <span key={`${chunk}-${String(i)}`} />;
+    if (/^(".*?"|'.*?')$/.test(chunk)) {
+      return (
+        <span key={`${chunk}-${String(i)}`} className="text-emerald-300">
+          {chunk}
+        </span>
+      );
+    }
+    if (chunk === "curl" || chunk === "-H") {
+      return (
+        <span key={`${chunk}-${String(i)}`} className="text-sky-300">
+          {chunk}
+        </span>
+      );
+    }
+    return <span key={`${chunk}-${String(i)}`}>{chunk}</span>;
+  });
+}
+
+function renderHighlightedCode(
+  code: string,
+  language: "plain" | "ts" | "bash",
+): ReactNode {
+  const lines = code.split("\n");
+  return lines.map((line, idx) => (
+    <span key={`${line}-${String(idx)}`} className="block">
+      {language === "ts"
+        ? highlightTsLine(line)
+        : language === "bash"
+          ? highlightBashLine(line)
+          : line}
+    </span>
+  ));
+}
+
 export function CodeBlock({
   code,
   label,
+  language = "plain",
   className = "",
   size = "default",
 }: CodeBlockProps) {
@@ -71,7 +142,7 @@ export function CodeBlock({
       <pre
         className={`whitespace-pre font-mono leading-relaxed text-zinc-200 ${padding} ${textSize}`}
       >
-        {trimmed}
+        {renderHighlightedCode(trimmed, language)}
       </pre>
     </div>
   );
