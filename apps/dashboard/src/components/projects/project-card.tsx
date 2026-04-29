@@ -1089,12 +1089,12 @@ export function ProjectCard({
 
       {settingsOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-3 backdrop-blur-sm sm:pt-4"
           role="presentation"
           onClick={closeSettingsModal}
         >
           <div
-            className="relative my-6 w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`settings-title-${p.id}`}
@@ -1212,12 +1212,12 @@ export function ProjectCard({
 
       {deleteOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-3 backdrop-blur-sm sm:pt-4"
           role="presentation"
           onClick={closeDeleteModal}
         >
           <div
-            className="relative my-6 w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`delete-title-${p.id}`}
@@ -1316,12 +1316,12 @@ export function ProjectCard({
 
       {resetOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-3 backdrop-blur-sm sm:pt-4"
           role="presentation"
           onClick={closeResetModal}
         >
           <div
-            className="relative my-6 w-full max-w-md rounded-md border border-red-300 bg-white p-6 shadow-2xl dark:border-red-900 dark:bg-zinc-900"
+            className="relative w-full max-w-md rounded-md border border-red-300 bg-white p-6 shadow-2xl dark:border-red-900 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`reset-title-${p.id}`}

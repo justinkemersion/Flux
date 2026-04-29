@@ -427,12 +427,12 @@ export default function ProjectsPage() {
 
       {detailSlug && detailProject ? (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-3 backdrop-blur-sm sm:pt-4"
           role="presentation"
           onClick={closeProjectDetail}
         >
           <div
-            className="relative my-6 w-full max-w-4xl"
+            className="relative w-full max-w-4xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -461,7 +461,7 @@ export default function ProjectsPage() {
 
       {createOpen ? (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-3 backdrop-blur-sm sm:pt-4"
           role="presentation"
           onClick={closeCreateModal}
         >
