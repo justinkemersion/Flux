@@ -14,6 +14,7 @@ import {
 type PasswordSource = "container" | "derived" | "unavailable";
 
 type ManifestPayload = {
+  mode?: "v1_dedicated" | "v2_shared";
   apiUrl: string;
   postgresPassword: string;
   passwordSource: PasswordSource;
@@ -175,7 +176,9 @@ export function ProjectManifest({ slug }: Props) {
                   value={data.postgresPassword}
                   emptyHint={
                     data.passwordSource === "unavailable"
-                      ? "Unavailable: start DB or set FLUX_PROJECT_PASSWORD_SECRET"
+                      ? data.mode === "v2_shared"
+                        ? "Not shown for pooled tenants (no per-tenant Postgres container). Use the API URL with gateway JWTs."
+                        : "Unavailable: start DB or set FLUX_PROJECT_PASSWORD_SECRET"
                       : "—"
                   }
                 />

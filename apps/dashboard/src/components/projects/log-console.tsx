@@ -5,10 +5,17 @@ import {
   useEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { LogLineFormattedView } from "@/src/lib/log-line-html";
 
-type Props = { slug: string; hash: string; maxLines?: number };
+type Props = {
+  slug: string;
+  hash: string;
+  maxLines?: number;
+  /** When set, skip Docker log streaming (v2 has no per-tenant containers). */
+  mode?: "v1_dedicated" | "v2_shared";
+};
 type TapState = "idle" | "open" | "err";
 
 type StreamProps = {
@@ -135,10 +142,28 @@ function LogEventStream({
   );
 }
 
+const V2_LOGS_EXPLAINER =
+  "Pooled v2_shared projects do not have dedicated Docker PostgREST or Postgres containers, so this console cannot stream per-tenant logs. On the host, inspect logs for flux-postgrest-pool, flux-node-gateway, or the shared cluster.";
+
+function LogConsoleV2PooledInfo(): ReactNode {
+  return (
+    <div className="border border-zinc-800 bg-zinc-950/80 p-3">
+      <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+        LOG_TAP / POOLED
+      </div>
+      <p className="font-mono text-xs leading-relaxed text-zinc-500">
+        {V2_LOGS_EXPLAINER}
+      </p>
+    </div>
+  );
+}
+
+type DockerProps = { slug: string; hash: string; maxLines: number };
+
 /**
- * Black scroll region; EventSource to dashboard SSE (session cookie), CLI-shaped lines.
+ * v1: EventSource to dashboard SSE (session cookie), CLI-shaped lines.
  */
-export function LogConsole({ slug, hash, maxLines = 500 }: Props) {
+function LogConsoleDocker({ slug, hash, maxLines }: DockerProps) {
   const [service, setService] = useState<"api" | "db">("api");
   const [tap, setTap] = useState<TapState>("idle");
   const [sseMsg, setSseMsg] = useState<string | null>(null);
@@ -195,4 +220,14 @@ export function LogConsole({ slug, hash, maxLines = 500 }: Props) {
       />
     </div>
   );
+}
+
+/**
+ * Black scroll region: v2 shows static explainer; v1 streams Docker container logs.
+ */
+export function LogConsole({ slug, hash, maxLines = 500, mode }: Props) {
+  if (mode === "v2_shared") {
+    return <LogConsoleV2PooledInfo />;
+  }
+  return <LogConsoleDocker slug={slug} hash={hash} maxLines={maxLines} />;
 }

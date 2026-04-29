@@ -53,6 +53,7 @@ export async function GET(
 
   if (project.mode === "v2_shared") {
     return Response.json({
+      mode: "v2_shared" as const,
       apiUrl,
       postgresPassword: "",
       passwordSource: "unavailable" as PasswordSource,
@@ -85,6 +86,7 @@ export async function GET(
   }
 
   return Response.json({
+    mode: (project.mode ?? "v1_dedicated") as "v1_dedicated" | "v2_shared",
     apiUrl,
     postgresPassword,
     passwordSource,

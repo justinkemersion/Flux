@@ -27,6 +27,7 @@ export function ProjectMeshReadout({ project }: Props) {
         key={`${project.slug}-${project.hash}`}
         slug={project.slug}
         hash={project.hash}
+        mode={project.mode}
       />
     </div>
   );
