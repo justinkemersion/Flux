@@ -4,6 +4,7 @@ import https from "node:https";
 import { URL } from "node:url";
 
 const PROBE_TIMEOUT_MS = 5_000;
+const DEFAULT_GATEWAY_PROBE_URL = "http://flux-node-gateway:4000";
 
 /**
  * When set (e.g. `http://flux-node-gateway:4000`), tenant health probes from the
@@ -14,9 +15,22 @@ const PROBE_TIMEOUT_MS = 5_000;
  * (TLS / wildcard depth for extra labels, split-horizon DNS, or hairpin NAT) even when
  * Traefik and the gateway are healthy.
  */
-function tenantProbeGatewayBase(): string | null {
-  const u = process.env.FLUX_TENANT_PROBE_GATEWAY_URL?.trim();
-  return u && u.length > 0 ? u : null;
+function tenantProbeGatewayBases(): string[] {
+  const configured = process.env.FLUX_TENANT_PROBE_GATEWAY_URL?.trim();
+  const bases: string[] = [];
+  if (configured && configured.length > 0) {
+    bases.push(configured);
+  }
+  // In production Compose deployments, this service is typically reachable over
+  // the shared `flux-network`; keeping it as a fallback reduces false "offline"
+  // status when env wiring is missing.
+  if (
+    process.env.NODE_ENV === "production" &&
+    !bases.includes(DEFAULT_GATEWAY_PROBE_URL)
+  ) {
+    bases.push(DEFAULT_GATEWAY_PROBE_URL);
+  }
+  return bases;
 }
 
 function isProbeSuccessStatus(code: number): boolean {
@@ -33,10 +47,13 @@ export async function probeTenantApiUrl(
   isProduction: boolean,
 ): Promise<boolean> {
   const publicUrl = fluxApiUrlForSlug(slug, hash, isProduction);
-  const via = tenantProbeGatewayBase();
-  if (via) {
-    return probeThroughGateway(new URL(publicUrl), via);
+  const tenantUrl = new URL(publicUrl);
+  for (const via of tenantProbeGatewayBases()) {
+    if (await probeThroughGateway(tenantUrl, via)) {
+      return true;
+    }
   }
+  // Final fallback: probe the public URL directly.
   return probeWithFetch(publicUrl);
 }
 

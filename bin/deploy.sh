@@ -20,6 +20,12 @@ CHECK_HOST="${FLUX_DEPLOY_CHECK_HOST:-flux.vsl-base.com}"
 
 echo "--- Flux Deploy: Initializing ---"
 echo "  repo: $REPO_ROOT"
+if grep -Eq '^\s*FLUX_TENANT_PROBE_GATEWAY_URL=' "$REPO_ROOT/docker/web/.env" 2>/dev/null; then
+  echo "  tenant_probe_gateway: configured"
+else
+  echo "  WARN: FLUX_TENANT_PROBE_GATEWAY_URL is not set in docker/web/.env"
+  echo "        Set it to http://flux-node-gateway:4000 to reduce false Offline mesh status."
+fi
 
 # 1. Optional: synchronize with origin (skip locally if unset)
 if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
