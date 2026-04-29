@@ -12,13 +12,27 @@ type CodeBlockProps = {
   /** e.g. bash, env — small label; omit for a minimal block */
   label?: string;
   /** Enables lightweight in-app syntax highlighting */
-  language?: "plain" | "ts" | "bash";
+  language?: "plain" | "ts" | "bash" | "env";
   className?: string;
   /** Slightly more padding on the landing / hero */
   size?: "default" | "comfortable";
 };
 
+function commentLine(line: string, idx: number): ReactNode[] | null {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith("#")) {
+    return [
+      <span key={`comment-${String(idx)}`} className="text-zinc-500">
+        {line}
+      </span>,
+    ];
+  }
+  return null;
+}
+
 function highlightTsLine(line: string): ReactNode[] {
+  const comment = commentLine(line, 0);
+  if (comment) return comment;
   const tokenRegex =
     /(".*?"|'.*?'|`.*?`|\b(?:const|let|var|await|async|return|fetch|headers|Authorization|cache|window)\b)/g;
   const chunks = line.split(tokenRegex);
@@ -47,6 +61,8 @@ function highlightTsLine(line: string): ReactNode[] {
 }
 
 function highlightBashLine(line: string): ReactNode[] {
+  const comment = commentLine(line, 0);
+  if (comment) return comment;
   const tokenRegex = /(".*?"|'.*?'|\bcurl\b|-H)/g;
   const chunks = line.split(tokenRegex);
   return chunks.map((chunk, i) => {
@@ -69,9 +85,32 @@ function highlightBashLine(line: string): ReactNode[] {
   });
 }
 
+function highlightEnvLine(line: string): ReactNode[] {
+  const comment = commentLine(line, 0);
+  if (comment) return comment;
+
+  const eq = line.indexOf("=");
+  if (eq <= 0) return [<span key={`env-${line}`}>{line}</span>];
+
+  const left = line.slice(0, eq);
+  const right = line.slice(eq + 1);
+
+  return [
+    <span key={`env-k-${line}`} className="text-sky-300">
+      {left}
+    </span>,
+    <span key={`env-eq-${line}`} className="text-zinc-400">
+      =
+    </span>,
+    <span key={`env-v-${line}`} className="text-emerald-300">
+      {right}
+    </span>,
+  ];
+}
+
 function renderHighlightedCode(
   code: string,
-  language: "plain" | "ts" | "bash",
+  language: "plain" | "ts" | "bash" | "env",
 ): ReactNode {
   const lines = code.split("\n");
   return lines.map((line, idx) => (
@@ -80,7 +119,9 @@ function renderHighlightedCode(
         ? highlightTsLine(line)
         : language === "bash"
           ? highlightBashLine(line)
-          : line}
+          : language === "env"
+            ? highlightEnvLine(line)
+            : commentLine(line, idx) ?? line}
     </span>
   ));
 }

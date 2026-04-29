@@ -22,6 +22,38 @@ type ManifestPayload = {
 
 type Props = { slug: string };
 
+function renderEnvPreview(block: string): ReactNode {
+  return block.split("\n").map((line, idx) => {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("#")) {
+      return (
+        <span key={`line-${String(idx)}`} className="block text-zinc-500">
+          {line}
+        </span>
+      );
+    }
+
+    const eq = line.indexOf("=");
+    if (eq <= 0) {
+      return (
+        <span key={`line-${String(idx)}`} className="block">
+          {line}
+        </span>
+      );
+    }
+
+    const left = line.slice(0, eq);
+    const right = line.slice(eq + 1);
+    return (
+      <span key={`line-${String(idx)}`} className="block">
+        <span className="text-sky-300">{left}</span>
+        <span className="text-zinc-400">=</span>
+        <span className="text-emerald-300">{right}</span>
+      </span>
+    );
+  });
+}
+
 function CopyBtn({
   text,
   idleLabel = "COPY",
@@ -188,7 +220,7 @@ FLUX_GATEWAY_JWT_SECRET=`
           </p>
           <div className="flex min-w-0 items-start justify-between gap-2 border border-zinc-800 bg-black p-2">
             <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-300">
-              {envBlock || "SYNC..."}
+              {envBlock ? renderEnvPreview(envBlock) : "SYNC..."}
             </pre>
             {envBlock ? (
               <CopyBtn
