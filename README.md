@@ -265,7 +265,7 @@ The workspace is defined in **`pnpm-workspace.yaml`** (`packages/*`, `apps/*`). 
 | `packages/cli` | **`@flux/cli`** | `flux` entry (`src/index.ts`), Commander + Chalk, calls into `ProjectManager`. |
 | `packages/sdk` | **`@flux/sdk`** | `createClient`, `FluxClient`, PostgREST-shaped `select`/`insert`/`update`/`delete` + `eq` filters over `fetch`. |
 | `apps/dashboard` | **`dashboard`** (private) | Next.js App Router, Auth.js, Drizzle + `pg` to `flux-system`, API routes under `app/api/*`, Stripe integration, `instrumentation.ts` for DB init. |
-| `docs/guides/` | — | **PostgreSQL / Supabase → Flux** import guide, **Clerk + PostgREST**, etc. |
+| `docs/guides/` | — | **PostgreSQL / Supabase → Flux** import guide, **Clerk + PostgREST**, **Flux + Next.js (`v2_shared`) quickstart**, and **Auth.js + RLS extension**. |
 
 Root **`package.json`** is minimal; install and scripts are usually run with **`pnpm --filter <name>`** from the repo root.
 
@@ -495,6 +495,8 @@ pnpm run flux -- reap --hours 72
 - **`docs/production-security-audit.md`** — Production security posture, pinned images, and credential API behavior.
 - **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
 - **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
+- **`docs/guides/flux-nextjs-v2-shared-quickstart.md`** — Copy/paste bootstrap for a brand-new Next.js app backed by a Flux pooled (`v2_shared`) project.
+- **`docs/guides/flux-nextjs-authjs-rls.md`** — Follow-on guide for Auth.js integration and user-scoped RLS (`auth.uid()` + `text` user ids).
 - **`docs/flux-v2-architecture.md`** — v2 invariants, threat model, tiering, and implementation red flags.
 - **`docs/UI-SCOPE-CONTRACT.md`** — CLI-first UI boundary, admission criteria, and scheduled scope revisit protocol.
 - **`docs/TRAJECTORY-TODO.md`** — internal execution roadmap and active priority backlog.

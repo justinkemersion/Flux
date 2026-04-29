@@ -2,6 +2,11 @@
 
 Flux tenants run a **pinned Postgres image** (see `FLUX_DOCKER_IMAGES.postgres` in `@flux/core`). Imports must match that major version and the way Flux wires **PostgREST** (`api` schema, `anon` / `authenticated` roles).
 
+## Start here (choose your path)
+
+- **Brand-new app on pooled Flux (`v2_shared`)**: use [`docs/guides/flux-nextjs-v2-shared-quickstart.md`](./flux-nextjs-v2-shared-quickstart.md), then extend with [`docs/guides/flux-nextjs-authjs-rls.md`](./flux-nextjs-authjs-rls.md).
+- **Existing app / database port**: continue with this guide for dump import, compatibility transforms, and `public` → `api` migration details.
+
 ## Universal issues (any source → Flux)
 
 1. **Server version mismatch**  
