@@ -38,7 +38,7 @@ export const FLUX_CODEX_JSON = {
    */
   executionModesAndTiers: {
     overview:
-      "Flux supports two execution strategies in one product: **v1_dedicated** (isolated Postgres + PostgREST containers per project) and **v2_shared** (shared cluster, schema-per-tenant, pooled PostgREST behind a gateway). The CLI and dashboard stay the same; `flux-system.projects.mode` selects the engine. v1 and v2 coexist indefinitely—v2 is not a replacement for v1.",
+      "Flux supports two execution strategies in one product: **Dedicated stack** (`v1_dedicated`) and **Pooled stack** (`v2_shared`). These are fit-based options, not a quality ranking by version number. The CLI and dashboard stay the same; `flux-system.projects.mode` selects the engine.",
     v1Dedicated: {
       modeKey: "v1_dedicated",
       summary:
@@ -54,7 +54,7 @@ export const FLUX_CODEX_JSON = {
         "Cost-efficient scale, many small tenants, prototypes, and apps that accept cluster-level blast radius mitigated by statement timeouts, connection limits, and gateway rate limits.",
     },
     tierHierarchy:
-      "Tiers describe **where data lives** and **how tight operational guardrails are**—not different products. **Free** and **Pro** both target the shared path (`v2_shared`); Pro adds stricter limits. **Enterprise** defaults to dedicated stacks (`v1_dedicated`) for isolation and compliance. Changing tier or mode is explicit in the system database, not inferred only from marketing labels.",
+      "Tiers describe **where data lives** and **how tight operational guardrails are**—not separate products. **Free** and **Pro** typically use the pooled stack (`v2_shared`), while **Enterprise** defaults to the dedicated stack (`v1_dedicated`) for stronger isolation and compliance posture. Changing tier or mode is explicit in the system database.",
     tiers: {
       free: {
         name: "Free",
@@ -92,7 +92,7 @@ export const FLUX_CODEX_JSON = {
       },
     },
     cliFuture:
-      "Planned CLI shape: `flux create my-app` defaults toward v2_shared; `flux create my-app --mode v1_dedicated` requests a dedicated stack. Until wired end-to-end, provisioning may still reflect the host's current engine rollout—Codex should say 'check dashboard / host docs' if behavior differs.",
+      "Planned CLI shape: `flux create my-app` defaults toward the pooled stack (`v2_shared`); `flux create my-app --mode v1_dedicated` requests the dedicated stack. Until wired end-to-end, provisioning may still reflect the host's current engine rollout—Codex should say 'check dashboard / host docs' if behavior differs.",
     codexInferenceNote:
       "Flux Codex (this assistant) is a resource-constrained control-plane component: inference is rate-limited. It is not unbounded LLM access.",
   },
@@ -147,7 +147,7 @@ export const FLUX_CODEX_JSON = {
       apiUrl:
         "Use the API URL returned by `flux create` as your app's REST base URL.",
       auth:
-        "Send the project API key (`anon` or `service_role`) in request headers as required by your app/backend.",
+        "Auth approach depends on execution strategy: dedicated projects often use project keys (`anon` / `service_role`), while pooled projects typically use your app auth token flow through the gateway.",
       example: "GET /your_table",
     },
   },
