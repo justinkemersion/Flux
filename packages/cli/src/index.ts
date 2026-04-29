@@ -1,24 +1,22 @@
 #!/usr/bin/env node
-import { access } from "node:fs/promises";
 import { once } from "node:events";
 import { createInterface } from "node:readline/promises";
-import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import type {
   FluxProjectEnvEntry,
   FluxProjectSummary,
-  ImportSqlFileResult,
 } from "@flux/core/standalone";
 import { fluxTenantDockerResourceNames } from "@flux/core/standalone";
 import chalk from "chalk";
 import { Command } from "commander";
 import open from "open";
-import ora from "ora";
 import { getApiClient } from "./api-client";
 import { sectionBanner } from "./cli-layout";
 import { cmdCreate } from "./commands/create";
 import { cmdProjectCredentials } from "./commands/project-credentials";
+import { cmdPush } from "./commands/push";
 import { saveConfig } from "./config";
+import { resolveDashboardBase } from "./dashboard-base";
 import { type FluxJson, readFluxJson } from "./flux-config";
 import { resolveExplicitCreateMode } from "./mode-default";
 import {
@@ -64,29 +62,6 @@ function formatCliError(err: unknown): string {
 function printErrorAndExit(err: unknown): void {
   console.error(chalk.red("Error:"), formatCliError(err));
   process.exit(1);
-}
-
-const DEFAULT_API_BASE = "https://flux.vsl-base.com/api";
-
-/**
- * Origin of the Next.js dashboard (Mesh Readout). Override with `FLUX_DASHBOARD_BASE`, or
- * derived from `FLUX_API_BASE` by stripping a trailing `/api` segment.
- */
-function resolveDashboardBase(): string {
-  const direct = process.env.FLUX_DASHBOARD_BASE?.trim();
-  if (direct) {
-    return direct.replace(/\/$/, "");
-  }
-  const raw = process.env.FLUX_API_BASE?.trim().replace(/\/$/, "");
-  const api = raw && raw.length > 0 ? raw : DEFAULT_API_BASE;
-  if (api.endsWith("/api")) {
-    return api.slice(0, -"/api".length);
-  }
-  try {
-    return new URL(api).origin;
-  } catch {
-    return "https://flux.vsl-base.com";
-  }
 }
 
 /** Same origin as the dashboard; used for install bundle and version checks. */
@@ -239,81 +214,6 @@ async function cmdLogs(
   } finally {
     process.off("SIGINT", onSig);
     process.off("SIGTERM", onSig);
-  }
-}
-
-async function cmdPush(
-  file: string,
-  project: string,
-  options: {
-    supabaseCompat: boolean;
-    noSanitize: boolean;
-    disableApiRls: boolean;
-    hash?: string;
-  },
-  flux: FluxJson | null,
-): Promise<void> {
-  const abs = resolve(process.cwd(), file);
-  try {
-    await access(abs);
-  } catch {
-    throw new Error(`SQL file not found or not accessible: ${abs}`);
-  }
-
-  const slug = resolveProjectSlug(project, flux, "-p, --project");
-  const client = getApiClient();
-  const hash = resolveHash(options.hash, flux);
-  console.log(
-    chalk.blue(
-      `Applying ${chalk.bold(file)} to project ${chalk.bold(slug)}…`,
-    ),
-  );
-  const spinner = ora("Applying SQL…").start();
-  const emptyReport: ImportSqlFileResult = {
-    tablesMoved: 0,
-    sequencesMoved: 0,
-    viewsMoved: 0,
-  };
-  let result: ImportSqlFileResult = emptyReport;
-  try {
-    if (options.supabaseCompat) {
-      spinner.stop();
-      console.log(
-        chalk.dim(
-          "  Supabase compatibility mode. Remote control plane applies the raw SQL as-is; local transforms are not run.",
-        ),
-      );
-      if (options.disableApiRls) {
-        console.log(
-          chalk.dim("  (RLS options are not applied on remote push yet.)"),
-        );
-      }
-      spinner.start("Applying…");
-    }
-    result = await client.importSqlFile(slug, abs, hash, {
-      supabaseCompat: options.supabaseCompat,
-      sanitizeForTarget: !options.noSanitize,
-      moveFromPublic: options.supabaseCompat,
-      ...(options.disableApiRls
-        ? { disableRowLevelSecurityInApi: true as const }
-        : {}),
-    });
-  } finally {
-    spinner.stop();
-  }
-  console.log(chalk.green("✓"), chalk.white("SQL applied successfully."));
-  if (options.supabaseCompat) {
-    sectionBanner("Post-migration report");
-    console.log(
-      `  ${chalk.white("Tables moved to api:".padEnd(28))}${chalk.cyan(String(result.tablesMoved))}`,
-    );
-    console.log(
-      `  ${chalk.white("Sequences moved to api:".padEnd(28))}${chalk.cyan(String(result.sequencesMoved))}`,
-    );
-    console.log(
-      `  ${chalk.white("Views / matviews moved to api:".padEnd(28))}${chalk.cyan(String(result.viewsMoved))}`,
-    );
-    console.log();
   }
 }
 
