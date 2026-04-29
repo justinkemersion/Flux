@@ -15,6 +15,7 @@ import { Command } from "commander";
 import open from "open";
 import ora from "ora";
 import { getApiClient } from "./api-client";
+import { B, hintLine, sectionBanner } from "./cli-layout";
 import { cmdCreate } from "./commands/create";
 import { cmdProjectCredentials } from "./commands/project-credentials";
 import { saveConfig } from "./config";
@@ -42,12 +43,6 @@ export {
 
 function isFluxDebug(): boolean {
   return process.env.FLUX_DEBUG != null && process.env.FLUX_DEBUG !== "" && process.env.FLUX_DEBUG !== "0";
-}
-
-function printBanner(title: string): void {
-  console.log();
-  console.log(chalk.bold.cyan(`  ${title}`));
-  console.log(chalk.dim("  " + "─".repeat(Math.max(title.length, 24))));
 }
 
 function formatCliError(err: unknown): string {
@@ -148,14 +143,10 @@ async function cmdUpdate(): Promise<void> {
     chalk.dim("flux update — pull latest bundle, then run with node (Node 20+):"),
   );
   console.log();
-  console.log(
-    `  curl -fsSL ${bundle} -o /tmp/flux.mjs && node /tmp/flux.mjs --help`,
-  );
+  console.log(`curl -fsSL ${bundle} -o /tmp/flux.mjs && node /tmp/flux.mjs --help`);
   console.log();
   console.log(chalk.dim("Or copy to a dir on PATH:"));
-  console.log(
-    `  curl -fsSL ${bundle} -o flux && chmod +x flux && mv flux ~/.local/bin/`,
-  );
+  console.log(`curl -fsSL ${bundle} -o flux && chmod +x flux && mv flux ~/.local/bin/`);
   if (v) {
     console.log();
     console.log(chalk.dim(`Control plane version: ${v}`));
@@ -283,15 +274,11 @@ async function cmdPush(
   try {
     if (options.supabaseCompat) {
       spinner.stop();
-      console.log(
-        chalk.dim(
-          "  Supabase compatibility mode. Remote control plane applies the raw SQL as-is; local transforms are not run.",
-        ),
+      hintLine(
+        "Supabase compatibility mode. Remote control plane applies the raw SQL as-is; local transforms are not run.",
       );
       if (options.disableApiRls) {
-        console.log(
-          chalk.dim("  (RLS options are not applied on remote push yet.)"),
-        );
+        hintLine("(RLS options are not applied on remote push yet.)");
       }
       spinner.start("Applying…");
     }
@@ -308,21 +295,15 @@ async function cmdPush(
   }
   console.log(chalk.green("✓"), chalk.white("SQL applied successfully."));
   if (options.supabaseCompat) {
-    printBanner("Post-migration report");
+    sectionBanner("Post-migration report");
     console.log(
-      chalk.dim("  "),
-      chalk.white("Tables moved to api:".padEnd(28)),
-      chalk.cyan(String(result.tablesMoved)),
+      `${B}${chalk.white("Tables moved to api:".padEnd(28))}${chalk.cyan(String(result.tablesMoved))}`,
     );
     console.log(
-      chalk.dim("  "),
-      chalk.white("Sequences moved to api:".padEnd(28)),
-      chalk.cyan(String(result.sequencesMoved)),
+      `${B}${chalk.white("Sequences moved to api:".padEnd(28))}${chalk.cyan(String(result.sequencesMoved))}`,
     );
     console.log(
-      chalk.dim("  "),
-      chalk.white("Views / matviews moved to api:".padEnd(28)),
-      chalk.cyan(String(result.viewsMoved)),
+      `${B}${chalk.white("Views / matviews moved to api:".padEnd(28))}${chalk.cyan(String(result.viewsMoved))}`,
     );
     console.log();
   }
@@ -385,7 +366,7 @@ async function cmdCors(options: {
     console.log(
       chalk.blue.bold(`Per-project CORS extras for "${project}":`),
     );
-    for (const origin of current) console.log(`  ${origin}`);
+    for (const origin of current) console.log(origin);
     return;
   }
 
@@ -407,9 +388,9 @@ async function cmdCors(options: {
   await client.setProjectAllowedOrigins(project, next, hash);
   console.log(chalk.green("✓"), chalk.white("CORS allow-origins updated."));
   if (next.length === 0) {
-    console.log(chalk.dim("  (All per-project CORS extras cleared.)"));
+    hintLine("(All per-project CORS extras cleared.)");
   } else {
-    for (const origin of next) console.log(`  ${origin}`);
+    for (const origin of next) console.log(origin);
   }
 }
 
@@ -469,7 +450,7 @@ async function cmdReap(hours: number): Promise<void> {
   );
   const { stopped, errors } = await client.reapIdleProjects(hours);
   if (stopped.length === 0 && errors.length === 0) {
-    console.log(chalk.dim("  No projects past the threshold."));
+    console.log(chalk.dim("No projects past the threshold."));
     return;
   }
   for (const slug of stopped) {
@@ -497,17 +478,15 @@ async function cmdKeys(
   }
   const { anonKey, serviceRoleKey } = await client.getProjectKeys(slug, hash);
 
-  printBanner(`JWT keys — ${slug}`);
+  sectionBanner(`JWT keys — ${slug}`);
   console.log();
-  console.log(chalk.cyan("  Anon key"));
-  console.log(chalk.white(`  ${anonKey}`));
+  console.log(chalk.cyan("Anon key"));
+  console.log(chalk.white(anonKey));
   console.log();
-  console.log(chalk.magenta("  Service role key"));
-  console.log(chalk.white(`  ${serviceRoleKey}`));
+  console.log(chalk.magenta("Service role key"));
+  console.log(chalk.white(serviceRoleKey));
   console.log();
-  console.log(
-    chalk.dim("  Keep the service role key secret; it bypasses RLS."),
-  );
+  hintLine("Keep the service role key secret; it bypasses RLS.");
   console.log();
 }
 
@@ -559,18 +538,18 @@ async function cmdList(): Promise<void> {
     return;
   }
 
-  printBanner("Flux projects");
+  sectionBanner("Flux projects");
   const wProject = 26;
   const wHash = 10;
   const wStatus = 12;
   console.log(
     chalk.dim(
-      `  ${"PROJECT".padEnd(wProject)}${"HASH".padEnd(wHash)}${"STATUS".padEnd(wStatus)}API URL`,
+      `${B}${"PROJECT".padEnd(wProject)}${"HASH".padEnd(wHash)}${"STATUS".padEnd(wStatus)}API URL`,
     ),
   );
   for (const r of rows) {
     console.log(
-      `  ${chalk.cyan(r.slug.padEnd(wProject))}${chalk.yellow(r.hash.padEnd(wHash))}${statusCell(r.status)}${chalk.white(r.apiUrl)}`,
+      `${B}${chalk.cyan(r.slug.padEnd(wProject))}${chalk.yellow(r.hash.padEnd(wHash))}${statusCell(r.status)}${chalk.white(r.apiUrl)}`,
     );
   }
   console.log();
@@ -662,14 +641,12 @@ async function cmdEnvList(
     console.log(chalk.dim("No environment variables on the API container (or not yet available)."));
     return;
   }
-  printBanner(`Environment — ${slug}`);
+  sectionBanner(`Environment — ${slug}`);
   for (const row of rows) {
-    console.log(`  ${formatEnvListRow(row)}`);
+    console.log(`${B}${formatEnvListRow(row)}`);
   }
   console.log();
-  console.log(
-    chalk.dim("  Values for sensitive keys are not shown when marked (set)."),
-  );
+  hintLine("Values for sensitive keys are not shown when marked (set).");
   console.log();
 }
 
@@ -783,10 +760,8 @@ async function main(): Promise<void> {
         const { user, plan, defaultMode } = await client.verifyToken(key);
         saveConfig({ token: key, profile: { plan, defaultMode } });
         console.log(`Flux authenticated as ${user}.`);
-        console.log(
-          chalk.dim(
-            `Plan at login: ${plan} (typical default mode: ${defaultMode}). On create, omit --mode to let the control plane pick from your current plan; use --mode or FLUX_DEFAULT_MODE to override.`,
-          ),
+        hintLine(
+          `Plan at login: ${plan} (typical default mode: ${defaultMode}). On create, omit --mode to let the control plane pick from your current plan; use --mode or FLUX_DEFAULT_MODE to override.`,
         );
       } catch (err: unknown) {
         printErrorAndExit(err);

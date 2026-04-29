@@ -234,6 +234,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const payload = {
     summary,
+    mode,
     /** Canonical tenant JWT signing key (also `secrets.pgrstJwtSecret` for v2_shared). */
     projectJwtSecret: project.projectJwtSecret,
     secrets: project.secrets,

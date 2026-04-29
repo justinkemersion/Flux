@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { getApiClient } from "../api-client";
+import { hintLine } from "../cli-layout";
 import type { FluxJson } from "../flux-config";
 import { printGatewayJwtEnvCopyBlock } from "../print-gateway-env-snippet";
 import { resolveHash, resolveOptionalName } from "../project-resolve";
@@ -21,7 +22,7 @@ export async function cmdProjectCredentials(
     console.log();
     printGatewayJwtEnvCopyBlock(creds.projectJwtSecret);
     for (const line of creds.note.match(/.{1,76}/g) ?? [creds.note]) {
-      console.log(chalk.dim(`  ${line}`));
+      hintLine(line);
     }
     console.log();
     return;
@@ -34,17 +35,15 @@ export async function cmdProjectCredentials(
   if (creds.projectJwtSecret) {
     printGatewayJwtEnvCopyBlock(creds.projectJwtSecret);
   }
-  console.log(chalk.cyan("  Postgres"));
-  console.log(chalk.white(`  ${creds.postgresConnectionString}`));
+  console.log(chalk.cyan("Postgres"));
+  console.log(chalk.white(creds.postgresConnectionString));
   console.log();
-  console.log(chalk.cyan("  Anon key"));
-  console.log(chalk.white(`  ${creds.anonKey}`));
+  console.log(chalk.cyan("Anon key"));
+  console.log(chalk.white(creds.anonKey));
   console.log();
-  console.log(chalk.magenta("  Service role key"));
-  console.log(chalk.white(`  ${creds.serviceRoleKey}`));
+  console.log(chalk.magenta("Service role key"));
+  console.log(chalk.white(creds.serviceRoleKey));
   console.log();
-  console.log(
-    chalk.dim("  Keep the service role key secret; it bypasses RLS."),
-  );
+  hintLine("Keep the service role key secret; it bypasses RLS.");
   console.log();
 }

@@ -35,6 +35,8 @@ const createProjectSecretsSchema = z.object({
 
 const createProjectResponseSchema = z.object({
   summary: fluxProjectSummarySchema,
+  /** Provisioning mode chosen for this project (same as catalog `projects.mode`). */
+  mode: z.enum(["v1_dedicated", "v2_shared"]),
   /** Present on control planes that expose the canonical tenant JWT (same as secrets.pgrstJwtSecret when set). */
   projectJwtSecret: z.string().optional(),
   secrets: createProjectSecretsSchema,
@@ -320,7 +322,7 @@ export class ApiClient {
     const parsed = createProjectResponseSchema.safeParse(raw);
     if (!parsed.success) {
       throw new Error(
-        "CLI create: response did not match expected { summary, secrets } shape.",
+        "CLI create: response did not match expected { summary, mode, secrets } shape.",
       );
     }
     return parsed.data;
