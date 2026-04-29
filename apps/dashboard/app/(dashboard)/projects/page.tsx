@@ -427,12 +427,12 @@ export default function ProjectsPage() {
 
       {detailSlug && detailProject ? (
         <div
-          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-20 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm"
           role="presentation"
           onClick={closeProjectDetail}
         >
           <div
-            className="relative w-full max-w-4xl pb-20"
+            className="relative my-6 w-full max-w-4xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button

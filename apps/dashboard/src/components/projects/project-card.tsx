@@ -923,37 +923,49 @@ export function ProjectCard({
           ) : null}
 
           <div className="mt-6 flex flex-col gap-6">
-            <CopyableField
-              label="Postgres connection string"
-              value={
-                credentialsLoaded ? (p.postgresConnectionString ?? null) : null
-              }
-              isSecret
-              prominent
-              emptyHint={connectSecretEmptyHint}
-            />
-            <CopyableField
-              label="Anon key"
-              value={credentialsLoaded ? (p.anonKey ?? null) : null}
-              isSecret={false}
-              visuallyTruncate
-              prominent
-              emptyHint={connectSecretEmptyHint}
-            />
-            <CopyableField
-              label="Service URL"
-              value={p.apiUrl || null}
-              isSecret={false}
-              visuallyTruncate
-              prominent
-            />
-            <CopyableField
-              label="Service role key"
-              value={credentialsLoaded ? (p.serviceRoleKey ?? null) : null}
-              isSecret
-              prominent
-              emptyHint={connectSecretEmptyHint}
-            />
+            {isV2Shared ? (
+              <CopyableField
+                label="Service URL"
+                value={p.apiUrl || null}
+                isSecret={false}
+                visuallyTruncate
+                prominent
+              />
+            ) : (
+              <>
+                <CopyableField
+                  label="Postgres connection string"
+                  value={
+                    credentialsLoaded ? (p.postgresConnectionString ?? null) : null
+                  }
+                  isSecret
+                  prominent
+                  emptyHint={connectSecretEmptyHint}
+                />
+                <CopyableField
+                  label="Anon key"
+                  value={credentialsLoaded ? (p.anonKey ?? null) : null}
+                  isSecret={false}
+                  visuallyTruncate
+                  prominent
+                  emptyHint={connectSecretEmptyHint}
+                />
+                <CopyableField
+                  label="Service URL"
+                  value={p.apiUrl || null}
+                  isSecret={false}
+                  visuallyTruncate
+                  prominent
+                />
+                <CopyableField
+                  label="Service role key"
+                  value={credentialsLoaded ? (p.serviceRoleKey ?? null) : null}
+                  isSecret
+                  prominent
+                  emptyHint={connectSecretEmptyHint}
+                />
+              </>
+            )}
           </div>
 
           {!credentialsLoaded && !canRevealCredentials ? (
@@ -1077,12 +1089,12 @@ export function ProjectCard({
 
       {settingsOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 pb-8 backdrop-blur-sm sm:pt-10"
+          className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"
           role="presentation"
           onClick={closeSettingsModal}
         >
           <div
-            className="relative my-4 w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            className="relative my-6 w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`settings-title-${p.id}`}
@@ -1200,12 +1212,12 @@ export function ProjectCard({
 
       {deleteOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 pb-8 backdrop-blur-sm sm:pt-10"
+          className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"
           role="presentation"
           onClick={closeDeleteModal}
         >
           <div
-            className="relative my-4 w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            className="relative my-6 w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`delete-title-${p.id}`}
@@ -1304,12 +1316,12 @@ export function ProjectCard({
 
       {resetOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 pb-8 backdrop-blur-sm sm:pt-10"
+          className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"
           role="presentation"
           onClick={closeResetModal}
         >
           <div
-            className="relative my-4 w-full max-w-md rounded-md border border-red-300 bg-white p-6 shadow-2xl dark:border-red-900 dark:bg-zinc-900"
+            className="relative my-6 w-full max-w-md rounded-md border border-red-300 bg-white p-6 shadow-2xl dark:border-red-900 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`reset-title-${p.id}`}

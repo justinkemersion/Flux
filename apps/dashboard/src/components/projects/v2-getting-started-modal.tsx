@@ -190,12 +190,12 @@ const data = await res.json();`,
 
   return (
     <div
-      className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-black/75 p-4 pt-8 backdrop-blur-sm sm:pt-10"
+      className="fixed inset-0 z-[220] flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-sm"
       role="presentation"
       onClick={onClose}
     >
       <div
-        className="relative my-4 w-full max-w-3xl rounded-md border border-zinc-800 bg-zinc-950 p-4 shadow-2xl sm:p-6"
+        className="relative my-6 w-full max-w-3xl rounded-md border border-zinc-800 bg-zinc-950 p-4 shadow-2xl sm:p-6"
         role="dialog"
         aria-modal="true"
         aria-labelledby="v2-getting-started-title"
