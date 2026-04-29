@@ -16,6 +16,7 @@ import open from "open";
 import ora from "ora";
 import { getApiClient } from "./api-client";
 import { cmdCreate } from "./commands/create";
+import { cmdProjectCredentials } from "./commands/project-credentials";
 import { saveConfig } from "./config";
 import { type FluxJson, readFluxJson } from "./flux-config";
 import { resolveExplicitCreateMode } from "./mode-default";
@@ -828,10 +829,35 @@ async function main(): Promise<void> {
           ...(opts.hash ? { hash: opts.hash } : {}),
           ...(mode !== undefined ? { mode } : {}),
         });
-      } catch (err: unknown) {
-        printErrorAndExit(err);
-      }
-    });
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
+  const projectRoot = program
+    .command("project")
+    .description("Project helpers backed by the control-plane API");
+
+  const projectCredentialsCmd = projectRoot
+    .command("credentials")
+    .description(
+      "Show FLUX_GATEWAY_JWT_SECRET (v2_shared) or Postgres + JWT keys (v1) for flux.json / hash",
+    )
+    .argument(
+      "[name]",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option("--hash <hex>", hashFlagDesc);
+
+  projectCredentialsCmd.action(async (name: string | undefined) => {
+    try {
+      const opts = projectCredentialsCmd.opts<{ hash?: string }>();
+      const flux = await readFluxJson(process.cwd());
+      await cmdProjectCredentials(name, opts.hash, flux);
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
 
   const push = program
     .command("push")

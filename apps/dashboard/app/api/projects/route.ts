@@ -347,6 +347,8 @@ export async function POST(req: Request): Promise<Response> {
         stripSupabaseRestPrefix: project.stripSupabaseRestPrefix,
         mode: dbProject.mode,
         createdAt: dbProject.createdAt,
+        /** Tenant JWT signing key — use as `FLUX_GATEWAY_JWT_SECRET` in app/gateway `.env`. */
+        projectJwtSecret: project.projectJwtSecret,
       },
     });
   } catch (err: unknown) {

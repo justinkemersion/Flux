@@ -74,6 +74,29 @@ test("dispatchProvisionProject routes v2_shared through engine-v2 provisioner", 
   assert.equal(Buffer.from(result.projectJwtSecret, "base64").length, 36);
 });
 
+test("dispatchProvisionProject v2_shared reuses jwt when reuseProjectJwtSecret is set", async () => {
+  const reused = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  const projectManager = {} as ProjectManager;
+  const result = await dispatchProvisionProject({
+    mode: "v2_shared",
+    projectName: "Reuse Test",
+    projectHash: "aaa0001",
+    tenantId: "550e8400-e29b-41d4-a716-446655440000",
+    projectManager,
+    isProduction: false,
+    reuseProjectJwtSecret: reused,
+    provisionSharedTenant: async (tenantId) => ({
+      tenantId,
+      shortId: "550e8400e29b",
+      schema: "t_550e8400e29b_api",
+      role: "t_550e8400e29b_role",
+    }),
+  });
+
+  assert.equal(result.projectJwtSecret, reused);
+  assert.equal(result.secrets.pgrstJwtSecret, reused);
+});
+
 // ---------------------------------------------------------------------------
 // T-1: v2 cleanupOnFailure calls deprovisionProject
 //

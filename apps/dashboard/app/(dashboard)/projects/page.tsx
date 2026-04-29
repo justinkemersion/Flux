@@ -59,6 +59,7 @@ export default function ProjectsPage() {
     apiUrl: string;
     slug: string;
     hash: string;
+    projectJwtSecret?: string;
   } | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -302,6 +303,7 @@ export default function ProjectsPage() {
                 slug?: unknown;
                 hash?: unknown;
                 mode?: unknown;
+                projectJwtSecret?: unknown;
               };
             }).project
           : null;
@@ -321,6 +323,10 @@ export default function ProjectsPage() {
           apiUrl: createdProject.apiUrl,
           slug: createdProject.slug,
           hash: createdProject.hash,
+          ...(typeof createdProject.projectJwtSecret === "string" &&
+          createdProject.projectJwtSecret.length > 0
+            ? { projectJwtSecret: createdProject.projectJwtSecret }
+            : {}),
         });
       }
     } catch (err) {
@@ -644,6 +650,7 @@ export default function ProjectsPage() {
         apiUrl={v2GettingStartedProject?.apiUrl ?? ""}
         slug={v2GettingStartedProject?.slug ?? ""}
         hash={v2GettingStartedProject?.hash ?? ""}
+        gatewayJwtSecretOneTime={v2GettingStartedProject?.projectJwtSecret}
       />
     </div>
   );

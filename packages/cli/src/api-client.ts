@@ -1,3 +1,4 @@
+import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import {
   type FluxProjectEnvEntry,
   type FluxProjectSummary,
@@ -34,8 +35,33 @@ const createProjectSecretsSchema = z.object({
 
 const createProjectResponseSchema = z.object({
   summary: fluxProjectSummarySchema,
+  /** Present on control planes that expose the canonical tenant JWT (same as secrets.pgrstJwtSecret when set). */
+  projectJwtSecret: z.string().optional(),
   secrets: createProjectSecretsSchema,
 });
+
+const projectCredentialsV2Schema = z.object({
+  mode: z.literal("v2_shared"),
+  slug: z.string(),
+  hash: z.string(),
+  projectJwtSecret: z.string(),
+  note: z.string(),
+});
+
+const projectCredentialsV1Schema = z.object({
+  mode: z.literal("v1_dedicated"),
+  slug: z.string(),
+  hash: z.string(),
+  projectJwtSecret: z.string().optional(),
+  postgresConnectionString: z.string(),
+  anonKey: z.string(),
+  serviceRoleKey: z.string(),
+});
+
+const projectCredentialsResponseSchema = z.discriminatedUnion("mode", [
+  projectCredentialsV2Schema,
+  projectCredentialsV1Schema,
+]);
 const verifyTokenResponseSchema = z.object({
   ok: z.literal(true),
   user: z.string(),
@@ -57,6 +83,9 @@ const pushSqlResponseSchema = z.object({
 
 export type CreateProjectSecrets = z.infer<typeof createProjectSecretsSchema>;
 export type CreateProjectResult = z.infer<typeof createProjectResponseSchema>;
+export type ProjectCredentialsByHash = z.infer<
+  typeof projectCredentialsResponseSchema
+>;
 export type CreateProjectMode = "v1_dedicated" | "v2_shared";
 export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
@@ -292,6 +321,60 @@ export class ApiClient {
     if (!parsed.success) {
       throw new Error(
         "CLI create: response did not match expected { summary, secrets } shape.",
+      );
+    }
+    return parsed.data;
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /api/cli/v1/projects/:hash/credentials — tenant JWT (v2) or full v1 secrets
+  // ---------------------------------------------------------------------------
+  async getProjectCredentialsByHash(
+    hash: string,
+  ): Promise<ProjectCredentialsByHash> {
+    const token = this.tokenOrThrow();
+    const h = hash.trim().toLowerCase();
+    const hexLen = FLUX_PROJECT_HASH_HEX_LEN;
+    if (h.length !== hexLen || !/^[a-f0-9]+$/u.test(h)) {
+      throw new Error(
+        `Project hash must be a ${String(hexLen)}-character lowercase hex id.`,
+      );
+    }
+    const url = `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}/credentials`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    const text = await res.text();
+    let raw: unknown;
+    try {
+      raw = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI credentials: response was not JSON (${res.status}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (!res.ok) {
+      const msg =
+        raw &&
+        typeof raw === "object" &&
+        raw !== null &&
+        "error" in raw &&
+        typeof (raw as { error: unknown }).error === "string"
+          ? (raw as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = projectCredentialsResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        "CLI credentials: response did not match expected credentials shape.",
       );
     }
     return parsed.data;

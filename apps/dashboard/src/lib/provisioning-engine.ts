@@ -20,6 +20,11 @@ export type DispatchProvisionInput = {
   isProduction: boolean;
   customJwtSecret?: string;
   stripSupabaseRestPrefix?: boolean;
+  /**
+   * v2_shared repair only: reuse the catalog `jwt_secret` so in-memory provision
+   * does not diverge from Postgres. Omitted on create → {@link generateProjectJwtSecret}.
+   */
+  reuseProjectJwtSecret?: string;
   /** Injectable for tests — defaults to engine-v2 provisionProject. */
   provisionSharedTenant?: (
     tenantId: string,
@@ -117,7 +122,10 @@ export async function dispatchProvisionProject(
   }
 
   const slug = slugifyProjectName(input.projectName);
-  const projectJwtSecret = generateProjectJwtSecret();
+  // v2_shared: every new tenant gets a fresh HS256 key via generateProjectJwtSecret().
+  // Repair passes reuseProjectJwtSecret so the returned secrets match the catalog row.
+  const projectJwtSecret =
+    input.reuseProjectJwtSecret ?? generateProjectJwtSecret();
   const provisionSharedTenant =
     input.provisionSharedTenant ??
     (async (tenantId: string) => {

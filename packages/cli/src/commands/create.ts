@@ -4,6 +4,7 @@ import ora from "ora";
 import type { CreateProjectMode, CreateProjectResult } from "../api-client";
 import { getApiClient } from "../api-client";
 import { visibleLength } from "../ansi";
+import { printGatewayJwtEnvCopyBlock } from "../print-gateway-env-snippet";
 
 function printProjectSummaryCard(
   result: CreateProjectResult,
@@ -77,20 +78,11 @@ function printProjectSummaryCard(
   }
   console.log();
 
-  console.log(chalk.dim("  RUNTIME_CREDENTIALS"));
-  console.log(
-    chalk.white(`    FLUX_GATEWAY_JWT_SECRET=${secrets.pgrstJwtSecret}`),
-  );
-  console.log(
-    chalk.dim(
-      "    ↑ per-project tenant API signing key (control plane projects.jwt_secret).",
-    ),
-  );
-  console.log(
-    chalk.dim(
-      "      Not the same value as the host pool FLUX_GATEWAY_JWT_SECRET on flux-postgrest-pool.",
-    ),
-  );
+  const tenantJwt =
+    result.projectJwtSecret ?? secrets.pgrstJwtSecret;
+  printGatewayJwtEnvCopyBlock(tenantJwt);
+
+  console.log(chalk.dim("  OTHER_RUNTIME_SECRETS (reference)"));
   console.log(`    PGRST_JWT_SECRET=${secrets.pgrstJwtSecret}`);
   console.log(`    POSTGRES_PASSWORD=${secrets.postgresPassword}`);
   console.log(`    POSTGRES_CONTAINER_HOST=${secrets.postgresContainerHost}`);

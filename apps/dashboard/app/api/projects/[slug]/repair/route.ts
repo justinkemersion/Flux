@@ -56,6 +56,14 @@ export async function POST(
     ]);
   }
 
+  const catalogJwtSecret = row.jwtSecret;
+  if (!catalogJwtSecret) {
+    return jsonError(
+      "Project jwt_secret is missing and could not be allocated.",
+      500,
+    );
+  }
+
   const pm = getProjectManager();
   try {
     // v1_dedicated intentionally does not nuke containers/volumes here:
@@ -68,12 +76,15 @@ export async function POST(
       tenantId: row.id,
       projectManager: pm,
       isProduction: process.env.NODE_ENV === "production",
+      reuseProjectJwtSecret: catalogJwtSecret,
     });
     return Response.json({
       ok: true,
       apiUrl: provisioned.apiUrl,
       slug: provisioned.slug,
       mode: row.mode,
+      /** Same value as `projects.jwt_secret` — paste as `FLUX_GATEWAY_JWT_SECRET` in your app/gateway `.env`. */
+      projectJwtSecret: catalogJwtSecret,
     });
   } catch (err: unknown) {
     return jsonError(err instanceof Error ? err.message : String(err), 500);

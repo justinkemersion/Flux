@@ -2,9 +2,15 @@
 
 import { Check, Clipboard, ExternalLink, Loader2, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { CodeBlock } from "@/src/components/docs/code-block";
+
+const GATEWAY_ENV_KEY = "FLUX_GATEWAY_JWT_SECRET";
+
+function gatewayJwtDismissStorageKey(slug: string, hash: string): string {
+  return `flux:v2-gateway-jwt-dismissed:${slug}:${hash}`;
+}
 
 type V2GettingStartedModalProps = {
   open: boolean;
@@ -12,6 +18,11 @@ type V2GettingStartedModalProps = {
   apiUrl: string;
   slug: string;
   hash: string;
+  /**
+   * Returned only once from project create — not stored on the project list.
+   * After the user closes this dialog, we do not show it here again on this device (see localStorage key above).
+   */
+  gatewayJwtSecretOneTime?: string | null;
 };
 
 function CopyField({
@@ -58,16 +69,79 @@ function CopyField({
   );
 }
 
+function GatewayEnvOneTimeBlock({
+  envLine,
+}: {
+  envLine: string;
+}): React.ReactElement {
+  const [copied, setCopied] = useState(false);
+
+  async function copyLine(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(envLine);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* clipboard denied */
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-amber-800/80 bg-amber-950/40 p-3.5">
+      <p className="text-sm font-semibold text-amber-100">
+        Copy your gateway secret now
+      </p>
+      <p className="mt-2 text-xs leading-relaxed text-amber-200/90">
+        Add this line to your gateway or app{" "}
+        <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-[11px]">
+          .env
+        </code>
+        . For security,{" "}
+        <strong className="font-medium text-amber-50">
+          we will not show this value again in this dialog
+        </strong>{" "}
+        on this browser after you close it. If you lose it, use{" "}
+        <strong className="font-medium text-amber-50">Repair</strong> on the
+        project or run{" "}
+        <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-[11px]">
+          flux project credentials
+        </code>{" "}
+        from the CLI.
+      </p>
+      <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-900/60 bg-black/50 p-2.5">
+        <code className="min-w-0 flex-1 break-all font-mono text-[11px] leading-snug text-amber-50">
+          {envLine}
+        </code>
+        <button
+          type="button"
+          onClick={() => void copyLine()}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-amber-300/90 transition-colors hover:bg-amber-950/80 hover:text-amber-50"
+          aria-label="Copy gateway environment line"
+          title="Copy full line"
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-emerald-400" aria-hidden />
+          ) : (
+            <Clipboard className="h-4 w-4" aria-hidden />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function V2GettingStartedModal({
   open,
   onClose,
   apiUrl,
   slug,
   hash,
+  gatewayJwtSecretOneTime,
 }: V2GettingStartedModalProps): React.ReactElement | null {
   const [tokenInput, setTokenInput] = useState("");
   const [testBusy, setTestBusy] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [dismissedPriorOnDevice, setDismissedPriorOnDevice] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     status: number;
@@ -78,14 +152,43 @@ export function V2GettingStartedModal({
     setMounted(true);
   }, []);
 
+  useLayoutEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    try {
+      setDismissedPriorOnDevice(
+        localStorage.getItem(gatewayJwtDismissStorageKey(slug, hash)) === "1",
+      );
+    } catch {
+      setDismissedPriorOnDevice(false);
+    }
+  }, [open, slug, hash]);
+
+  useEffect(() => {
+    if (!open) return;
+    const hadOneTimeSecret = Boolean(gatewayJwtSecretOneTime?.trim());
+    return () => {
+      if (hadOneTimeSecret && slug && hash) {
+        try {
+          localStorage.setItem(gatewayJwtDismissStorageKey(slug, hash), "1");
+        } catch {
+          /* private mode / quota */
+        }
+      }
+    };
+  }, [open, slug, hash, gatewayJwtSecretOneTime]);
+
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent): void {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleClose();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open, handleClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -199,13 +302,21 @@ const data = await res.json();`,
     }
   }
 
+  const trimmedOneTime = gatewayJwtSecretOneTime?.trim() ?? "";
+  const gatewayEnvLine = `${GATEWAY_ENV_KEY}=${trimmedOneTime}`;
+  const showGatewaySecretOnce =
+    Boolean(trimmedOneTime) && !dismissedPriorOnDevice;
+  const showDismissedGatewayNotice =
+    Boolean(trimmedOneTime) && dismissedPriorOnDevice;
+  const showRecoveryHint = dismissedPriorOnDevice && !trimmedOneTime;
+
   if (!open || !mounted) return null;
 
   return createPortal(
     <div
       className="fixed inset-0 z-[220] flex items-start justify-center overflow-y-auto bg-black/75 p-4 pt-3 backdrop-blur-sm sm:pt-4"
       role="presentation"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="relative w-full max-w-3xl rounded-md border border-zinc-800 bg-zinc-950 p-4 shadow-2xl sm:p-6"
@@ -216,7 +327,7 @@ const data = await res.json();`,
       >
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-100"
           aria-label="Close"
         >
@@ -235,6 +346,46 @@ const data = await res.json();`,
             database.
           </p>
         </div>
+
+        {showGatewaySecretOnce ? (
+          <div className="mt-5">
+            <GatewayEnvOneTimeBlock envLine={gatewayEnvLine} />
+          </div>
+        ) : null}
+        {showDismissedGatewayNotice ? (
+          <div
+            className="mt-5 rounded-md border border-zinc-700 bg-zinc-900/50 px-3 py-2.5 text-xs leading-relaxed text-zinc-400"
+            role="status"
+          >
+            This browser already acknowledged the gateway signing secret for
+            this project in this dialog, so it is not shown again here. Retrieve
+            it anytime with{" "}
+            <strong className="font-medium text-zinc-300">Repair</strong> on the
+            project card or{" "}
+            <code className="rounded bg-black/50 px-1 py-0.5 font-mono text-[11px] text-zinc-200">
+              flux project credentials
+            </code>{" "}
+            in the CLI.
+          </div>
+        ) : null}
+        {showRecoveryHint ? (
+          <p
+            className="mt-5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs leading-relaxed text-zinc-400"
+            role="note"
+          >
+            To retrieve your{" "}
+            <code className="font-mono text-[11px] text-zinc-300">
+              FLUX_GATEWAY_JWT_SECRET
+            </code>{" "}
+            signing key, use{" "}
+            <strong className="font-medium text-zinc-300">Repair</strong> on the
+            project or{" "}
+            <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-[11px] text-zinc-200">
+              flux project credentials
+            </code>{" "}
+            — it is not kept in this dialog after the first copy flow.
+          </p>
+        ) : null}
 
         <div className="mt-5">
           <CopyField label="Service URL (your API endpoint)" value={apiUrl} />
@@ -316,7 +467,7 @@ const data = await res.json();`,
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="rounded-md px-4 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-zinc-200"
           >
             Close
@@ -324,7 +475,7 @@ const data = await res.json();`,
           <Link
             href={`/docs/v2-first-request?slug=${encodeURIComponent(slug)}&hash=${encodeURIComponent(hash)}`}
             onClick={() => {
-              onClose();
+              handleClose();
               document.body.style.overflow = "";
             }}
             className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-600 bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-white"
