@@ -17,30 +17,17 @@ type V2GettingStartedModalProps = {
 function CopyField({
   label,
   value,
-  envText,
 }: {
   label: string;
   value: string;
-  envText: string;
 }): React.ReactElement {
   const [copied, setCopied] = useState(false);
-  const [copiedEnv, setCopiedEnv] = useState(false);
 
   async function copyValue(): Promise<void> {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      /* clipboard denied */
-    }
-  }
-
-  async function copyAsEnv(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(envText);
-      setCopiedEnv(true);
-      window.setTimeout(() => setCopiedEnv(false), 1500);
     } catch {
       /* clipboard denied */
     }
@@ -65,15 +52,6 @@ function CopyField({
           ) : (
             <Clipboard className="h-4 w-4" aria-hidden />
           )}
-        </button>
-        <button
-          type="button"
-          onClick={() => void copyAsEnv()}
-          className="inline-flex h-8 shrink-0 items-center rounded-md border border-zinc-700 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
-          aria-label="Copy environment variables"
-          title="Copy as environment variables for your app"
-        >
-          {copiedEnv ? "Copied .env" : "Copy as .env"}
         </button>
       </div>
     </div>
@@ -160,11 +138,6 @@ const data = await res.json();`,
     () =>
       `curl "${apiUrl}/hops?select=*" \\
   -H "Authorization: Bearer <TOKEN>"`,
-    [apiUrl],
-  );
-  const envText = useMemo(
-    () => `NEXT_PUBLIC_FLUX_URL=${apiUrl}
-FLUX_URL=${apiUrl}`,
     [apiUrl],
   );
 
@@ -257,11 +230,7 @@ FLUX_URL=${apiUrl}`,
         </div>
 
         <div className="mt-5">
-          <CopyField
-            label="Service URL (your API endpoint)"
-            value={apiUrl}
-            envText={envText}
-          />
+          <CopyField label="Service URL (your API endpoint)" value={apiUrl} />
         </div>
 
         <div className="mt-5 space-y-4">

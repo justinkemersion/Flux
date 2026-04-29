@@ -22,7 +22,19 @@ type ManifestPayload = {
 
 type Props = { slug: string };
 
-function CopyBtn({ text }: { text: string }): ReactNode {
+function CopyBtn({
+  text,
+  idleLabel = "COPY",
+  doneLabel = "COPIED",
+  ariaLabel,
+  title,
+}: {
+  text: string;
+  idleLabel?: string;
+  doneLabel?: string;
+  ariaLabel?: string;
+  title?: string;
+}): ReactNode {
   const [done, setDone] = useState(false);
   async function copy(): Promise<void> {
     try {
@@ -38,8 +50,10 @@ function CopyBtn({ text }: { text: string }): ReactNode {
       type="button"
       onClick={() => void copy()}
       className="shrink-0 border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-zinc-300 hover:border-zinc-500"
+      aria-label={ariaLabel}
+      title={title}
     >
-      {done ? "COPIED" : "COPY"}
+      {done ? doneLabel : idleLabel}
     </button>
   );
 }
@@ -107,6 +121,18 @@ function RevealField({ value, emptyHint }: { value: string; emptyHint: string })
 export function ProjectManifest({ slug }: Props) {
   const [data, setData] = useState<ManifestPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const envBlock = data?.apiUrl
+    ? `# Public URL for browser/client calls
+NEXT_PUBLIC_FLUX_URL=${data.apiUrl}
+
+# Server-only URL for routes/actions
+FLUX_URL=${data.apiUrl}
+
+# Shared JWT secret used to verify tokens at Flux gateway
+# Use your Auth.js / Clerk signing secret, generated once
+# Example: openssl rand -base64 48
+FLUX_GATEWAY_JWT_SECRET=`
+    : "";
 
   const load = useCallback(async () => {
     setErr(null);
@@ -154,6 +180,25 @@ export function ProjectManifest({ slug }: Props) {
               {data?.apiUrl ?? "—"}
             </code>
             {data?.apiUrl ? <CopyBtn text={data.apiUrl} /> : null}
+          </div>
+        </div>
+        <div>
+          <p className="mb-1 font-mono text-[9px] uppercase text-zinc-600">
+            APP .ENV
+          </p>
+          <div className="flex min-w-0 items-start justify-between gap-2 border border-zinc-800 bg-black p-2">
+            <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-300">
+              {envBlock || "SYNC..."}
+            </pre>
+            {envBlock ? (
+              <CopyBtn
+                text={envBlock}
+                idleLabel="COPY .ENV"
+                doneLabel="COPIED .ENV"
+                ariaLabel="Copy environment variables"
+                title="Copy environment variables"
+              />
+            ) : null}
           </div>
         </div>
         <div>
