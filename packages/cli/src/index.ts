@@ -19,9 +19,9 @@ import {
   type CreateProjectResult,
   getApiClient,
 } from "./api-client";
-import { loadConfig, saveConfig } from "./config";
+import { saveConfig } from "./config";
 import { type FluxJson, readFluxJson } from "./flux-config";
-import { resolveCreateModeFromInputs } from "./mode-default";
+import { resolveExplicitCreateMode } from "./mode-default";
 import {
   resolveHash,
   resolveOptionalName,
@@ -854,7 +854,7 @@ async function main(): Promise<void> {
         console.log(`Flux authenticated as ${user}.`);
         console.log(
           chalk.dim(
-            `Default create mode from your account tier: ${defaultMode} (override with --mode or FLUX_DEFAULT_MODE).`,
+            `Plan at login: ${plan} (typical default mode: ${defaultMode}). On create, omit --mode to let the control plane pick from your current plan; use --mode or FLUX_DEFAULT_MODE to override.`,
           ),
         );
       } catch (err: unknown) {
@@ -880,7 +880,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--mode <mode>",
-      "Project execution mode: v1_dedicated or v2_shared (default resolved by --mode > FLUX_DEFAULT_MODE > account tier)",
+      "Optional. v1_dedicated or v2_shared. If omitted (and FLUX_DEFAULT_MODE unset), the control plane picks mode from your current plan.",
     )
     .action(async (name: string) => {
       try {
@@ -889,15 +889,14 @@ async function main(): Promise<void> {
           hash?: string;
           mode?: string;
         }>();
-        const mode = resolveCreateModeFromInputs({
+        const mode = resolveExplicitCreateMode({
           explicitMode: opts.mode,
           envMode: process.env.FLUX_DEFAULT_MODE,
-          profileDefaultMode: loadConfig()?.profile?.defaultMode,
         });
         await cmdCreate(name, {
           noSupabaseRestPath: opts.noSupabaseRestPath === true,
           ...(opts.hash ? { hash: opts.hash } : {}),
-          mode,
+          ...(mode !== undefined ? { mode } : {}),
         });
       } catch (err: unknown) {
         printErrorAndExit(err);

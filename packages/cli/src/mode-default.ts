@@ -14,15 +14,15 @@ export function normalizeModeOrThrow(
   );
 }
 
-export function resolveCreateModeFromInputs(input: {
+/**
+ * Modes sent on `flux create` only when the user explicitly requests one.
+ * If this returns `undefined`, the control plane picks mode from the live account plan.
+ */
+export function resolveExplicitCreateMode(input: {
   explicitMode: string | undefined;
   envMode: string | undefined;
-  profileDefaultMode: CreateProjectMode | undefined;
-}): CreateProjectMode {
-  const explicit = normalizeModeOrThrow(input.explicitMode, "--mode");
-  if (explicit) return explicit;
-  const fromEnv = normalizeModeOrThrow(input.envMode, "FLUX_DEFAULT_MODE");
-  if (fromEnv) return fromEnv;
-  if (input.profileDefaultMode) return input.profileDefaultMode;
-  return "v2_shared";
+}): CreateProjectMode | undefined {
+  const fromFlag = normalizeModeOrThrow(input.explicitMode, "--mode");
+  if (fromFlag) return fromFlag;
+  return normalizeModeOrThrow(input.envMode, "FLUX_DEFAULT_MODE");
 }

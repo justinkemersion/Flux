@@ -1,50 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveCreateModeFromInputs } from "./mode-default";
+import { resolveExplicitCreateMode } from "./mode-default";
 
-test("create mode precedence: explicit --mode wins", () => {
-  const mode = resolveCreateModeFromInputs({
+test("explicit --mode wins over env", () => {
+  const mode = resolveExplicitCreateMode({
     explicitMode: "v2_shared",
     envMode: "v1_dedicated",
-    profileDefaultMode: "v1_dedicated",
   });
   assert.equal(mode, "v2_shared");
 });
 
-test("create mode precedence: env override beats profile", () => {
-  const mode = resolveCreateModeFromInputs({
+test("FLUX_DEFAULT_MODE used when --mode omitted", () => {
+  const mode = resolveExplicitCreateMode({
     explicitMode: undefined,
-    envMode: "v2_shared",
-    profileDefaultMode: "v1_dedicated",
-  });
-  assert.equal(mode, "v2_shared");
-});
-
-test("create mode precedence: profile default beats hard fallback", () => {
-  const mode = resolveCreateModeFromInputs({
-    explicitMode: undefined,
-    envMode: undefined,
-    profileDefaultMode: "v1_dedicated",
+    envMode: "v1_dedicated",
   });
   assert.equal(mode, "v1_dedicated");
 });
 
-test("create mode fallback: v2_shared when nothing set", () => {
-  const mode = resolveCreateModeFromInputs({
+test("returns undefined when neither set (server chooses)", () => {
+  const mode = resolveExplicitCreateMode({
     explicitMode: undefined,
     envMode: undefined,
-    profileDefaultMode: undefined,
   });
-  assert.equal(mode, "v2_shared");
+  assert.equal(mode, undefined);
 });
 
 test("invalid explicit mode throws", () => {
   assert.throws(
     () =>
-      resolveCreateModeFromInputs({
+      resolveExplicitCreateMode({
         explicitMode: "bad-mode",
         envMode: undefined,
-        profileDefaultMode: undefined,
       }),
     /Invalid --mode/,
   );
@@ -53,10 +40,9 @@ test("invalid explicit mode throws", () => {
 test("invalid env mode throws", () => {
   assert.throws(
     () =>
-      resolveCreateModeFromInputs({
+      resolveExplicitCreateMode({
         explicitMode: undefined,
         envMode: "not-a-mode",
-        profileDefaultMode: undefined,
       }),
     /Invalid FLUX_DEFAULT_MODE/,
   );
