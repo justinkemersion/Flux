@@ -3,6 +3,7 @@
 import { Check, Clipboard, ExternalLink, Loader2, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { CodeBlock } from "@/src/components/docs/code-block";
 
 type V2GettingStartedModalProps = {
@@ -66,11 +67,16 @@ export function V2GettingStartedModal({
 }: V2GettingStartedModalProps): React.ReactElement | null {
   const [tokenInput, setTokenInput] = useState("");
   const [testBusy, setTestBusy] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     status: number;
     message: string;
   } | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -186,9 +192,9 @@ const data = await res.json();`,
     }
   }
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[220] flex items-start justify-center overflow-y-auto bg-black/75 p-4 pt-3 backdrop-blur-sm sm:pt-4"
       role="presentation"
@@ -317,6 +323,7 @@ const data = await res.json();`,
           </Link>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
