@@ -56,6 +56,23 @@ export function deriveShortId(tenantId: string): string {
   return tenantId.replace(/-/g, "").slice(0, 12).toLowerCase();
 }
 
+/**
+ * Multi-line `.env` fragment for app ↔ Flux gateway wiring (browser + server URLs + JWT placeholder).
+ * Kept in sync with the dashboard connection manifest (`APP .ENV`); comments are intentional.
+ */
+export function buildFluxAppDotEnvSnippet(apiUrl: string): string {
+  return `# Public URL for browser/client calls
+NEXT_PUBLIC_FLUX_URL=${apiUrl}
+
+# Server-only URL for routes/actions
+FLUX_URL=${apiUrl}
+
+# Shared JWT secret used to verify tokens at Flux gateway
+# Use your Auth.js / Clerk signing secret, generated once
+# Example: openssl rand -base64 48
+FLUX_GATEWAY_JWT_SECRET=`;
+}
+
 /** Row returned for project list / summaries. */
 export interface FluxProjectSummary {
   /** Normalized project slug (from container names). */

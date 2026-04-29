@@ -9,7 +9,10 @@ import type {
   FluxProjectSummary,
   ImportSqlFileResult,
 } from "@flux/core/standalone";
-import { fluxTenantDockerResourceNames } from "@flux/core/standalone";
+import {
+  buildFluxAppDotEnvSnippet,
+  fluxTenantDockerResourceNames,
+} from "@flux/core/standalone";
 import chalk from "chalk";
 import { Command } from "commander";
 import open from "open";
@@ -206,33 +209,73 @@ function printProjectSummaryCard(
   nameArg: string,
 ): void {
   const { summary, secrets } = result;
-  const inner = 62;
+  const inner = 56;
   const hr = chalk.dim("─".repeat(inner));
   const row = (key: string, val: string): void => {
+    const keyCol = key.padEnd(16);
+    const maxVal = Math.max(0, inner - keyCol.length);
+    let valStr = val;
+    if (valStr.length > maxVal) {
+      valStr = `${valStr.slice(0, Math.max(0, maxVal - 1))}…`;
+    }
+    const pad = " ".repeat(inner - keyCol.length - valStr.length);
     console.log(
-      `${chalk.dim("  │ ")}${chalk.yellow(key.padEnd(16))}${chalk.white(val)}`,
+      `${chalk.dim("  │ ")}${chalk.yellow(keyCol)}${chalk.white(valStr)}${pad}${chalk.dim("│")}`,
     );
   };
+
   console.log();
+  console.log(
+    `${chalk.dim("  ")}${chalk.bold("Created")} ${chalk.bold.cyan(summary.slug)} ${chalk.bold.yellow(`#${summary.hash}`)}`,
+  );
+  console.log(chalk.dim(`  name (input): ${nameArg}`));
+  console.log();
+
   console.log(chalk.dim("  ┌") + hr + chalk.dim("┐"));
   console.log(
     `${chalk.dim("  │ ")}${chalk.bold.cyan("PROJECT_SUMMARY")}${chalk.dim(" ".repeat(Math.max(0, inner - 17)))}${chalk.dim("│")}`,
   );
   console.log(chalk.dim("  ├") + hr + chalk.dim("┤"));
-  row("name_arg", nameArg);
   row("slug", summary.slug);
   row("hash", summary.hash);
   row("status", summary.status);
-  row("api_url", summary.apiUrl);
-  console.log(chalk.dim("  ├") + hr + chalk.dim("┤"));
-  console.log(
-    `${chalk.dim("  │ ")}${chalk.bold.magenta("SECRETS")}${chalk.dim(" ".repeat(Math.max(0, inner - 8)))}${chalk.dim("│")}`,
-  );
-  console.log(chalk.dim("  ├") + hr + chalk.dim("┤"));
-  row("postgres_pw", secrets.postgresPassword);
-  row("jwt_secret", secrets.pgrstJwtSecret);
-  row("pg_container", secrets.postgresContainerHost);
   console.log(chalk.dim("  └") + hr + chalk.dim("┘"));
+
+  console.log();
+  console.log(chalk.dim("  POSTGREST API"));
+  console.log(chalk.white(`    ${summary.apiUrl}`));
+  console.log();
+
+  console.log(chalk.dim("  APP .ENV"));
+  console.log(
+    chalk.dim(
+      "    Paste into .env or .env.local (or a new file). For `flux push`, add ./flux.json with the same slug and hash above.",
+    ),
+  );
+  const snippet = buildFluxAppDotEnvSnippet(summary.apiUrl);
+  for (const line of snippet.split("\n")) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("#")) {
+      console.log(chalk.dim(`    ${line}`));
+    } else {
+      const eq = line.indexOf("=");
+      if (eq > 0) {
+        const left = line.slice(0, eq);
+        const right = line.slice(eq + 1);
+        console.log(
+          `    ${chalk.cyan(left)}${chalk.dim("=")}${chalk.green(right)}`,
+        );
+      } else {
+        console.log(`    ${line}`);
+      }
+    }
+  }
+  console.log();
+
+  console.log(chalk.dim("  RUNTIME_CREDENTIALS"));
+  console.log(`    PGRST_JWT_SECRET=${secrets.pgrstJwtSecret}`);
+  console.log(`    POSTGRES_PASSWORD=${secrets.postgresPassword}`);
+  console.log(`    POSTGRES_CONTAINER_HOST=${secrets.postgresContainerHost}`);
   console.log();
   for (const line of secrets.note.match(/.{1,76}/g) ?? [secrets.note]) {
     console.log(chalk.dim(`    ${line}`));

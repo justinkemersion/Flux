@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { buildFluxAppDotEnvSnippet } from "@flux/core/standalone";
 import {
   errorMessageFromJsonBody,
   readResponseJson,
@@ -153,18 +154,7 @@ function RevealField({ value, emptyHint }: { value: string; emptyHint: string })
 export function ProjectManifest({ slug }: Props) {
   const [data, setData] = useState<ManifestPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const envBlock = data?.apiUrl
-    ? `# Public URL for browser/client calls
-NEXT_PUBLIC_FLUX_URL=${data.apiUrl}
-
-# Server-only URL for routes/actions
-FLUX_URL=${data.apiUrl}
-
-# Shared JWT secret used to verify tokens at Flux gateway
-# Use your Auth.js / Clerk signing secret, generated once
-# Example: openssl rand -base64 48
-FLUX_GATEWAY_JWT_SECRET=`
-    : "";
+  const envBlock = data?.apiUrl ? buildFluxAppDotEnvSnippet(data.apiUrl) : "";
 
   const load = useCallback(async () => {
     setErr(null);
