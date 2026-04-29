@@ -15,9 +15,9 @@ function jsonError(message: string, status: number): Response {
 }
 
 /**
- * POST /api/projects/[slug]/repair
- * Reconciles tenant infrastructure in place (non-destructive) and reprovisions
- * missing pieces. For v1, this preserves the Postgres volume/data.
+ * POST /api/projects/[slug]/factory-reset
+ * Destructive reset for v1 dedicated projects: removes API/DB containers + data volume,
+ * then reprovisions an empty stack for the same slug/hash.
  */
 export async function POST(
   _req: NextRequest,
@@ -36,12 +36,17 @@ export async function POST(
     .where(and(eq(projects.slug, slug), eq(projects.userId, session.user.id)));
 
   if (!project) return jsonError("Project not found", 404);
+  if (project.mode !== "v1_dedicated") {
+    return jsonError(
+      "Factory reset is only supported for v1_dedicated projects.",
+      400,
+    );
+  }
 
   const pm = getProjectManager();
   try {
-    // v1_dedicated intentionally does not nuke containers/volumes here:
-    // provisionProject() already adopts existing containers, starts stopped ones,
-    // and recreates missing pieces while preserving tenant data volumes.
+    await pm.nukeContainersOnly(slug, project.hash);
+    await pm.removeTenantPrivateNetworkAllowMissing(slug, project.hash);
     const provisioned = await dispatchProvisionProject({
       mode: project.mode,
       projectName: project.name,

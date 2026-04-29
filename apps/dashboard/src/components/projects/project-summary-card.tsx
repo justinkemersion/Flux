@@ -193,7 +193,7 @@ export function ProjectSummaryCard({
   async function runRepair(): Promise<void> {
     const confirmMsg = isV2Shared
       ? "Repair re-runs shared-cluster provisioning for this tenant. Continue?"
-      : "Repair removes Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?";
+      : "Repair reconciles this project's Docker stack in place (restarts/adopts/recreates missing services) without deleting Postgres data. Continue?";
     if (!window.confirm(confirmMsg)) {
       return;
     }

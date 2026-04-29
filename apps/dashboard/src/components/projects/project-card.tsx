@@ -306,7 +306,7 @@ type ProjectCardProps = {
       postgresConnectionString: string;
     },
   ) => void;
-  /** After destructive repair reprovisions the stack. */
+  /** After in-place repair/reconcile reprovisions the stack. */
   onRepaired?: () => void;
   /** When true (e.g. opened from list “Settings”), open the settings modal once on mount. */
   autoOpenSettings?: boolean;
@@ -339,6 +339,10 @@ export function ProjectCard({
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   const [revealBusy, setRevealBusy] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
   const [repairBusy, setRepairBusy] = useState(false);
@@ -383,6 +387,15 @@ export function ProjectCard({
     return () => document.removeEventListener("keydown", onKey);
   }, [deleteOpen]);
 
+  useEffect(() => {
+    if (!resetOpen) return;
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") setResetOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [resetOpen]);
+
   const closeSettingsModal = useCallback((): void => {
     if (settingsSaving) return;
     setSettingsOpen(false);
@@ -423,6 +436,15 @@ export function ProjectCard({
       document.body.style.overflow = prev;
     };
   }, [deleteOpen]);
+
+  useEffect(() => {
+    if (!resetOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [resetOpen]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -554,10 +576,21 @@ export function ProjectCard({
     setDeleteOpen(false);
   }
 
+  function openResetModal(): void {
+    setResetConfirm("");
+    setResetError(null);
+    setResetOpen(true);
+  }
+
+  function closeResetModal(): void {
+    if (resetBusy) return;
+    setResetOpen(false);
+  }
+
   async function runRepair(): Promise<void> {
     const confirmMsg = isV2Shared
       ? "Repair re-runs shared-cluster provisioning for this tenant (schema + role). This is for recovery when the catalog and cluster are out of sync. Continue?"
-      : "Repair removes any Docker containers and volumes for this project, then provisions a new empty stack. All previous database data on the host is lost. Continue?";
+      : "Repair reconciles this project's Docker stack in place (restarts/adopts/recreates missing services) without deleting the Postgres data volume. Continue?";
     if (!window.confirm(confirmMsg)) {
       return;
     }
@@ -652,6 +685,36 @@ export function ProjectCard({
       setDeleteError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function handleFactoryReset(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    const expected = `RESET ${p.name}`;
+    if (resetConfirm !== expected) return;
+    setResetBusy(true);
+    setResetError(null);
+    try {
+      const res = await fetch(`/api/projects/${p.slug}/factory-reset`, {
+        method: "POST",
+      });
+      const data = (await readResponseJson(res, {
+        apiLabel: "project factory reset API",
+      })) as { error?: string } | null;
+      if (!res.ok) {
+        throw new Error(
+          errorMessageFromJsonBody(
+            data,
+            `Factory reset failed (${String(res.status)})`,
+          ),
+        );
+      }
+      setResetOpen(false);
+      onRepaired?.();
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setResetBusy(false);
     }
   }
 
@@ -779,6 +842,18 @@ export function ProjectCard({
             >
               <Trash2 className="h-4 w-4" aria-hidden />
             </button>
+            {!isV2Shared ? (
+              <button
+                type="button"
+                onClick={openResetModal}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-2.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
+                aria-label={`Factory reset ${p.name}`}
+                title="Factory reset (destructive)"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                Factory reset
+              </button>
+            ) : null}
           </div>
         </header>
 
@@ -1193,6 +1268,109 @@ export function ProjectCard({
                       <Trash2 className="h-4 w-4" aria-hidden />
                     )}
                     {isDeleting ? "Deleting…" : "Delete project"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {resetOpen ? (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 py-20 backdrop-blur-sm sm:py-8"
+          role="presentation"
+          onClick={closeResetModal}
+        >
+          <div
+            className="relative w-full max-w-md rounded-md border border-red-300 bg-white p-6 shadow-2xl dark:border-red-900 dark:bg-zinc-900"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`reset-title-${p.id}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={closeResetModal}
+              disabled={resetBusy}
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+
+            <div className="pr-10">
+              <div className="mb-4 flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950">
+                  <AlertTriangle
+                    className="h-5 w-5 text-red-600 dark:text-red-400"
+                    aria-hidden
+                  />
+                </div>
+                <div className="min-w-0">
+                  <h2
+                    id={`reset-title-${p.id}`}
+                    className="text-base font-semibold text-zinc-900 dark:text-zinc-50"
+                  >
+                    Factory reset project
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                    This destroys all database data for{" "}
+                    <strong className="text-zinc-900 dark:text-zinc-100">
+                      {p.name}
+                    </strong>{" "}
+                    by removing containers and volumes, then reprovisions a fresh
+                    empty stack.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={(e) => void handleFactoryReset(e)}>
+                <label
+                  htmlFor={`reset-confirm-${p.id}`}
+                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
+                >
+                  Type{" "}
+                  <span className="font-mono font-semibold">{`RESET ${p.name}`}</span>{" "}
+                  to confirm
+                </label>
+                <input
+                  id={`reset-confirm-${p.id}`}
+                  type="text"
+                  value={resetConfirm}
+                  onChange={(e) => setResetConfirm(e.target.value)}
+                  className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none ring-zinc-200 transition-shadow focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-600 dark:bg-zinc-950 dark:ring-zinc-800 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
+                  placeholder={`RESET ${p.name}`}
+                  autoComplete="off"
+                  disabled={resetBusy}
+                />
+
+                {resetError ? (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                    {resetError}
+                  </p>
+                ) : null}
+
+                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={closeResetModal}
+                    disabled={resetBusy}
+                    className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetConfirm !== `RESET ${p.name}` || resetBusy}
+                    className="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
+                  >
+                    {resetBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4" aria-hidden />
+                    )}
+                    {resetBusy ? "Resetting…" : "Factory reset"}
                   </button>
                 </div>
               </form>

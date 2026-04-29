@@ -335,7 +335,7 @@ export function CodexManual() {
             Flux separates <strong className="text-zinc-800 dark:text-zinc-200">power</strong>{" "}
             (stop/start—containers off or on, data usually kept) from{" "}
             <strong className="text-zinc-800 dark:text-zinc-200">destructive</strong> actions
-            (repair or delete), which can wipe data or remove the project entirely.
+            (delete), which can wipe data or remove the project entirely.
           </p>
           <dl className="mt-5 space-y-4 border-t border-zinc-200/80 pt-4 dark:border-zinc-800/80">
             <div>
@@ -359,16 +359,18 @@ export function CodexManual() {
                 Repair
               </dt>
               <dd className="mt-1.5 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Rebuilds the tenant when the stack is broken or missing. Treat this as a fresh empty
-                database for that project slug.
+                Reconciles the tenant stack in place when containers/network are out of sync.
+                It restarts/adopts/recreates missing services without deleting the Postgres data
+                volume.
               </dd>
             </div>
             <div>
               <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-red-600/90 dark:text-red-400/80">
-                Nuke
+                Factory reset / Nuke
               </dt>
               <dd className="mt-1.5 font-sans text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Removes containers, volumes, and the project row. Cannot be undone.
+                Factory reset wipes tenant containers and volumes, then reprovisions an empty stack.
+                Nuke removes containers, volumes, and the project row. Both are irreversible.
               </dd>
             </div>
           </dl>

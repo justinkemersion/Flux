@@ -635,19 +635,114 @@ export class ApiClient {
   // ---------------------------------------------------------------------------
   // GET /projects/{slug}/api-env?hash=
   // ---------------------------------------------------------------------------
-  listProjectEnv(_project: string, _hash: string): Promise<FluxProjectEnvEntry[]> {
-    return Promise.reject(this.notImplemented("listProjectEnv"));
+  async listProjectEnv(
+    project: string,
+    hash: string,
+  ): Promise<FluxProjectEnvEntry[]> {
+    const token = this.tokenOrThrow();
+    const slug = slugifyProjectName(project);
+    const u = new URL(
+      `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(hash)}/api-env`,
+    );
+    u.searchParams.set("slug", slug);
+    const res = await fetch(u, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI env list: response was not JSON (${String(res.status)}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const schema = z.array(
+      z.union([
+        z.object({
+          key: z.string(),
+          sensitive: z.literal(true),
+        }),
+        z.object({
+          key: z.string(),
+          value: z.string(),
+          sensitive: z.literal(false),
+        }),
+      ]),
+    );
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      throw new Error(
+        "CLI env list: response did not match expected env entry shape.",
+      );
+    }
+    return parsed.data;
   }
 
   // ---------------------------------------------------------------------------
   // PATCH /projects/{slug}/api-env?hash= — partial env map
   // ---------------------------------------------------------------------------
-  setProjectEnv(
-    _project: string,
-    _env: Record<string, string>,
-    _hash: string,
+  async setProjectEnv(
+    project: string,
+    env: Record<string, string>,
+    hash: string,
   ): Promise<void> {
-    return Promise.reject(this.notImplemented("setProjectEnv"));
+    const token = this.tokenOrThrow();
+    const slug = slugifyProjectName(project);
+    const u = new URL(
+      `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(hash)}/api-env`,
+    );
+    u.searchParams.set("slug", slug);
+    const res = await fetch(u, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ env }),
+    });
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI env set: response was not JSON (${String(res.status)}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
   }
 }
 

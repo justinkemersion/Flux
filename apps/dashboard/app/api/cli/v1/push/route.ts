@@ -20,6 +20,15 @@ function isValidHash(h: string): boolean {
 }
 
 /**
+ * Cross-version compatibility shim for SQL dumps produced by newer pg_dump
+ * clients (e.g. PG17) and replayed against older targets (e.g. PG16).
+ */
+function normalizeSqlForTarget(sql: string): string {
+  // PG16 and older do not recognize this GUC; harmless to drop from dumps.
+  return sql.replace(/^\s*SET\s+transaction_timeout\s*=\s*[^;]+;\s*$/gimu, "");
+}
+
+/**
  * POST /api/cli/v1/push
  * Authorization: Bearer flx_live_…
  * Body: `{ "slug": string, "hash": string, "sql": string }`
@@ -58,7 +67,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const slug = (body as { slug: string }).slug.trim();
   const hash = (body as { hash: string }).hash.trim().toLowerCase();
-  const sql = (body as { sql: string }).sql;
+  const sql = normalizeSqlForTarget((body as { sql: string }).sql);
 
   if (!slug) return jsonError("slug is required", 400);
   if (!isValidHash(hash)) {
