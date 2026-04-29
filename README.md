@@ -496,6 +496,7 @@ pnpm run flux -- reap --hours 72
 - **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
 - **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
 - **`docs/flux-v2-architecture.md`** — v2 invariants, threat model, tiering, and implementation red flags.
+- **`docs/UI-SCOPE-CONTRACT.md`** — CLI-first UI boundary, admission criteria, and scheduled scope revisit protocol.
 - **`docs/TRAJECTORY-TODO.md`** — internal execution roadmap and active priority backlog.
 
 ---
