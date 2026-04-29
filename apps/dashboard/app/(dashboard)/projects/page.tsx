@@ -12,6 +12,9 @@ import {
   useMemo,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+
+/** Page-level overlays (mesh readout, create project): portal to `document.body`, z-[200]. */
 import {
   HOBBY_LIMIT_API_MESSAGE,
   PRO_LIMIT_API_MESSAGE,
@@ -57,6 +60,11 @@ export default function ProjectsPage() {
     slug: string;
     hash: string;
   } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function closeProjectDetail(): void {
     setDetailSlug(null);
@@ -425,53 +433,57 @@ export default function ProjectsPage() {
         )}
       </div>
 
-      {detailSlug && detailProject ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-3 backdrop-blur-sm sm:pt-4"
-          role="presentation"
-          onClick={closeProjectDetail}
-        >
-          <div
-            className="relative w-full max-w-4xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
+      {detailSlug && detailProject && mounted
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-3 backdrop-blur-sm sm:pt-4"
+              role="presentation"
               onClick={closeProjectDetail}
-              className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center border border-zinc-700 bg-zinc-950 font-mono text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-100"
-              aria-label="Close"
             >
-              <X className="h-5 w-5" />
-            </button>
-            <ProjectMeshReadout project={detailProject} />
-            <ProjectCard
-              key={detailProject.id}
-              project={detailProject}
-              onDelete={() => {
-                handleProjectDeleted(detailProject.slug);
-                closeProjectDetail();
-              }}
-              onSettingsSaved={handleSettingsSavedClearCredentials}
-              onCredentialsRevealed={handleCredentialsRevealed}
-              onRepaired={() => handleProjectRepaired(detailProject.slug)}
-            />
-          </div>
-        </div>
-      ) : null}
+              <div
+                className="relative w-full max-w-4xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={closeProjectDetail}
+                  className="absolute -right-1 -top-1 z-10 inline-flex h-9 w-9 items-center justify-center border border-zinc-700 bg-zinc-950 font-mono text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <ProjectMeshReadout project={detailProject} />
+                <ProjectCard
+                  key={detailProject.id}
+                  project={detailProject}
+                  onDelete={() => {
+                    handleProjectDeleted(detailProject.slug);
+                    closeProjectDetail();
+                  }}
+                  onSettingsSaved={handleSettingsSavedClearCredentials}
+                  onCredentialsRevealed={handleCredentialsRevealed}
+                  onRepaired={() => handleProjectRepaired(detailProject.slug)}
+                />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
-      {createOpen ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-3 backdrop-blur-sm sm:pt-4"
-          role="presentation"
-          onClick={closeCreateModal}
-        >
-          <div
-            className="relative w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-project-title"
-            onClick={(e) => e.stopPropagation()}
-          >
+      {createOpen && mounted
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-3 backdrop-blur-sm sm:pt-4"
+              role="presentation"
+              onClick={closeCreateModal}
+            >
+              <div
+                className="relative w-full max-w-md rounded-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="create-project-title"
+                onClick={(e) => e.stopPropagation()}
+              >
             <button
               type="button"
               onClick={closeCreateModal}
@@ -619,10 +631,12 @@ export default function ProjectsPage() {
                   </button>
                 </div>
               </form>
+              </div>
             </div>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
 
       <V2GettingStartedModal
         open={Boolean(v2GettingStartedProject)}
