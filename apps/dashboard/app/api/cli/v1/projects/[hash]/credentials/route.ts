@@ -33,7 +33,7 @@ const V2_NOTE =
  * Bearer CLI API key. Same ownership rule as other CLI project routes.
  * v2_shared: returns `projectJwtSecret` for `FLUX_GATEWAY_JWT_SECRET` in app `.env`.
  */
-export async function GET(_req: Request, context: Ctx): Promise<Response> {
+export async function GET(req: Request, context: Ctx): Promise<Response> {
   await initSystemDb();
   const db = getDb();
   const secret = extractBearerToken(req.headers.get("authorization"));
