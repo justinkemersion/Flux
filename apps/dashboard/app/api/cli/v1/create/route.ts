@@ -10,6 +10,7 @@ import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import { probeSingleProject } from "@/src/lib/fleet-monitor";
 import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
+import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 
 export const runtime = "nodejs";
 
@@ -69,7 +70,7 @@ async function allocateUniqueProjectHash(
 /**
  * POST /api/cli/v1/create
  * Authorization: Bearer flx_live_…
- * Body: `{ "name": string, "stripSupabaseRestPrefix"?: boolean, "mode"?: "v1_dedicated" | "v2_shared" }` — defaults to `v2_shared`
+ * Body: `{ "name": string, "stripSupabaseRestPrefix"?: boolean, "mode"?: "v1_dedicated" | "v2_shared" }` — defaults by plan when omitted
  *
  * Order: validate → limits → allocate hash → **Docker provision** → **DB insert** only on success.
  * If insert fails after provision, nuke containers (same ghost-stack rollback as session POST).
@@ -156,12 +157,9 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(PRO_LIMIT_ERROR, 403);
   }
 
-  // Privileged mode selection: v1_dedicated (Isolated) is a Pro-only tier.
-  if (requestedMode === "v1_dedicated" && plan !== "pro") {
-    return jsonError(
-      "Isolated dedicated stacks require a Pro subscription.",
-      403,
-    );
+  const modePolicy = resolveCreateModeForPlan({ requestedMode, plan });
+  if (!modePolicy.ok) {
+    return jsonError(modePolicy.message, 403);
   }
 
   const projectHash = await allocateUniqueProjectHash(db, slug);
@@ -174,7 +172,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const pm = getProjectManager();
   const tenantId = crypto.randomUUID();
-  const mode: "v1_dedicated" | "v2_shared" = requestedMode ?? "v2_shared";
+  const mode: "v1_dedicated" | "v2_shared" = modePolicy.mode;
   let project: Awaited<ReturnType<typeof dispatchProvisionProject>>;
   try {
     project = await dispatchProvisionProject({

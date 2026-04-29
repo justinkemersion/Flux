@@ -21,7 +21,7 @@
     "build": "tsup",
     "dev": "tsx src/index.ts",
     "flux": "tsx src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tsx --test src/**/*.test.ts"
   },
   "keywords": [],
   "author": "",

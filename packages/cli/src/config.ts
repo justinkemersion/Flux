@@ -8,6 +8,10 @@ const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 export type FluxConfig = {
   token: string;
+  profile?: {
+    plan: "hobby" | "pro";
+    defaultMode: "v1_dedicated" | "v2_shared";
+  };
 };
 
 /**
@@ -27,7 +31,22 @@ export function loadConfig(): FluxConfig | null {
     if (typeof t !== "string" || !t.trim()) {
       return null;
     }
-    return { token: t.trim() };
+    const profileRaw =
+      "profile" in j
+        ? (j as { profile?: unknown }).profile
+        : undefined;
+    let profile: FluxConfig["profile"];
+    if (profileRaw && typeof profileRaw === "object") {
+      const plan = (profileRaw as { plan?: unknown }).plan;
+      const defaultMode = (profileRaw as { defaultMode?: unknown }).defaultMode;
+      if (
+        (plan === "hobby" || plan === "pro") &&
+        (defaultMode === "v1_dedicated" || defaultMode === "v2_shared")
+      ) {
+        profile = { plan, defaultMode };
+      }
+    }
+    return { token: t.trim(), ...(profile ? { profile } : {}) };
   } catch {
     return null;
   }
@@ -36,15 +55,22 @@ export function loadConfig(): FluxConfig | null {
 /**
  * Writes `~/.flux/config.json` with mode 0600 (best effort).
  */
-export function saveConfig(config: { token: string }): void {
+export function saveConfig(config: {
+  token: string;
+  profile?: FluxConfig["profile"];
+}): void {
   const token = config.token.trim();
   if (!token) {
     throw new Error("Token is empty.");
   }
+  const payload: FluxConfig = { token };
+  if (config.profile) {
+    payload.profile = config.profile;
+  }
   mkdirSync(CONFIG_DIR, { mode: 0o700, recursive: true });
   writeFileSync(
     CONFIG_FILE,
-    `${JSON.stringify({ token }, null, 2)}\n`,
+    `${JSON.stringify(payload, null, 2)}\n`,
     { mode: 0o600 },
   );
   void chmod(CONFIG_FILE, 0o600).catch(() => {

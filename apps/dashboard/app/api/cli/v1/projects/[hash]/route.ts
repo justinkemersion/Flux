@@ -26,6 +26,51 @@ function isValidHash(h: string): boolean {
 type Ctx = { params: Promise<{ hash: string }> };
 
 /**
+ * GET /api/cli/v1/projects/:hash
+ * Bearer CLI key, ownership: catalog row for this (user, hash).
+ * Returns mode metadata for CLI routing decisions.
+ */
+export async function GET(
+  req: Request,
+  context: Ctx,
+): Promise<Response> {
+  await initSystemDb();
+  const db = getDb();
+  const secret = extractBearerToken(req.headers.get("authorization"));
+  const auth = await authenticateCliApiKey(db, secret);
+  if (!auth) {
+    return jsonError("Unauthorized", 401);
+  }
+
+  const { hash: paramHash } = await context.params;
+  const hash = (paramHash ?? "").trim().toLowerCase();
+  if (!isValidHash(hash)) {
+    return jsonError(
+      `hash in path must be a ${String(FLUX_PROJECT_HASH_HEX_LEN)}-char hex id`,
+      400,
+    );
+  }
+
+  const [row] = await db
+    .select({ slug: projects.slug, hash: projects.hash, mode: projects.mode })
+    .from(projects)
+    .where(and(eq(projects.userId, auth.userId), eq(projects.hash, hash)))
+    .limit(1);
+  if (!row) {
+    return jsonError("Project not found for this hash.", 404);
+  }
+
+  return Response.json(
+    {
+      slug: row.slug,
+      hash: row.hash,
+      mode: row.mode,
+    },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
+}
+
+/**
  * DELETE /api/cli/v1/projects/:hash
  * Bearer CLI key, ownership: catalog row for this (user, hash) when not forcing orphan cleanup.
  * Query: `?force=1&slug=...` — nuke Docker only if no catalog row (ghost / drift).

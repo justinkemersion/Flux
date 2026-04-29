@@ -36,6 +36,17 @@ const createProjectResponseSchema = z.object({
   summary: fluxProjectSummarySchema,
   secrets: createProjectSecretsSchema,
 });
+const verifyTokenResponseSchema = z.object({
+  ok: z.literal(true),
+  user: z.string(),
+  plan: z.union([z.literal("hobby"), z.literal("pro")]),
+  defaultMode: z.union([z.literal("v1_dedicated"), z.literal("v2_shared")]),
+});
+const projectMetadataSchema = z.object({
+  slug: z.string(),
+  hash: z.string(),
+  mode: z.union([z.literal("v1_dedicated"), z.literal("v2_shared")]),
+});
 
 const pushSqlResponseSchema = z.object({
   ok: z.boolean().optional(),
@@ -47,6 +58,8 @@ const pushSqlResponseSchema = z.object({
 export type CreateProjectSecrets = z.infer<typeof createProjectSecretsSchema>;
 export type CreateProjectResult = z.infer<typeof createProjectResponseSchema>;
 export type CreateProjectMode = "v1_dedicated" | "v2_shared";
+export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
+export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
 
 /**
  * Base URL: `https://flux.vsl-base.com/api` (Flux control plane) or `process.env.FLUX_API_BASE` (no trailing slash).
@@ -80,7 +93,7 @@ export class ApiClient {
   /**
    * GET /api/cli/v1/auth/verify — check a token (e.g. before persisting in `flux login`).
    */
-  async verifyToken(token: string): Promise<{ ok: true; user: string }> {
+  async verifyToken(token: string): Promise<VerifyTokenResult> {
     const t = token.trim();
     if (!t) {
       throw new Error("Empty API token.");
@@ -116,13 +129,55 @@ export class ApiClient {
           : `Request failed (${String(res.status)})`;
       throw new Error(msg);
     }
-    const verifySchema = z.object({
-      ok: z.literal(true),
-      user: z.string(),
-    });
-    const parsed = verifySchema.safeParse(raw);
+    const parsed = verifyTokenResponseSchema.safeParse(raw);
     if (!parsed.success) {
-      throw new Error("CLI verify: response did not match { ok, user }.");
+      throw new Error("CLI verify: response did not match expected profile shape.");
+    }
+    return parsed.data;
+  }
+
+  async getProjectMetadata(hash: string): Promise<ProjectMetadata> {
+    const token = this.tokenOrThrow();
+    const h = hash.trim().toLowerCase();
+    if (!/^[a-f0-9]{7}$/u.test(h)) {
+      throw new Error("Project hash must be a 7-char hex id.");
+    }
+    const url = `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI project metadata: response was not JSON (${res.status}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = projectMetadataSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new Error(
+        "CLI project metadata: response did not match expected { slug, hash, mode } shape.",
+      );
     }
     return parsed.data;
   }

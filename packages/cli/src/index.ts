@@ -19,8 +19,9 @@ import {
   type CreateProjectResult,
   getApiClient,
 } from "./api-client";
-import { saveConfig } from "./config";
+import { loadConfig, saveConfig } from "./config";
 import { type FluxJson, readFluxJson } from "./flux-config";
+import { resolveCreateModeFromInputs } from "./mode-default";
 import {
   resolveHash,
   resolveOptionalName,
@@ -557,6 +558,12 @@ async function cmdKeys(
   const slug = resolveOptionalName(name, flux, "positional <name> argument");
   const client = getApiClient();
   const hash = resolveHash(cliHash, flux);
+  const metadata = await client.getProjectMetadata(hash);
+  if (metadata.mode === "v2_shared") {
+    throw new Error(
+      "This project uses pooled mode (v2_shared) and does not expose static anon/service keys. Use user auth tokens instead.",
+    );
+  }
   const { anonKey, serviceRoleKey } = await client.getProjectKeys(slug, hash);
 
   printBanner(`JWT keys — ${slug}`);
@@ -842,9 +849,14 @@ async function main(): Promise<void> {
           throw new Error("No API key entered.");
         }
         const client = getApiClient();
-        const { user } = await client.verifyToken(key);
-        saveConfig({ token: key });
+        const { user, plan, defaultMode } = await client.verifyToken(key);
+        saveConfig({ token: key, profile: { plan, defaultMode } });
         console.log(`Flux authenticated as ${user}.`);
+        console.log(
+          chalk.dim(
+            `Default create mode from your account tier: ${defaultMode} (override with --mode or FLUX_DEFAULT_MODE).`,
+          ),
+        );
       } catch (err: unknown) {
         printErrorAndExit(err);
       }
@@ -868,7 +880,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--mode <mode>",
-      "Project execution mode: v1_dedicated (default) or v2_shared (subject to account privileges)",
+      "Project execution mode: v1_dedicated or v2_shared (default resolved by --mode > FLUX_DEFAULT_MODE > account tier)",
     )
     .action(async (name: string) => {
       try {
@@ -877,16 +889,15 @@ async function main(): Promise<void> {
           hash?: string;
           mode?: string;
         }>();
-        const mode = opts.mode?.trim().toLowerCase();
-        if (mode && mode !== "v1_dedicated" && mode !== "v2_shared") {
-          throw new Error(
-            `Invalid --mode "${opts.mode}". Use "v1_dedicated" or "v2_shared".`,
-          );
-        }
+        const mode = resolveCreateModeFromInputs({
+          explicitMode: opts.mode,
+          envMode: process.env.FLUX_DEFAULT_MODE,
+          profileDefaultMode: loadConfig()?.profile?.defaultMode,
+        });
         await cmdCreate(name, {
           noSupabaseRestPath: opts.noSupabaseRestPath === true,
           ...(opts.hash ? { hash: opts.hash } : {}),
-          ...(mode ? { mode: mode as CreateProjectMode } : {}),
+          mode,
         });
       } catch (err: unknown) {
         printErrorAndExit(err);
