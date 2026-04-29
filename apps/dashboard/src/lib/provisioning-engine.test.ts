@@ -176,6 +176,30 @@ test("buildTenantBootstrapSql contains idempotency guards", () => {
     sql.includes(`'tenant:${TENANT_ID}'`),
     "bootstrap SQL must stamp COMMENT ON SCHEMA with the tenant UUID for collision detection",
   );
+  assert.ok(
+    sql.includes("GRANT USAGE ON SCHEMA") && sql.includes("TO \"anon\""),
+    "pool: anon must have USAGE on the tenant schema (guest / no-JWT access)",
+  );
+  assert.ok(
+    sql.includes("TO \"authenticator\"") && sql.includes("GRANT USAGE ON SCHEMA"),
+    "pool: authenticator must have USAGE on the tenant schema",
+  );
+  assert.ok(
+    /ALTER DEFAULT PRIVILEGES IN SCHEMA .+ GRANT SELECT ON TABLES TO "anon"/.test(
+      sql.replaceAll("\n", " "),
+    ),
+    "pool: default privileges must grant future table SELECT to anon",
+  );
+  assert.match(
+    sql,
+    /GRANT SELECT ON ALL TABLES IN SCHEMA [^\n;]+ TO "t_[0-9a-f]{12}_role"/u,
+    "pool: tenant role gets SELECT on all tables (RLS policies as session role)",
+  );
+  assert.match(
+    sql,
+    /GRANT SELECT ON ALL TABLES IN SCHEMA [^\n;]+ TO "anon"/u,
+    "pool: anon gets SELECT on all existing tables (guest / marketplace read)",
+  );
 });
 
 // ---------------------------------------------------------------------------

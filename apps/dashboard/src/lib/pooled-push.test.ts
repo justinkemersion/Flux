@@ -52,6 +52,7 @@ test("executePooledPush issues BEGIN, search_path, user SQL, COMMIT in order", a
     "SET LOCAL statement_timeout = '30s'",
     'SET LOCAL search_path TO "t_aabbccddeeff_api", public',
     "CREATE TABLE foo (id int);",
+    "NOTIFY pgrst, 'reload schema';",
     "COMMIT",
   ]);
   assert.equal(client.ended, true);

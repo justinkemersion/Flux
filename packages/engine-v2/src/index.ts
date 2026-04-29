@@ -101,6 +101,7 @@ export function buildTenantBootstrapSql(
   const role = quoteIdent(identity.role);
   const roleLiteral = identity.role.replaceAll("'", "''");
   const authenticator = quoteIdent(DEFAULT_AUTHENTICATOR_ROLE);
+  const anon = quoteIdent("anon");
   const connectionLimit = parsePositiveIntEnv(
     "FLUX_V2_ROLE_CONNECTION_LIMIT",
     DEFAULT_CONNECTION_LIMIT,
@@ -153,6 +154,18 @@ BEGIN
 END
 $flux$;
 GRANT USAGE ON SCHEMA ${schema} TO ${role};
+-- Pool PostgREST roles need schema access: anon (unauthenticated) and
+-- authenticator (login role that may SET ROLE before a tenant context).
+GRANT USAGE ON SCHEMA ${schema} TO ${anon};
+GRANT USAGE ON SCHEMA ${schema} TO ${authenticator};
+-- Guest/public read: future tables in this schema grant SELECT to anon
+-- (and existing tables via the ALL TABLES GRANTs below on each repair run).
+ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} GRANT SELECT ON TABLES TO ${anon};
+-- Tenant app role: explicit table SELECT so RLS / policy checks work as
+-- the PostgREST session role, including for "public" read-style policies.
+GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${role};
+GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${anon};
+ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} GRANT SELECT ON TABLES TO ${role};
 ALTER ROLE ${role} SET search_path = ${schema};
 ALTER ROLE ${role} CONNECTION LIMIT ${String(connectionLimit)};
 ALTER ROLE ${role} IN DATABASE ${roleDatabase} SET statement_timeout = '${String(statementTimeoutMs)}ms';

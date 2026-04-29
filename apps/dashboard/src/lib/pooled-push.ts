@@ -66,6 +66,9 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
         `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
       );
       await client.query(input.sql);
+      // Shared pool: refresh PostgREST’s cached schema list in-process (same
+      // pattern as v1 per-tenant Docker; channel/payload are PostgREST’s API).
+      await client.query("NOTIFY pgrst, 'reload schema';");
       await client.query("COMMIT");
     } catch (err) {
       try {
