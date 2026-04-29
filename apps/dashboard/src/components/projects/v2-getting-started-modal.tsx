@@ -97,6 +97,13 @@ export function V2GettingStartedModal({
   }, [open]);
 
   useEffect(() => {
+    return () => {
+      // Defensive unlock in case route transition bypasses the open-state cleanup timing.
+      document.body.style.overflow = "";
+    };
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
     setTokenInput("");
     setTestBusy(false);
@@ -316,9 +323,13 @@ const data = await res.json();`,
           </button>
           <Link
             href={`/docs/v2-first-request?slug=${encodeURIComponent(slug)}&hash=${encodeURIComponent(hash)}`}
+            onClick={() => {
+              onClose();
+              document.body.style.overflow = "";
+            }}
             className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-600 bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-white"
           >
-            View Quickstart Guide
+            View Pooled Stack Guide
             <ExternalLink className="h-4 w-4" aria-hidden />
           </Link>
         </div>

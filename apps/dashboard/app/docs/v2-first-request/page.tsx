@@ -3,9 +3,9 @@ import Link from "next/link";
 import { CodeBlock } from "@/src/components/docs/code-block";
 
 export const metadata: Metadata = {
-  title: "Flux v2: First Request Guide",
+  title: "Flux Pooled Stack: First Request Guide",
   description:
-    "Get your first successful request working in Flux v2 pooled projects.",
+    "Get your first successful request working with Flux pooled stack projects.",
 };
 
 function safeParam(
@@ -133,7 +133,7 @@ console.log(data);`;
           ← Back to projects
         </Link>
         <h1 className="mt-3 text-2xl font-semibold text-zinc-100">
-          Flux v2: First Request Guide
+          Flux Pooled Stack: First Request Guide
         </h1>
         <p className="mt-2 text-sm text-zinc-400">
           You don&apos;t need API keys. Flux uses your app&apos;s auth tokens.
@@ -143,9 +143,9 @@ console.log(data);`;
       <section className="mt-8">
         <h2 className="text-lg font-semibold text-zinc-100">1. Mental Model</h2>
         <ul className="mt-3 space-y-1 text-sm text-zinc-300">
-          <li>v1 projects use static API keys.</li>
-          <li>v2 projects use your Service URL plus user auth tokens.</li>
-          <li>There are no static anon/service keys in v2 pooled projects.</li>
+          <li>Dedicated stack projects typically use static API key patterns.</li>
+          <li>Pooled stack projects use your Service URL plus user auth tokens.</li>
+          <li>There are no static anon/service keys in pooled stack projects.</li>
         </ul>
       </section>
 
