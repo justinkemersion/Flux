@@ -108,6 +108,12 @@ Treat it as an operator-level source of truth.
 - `flux-network` (control-plane + Traefik)
 - `flux-v2-shared` (so `FLUX_SHARED_POSTGRES_URL` can resolve shared-cluster hosts)
 
+### Mesh HTTP probes from `flux-web` (internal)
+
+Fleet monitor and v2 “start” power actions probe each tenant by HTTP. By default the code uses the public URL from `fluxApiUrlForSlug` (e.g. `https://api.<slug>.<hash>.<domain>`). **Inside the `flux-web` container** that `fetch` often fails even when the tenant is healthy: Traefik / ACME may not cover the extra `.<hash>` label, or internal DNS may not resolve the public hostname the same way as a browser on the internet.
+
+**Recommended in production:** set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` (both `flux-web` and `flux-node-gateway` are on `flux-network`). Probes then call that internal base URL and send `Host: api.<slug>.<hash>.<domain>` so the Node gateway routes exactly like a real client, without TLS to the public name. See `apps/dashboard/src/lib/tenant-api-probe.ts`.
+
 ### JWT and schema isolation handshake
 
 1. Gateway resolves request host to `tenant_id`.
@@ -243,6 +249,7 @@ pnpm --filter dashboard test
 | `flux-node-gateway` restart loop | runtime module resolution / env validation crash | `docker logs --since 5m flux-node-gateway` |
 | gateway `health` fails with reset | process crashed before listener stabilized | same logs + `docker inspect ... State` |
 | v2 provision fails in dashboard | `FLUX_SHARED_POSTGRES_URL` DNS/network mismatch | verify `flux-web` attached to `flux-v2-shared` and URL host |
+| v2 mesh shows **Partial** / **Offline** but curl to tenant works | public `https://` probe from `flux-web` fails (TLS / DNS) | set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` and recreate `flux-web` |
 | PostgREST returns wrong schema data | missing profile headers / hook misconfig | gateway proxy headers + `PGRST_DB_PRE_REQUEST` |
 | stale custom-domain routing | Redis cache not evicted | domain CRUD/delete path calls `evictHostname(s)` |
 

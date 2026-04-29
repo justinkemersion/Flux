@@ -1,11 +1,10 @@
 import { and, count, eq, sql } from "drizzle-orm";
-import { fluxApiUrlForSlug } from "@flux/core";
 import { projectHeartbeatLog, projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
+import { probeTenantApiUrl } from "@/src/lib/tenant-api-probe";
 
 const INTERVAL_MS = 2 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 5_000;
 /** ~1 in 20 ticks (≈40 min at 2m interval) — limit write lock / churn on `project_heartbeat_log`. */
 const PRUNE_PROBABILITY = 0.05;
 
@@ -61,24 +60,6 @@ export async function getNodeStats() {
   return pm.getNodeStats();
 }
 
-function isProbeSuccess(status: number): boolean {
-  return status >= 200 && status < 400;
-}
-
-async function probeApiUrl(url: string): Promise<boolean> {
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    return isProbeSuccess(res.status);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * `DELETE` telemetry samples where `recorded_at` is before `now() - 24 hours` (DB clock).
  * Invoked from the end of a fleet tick, occasionally, so the log does not grow without bound.
@@ -124,8 +105,7 @@ export async function probeSingleProject(projectId: string): Promise<void> {
   const now = new Date();
 
   if (row.mode === "v2_shared") {
-    const apiUrl = fluxApiUrlForSlug(row.slug, row.hash, isProd);
-    const ok = await probeApiUrl(apiUrl);
+    const ok = await probeTenantApiUrl(row.slug, row.hash, isProd);
     const status = ok ? "running" : "error";
     await db
       .update(projects)
@@ -155,8 +135,7 @@ export async function probeSingleProject(projectId: string): Promise<void> {
     });
     return;
   }
-  const apiUrl = fluxApiUrlForSlug(row.slug, row.hash, isProd);
-  const ok = await probeApiUrl(apiUrl);
+  const ok = await probeTenantApiUrl(row.slug, row.hash, isProd);
   const status = ok ? "running" : "error";
   await db
     .update(projects)
@@ -206,8 +185,7 @@ export async function runFleetMonitorTick(): Promise<void> {
     await Promise.all(
       rows.map(async (row) => {
         if (row.mode === "v2_shared") {
-          const apiUrl = fluxApiUrlForSlug(row.slug, row.hash, isProd);
-          const ok = await probeApiUrl(apiUrl);
+          const ok = await probeTenantApiUrl(row.slug, row.hash, isProd);
           const status = ok ? "running" : "error";
           await db
             .update(projects)
@@ -237,8 +215,7 @@ export async function runFleetMonitorTick(): Promise<void> {
           });
           return;
         }
-        const apiUrl = fluxApiUrlForSlug(row.slug, row.hash, isProd);
-        const ok = await probeApiUrl(apiUrl);
+        const ok = await probeTenantApiUrl(row.slug, row.hash, isProd);
         const status = ok ? "running" : "error";
         await db
           .update(projects)
