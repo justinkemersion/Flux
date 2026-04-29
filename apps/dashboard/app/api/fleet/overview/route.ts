@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
 import { projects } from "@/src/db/schema";
 import { projectHealthBucket } from "@/src/lib/fleet-overview";
+import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
@@ -26,21 +27,36 @@ export async function GET(): Promise<Response> {
     .from(projects)
     .where(eq(projects.userId, session.user.id));
 
-  let summaries: Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>;
-  try {
-    summaries = await pm.getProjectSummariesForUser(session.user.id, {
-      loadSlugRefsForUser: async (userId) =>
-        db
-          .select({ slug: projects.slug, hash: projects.hash })
-          .from(projects)
-          .where(eq(projects.userId, userId)),
-      isProduction: process.env.NODE_ENV === "production",
-    });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json(
-      { error: `Docker project status unavailable: ${msg}` },
-      { status: 503 },
+  // v2_shared projects have no dedicated Docker pair; querying them via Docker summaries
+  // misclassifies healthy shared-mode tenants as "missing".
+  const v1Projects = userProjects.filter((p) => p.mode !== "v2_shared");
+  let summaryBySlug = new Map<string, Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>[number]>();
+  if (v1Projects.length > 0) {
+    const v1Slugs = new Set(v1Projects.map((p) => p.slug));
+    let summaries: Awaited<ReturnType<typeof pm.getProjectSummariesForUser>>;
+    try {
+      summaries = await pm.getProjectSummariesForUser(session.user.id, {
+        loadSlugRefsForUser: async (userId) =>
+          db
+            .select({ slug: projects.slug, hash: projects.hash })
+            .from(projects)
+            .where(
+              and(
+                eq(projects.userId, userId),
+                or(eq(projects.mode, "v1_dedicated"), isNull(projects.mode)),
+              ),
+            ),
+        isProduction: process.env.NODE_ENV === "production",
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return Response.json(
+        { error: `Docker project status unavailable: ${msg}` },
+        { status: 503 },
+      );
+    }
+    summaryBySlug = new Map(
+      summaries.filter((s) => v1Slugs.has(s.slug)).map((s) => [s.slug, s]),
     );
   }
 
@@ -55,10 +71,11 @@ export async function GET(): Promise<Response> {
     );
   }
 
-  const summaryBySlug = new Map(summaries.map((s) => [s.slug, s]));
   const projectCells = userProjects.map((p) => {
-    const s = summaryBySlug.get(p.slug);
-    const status = s?.status ?? "missing";
+    const status =
+      p.mode === "v2_shared"
+        ? statusFromV2CatalogHealth({ healthStatus: p.healthStatus ?? null })
+        : (summaryBySlug.get(p.slug)?.status ?? "missing");
     const health = projectHealthBucket({
       status,
       healthStatus: p.healthStatus ?? null,
