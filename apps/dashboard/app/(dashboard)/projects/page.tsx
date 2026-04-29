@@ -85,9 +85,17 @@ export default function ProjectsPage() {
         projects: ProjectRow[];
         plan?: "hobby" | "pro";
       };
+      const orderedProjects = [...data.projects].sort((a, b) => {
+        const ta = new Date(a.createdAt).getTime();
+        const tb = new Date(b.createdAt).getTime();
+        if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) {
+          return tb - ta;
+        }
+        return b.id.localeCompare(a.id);
+      });
       setProjectList((prev) => {
         const prevBySlug = new Map(prev.map((x) => [x.slug, x]));
-        return data.projects.map((p) => {
+        return orderedProjects.map((p) => {
           const old = prevBySlug.get(p.slug);
           return {
             ...p,

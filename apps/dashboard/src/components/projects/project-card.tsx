@@ -335,6 +335,7 @@ export function ProjectCard({
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
+  const [keysRotationNotice, setKeysRotationNotice] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -556,6 +557,7 @@ export function ProjectCard({
       setSettingsSuccess(true);
       setLastSavedJwtSecret(trimmed);
       setJwtSecretInput("");
+      setKeysRotationNotice(true);
       onSettingsSaved?.(p.slug);
       window.setTimeout(() => setSettingsSuccess(false), 4000);
     } catch (err) {
@@ -654,6 +656,7 @@ export function ProjectCard({
         serviceRoleKey: data.serviceRoleKey,
         postgresConnectionString: data.postgresConnectionString,
       });
+      setKeysRotationNotice(false);
     } catch (err) {
       setRevealError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -897,6 +900,16 @@ export function ProjectCard({
               {revealError}
             </p>
           ) : null}
+          {keysRotationNotice ? (
+            <p
+              className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+              role="status"
+            >
+              JWT secret was updated. Previously copied anon/service keys are now
+              stale. Click <strong className="font-medium">Load connection secrets</strong>{" "}
+              to refresh them before using signed-out requests.
+            </p>
+          ) : null}
 
           <div className="mt-6 flex flex-col gap-6">
             <CopyableField
@@ -1053,12 +1066,12 @@ export function ProjectCard({
 
       {settingsOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 py-20 backdrop-blur-sm sm:py-8"
+          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 pb-8 backdrop-blur-sm sm:pt-10"
           role="presentation"
           onClick={closeSettingsModal}
         >
           <div
-            className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            className="relative my-4 w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`settings-title-${p.id}`}
@@ -1142,7 +1155,9 @@ export function ProjectCard({
                 ) : null}
                 {settingsSuccess ? (
                   <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">
-                    Saved. PostgREST was restarted with the new secret.
+                    Saved. PostgREST restarted with the new secret. Existing
+                    anon/service keys are now stale; reload connection secrets
+                    on the project card.
                   </p>
                 ) : null}
 
@@ -1174,12 +1189,12 @@ export function ProjectCard({
 
       {deleteOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 py-20 backdrop-blur-sm sm:py-8"
+          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 pb-8 backdrop-blur-sm sm:pt-10"
           role="presentation"
           onClick={closeDeleteModal}
         >
           <div
-            className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            className="relative my-4 w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`delete-title-${p.id}`}
@@ -1278,12 +1293,12 @@ export function ProjectCard({
 
       {resetOpen ? (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 py-20 backdrop-blur-sm sm:py-8"
+          className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 pb-8 backdrop-blur-sm sm:pt-10"
           role="presentation"
           onClick={closeResetModal}
         >
           <div
-            className="relative w-full max-w-md rounded-md border border-red-300 bg-white p-6 shadow-2xl dark:border-red-900 dark:bg-zinc-900"
+            className="relative my-4 w-full max-w-md rounded-md border border-red-300 bg-white p-6 shadow-2xl dark:border-red-900 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`reset-title-${p.id}`}

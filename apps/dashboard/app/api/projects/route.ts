@@ -1,4 +1,4 @@
-import { and, count, eq, isNull, or } from "drizzle-orm";
+import { and, count, desc, eq, isNull, or } from "drizzle-orm";
 import { auth } from "@/src/lib/auth";
 import { projects, users } from "@/src/db/schema";
 import {
@@ -88,7 +88,8 @@ export async function GET(): Promise<Response> {
     const userProjects = await db
       .select()
       .from(projects)
-      .where(eq(projects.userId, session.user.id));
+      .where(eq(projects.userId, session.user.id))
+      .orderBy(desc(projects.createdAt), desc(projects.id));
 
     // Only probe Docker for v1_dedicated projects — v2_shared projects have no
     // dedicated containers and probing Docker for them wastes a roundtrip and
