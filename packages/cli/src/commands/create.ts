@@ -9,13 +9,15 @@ import {
   boxSep,
   boxTop,
   B,
-  hintLine,
   printlnCopyEnvSnippetLine,
 } from "../cli-layout";
 import { getVisibleLength } from "../utils/terminal.js";
 
 const GENERATED_MARKER =
   "# --- FLUX GENERATED CONFIG [DO NOT BORDER THIS] ---";
+
+/** Four spaces under `APP .ENV` / reference headings (classic Flux CLI nesting). */
+const NEST = "    ";
 
 function mergeFluxGatewaySecretIntoAppSnippet(
   snippet: string,
@@ -32,7 +34,7 @@ function printProjectSummaryCard(
   nameArg: string,
 ): void {
   const { summary, secrets, mode } = result;
-  /** Visible width between the left `│` and right `│` on boxed rows. */
+  /** Visible width between `│ ` and closing `│` on boxed rows. */
   const inner = 56;
   const margin = B;
 
@@ -50,9 +52,9 @@ function printProjectSummaryCard(
 
   console.log();
   console.log(
-    `${margin}${chalk.bold("Created")} ${chalk.bold.cyan(summary.slug)} ${chalk.bold.yellow(`#${summary.hash}`)}`,
+    `${chalk.dim("  ")}${chalk.bold("Created")} ${chalk.bold.cyan(summary.slug)} ${chalk.bold.yellow(`#${summary.hash}`)}`,
   );
-  hintLine(`name (input): ${nameArg}`);
+  console.log(chalk.dim(`  name (input): ${nameArg}`));
   console.log();
 
   boxTop(inner, margin);
@@ -69,13 +71,15 @@ function printProjectSummaryCard(
   boxBottom(inner, margin);
 
   console.log();
-  console.log(`${B}${chalk.dim("POSTGREST API")}`);
-  console.log(chalk.white(summary.apiUrl));
+  console.log(chalk.dim("  POSTGREST API"));
+  console.log(chalk.white(`${NEST}${summary.apiUrl}`));
   console.log();
 
-  console.log(`${B}${chalk.dim("APP .ENV")}`);
-  hintLine(
-    "Paste into .env or .env.local (or a new file). For `flux push`, add ./flux.json with the same slug and hash above.",
+  console.log(chalk.dim("  APP .ENV"));
+  console.log(
+    chalk.dim(
+      `${NEST}Paste into .env or .env.local (or a new file). For \`flux push\`, add ./flux.json with the same slug and hash above.`,
+    ),
   );
   const tenantJwt =
     result.projectJwtSecret ?? secrets.pgrstJwtSecret;
@@ -90,15 +94,22 @@ function printProjectSummaryCard(
   }
   console.log();
 
-  console.log(`${B}${chalk.dim("OTHER_RUNTIME_SECRETS (reference)")}`);
-  printlnCopyEnvSnippetLine(`PGRST_JWT_SECRET=${secrets.pgrstJwtSecret}`);
-  printlnCopyEnvSnippetLine(`POSTGRES_PASSWORD=${secrets.postgresPassword}`);
+  console.log(chalk.dim("  OTHER_RUNTIME_SECRETS (reference)"));
+  printlnCopyEnvSnippetLine(
+    `PGRST_JWT_SECRET=${secrets.pgrstJwtSecret}`,
+    NEST,
+  );
+  printlnCopyEnvSnippetLine(
+    `POSTGRES_PASSWORD=${secrets.postgresPassword}`,
+    NEST,
+  );
   printlnCopyEnvSnippetLine(
     `POSTGRES_CONTAINER_HOST=${secrets.postgresContainerHost}`,
+    NEST,
   );
   console.log();
   for (const line of secrets.note.match(/.{1,76}/g) ?? [secrets.note]) {
-    hintLine(line);
+    console.log(chalk.dim(`${NEST}${line}`));
   }
   console.log();
 }
