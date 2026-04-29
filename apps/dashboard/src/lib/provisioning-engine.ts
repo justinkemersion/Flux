@@ -1,9 +1,15 @@
+import { randomBytes } from "node:crypto";
 import { fluxApiUrlForSlug, slugifyProjectName } from "@flux/core";
 import type { ProjectManager } from "@flux/core";
 import { deprovisionProject } from "@flux/engine-v2";
 import { getEngineV2 } from "@/src/lib/flux";
 
 export type ProjectMode = "v1_dedicated" | "v2_shared";
+
+/** 36 random bytes → 48-character standard Base64 — per-project tenant JWT verification key. */
+export function generateProjectJwtSecret(): string {
+  return randomBytes(36).toString("base64");
+}
 
 export type DispatchProvisionInput = {
   mode: ProjectMode;
@@ -34,6 +40,8 @@ type BaseProvisionResult = {
 type V1ProvisionResult = BaseProvisionResult & {
   mode: "v1_dedicated";
   stripSupabaseRestPrefix: boolean;
+  /** PostgREST HS256 secret — same value stored as `projects.jwt_secret`. */
+  projectJwtSecret: string;
   secrets: {
     pgrstJwtSecret: string;
     postgresPassword: string;
@@ -51,6 +59,8 @@ type V2ProvisionResult = BaseProvisionResult & {
     schema: string;
     role: string;
   };
+  /** Same bytes persisted as `projects.jwt_secret` — tenant-facing credential. */
+  projectJwtSecret: string;
   secrets: {
     pgrstJwtSecret: string;
     postgresPassword: string;
@@ -91,6 +101,7 @@ export async function dispatchProvisionProject(
       hash: provisioned.hash,
       apiUrl: provisioned.apiUrl,
       stripSupabaseRestPrefix: provisioned.stripSupabaseRestPrefix,
+      projectJwtSecret: provisioned.jwtSecret,
       secrets: {
         pgrstJwtSecret: provisioned.jwtSecret,
         postgresPassword: provisioned.postgresPassword,
@@ -106,6 +117,7 @@ export async function dispatchProvisionProject(
   }
 
   const slug = slugifyProjectName(input.projectName);
+  const projectJwtSecret = generateProjectJwtSecret();
   const provisionSharedTenant =
     input.provisionSharedTenant ??
     (async (tenantId: string) => {
@@ -124,13 +136,14 @@ export async function dispatchProvisionProject(
     apiUrl: fluxApiUrlForSlug(slug, input.projectHash, input.isProduction),
     stripSupabaseRestPrefix: true,
     tenant,
-    // CLI response still expects `secrets`; for v2 these are intentionally non-applicable.
+    projectJwtSecret,
     secrets: {
-      pgrstJwtSecret: "managed-by-gateway-shared-secret",
+      pgrstJwtSecret: projectJwtSecret,
       postgresPassword: "n/a-v2-shared",
       postgresContainerHost: "shared-cluster",
       note:
-        "v2_shared uses shared-cluster provisioning. Runtime JWT verification is configured on the pooled PostgREST deployment and must share FLUX_GATEWAY_JWT_SECRET/PGRST_JWT_SECRET.",
+        "PROJECT_JWT_SECRET (jwt_secret) signs tenant-issued JWTs; the gateway verifies them per Host. " +
+        "Gateway→PostgREST uses the pool FLUX_GATEWAY_JWT_SECRET / PGRST_JWT_SECRET (not this value).",
     },
     // Rollback: if the catalog INSERT fails after provisioning succeeds, drop the
     // just-created schema + role from the shared cluster so they don't accumulate

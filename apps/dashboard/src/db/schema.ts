@@ -108,8 +108,13 @@ export const projects = pgTable(
     /** Execution engine: v1_dedicated (one container per project) or v2_shared (shared cluster). */
     mode: text("mode")
       .notNull()
-      .default("v1_dedicated")
+      .default("v2_shared")
       .$type<"v1_dedicated" | "v2_shared">(),
+    /**
+     * Per-project HS256 secret (Base64) for verifying tenant-issued JWTs at the gateway.
+     * Distinct from the pooled PostgREST `FLUX_GATEWAY_JWT_SECRET` / `PGRST_JWT_SECRET` pair.
+     */
+    jwtSecret: text("jwt_secret"),
   },
   (t) => [uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug)],
 );

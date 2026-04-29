@@ -6,7 +6,12 @@
  */
 
 export { createApp } from "./app.ts";
-export { resolveTenant, evictHostname, normalizeHost } from "./tenant-resolver.ts";
+export {
+  resolveTenant,
+  evictHostname,
+  normalizeHost,
+  fetchProjectJwtSecret,
+} from "./tenant-resolver.ts";
 export { tenantIdToShortid } from "./shortid.ts";
 export { mintJwt } from "./jwt-issuer.ts";
 export { acquireRateSlot } from "./rate-limiter.ts";

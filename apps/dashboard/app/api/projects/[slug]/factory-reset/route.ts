@@ -55,6 +55,10 @@ export async function POST(
       projectManager: pm,
       isProduction: process.env.NODE_ENV === "production",
     });
+    await db
+      .update(projects)
+      .set({ jwtSecret: provisioned.projectJwtSecret })
+      .where(eq(projects.id, project.id));
     return Response.json({
       ok: true,
       apiUrl: provisioned.apiUrl,

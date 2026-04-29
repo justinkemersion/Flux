@@ -286,6 +286,12 @@ This applies to rate-limit checks, activity INCRs, and cache writes.
 **Only the gateway mints runtime JWTs.** No other service or endpoint may issue a token in this
 shape for production API traffic.
 
+**Split keys (pooled data plane):** The single `PGRST_JWT_SECRET` on `flux-postgrest-pool` must
+match the gateway's pool signing key for **upstream** HS256 tokens only. Each project also has a
+distinct `jwt_secret` in the `flux-system` `projects` table: tenant applications sign end-user or
+service JWTs with that secret; the gateway verifies them when `Authorization: Bearer` is present.
+Those tenant-scoped secrets are **not** the pool secret and are never copied into PostgREST env.
+
 ### Admin / service JWT (control plane)
 
 Issued by the control plane for migrations, internal operations, and schema setup. These tokens

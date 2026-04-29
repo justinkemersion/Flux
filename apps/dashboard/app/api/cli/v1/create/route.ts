@@ -204,6 +204,7 @@ export async function POST(req: Request): Promise<Response> {
         id: tenantId,
         userId: auth.userId,
         mode,
+        jwtSecret: project.projectJwtSecret,
       })
       .returning({ id: projects.id });
     try {

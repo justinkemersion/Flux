@@ -1,5 +1,10 @@
 import { Hono } from "hono";
-import { resolveTenant, type CacheSource } from "./tenant-resolver.ts";
+import { jwtVerify } from "jose";
+import {
+  resolveTenant,
+  fetchProjectJwtSecret,
+  type CacheSource,
+} from "./tenant-resolver.ts";
 import { acquireRateSlot } from "./rate-limiter.ts";
 import { mintJwt } from "./jwt-issuer.ts";
 import { trackActivity } from "./activity-tracker.ts";
@@ -125,6 +130,34 @@ export function createApp(): Hono {
         },
         502,
       );
+    }
+
+    // 2b. Optional inbound Bearer — verify HS256 with per-project jwt_secret (not the pool secret).
+    const authz = c.req.header("authorization")?.trim();
+    if (authz?.toLowerCase().startsWith("bearer ")) {
+      const token = authz.slice(7).trim();
+      if (token) {
+        let projectSecret = tenant.jwtSecret;
+        if (projectSecret == null) {
+          projectSecret = await fetchProjectJwtSecret(tenant.projectId);
+        }
+        if (projectSecret == null) {
+          return c.json(
+            {
+              error:
+                "project jwt_secret missing; run repair on the control plane",
+            },
+            503,
+          );
+        }
+        try {
+          await jwtVerify(token, new TextEncoder().encode(projectSecret), {
+            algorithms: ["HS256"],
+          });
+        } catch {
+          return c.json({ error: "invalid or expired token" }, 401);
+        }
+      }
     }
 
     // 3. Rate limit

@@ -147,7 +147,8 @@ export async function PUT(
 
 /**
  * PATCH /api/projects/[slug]
- * Body: { jwtSecret: string } — updates PostgREST `PGRST_JWT_SECRET` and recreates the API container.
+ * Body: { jwtSecret: string } — v2_shared: updates `projects.jwt_secret` and evicts the default API host cache.
+ * v1_dedicated: updates PostgREST `PGRST_JWT_SECRET`, recreates the API container, and mirrors the secret in the catalog.
  */
 export async function PATCH(
   req: NextRequest,
@@ -184,15 +185,26 @@ export async function PATCH(
   if (!project) return jsonError("Project not found", 404);
 
   if (project.mode === "v2_shared") {
-    return jsonError(
-      "Rotating PostgREST JWT secrets is not supported for v2_shared projects from the dashboard; the pooled PostgREST deployment uses a shared gateway secret.",
-      400,
-    );
+    const db = getDb();
+    await db
+      .update(projects)
+      .set({ jwtSecret })
+      .where(eq(projects.id, project.id));
+    const defaultHost = new URL(
+      fluxApiUrlForSlug(slug, project.hash, process.env.NODE_ENV === "production"),
+    ).hostname;
+    await evictHostnames([defaultHost]);
+    return Response.json({ ok: true });
   }
 
   const pm = getProjectManager();
+  const db = getDb();
   try {
     await pm.updatePostgrestJwtSecret(slug, jwtSecret, project.hash);
+    await db
+      .update(projects)
+      .set({ jwtSecret })
+      .where(eq(projects.id, project.id));
     return Response.json({ ok: true });
   } catch (err: unknown) {
     return jsonError(err instanceof Error ? err.message : String(err), 500);
@@ -231,7 +243,13 @@ export async function DELETE(
     .select({ hostname: domains.hostname })
     .from(domains)
     .where(eq(domains.projectId, project.id));
-  const hostnames = projectDomains.map((d) => d.hostname);
+  const isProduction = process.env.NODE_ENV === "production";
+  const defaultApiHost = new URL(
+    fluxApiUrlForSlug(slug, project.hash, isProduction),
+  ).hostname;
+  const hostnames = [
+    ...new Set([...projectDomains.map((d) => d.hostname), defaultApiHost]),
+  ];
 
   try {
     // 2. Evict gateway hostname caches (fail-open) to prevent zombie routing.

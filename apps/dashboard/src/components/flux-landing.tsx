@@ -19,24 +19,27 @@ const focusSecondary =
 const focusLink =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
 
-/** Operational matrix: Free/Pro → v2_shared; Enterprise → v1_dedicated (current dedicated stack). */
+/** Operational matrix: default stack is pooled (Standard); Pro may opt into isolated (Pro). */
 const planExecutionMatrix = [
   {
     id: "free",
     tier: "Free",
     engine: "v2_shared" as const,
+    stackLabel: "Pooled Stack (Standard)",
     body: "PostgreSQL with logical isolation (schema-per-tenant), pooled PostgREST, and a gateway-first HTTP edge—built to keep cold start and unit economics sane.",
   },
   {
     id: "pro",
     tier: "Pro",
     engine: "v2_shared" as const,
+    stackLabel: "Pooled Stack (Standard)",
     body: "Everything in Free with stricter operational limits: per-tenant rate limits, connection discipline, and statement timeouts aligned with shared-infrastructure reality.",
   },
   {
     id: "enterprise",
     tier: "Enterprise",
     engine: "v1_dedicated" as const,
+    stackLabel: "Isolated Stack (Pro)",
     body: "Dedicated Postgres and PostgREST per project—the isolation and compliance boundary when shared infrastructure is not the right tradeoff.",
   },
 ] as const;
@@ -155,11 +158,11 @@ export function FluxLanding({ fleetShowcase, reliability, queryCodexAction }: Pr
                       style={{ fontFamily: "var(--font-geist-mono)" }}
                       title={
                         row.engine === "v1_dedicated"
-                          ? "Maps to the dedicated (per-project) engine: isolated Postgres and PostgREST (v1_dedicated)."
-                          : "Maps to the shared-cluster engine: schema-per-tenant, pooled data plane (v2_shared)."
+                          ? "Isolated Stack (Pro): v1_dedicated — dedicated Postgres and PostgREST per project."
+                          : "Pooled Stack (Standard): v2_shared — schema-per-tenant on a shared cluster."
                       }
                     >
-                      {row.engine}
+                      {row.stackLabel}
                     </p>
                   </div>
                   <p className="mt-2.5 font-sans text-xs font-normal leading-[1.55] text-zinc-400 sm:text-[13px] sm:leading-relaxed">

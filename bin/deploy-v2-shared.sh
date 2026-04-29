@@ -18,7 +18,7 @@
 #   SHARED_POSTGRES_PASSWORD
 #   PGB_BACKEND_PASSWORD
 #   PGRST_DB_PASSWORD
-#   FLUX_GATEWAY_JWT_SECRET
+#   FLUX_GATEWAY_JWT_SECRET  (pool secret; must match PGRST_JWT_SECRET — not per-tenant keys)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,8 +1,8 @@
 export type UserPlan = "hobby" | "pro";
 export type ProjectMode = "v1_dedicated" | "v2_shared";
 
-export function defaultModeForPlan(plan: UserPlan): ProjectMode {
-  return plan === "pro" ? "v1_dedicated" : "v2_shared";
+export function defaultModeForPlan(_plan: UserPlan): ProjectMode {
+  return "v2_shared";
 }
 
 export function resolveCreateModeForPlan(input: {

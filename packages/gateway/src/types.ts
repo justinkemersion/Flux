@@ -6,4 +6,6 @@ export interface TenantResolution {
   shortid: string;
   mode: ProjectMode;
   slug: string;
+  /** Per-project HS256 key (Base64); null until backfilled by repair. */
+  jwtSecret: string | null;
 }

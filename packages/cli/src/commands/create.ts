@@ -10,8 +10,11 @@ function printProjectSummaryCard(
   nameArg: string,
 ): void {
   const { summary, secrets } = result;
+  /** Visible width between the left `│` and right `│` on boxed rows. */
   const inner = 56;
   const hr = chalk.dim("─".repeat(inner));
+  const leftBar = chalk.dim("  │ ");
+  const rightBar = chalk.dim("│");
   const row = (key: string, val: string): void => {
     const keyPlain = key.padEnd(16);
     const keyStyled = chalk.yellow(keyPlain);
@@ -23,9 +26,7 @@ function printProjectSummaryCard(
     const valStyled = chalk.white(valPlain);
     const used = visibleLength(keyStyled) + visibleLength(valStyled);
     const pad = " ".repeat(Math.max(0, inner - used));
-    console.log(
-      `${chalk.dim("  │ ")}${keyStyled}${valStyled}${pad}${chalk.dim("│")}`,
-    );
+    console.log(`${leftBar}${keyStyled}${valStyled}${pad}${rightBar}`);
   };
 
   console.log();
@@ -38,9 +39,7 @@ function printProjectSummaryCard(
   console.log(chalk.dim("  ┌") + hr + chalk.dim("┐"));
   const titleStyled = chalk.bold.cyan("PROJECT_SUMMARY");
   const titlePad = " ".repeat(Math.max(0, inner - visibleLength(titleStyled)));
-  console.log(
-    `${chalk.dim("  │ ")}${titleStyled}${chalk.dim(titlePad)}${chalk.dim("│")}`,
-  );
+  console.log(`${leftBar}${titleStyled}${titlePad}${rightBar}`);
   console.log(chalk.dim("  ├") + hr + chalk.dim("┤"));
   row("slug", summary.slug);
   row("hash", summary.hash);
@@ -79,6 +78,19 @@ function printProjectSummaryCard(
   console.log();
 
   console.log(chalk.dim("  RUNTIME_CREDENTIALS"));
+  console.log(
+    chalk.white(`    FLUX_GATEWAY_JWT_SECRET=${secrets.pgrstJwtSecret}`),
+  );
+  console.log(
+    chalk.dim(
+      "    ↑ per-project tenant API signing key (control plane projects.jwt_secret).",
+    ),
+  );
+  console.log(
+    chalk.dim(
+      "      Not the same value as the host pool FLUX_GATEWAY_JWT_SECRET on flux-postgrest-pool.",
+    ),
+  );
   console.log(`    PGRST_JWT_SECRET=${secrets.pgrstJwtSecret}`);
   console.log(`    POSTGRES_PASSWORD=${secrets.postgresPassword}`);
   console.log(`    POSTGRES_CONTAINER_HOST=${secrets.postgresContainerHost}`);

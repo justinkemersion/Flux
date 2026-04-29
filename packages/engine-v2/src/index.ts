@@ -267,6 +267,31 @@ export async function executeBootstrapSql(sql: string): Promise<void> {
 }
 
 /**
+ * Runs DDL in a single transaction (BEGIN … COMMIT). Used for deprovision so
+ * DROP SCHEMA + DROP ROLE stay atomic; safe to retry after ROLLBACK.
+ */
+async function executeTransactionalSql(sql: string): Promise<void> {
+  const client = new Client({
+    connectionString: requireSharedPostgresUrl(),
+  });
+  await client.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(sql);
+    await client.query("COMMIT");
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback failure
+    }
+    throw err;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Pre-flight ownership check for provisionProject.
  *
  * Reads the COMMENT stored on the schema (if it already exists) and compares
@@ -331,6 +356,8 @@ export async function bootstrapSharedCluster(): Promise<void> {
  * owned by or inside the schema — this is irreversible data loss by design.
  * Never call this on a live project; only on a just-provisioned tenant whose
  * catalog row failed to commit.
+ *
+ * Idempotent: safe to call twice — `DROP SCHEMA IF EXISTS` and guarded `DROP ROLE`.
  */
 export async function deprovisionProject(tenantId: string): Promise<void> {
   const identity = deriveTenantIdentity(tenantId);
@@ -352,7 +379,7 @@ $flux_drop$;
 `.trim();
 
   try {
-    await executeBootstrapSql(sql);
+    await executeTransactionalSql(sql);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(

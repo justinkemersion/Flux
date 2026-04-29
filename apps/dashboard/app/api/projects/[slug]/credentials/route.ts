@@ -36,10 +36,19 @@ export async function GET(
   if (!project) return jsonError("Project not found", 404);
 
   if (project.mode === "v2_shared") {
-    return jsonError(
-      "Credentials for v2_shared tenants are not exposed here: there is no per-tenant PostgREST container or Docker Postgres superuser. Use the public API URL with JWTs from the Flux gateway (or your app’s auth flow).",
-      501,
-    );
+    if (!project.jwtSecret) {
+      return jsonError(
+        "Project jwt_secret is not set yet. Run POST /api/projects/[slug]/repair once.",
+        503,
+      );
+    }
+    return Response.json({
+      mode: "v2_shared",
+      projectJwtSecret: project.jwtSecret,
+      note:
+        "Sign HS256 JWTs with projectJwtSecret; the gateway verifies them per Host. " +
+        "Gateway→PostgREST uses the pool FLUX_GATEWAY_JWT_SECRET (not this value). There is no per-tenant Docker Postgres URI in pooled mode.",
+    });
   }
 
   const pm = getProjectManager();

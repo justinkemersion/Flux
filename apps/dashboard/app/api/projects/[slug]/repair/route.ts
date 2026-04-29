@@ -4,7 +4,12 @@ import { auth } from "@/src/lib/auth";
 import { projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
-import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
+import {
+  dispatchProvisionProject,
+  generateProjectJwtSecret,
+} from "@/src/lib/provisioning-engine";
+import { evictHostnames } from "@/src/lib/gateway-cache";
+import { fluxApiUrlForSlug } from "@flux/core";
 
 export const runtime = "nodejs";
 
@@ -37,16 +42,30 @@ export async function POST(
 
   if (!project) return jsonError("Project not found", 404);
 
+  let row = project;
+  if (!row.jwtSecret) {
+    const secret = generateProjectJwtSecret();
+    await db
+      .update(projects)
+      .set({ jwtSecret: secret })
+      .where(eq(projects.id, row.id));
+    row = { ...row, jwtSecret: secret };
+    const isProd = process.env.NODE_ENV === "production";
+    await evictHostnames([
+      new URL(fluxApiUrlForSlug(row.slug, row.hash, isProd)).hostname,
+    ]);
+  }
+
   const pm = getProjectManager();
   try {
     // v1_dedicated intentionally does not nuke containers/volumes here:
     // provisionProject() already adopts existing containers, starts stopped ones,
     // and recreates missing pieces while preserving tenant data volumes.
     const provisioned = await dispatchProvisionProject({
-      mode: project.mode,
-      projectName: project.name,
-      projectHash: project.hash,
-      tenantId: project.id,
+      mode: row.mode,
+      projectName: row.name,
+      projectHash: row.hash,
+      tenantId: row.id,
       projectManager: pm,
       isProduction: process.env.NODE_ENV === "production",
     });
@@ -54,7 +73,7 @@ export async function POST(
       ok: true,
       apiUrl: provisioned.apiUrl,
       slug: provisioned.slug,
-      mode: project.mode,
+      mode: row.mode,
     });
   } catch (err: unknown) {
     return jsonError(err instanceof Error ? err.message : String(err), 500);

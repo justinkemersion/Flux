@@ -9,7 +9,10 @@ import {
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { probeSingleProject } from "@/src/lib/fleet-monitor";
 import { getProjectManager } from "@/src/lib/flux";
-import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
+import {
+  dispatchProvisionProject,
+} from "@/src/lib/provisioning-engine";
+import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
 export const runtime = "nodejs";
@@ -270,11 +273,12 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(PRO_LIMIT_ERROR, 403);
   }
 
-  if (requestedMode === "v1_dedicated" && plan !== "pro") {
-    return jsonError(
-      "Isolated dedicated stacks require a Pro subscription.",
-      403,
-    );
+  const modePolicy = resolveCreateModeForPlan({
+    requestedMode,
+    plan,
+  });
+  if (!modePolicy.ok) {
+    return jsonError(modePolicy.message, 403);
   }
 
   const projectHash = await allocateUniqueProjectHash(db, slug);
@@ -286,7 +290,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const tenantId = crypto.randomUUID();
-  const mode: "v1_dedicated" | "v2_shared" = requestedMode ?? "v2_shared";
+  const mode: "v1_dedicated" | "v2_shared" = modePolicy.mode;
   let project: Awaited<ReturnType<typeof dispatchProvisionProject>>;
   try {
     project = await dispatchProvisionProject({
@@ -319,6 +323,7 @@ export async function POST(req: Request): Promise<Response> {
         hash: project.hash,
         userId: session.user.id,
         mode,
+        jwtSecret: project.projectJwtSecret,
       })
       .returning();
 

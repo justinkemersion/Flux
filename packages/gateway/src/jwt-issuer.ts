@@ -3,8 +3,8 @@ import { env } from "./env.ts";
 
 const encoder = new TextEncoder();
 /**
- * Encoded once at module load — re-encoding on every call wastes CPU for no
- * reason since the secret never changes at runtime.
+ * Pool-only HS256 key shared with `flux-postgrest-pool` (`PGRST_JWT_SECRET`).
+ * Distinct from per-project `projects.jwt_secret` (tenant-issued JWT verification).
  */
 const SECRET_BYTES = encoder.encode(env.FLUX_GATEWAY_JWT_SECRET);
 const JWT_CACHE_MAX_TTL_SEC = 300;

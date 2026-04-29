@@ -15,8 +15,9 @@ Implemented Node gateway request path with:
 
 ## Contracts
 
-1. **Sole JWT issuer** — gateway is the only service that mints runtime JWTs for tenant API
-   traffic. No other package may issue `{ role, tenant_id, exp }` tokens for production traffic.
+1. **Sole upstream JWT issuer** — gateway is the only service that mints short-lived pool-signed
+   runtime JWTs (`{ role, tenant_id, exp }`) for PostgREST. Optional: clients may send Bearer tokens
+   signed with the per-project `jwt_secret`; the gateway verifies those before proxying.
 2. **PostgREST is private** — gateway is the only upstream for PostgREST; it must never be
    exposed to the public internet.
 3. **Redis is best-effort** — all Redis calls (`rate:*`, `activity:*`, `hostname:*`) must be

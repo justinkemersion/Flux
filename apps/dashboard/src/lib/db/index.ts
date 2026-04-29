@@ -217,6 +217,15 @@ async function _init(): Promise<void> {
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'v1_dedicated';
   `);
 
+  await pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS jwt_secret TEXT;
+  `);
+
+  // New projects default to pooled Standard stack; existing rows keep prior mode.
+  await pool.query(`
+    ALTER TABLE projects ALTER COLUMN mode SET DEFAULT 'v2_shared';
+  `);
+
   // v2: custom-domain → project mapping used by the gateway for tenant resolution.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS domains (

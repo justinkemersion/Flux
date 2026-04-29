@@ -1,10 +1,10 @@
-/** SGR sequences (e.g. chalk) — strip for terminal column / border width math. */
-const ANSI_SGR_RE = /\u001b\[[0-9;]*m/g;
+import stripAnsi from "strip-ansi";
 
+/** SGR and other ANSI escapes — strip for terminal column / border width math. */
 export function stripAnsiSgr(s: string): string {
-  return s.replace(ANSI_SGR_RE, "");
+  return stripAnsi(s);
 }
 
 export function visibleLength(s: string): number {
-  return stripAnsiSgr(s).length;
+  return stripAnsi(s).length;
 }

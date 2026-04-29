@@ -39,6 +39,7 @@ const inflight = new Map<string, Promise<ResolvedTenant | null>>();
  * Validates on read to prevent a compromised Redis instance from injecting
  * a crafted TenantResolution that routes one tenant's traffic to another.
  */
+/** Redis payload — intentionally omits jwtSecret (see cacheResolution). */
 const tenantResolutionSchema = z.object({
   projectId: z.string().uuid(),
   tenantId: z.string().uuid(),
@@ -108,8 +109,12 @@ async function resolveUncached(host: string): Promise<ResolvedTenant | null> {
     try {
       const result = tenantResolutionSchema.safeParse(JSON.parse(cached));
       if (result.success) {
-        memSet(cacheKey, result.data);
-        return { resolution: result.data, cacheSource: "redis" };
+        const resolution: TenantResolution = {
+          ...result.data,
+          jwtSecret: null,
+        };
+        memSet(cacheKey, resolution);
+        return { resolution, cacheSource: "redis" };
       }
       // Malformed or tampered cache entry — evict and fall through to DB.
       console.warn("[gateway] Redis cache entry failed schema validation; evicting:", cacheKey);
@@ -182,8 +187,9 @@ async function cacheResolution(
   resolution: TenantResolution,
 ): Promise<void> {
   memSet(key, resolution);
+  const { jwtSecret: _omit, ...forRedis } = resolution;
   await safeRedis((r) =>
-    r.set(key, JSON.stringify(resolution), "EX", REDIS_CACHE_TTL_SEC),
+    r.set(key, JSON.stringify(forRedis), "EX", REDIS_CACHE_TTL_SEC),
   );
 }
 
@@ -195,11 +201,13 @@ async function queryByExactDomain(
     tenant_id: string;
     slug: string;
     mode: string;
+    jwt_secret: string | null;
   }>(
     `SELECT d.project_id,
             p.id   AS tenant_id,
             p.slug,
-            p.mode
+            p.mode,
+            p.jwt_secret
      FROM   domains d
      JOIN   projects p ON p.id = d.project_id
      WHERE  d.hostname = $1
@@ -208,7 +216,13 @@ async function queryByExactDomain(
   );
   const row = rows[0];
   if (!row) return null;
-  return toResolution(row.tenant_id, row.project_id, row.slug, row.mode);
+  return toResolution(
+    row.tenant_id,
+    row.project_id,
+    row.slug,
+    row.mode,
+    row.jwt_secret,
+  );
 }
 
 async function queryBySlugAndHash(
@@ -219,10 +233,11 @@ async function queryBySlugAndHash(
     id: string;
     slug: string;
     mode: string;
+    jwt_secret: string | null;
   }>(
     // Filter by both slug AND hash so the lookup is deterministic regardless
     // of how many users share the same slug across the platform.
-    `SELECT id, slug, mode
+    `SELECT id, slug, mode, jwt_secret
      FROM   projects
      WHERE  slug = $1
        AND  hash = $2
@@ -231,7 +246,7 @@ async function queryBySlugAndHash(
   );
   const row = rows[0];
   if (!row) return null;
-  return toResolution(row.id, row.id, row.slug, row.mode);
+  return toResolution(row.id, row.id, row.slug, row.mode, row.jwt_secret);
 }
 
 function toResolution(
@@ -239,6 +254,7 @@ function toResolution(
   projectId: string,
   slug: string,
   mode: string,
+  jwtSecret: string | null,
 ): TenantResolution {
   return {
     tenantId,
@@ -246,5 +262,19 @@ function toResolution(
     shortid: tenantIdToShortid(tenantId),
     mode: mode as ProjectMode,
     slug,
+    jwtSecret,
   };
+}
+
+/**
+ * Loads jwt_secret when the hostname cache layer omitted it (Redis / legacy rows).
+ */
+export async function fetchProjectJwtSecret(
+  projectId: string,
+): Promise<string | null> {
+  const { rows } = await getPool().query<{ jwt_secret: string | null }>(
+    `SELECT jwt_secret FROM projects WHERE id = $1 LIMIT 1`,
+    [projectId],
+  );
+  return rows[0]?.jwt_secret ?? null;
 }
