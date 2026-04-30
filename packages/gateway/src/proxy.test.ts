@@ -9,23 +9,34 @@ function setGatewayEnv(poolUrl: string): void {
   process.env.FLUX_POSTGREST_POOL_URL = poolUrl;
 }
 
-test("proxy forwards only internal auth token to upstream", async () => {
+test("proxy forwards internal auth token and POST body", async () => {
   let seenAuthorization: string | undefined;
   let seenUserId: string | undefined;
   let seenRole: string | undefined;
   let seenTenantId: string | undefined;
   let seenAcceptProfile: string | undefined;
   let seenContentProfile: string | undefined;
+  let seenMethod: string | undefined;
+  let seenContentType: string | undefined;
+  let seenBody = "";
 
   const server = createServer((req, res) => {
+    seenMethod = req.method;
     seenAuthorization = req.headers.authorization;
     seenUserId = req.headers["x-user-id"] as string | undefined;
     seenRole = req.headers["x-role"] as string | undefined;
     seenTenantId = req.headers["x-tenant-id"] as string | undefined;
     seenAcceptProfile = req.headers["accept-profile"] as string | undefined;
     seenContentProfile = req.headers["content-profile"] as string | undefined;
-    res.statusCode = 200;
-    res.end("ok");
+    seenContentType = req.headers["content-type"] as string | undefined;
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      seenBody += chunk;
+    });
+    req.on("end", () => {
+      res.statusCode = 200;
+      res.end("ok");
+    });
   });
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -65,6 +76,7 @@ test("proxy forwards only internal auth token to upstream", async () => {
     const response = await proxyRequest(c as never, internalToken, tenant);
 
     assert.equal(response.status, 200);
+    assert.equal(seenMethod, "GET");
     assert.equal(seenAuthorization, `Bearer ${internalToken}`);
     assert.equal(seenAuthorization?.includes("external-client-token"), false);
     assert.equal(seenUserId, undefined);
@@ -72,6 +84,29 @@ test("proxy forwards only internal auth token to upstream", async () => {
     assert.equal(seenTenantId, tenant.tenantId);
     assert.equal(seenAcceptProfile, `t_${tenant.shortid}_api`);
     assert.equal(seenContentProfile, `t_${tenant.shortid}_api`);
+
+    seenMethod = undefined;
+    seenContentType = undefined;
+    seenBody = "";
+    const payload = { owner_id: "user-a", title: "A's product" };
+    const postC = {
+      req: {
+        method: "POST",
+        url: "http://tenant.flux.localhost/products",
+        raw: new Request("http://tenant.flux.localhost/products", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }),
+      },
+    };
+    const postResponse = await proxyRequest(postC as never, internalToken, tenant);
+    assert.equal(postResponse.status, 200);
+    assert.equal(seenMethod, "POST");
+    assert.equal(seenContentType, "application/json");
+    assert.equal(seenBody, JSON.stringify(payload));
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((err) => (err ? reject(err) : resolve())),

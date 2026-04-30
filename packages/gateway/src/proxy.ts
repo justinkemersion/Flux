@@ -89,9 +89,10 @@ export async function proxyRequest(
       method: c.req.method,
       headers: reqHeaders,
       body: hasBody ? (c.req.raw.body as BodyInit) : undefined,
+      duplex: hasBody ? "half" : undefined,
       signal: controller.signal,
       dispatcher: upstreamAgent,
-      // undici handles duplex streaming natively — no workaround needed
+      // Required by undici when streaming request bodies from ReadableStream.
     } as Parameters<typeof fetch>[1]);
 
     // --- Response headers: strip hop-by-hop from upstream response ---
