@@ -77,7 +77,7 @@ FLUX_GATEWAY_JWT_SECRET=`;
 export interface FluxProjectSummary {
   /** Normalized project slug (from container names). */
   slug: string;
-  /** Per-project hash segment in Docker/Traefik names and hostname (`api.{slug}.{hash}.…`). */
+  /** Per-project hash segment (7 hex) in Docker names and public API host (`api--…` pooled, `api.…` dedicated). */
   hash: string;
   /**
    * Combined health of Postgres + PostgREST containers.
@@ -85,7 +85,7 @@ export interface FluxProjectSummary {
    * **corrupted** — exactly one of the two containers exists.
    */
   status: "running" | "stopped" | "partial" | "missing" | "corrupted";
-  /** Public API URL via the Flux Traefik gateway (`Host: api.{slug}.{suffix}.<FLUX_DOMAIN>`). */
+  /** Public API URL (`https://api--{slug}--{hash}.…` for v2_shared, `https://api.{slug}.{hash}.…` for v1). */
   apiUrl: string;
 }
 

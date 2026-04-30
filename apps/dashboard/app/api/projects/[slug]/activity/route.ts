@@ -32,7 +32,7 @@ export async function OPTIONS(): Promise<Response> {
  * The `hash` query param is required because under global hash namespacing the
  * `slug` alone is no longer unique across users — it's only unique **per user**
  * thanks to the `(userId, slug)` composite index. The SDK infers `hash` from the
- * tenant URL (`api.{slug}.{hash}.{domain}`), so this is transparent to callers.
+ * tenant URL (`api--{slug}--{hash}.…` for pooled / v2_shared, or `api.{slug}.{hash}.…` for v1).
  */
 export async function POST(
   _req: NextRequest,

@@ -8,15 +8,14 @@ export type FluxActivityOptions = {
   secret: string;
   /**
    * Tenant slug. If omitted, inferred from {@link FluxClientOptions.url} when the host matches
-   * `api.{slug}.{7hex}.vsl-base.com` / `api.{slug}.{7hex}.flux.localhost`, or legacy
-   * `api.{slug}.…` / `{slug}.…` without the tenant hash segment.
+   * pooled `api--{slug}--{7hex}.<domain>` (v2_shared), dedicated `api.{slug}.{7hex}.<domain>` (v1),
+   * or legacy shapes without a hash segment.
    */
   slug?: string;
   /**
    * Per-project 7-hex tenant hash. Required by the dashboard activity endpoint under global
    * hash namespacing (slug is only unique per user). If omitted, inferred from
-   * {@link FluxClientOptions.url} (`api.{slug}.{7hex}.<domain>`). Without a hash, the SDK
-   * silently skips the activity ping rather than bumping the wrong row.
+   * {@link FluxClientOptions.url}. Without a hash, the SDK silently skips the activity ping.
    */
   hash?: string;
 };
@@ -34,6 +33,24 @@ export type FluxResult<T> = {
 };
 
 const FLUX_TENANT_HOST_SUFFIXES = [".vsl-base.com", ".flux.localhost"] as const;
+
+/**
+ * Pooled-stack flat label: `api--{slug}--{7hex}` (first DNS label under the tenant domain).
+ */
+function tryParseFlatApiTenantLabel(label: string): {
+  slug: string;
+  hash: string;
+} | null {
+  if (!label.toLowerCase().startsWith("api--")) return null;
+  const parts = label.split("--");
+  if (parts.length < 3) return null;
+  if (parts[0]!.toLowerCase() !== "api") return null;
+  const hash = parts[parts.length - 1]!.toLowerCase();
+  if (!/^[a-f0-9]{7}$/.test(hash)) return null;
+  const slug = parts.slice(1, -1).join("--");
+  if (!slug) return null;
+  return { slug, hash };
+}
 
 function extractFluxTenantHostSubdomain(baseUrl: string): string | null {
   let s = baseUrl.trim();
@@ -58,12 +75,14 @@ function extractFluxTenantHostSubdomain(baseUrl: string): string | null {
 }
 
 /**
- * Infer tenant slug from PostgREST base URL (`api.{slug}.{tenantHash}.<domain>`,
- * legacy `api.{slug}.<domain>`, or `{slug}.<domain>`).
+ * Infer tenant slug from PostgREST base URL: pooled `api--{slug}--{hash}.<domain>`,
+ * dedicated `api.{slug}.{hash}.<domain>`, or legacy hashless hosts.
  */
 export function inferFluxTenantSlugFromPostgrestUrl(baseUrl: string): string | null {
   const sub = extractFluxTenantHostSubdomain(baseUrl);
   if (sub === null) return null;
+  const flat = tryParseFlatApiTenantLabel(sub);
+  if (flat) return flat.slug;
   const segs = sub.split(".");
   if (segs.length >= 2) {
     const last = segs[segs.length - 1] ?? "";
@@ -76,13 +95,14 @@ export function inferFluxTenantSlugFromPostgrestUrl(baseUrl: string): string | n
 
 /**
  * Infer the per-project 7-hex tenant hash from a PostgREST base URL shaped like
- * `api.{slug}.{7hex}.<domain>`. Returns `null` for legacy hashless URLs so callers can decide
- * whether to skip the activity bump (under global hash namespacing the server requires the hash
- * to disambiguate slugs across users).
+ * `api--{slug}--{7hex}.<domain>` (pooled) or `api.{slug}.{7hex}.<domain>` (dedicated).
+ * Returns `null` for legacy hashless URLs so callers can skip the activity bump safely.
  */
 export function inferFluxTenantHashFromPostgrestUrl(baseUrl: string): string | null {
   const sub = extractFluxTenantHostSubdomain(baseUrl);
   if (sub === null) return null;
+  const flat = tryParseFlatApiTenantLabel(sub);
+  if (flat) return flat.hash;
   const segs = sub.split(".");
   if (segs.length < 2) return null;
   const last = segs[segs.length - 1] ?? "";
