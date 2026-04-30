@@ -39,6 +39,24 @@ import {
   fluxTenantStatusFromContainerPair,
   slugifyProjectName,
 } from "./standalone.ts";
+import {
+  fluxApiHttpsForTenantUrls,
+  fluxApiUrlForSlug,
+  fluxTenantDomain,
+  fluxTenantPostgrestHostname,
+} from "./tenant-catalog-urls.ts";
+
+export {
+  FLUX_DEFAULT_DOMAIN,
+  fluxTenantDomain,
+  fluxApiHttpsForTenantUrls,
+  fluxTenantPostgrestHostname,
+  fluxApiUrlForSlug,
+  type FluxCatalogProjectMode,
+  fluxTenantV2SharedHostname,
+  fluxApiUrlForV2Shared,
+  fluxApiUrlForCatalog,
+} from "./tenant-catalog-urls.ts";
 
 export type { ImportSqlFileOptions } from "./import-dump.ts";
 export type { MovePublicToApiResult } from "./schema-move-public-to-api.ts";
@@ -576,32 +594,12 @@ export function tenantVolumeName(hash: string, slug: string): string {
   return `${fluxTenantStackBaseId(hash, slug)}-db-data`;
 }
 
-/** Default public parent domain for tenant hostnames (`{slug}.<domain>`). Override with `FLUX_DOMAIN`. */
-export const FLUX_DEFAULT_DOMAIN = "vsl-base.com";
-
 /**
  * Default Traefik ACME `certificatesresolvers.<name>`; must match the edge gateway compose
  * (e.g. `docker/traefik/docker-compose.yml` uses `myresolver`). Overridden by `FLUX_TRAEFIK_CERTRESOLVER`, or
  * set implicitly when `FLUX_DOMAIN` enables HTTPS edge routing.
  */
 export const FLUX_TRAEFIK_ACME_RESOLVER = "myresolver" as const;
-
-/**
- * Parent domain for tenant API hostnames: `FLUX_DOMAIN` when set, otherwise {@link FLUX_DEFAULT_DOMAIN}.
- */
-export function fluxTenantDomain(): string {
-  const d = process.env.FLUX_DOMAIN?.trim();
-  return d && d.length > 0 ? d : FLUX_DEFAULT_DOMAIN;
-}
-
-/**
- * When `FLUX_DOMAIN` is set (non-empty), public tenant API URLs use `https://` (TLS at the edge).
- * {@link fluxApiUrlForSlug} also treats the optional `isProduction` flag as a request for `https://`.
- */
-export function fluxApiHttpsForTenantUrls(): boolean {
-  const d = process.env.FLUX_DOMAIN?.trim();
-  return Boolean(d);
-}
 
 /**
  * `true` if `DOCKER_HOST` targets a non-default Engine (SSH, remote `tcp`/`https`). Enables edge
@@ -653,88 +651,6 @@ export function fluxTraefikCertResolverName(): string | null {
   if (fluxApiHttpsForTenantUrls()) return FLUX_TRAEFIK_ACME_RESOLVER;
   if (fluxControlPlaneTargetIsRemoteEngine()) return FLUX_TRAEFIK_ACME_RESOLVER;
   return null;
-}
-
-/**
- * Hostname for tenant PostgREST (Traefik `Host()`), e.g. `api.acme.abc1234.example.com`.
- * Omit or pass an empty `hostnamePrefix` for legacy `{slug}.{domain}` only (no hash segment).
- */
-export function fluxTenantPostgrestHostname(
-  slug: string,
-  hash: string,
-  hostnamePrefix = "api",
-): string {
-  const domain = fluxTenantDomain();
-  if (!hostnamePrefix || hostnamePrefix.length === 0) {
-    return `${slug}.${domain}`;
-  }
-  return `${hostnamePrefix}.${slug}.${hash}.${domain}`;
-}
-
-/**
- * HTTP(S) origin for a tenant API as routed by {@link FLUX_GATEWAY_CONTAINER_NAME} (Traefik).
- * Uses `https://` when `FLUX_DOMAIN` is set, `isProduction`, or a **remote** `DOCKER_HOST` (SSH) —
- * the same case where edge Traefik labels apply. Otherwise `http://` (local `docker` on Unix).
- *
- * Produces `https://api.{slug}.{hash}.{domain}` (or `http://` when TLS is off). Each project
- * has its own random `hash` stored in the flux-system `projects` table; dashboard / CLI callers
- * must pass it through from the catalog row.
- *
- * **TLS:** A single wildcard like `*.example.com` does not cover the extra `.{hash}` label;
- * use per-host ACME, DNS-01, or a suitable wildcard depth for your edge.
- */
-export function fluxApiUrlForSlug(
-  slug: string,
-  hash: string,
-  isProduction = false,
-  hostnamePrefix = "api",
-): string {
-  const useHttps =
-    fluxApiHttpsForTenantUrls() || isProduction || fluxControlPlaneTargetIsRemoteEngine();
-  const scheme = useHttps ? "https" : "http";
-  return `${scheme}://${fluxTenantPostgrestHostname(slug, hash, hostnamePrefix)}`;
-}
-
-/** Catalog execution mode: dedicated PostgREST vs pooled gateway + shared cluster. */
-export type FluxCatalogProjectMode = "v1_dedicated" | "v2_shared";
-
-/**
- * Hostname for v2_shared tenants at the edge (single DNS label, SSL-friendly routing).
- * Example: `api--acme--abc1234.vsl-base.com`.
- */
-export function fluxTenantV2SharedHostname(slug: string, hash: string): string {
-  const domain = fluxTenantDomain();
-  return `api--${slug}--${hash}.${domain}`;
-}
-
-/**
- * Public API URL for v2_shared (gateway → PostgREST pool). Same HTTPS selection as
- * {@link fluxApiUrlForSlug}.
- */
-export function fluxApiUrlForV2Shared(
-  slug: string,
-  hash: string,
-  isProduction = false,
-): string {
-  const useHttps =
-    fluxApiHttpsForTenantUrls() || isProduction || fluxControlPlaneTargetIsRemoteEngine();
-  const scheme = useHttps ? "https" : "http";
-  return `${scheme}://${fluxTenantV2SharedHostname(slug, hash)}`;
-}
-
-/**
- * Returns the catalog API URL for the given mode: flat `api--` host for `v2_shared`,
- * dot-separated {@link fluxApiUrlForSlug} for `v1_dedicated`.
- */
-export function fluxApiUrlForCatalog(
-  slug: string,
-  hash: string,
-  isProduction: boolean,
-  mode: FluxCatalogProjectMode,
-): string {
-  return mode === "v2_shared"
-    ? fluxApiUrlForV2Shared(slug, hash, isProduction)
-    : fluxApiUrlForSlug(slug, hash, isProduction);
 }
 
 /**

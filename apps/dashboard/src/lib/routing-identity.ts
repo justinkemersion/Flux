@@ -2,7 +2,7 @@ import {
   type FluxCatalogProjectMode,
   fluxTenantPostgrestHostname,
   fluxTenantV2SharedHostname,
-} from "@flux/core";
+} from "@flux/core/standalone";
 
 /**
  * Deterministic 8-char hex segment for spec table [IDENTITY] column (Traefik-style).
