@@ -107,7 +107,11 @@ export function ProjectSummaryCard({
     }
   }, [p.status, busy, repairBusy]);
 
-  const specHost = projectApiInterface(p.slug, p.hash);
+  const specHost = projectApiInterface(
+    p.slug,
+    p.hash,
+    isV2Shared ? "v2_shared" : "v1_dedicated",
+  );
   const raw = (p.apiUrl?.trim() || specHost).trim();
   const apiHref = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 

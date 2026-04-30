@@ -1,3 +1,9 @@
+import {
+  type FluxCatalogProjectMode,
+  fluxTenantPostgrestHostname,
+  fluxTenantV2SharedHostname,
+} from "@flux/core";
+
 /**
  * Deterministic 8-char hex segment for spec table [IDENTITY] column (Traefik-style).
  */
@@ -9,8 +15,19 @@ export function hashSegment(key: string): string {
   return Math.abs(h).toString(16).padStart(8, "0").slice(0, 8);
 }
 
-export function projectApiInterface(slug: string, hash: string): string {
-  return `api.${slug}.${hash}.vsl-base.com`;
+/**
+ * Spec-table style hostname when `apiUrl` is absent. `v2_shared` uses flat ingress shape;
+ * `v1_dedicated` or omitted (legacy list rows) uses dot-separated dedicated PostgREST host.
+ */
+export function projectApiInterface(
+  slug: string,
+  hash: string,
+  mode?: FluxCatalogProjectMode,
+): string {
+  if (mode === "v2_shared") {
+    return fluxTenantV2SharedHostname(slug, hash);
+  }
+  return fluxTenantPostgrestHostname(slug, hash);
 }
 
 export function uptimeReadoutForStatus(

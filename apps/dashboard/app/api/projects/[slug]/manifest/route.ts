@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import {
   deriveTenantPostgresPasswordFromSecret,
   fluxApiUrlForSlug,
+  fluxApiUrlForV2Shared,
 } from "@flux/core";
 import type { NextRequest } from "next/server";
 import { auth } from "@/src/lib/auth";
@@ -45,11 +46,10 @@ export async function GET(
   }
 
   const isProd = process.env.NODE_ENV === "production";
-  const apiUrl = fluxApiUrlForSlug(
-    project.slug,
-    project.hash,
-    isProd,
-  );
+  const apiUrl =
+    project.mode === "v2_shared"
+      ? fluxApiUrlForV2Shared(project.slug, project.hash, isProd)
+      : fluxApiUrlForSlug(project.slug, project.hash, isProd);
 
   if (project.mode === "v2_shared") {
     return Response.json({

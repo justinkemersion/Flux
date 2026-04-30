@@ -24,6 +24,7 @@ async function applyProjectPowerForRow(
         project.slug,
         project.hash,
         isProduction,
+        "v2_shared",
       );
       await db
         .update(projects)

@@ -2,12 +2,15 @@ import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { auth } from "@/src/lib/auth";
 import { domains, projects } from "@/src/db/schema";
-import { fluxApiUrlForSlug } from "@flux/core";
+import { fluxApiUrlForSlug, fluxApiUrlForV2Shared } from "@flux/core";
 import { deprovisionProject } from "@flux/engine-v2";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import { applyProjectPowerAction } from "@/src/lib/project-lifecycle";
-import { evictHostnames } from "@/src/lib/gateway-cache";
+import {
+  evictHostnames,
+  v2SharedGatewayCacheHostnames,
+} from "@/src/lib/gateway-cache";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
 export const runtime = "nodejs";
@@ -47,7 +50,10 @@ export async function GET(
   if (!project) return jsonError("Project not found", 404);
 
   const isProduction = process.env.NODE_ENV === "production";
-  const apiUrl = fluxApiUrlForSlug(slug, project.hash, isProduction);
+  const apiUrl =
+    project.mode === "v2_shared"
+      ? fluxApiUrlForV2Shared(slug, project.hash, isProduction)
+      : fluxApiUrlForSlug(slug, project.hash, isProduction);
 
   if (project.mode === "v2_shared") {
     return Response.json({
@@ -190,10 +196,13 @@ export async function PATCH(
       .update(projects)
       .set({ jwtSecret })
       .where(eq(projects.id, project.id));
-    const defaultHost = new URL(
-      fluxApiUrlForSlug(slug, project.hash, process.env.NODE_ENV === "production"),
-    ).hostname;
-    await evictHostnames([defaultHost]);
+    await evictHostnames(
+      v2SharedGatewayCacheHostnames(
+        slug,
+        project.hash,
+        process.env.NODE_ENV === "production",
+      ),
+    );
     return Response.json({ ok: true });
   }
 
@@ -244,11 +253,15 @@ export async function DELETE(
     .from(domains)
     .where(eq(domains.projectId, project.id));
   const isProduction = process.env.NODE_ENV === "production";
-  const defaultApiHost = new URL(
-    fluxApiUrlForSlug(slug, project.hash, isProduction),
-  ).hostname;
+  const defaultApiHosts =
+    project.mode === "v2_shared"
+      ? v2SharedGatewayCacheHostnames(slug, project.hash, isProduction)
+      : [new URL(fluxApiUrlForSlug(slug, project.hash, isProduction)).hostname];
   const hostnames = [
-    ...new Set([...projectDomains.map((d) => d.hostname), defaultApiHost]),
+    ...new Set([
+      ...projectDomains.map((d) => d.hostname),
+      ...defaultApiHosts,
+    ]),
   ];
 
   try {

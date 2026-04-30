@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { fluxApiUrlForSlug, slugifyProjectName } from "@flux/core";
+import { fluxApiUrlForSlug, fluxApiUrlForV2Shared, slugifyProjectName } from "@flux/core";
 import type { ProjectManager } from "@flux/core";
 import { deprovisionProject } from "@flux/engine-v2";
 import { getEngineV2 } from "@/src/lib/flux";
@@ -141,7 +141,7 @@ export async function dispatchProvisionProject(
     name: input.projectName,
     slug,
     hash: input.projectHash,
-    apiUrl: fluxApiUrlForSlug(slug, input.projectHash, input.isProduction),
+    apiUrl: fluxApiUrlForV2Shared(slug, input.projectHash, input.isProduction),
     stripSupabaseRestPrefix: true,
     tenant,
     projectJwtSecret,

@@ -3,6 +3,7 @@ import { auth } from "@/src/lib/auth";
 import { projects, users } from "@/src/db/schema";
 import {
   fluxApiUrlForSlug,
+  fluxApiUrlForV2Shared,
   generateProjectHash,
   slugifyProjectName,
 } from "@flux/core";
@@ -142,7 +143,7 @@ export async function GET(): Promise<Response> {
           hash: p.hash,
           mode: p.mode,
           status,
-          apiUrl: fluxApiUrlForSlug(p.slug, p.hash, isProduction),
+          apiUrl: fluxApiUrlForV2Shared(p.slug, p.hash, isProduction),
           createdAt,
           healthStatus: p.healthStatus ?? null,
           lastHeartbeatAt: p.lastHeartbeatAt

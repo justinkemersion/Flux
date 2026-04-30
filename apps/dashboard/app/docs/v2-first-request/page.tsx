@@ -25,7 +25,7 @@ export default async function V2FirstRequestGuide({
   const params = await searchParams;
   const slug = safeParam(params.slug, "<slug>");
   const hash = safeParam(params.hash, "<hash>");
-  const apiUrl = `https://api.${slug}.${hash}.vsl-base.com`;
+  const apiUrl = `https://api--${slug}--${hash}.vsl-base.com`;
 
   const firstRequest = `const token = await window.Clerk?.session?.getToken({ template: "flux" });
 

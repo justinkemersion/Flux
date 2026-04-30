@@ -70,6 +70,10 @@ test("dispatchProvisionProject routes v2_shared through engine-v2 provisioner", 
   assert.equal(result.mode, "v2_shared");
   assert.equal(result.tenant.shortId, "550e8400e29b");
   assert.equal(result.hash, "def5678");
+  assert.match(
+    result.apiUrl,
+    /^http:\/\/api--my-shared-app--def5678\.vsl-base\.com$/,
+  );
   assert.match(result.projectJwtSecret, /^[A-Za-z0-9+/]+=*$/);
   assert.equal(Buffer.from(result.projectJwtSecret, "base64").length, 36);
 });

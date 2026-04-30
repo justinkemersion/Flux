@@ -12,6 +12,26 @@
  * (60 s by default) — "zombie routing" window is bounded.
  */
 
+import { fluxApiUrlForSlug, fluxApiUrlForV2Shared } from "@flux/core";
+
+/**
+ * Normalised hostnames to DEL for v2_shared: current flat `api--` ingress shape plus
+ * legacy dot `api.` keys from before URL flattening (deduped if identical).
+ */
+export function v2SharedGatewayCacheHostnames(
+  slug: string,
+  hash: string,
+  isProduction: boolean,
+): string[] {
+  const flat = new URL(
+    fluxApiUrlForV2Shared(slug, hash, isProduction),
+  ).hostname.toLowerCase();
+  const legacy = new URL(
+    fluxApiUrlForSlug(slug, hash, isProduction),
+  ).hostname.toLowerCase();
+  return flat === legacy ? [flat] : [flat, legacy];
+}
+
 function getRedisUrl(): string | undefined {
   return process.env.FLUX_REDIS_URL?.trim() || process.env.REDIS_URL?.trim() || undefined;
 }

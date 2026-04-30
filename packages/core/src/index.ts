@@ -695,6 +695,48 @@ export function fluxApiUrlForSlug(
   return `${scheme}://${fluxTenantPostgrestHostname(slug, hash, hostnamePrefix)}`;
 }
 
+/** Catalog execution mode: dedicated PostgREST vs pooled gateway + shared cluster. */
+export type FluxCatalogProjectMode = "v1_dedicated" | "v2_shared";
+
+/**
+ * Hostname for v2_shared tenants at the edge (single DNS label, SSL-friendly routing).
+ * Example: `api--acme--abc1234.vsl-base.com`.
+ */
+export function fluxTenantV2SharedHostname(slug: string, hash: string): string {
+  const domain = fluxTenantDomain();
+  return `api--${slug}--${hash}.${domain}`;
+}
+
+/**
+ * Public API URL for v2_shared (gateway → PostgREST pool). Same HTTPS selection as
+ * {@link fluxApiUrlForSlug}.
+ */
+export function fluxApiUrlForV2Shared(
+  slug: string,
+  hash: string,
+  isProduction = false,
+): string {
+  const useHttps =
+    fluxApiHttpsForTenantUrls() || isProduction || fluxControlPlaneTargetIsRemoteEngine();
+  const scheme = useHttps ? "https" : "http";
+  return `${scheme}://${fluxTenantV2SharedHostname(slug, hash)}`;
+}
+
+/**
+ * Returns the catalog API URL for the given mode: flat `api--` host for `v2_shared`,
+ * dot-separated {@link fluxApiUrlForSlug} for `v1_dedicated`.
+ */
+export function fluxApiUrlForCatalog(
+  slug: string,
+  hash: string,
+  isProduction: boolean,
+  mode: FluxCatalogProjectMode,
+): string {
+  return mode === "v2_shared"
+    ? fluxApiUrlForV2Shared(slug, hash, isProduction)
+    : fluxApiUrlForSlug(slug, hash, isProduction);
+}
+
 /**
  * Traefik v3 `Host()` matcher: backticks wrap the literal hostname (required syntax).
  * Example: `Host(\`api.acme.abc1234.vsl-base.com\`)`.

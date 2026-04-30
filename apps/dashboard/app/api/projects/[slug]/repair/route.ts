@@ -8,7 +8,10 @@ import {
   dispatchProvisionProject,
   generateProjectJwtSecret,
 } from "@/src/lib/provisioning-engine";
-import { evictHostnames } from "@/src/lib/gateway-cache";
+import {
+  evictHostnames,
+  v2SharedGatewayCacheHostnames,
+} from "@/src/lib/gateway-cache";
 import { fluxApiUrlForSlug } from "@flux/core";
 
 export const runtime = "nodejs";
@@ -51,9 +54,15 @@ export async function POST(
       .where(eq(projects.id, row.id));
     row = { ...row, jwtSecret: secret };
     const isProd = process.env.NODE_ENV === "production";
-    await evictHostnames([
-      new URL(fluxApiUrlForSlug(row.slug, row.hash, isProd)).hostname,
-    ]);
+    if (row.mode === "v2_shared") {
+      await evictHostnames(
+        v2SharedGatewayCacheHostnames(row.slug, row.hash, isProd),
+      );
+    } else {
+      await evictHostnames([
+        new URL(fluxApiUrlForSlug(row.slug, row.hash, isProd)).hostname,
+      ]);
+    }
   }
 
   const catalogJwtSecret = row.jwtSecret;

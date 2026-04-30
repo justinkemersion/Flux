@@ -64,10 +64,11 @@ export function normalizeHost(raw: string): string {
  *  2. Redis cache key `hostname:<normalizedHost>` (TTL 60s).
  *  3. DB: exact match in `domains` table — covers all custom domains (apex, www, etc.).
  *  4. DB: Flux subdomain fallbacks when host ends with FLUX_BASE_DOMAIN:
- *     a) Production Traefik shape `api.<slug>.<7-hex-hash>.<base>` (matches @flux/core
+ *     a) v2_shared ingress shape `api--<slug>--<7-hex-hash>.<base>` (single DNS label).
+ *     b) v1_dedicated Traefik shape `api.<slug>.<7-hex-hash>.<base>` (@flux/core
  *        fluxTenantPostgrestHostname default prefix `api`).
- *     b) Legacy / dev single-label `<slug>-<hash>.<base>` (first label only).
- *     Both query `projects` by slug + hash.
+ *     c) Legacy / dev single-label `<slug>-<hash>.<base>` (first label only).
+ *     All query `projects` by slug + hash.
  *  5. Returns null → caller responds 404.
  *
  * Cache invalidation: domain CRUD operations MUST call evictHostname(hostname)
@@ -136,13 +137,39 @@ async function resolveUncached(host: string): Promise<ResolvedTenant | null> {
   if (host !== baseDomain && host.endsWith(`.${baseDomain}`)) {
     const prefix = host.slice(0, host.length - baseDomain.length - 1);
     const parts = prefix.split(".");
-    // 4a. Traefik default: api.<slug>.<hash>.<base> → prefix is three labels (see FLUX_PROJECT_HASH_HEX_LEN in @flux/core).
     const HASH_HEX_LEN = 7;
+    const hashHexRe = new RegExp(`^[0-9a-f]{${HASH_HEX_LEN}}$`, "i");
+
+    // 4a-flat. Single label: api--<slug>--<hash>.<base> (v2_shared gateway ingress).
+    if (parts.length === 1) {
+      const label = parts[0] ?? "";
+      if (label.toLowerCase().startsWith("api--")) {
+        const segs = label.split("--");
+        if (
+          segs.length >= 3 &&
+          segs[0]!.toLowerCase() === "api"
+        ) {
+          const hashPart = segs[segs.length - 1]!.toLowerCase();
+          if (hashHexRe.test(hashPart)) {
+            const slug = segs.slice(1, -1).join("--");
+            if (slug) {
+              const slugRow = await queryBySlugAndHash(slug, hashPart);
+              if (slugRow) {
+                await cacheResolution(cacheKey, slugRow);
+                return { resolution: slugRow, cacheSource: "db" };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 4b-dot. Traefik v1: api.<slug>.<hash>.<base> → prefix is three labels.
     const hashPart = parts[2]?.toLowerCase() ?? "";
     if (
       parts.length === 3 &&
       parts[0]!.toLowerCase() === "api" &&
-      new RegExp(`^[0-9a-f]{${HASH_HEX_LEN}}$`, "i").test(hashPart)
+      hashHexRe.test(hashPart)
     ) {
       const slug = parts[1]!;
       const slugRow = await queryBySlugAndHash(slug, hashPart);
@@ -151,7 +178,7 @@ async function resolveUncached(host: string): Promise<ResolvedTenant | null> {
         return { resolution: slugRow, cacheSource: "db" };
       }
     }
-    // 4b. Legacy single-label: <slug>-<hash>.<base> (e.g. myapp-a1b2c3d.flux.localhost).
+    // 4c. Legacy single-label: <slug>-<hash>.<base> (e.g. myapp-a1b2c3d.flux.localhost).
     const label = parts[0] ?? "";
     const lastDash = label.lastIndexOf("-");
     if (lastDash > 0) {

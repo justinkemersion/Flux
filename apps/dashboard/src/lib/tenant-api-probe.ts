@@ -1,4 +1,7 @@
-import { fluxApiUrlForSlug } from "@flux/core";
+import {
+  type FluxCatalogProjectMode,
+  fluxApiUrlForCatalog,
+} from "@flux/core";
 import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
@@ -9,7 +12,8 @@ const DEFAULT_GATEWAY_PROBE_URL = "http://flux-node-gateway:4000";
 /**
  * When set (e.g. `http://flux-node-gateway:4000`), tenant health probes from the
  * dashboard (fleet monitor, v2 "start" power) issue HTTP to this base URL and set
- * the `Host` header to the public tenant API hostname (`api.<slug>.<hash>.<domain>`).
+ * the `Host` header to the public tenant API hostname (`api--<slug>--<hash>.<domain>` for
+ * v2_shared, `api.<slug>.<hash>.<domain>` for v1_dedicated).
  *
  * Without this, `fetch("https://api…")` from inside `flux-web` often fails in production
  * (TLS / wildcard depth for extra labels, split-horizon DNS, or hairpin NAT) even when
@@ -45,8 +49,9 @@ export async function probeTenantApiUrl(
   slug: string,
   hash: string,
   isProduction: boolean,
+  mode: FluxCatalogProjectMode,
 ): Promise<boolean> {
-  const publicUrl = fluxApiUrlForSlug(slug, hash, isProduction);
+  const publicUrl = fluxApiUrlForCatalog(slug, hash, isProduction, mode);
   const tenantUrl = new URL(publicUrl);
   for (const via of tenantProbeGatewayBases()) {
     if (await probeThroughGateway(tenantUrl, via)) {
