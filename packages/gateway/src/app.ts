@@ -1,12 +1,11 @@
 import { Hono } from "hono";
-import { jwtVerify } from "jose";
 import {
   resolveTenant,
   fetchProjectJwtSecret,
   type CacheSource,
 } from "./tenant-resolver.ts";
 import { acquireRateSlot } from "./rate-limiter.ts";
-import { mintJwt } from "./jwt-issuer.ts";
+import { mintBridgeJwt, mintJwt } from "./jwt-issuer.ts";
 import { trackActivity } from "./activity-tracker.ts";
 import { proxyRequest } from "./proxy.ts";
 import { pingDb } from "./db.ts";
@@ -134,6 +133,7 @@ export function createApp(): Hono {
 
     // 2b. Optional inbound Bearer — verify HS256 with per-project jwt_secret (not the pool secret).
     const authz = c.req.header("authorization")?.trim();
+    let downstreamJwt: string | undefined;
     if (authz?.toLowerCase().startsWith("bearer ")) {
       const token = authz.slice(7).trim();
       if (token) {
@@ -151,10 +151,28 @@ export function createApp(): Hono {
           );
         }
         try {
-          await jwtVerify(token, new TextEncoder().encode(projectSecret), {
-            algorithms: ["HS256"],
-          });
-        } catch {
+          const bridged = await mintBridgeJwt(token, projectSecret);
+          downstreamJwt = bridged.token;
+          logger.debug(
+            {
+              tenant_id: tenant.tenantId,
+              sub: bridged.claims.sub,
+              route: c.req.path,
+              auth_status: "verified",
+            },
+            "bridge auth verified",
+          );
+        } catch (err) {
+          logger.debug(
+            {
+              tenant_id: tenant.tenantId,
+              sub: null,
+              route: c.req.path,
+              auth_status: "rejected",
+              reason: err instanceof Error ? err.message : "invalid token",
+            },
+            "bridge auth rejected",
+          );
           return c.json({ error: "invalid or expired token" }, 401);
         }
       }
@@ -199,7 +217,7 @@ export function createApp(): Hono {
     // 5. Mint JWT + 6. Activity tracking + 7. Proxy
     const proxyStart = Date.now();
     try {
-      const jwt = await mintJwt(tenant);
+      const jwt = downstreamJwt ?? (await mintJwt(tenant));
       trackActivity(tenant.tenantId);
       const res = await proxyRequest(c, jwt, tenant);
       log({

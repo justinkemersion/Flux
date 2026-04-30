@@ -1,4 +1,4 @@
-import { SignJWT } from "jose";
+import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 import { env } from "./env.ts";
 
 const encoder = new TextEncoder();
@@ -8,6 +8,13 @@ const encoder = new TextEncoder();
  */
 const SECRET_BYTES = encoder.encode(env.FLUX_GATEWAY_JWT_SECRET);
 const JWT_CACHE_MAX_TTL_SEC = 300;
+const BRIDGE_TOKEN_TTL = "5m";
+
+export type BridgeTokenClaims = {
+  sub: string;
+  email: string | null;
+  role: "authenticated";
+};
 
 type JwtCacheEntry = {
   token: string;
@@ -58,4 +65,33 @@ export async function mintJwt(tenant: {
 
   jwtCache.set(tenant.tenantId, { token, expiresAtSec });
   return token;
+}
+
+export function sanitizeExternalClaims(payload: JWTPayload): BridgeTokenClaims {
+  const sub = typeof payload.sub === "string" ? payload.sub.trim() : "";
+  if (!sub) {
+    throw new Error("missing sub claim");
+  }
+
+  return {
+    sub,
+    email: typeof payload.email === "string" ? payload.email : null,
+    role: "authenticated",
+  };
+}
+
+export async function mintBridgeJwt(
+  externalToken: string,
+  projectSecret: string,
+): Promise<{ token: string; claims: BridgeTokenClaims }> {
+  const verified = await jwtVerify(externalToken, encoder.encode(projectSecret), {
+    algorithms: ["HS256"],
+  });
+  const claims = sanitizeExternalClaims(verified.payload);
+  const token = await new SignJWT(claims)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(BRIDGE_TOKEN_TTL)
+    .sign(SECRET_BYTES);
+  return { token, claims };
 }

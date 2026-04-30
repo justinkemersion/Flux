@@ -28,6 +28,7 @@ const HOP_BY_HOP = new Set([
   "proxy-authorization",
   "proxy-authenticate",
 ]);
+const STRIP_IDENTITY_HEADERS = new Set(["x-user-id", "x-role", "x-tenant-id"]);
 
 /**
  * Forwards an incoming Hono request to the PostgREST pool.
@@ -57,8 +58,10 @@ export async function proxyRequest(
   // --- Forward headers (strip hop-by-hop, strip host) ---
   const reqHeaders = new Headers();
   for (const [name, value] of c.req.raw.headers.entries()) {
-    if (name.toLowerCase() === "host") continue;
-    if (HOP_BY_HOP.has(name.toLowerCase())) continue;
+    const lower = name.toLowerCase();
+    if (lower === "host") continue;
+    if (HOP_BY_HOP.has(lower)) continue;
+    if (STRIP_IDENTITY_HEADERS.has(lower)) continue;
     reqHeaders.set(name, value);
   }
   // Inject gateway-controlled headers (override anything the client sent).
