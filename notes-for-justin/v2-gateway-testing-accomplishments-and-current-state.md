@@ -42,6 +42,7 @@ Without these, observed errors were expected:
 
 ## 3) Current architecture status (important)
 
+- **Clarification (2026-05):** the Drizzle catalog default for *new* `projects.mode` rows is **`v2_shared`** (`apps/dashboard/src/db/schema.ts`). The bullet below refers to this **historical manual test path**, not the current DB default.
 - **Default provisioning remains v1-oriented** for Web UI-created projects in this workflow.
 - Gateway v2 route behavior is functioning, but **v2 data-plane provisioning is still partially manual** in this test path.
 - Pointing `FLUX_POSTGREST_POOL_URL` at a single tenant `-api` container is valid for smoke/integration, but does **not** yet represent final shared-pool v2 behavior.

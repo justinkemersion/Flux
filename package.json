@@ -9,7 +9,7 @@
     "docker:compose:gateway:down": "docker compose -f packages/gateway/docker-compose.yml down",
     "docker:compose:traefik": "docker compose -f docker/traefik/docker-compose.yml up -d",
     "docker:compose:traefik:down": "docker compose -f docker/traefik/docker-compose.yml down",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "pnpm -r --if-present test",
     "perf:gateway:matrix": "bash perf/k6/run-matrix.sh",
     "perf:gateway:warm": "k6 run perf/k6/scenarios/warm-steady.js",
     "perf:gateway:overload": "k6 run perf/k6/scenarios/overload.js",
