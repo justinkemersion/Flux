@@ -50,7 +50,7 @@ export type ProvisionProjectResult = {
   role: string;
 };
 
-type TenantIdentity = {
+export type TenantIdentity = {
   shortId: string;
   schema: string;
   role: string;
@@ -361,24 +361,19 @@ export async function bootstrapSharedCluster(): Promise<void> {
 }
 
 /**
- * Removes all PostgreSQL resources created for a tenant by provisionProject.
- * Intended for the rollback path when a higher-level transaction (e.g. the
- * Dashboard catalog insert) fails after provisioning has already succeeded.
+ * Pure SQL for `deprovisionProject` — DROP SCHEMA CASCADE + guarded DROP ROLE.
+ * Exposed for unit tests and operator review without opening a DB connection.
  *
- * DROP SCHEMA ... CASCADE removes all objects (tables, views, functions, …)
- * owned by or inside the schema — this is irreversible data loss by design.
- * Never call this on a live project; only on a just-provisioned tenant whose
- * catalog row failed to commit.
- *
- * Idempotent: safe to call twice — `DROP SCHEMA IF EXISTS` and guarded `DROP ROLE`.
+ * `deprovisionProject` removes all PostgreSQL resources created for a tenant.
+ * Intended for rollback when the catalog insert fails after provisioning.
+ * DROP SCHEMA … CASCADE is irreversible; idempotent for DROP IF EXISTS + guarded DROP ROLE.
  */
-export async function deprovisionProject(tenantId: string): Promise<void> {
-  const identity = deriveTenantIdentity(tenantId);
+export function buildDeprovisionSql(identity: TenantIdentity): string {
   const schema = quoteIdent(identity.schema);
   const role = quoteIdent(identity.role);
   const roleLiteral = identity.role.replaceAll("'", "''");
 
-  const sql = `
+  return `
 DROP SCHEMA IF EXISTS ${schema} CASCADE;
 DO $flux_drop$
 BEGIN
@@ -390,6 +385,12 @@ BEGIN
 END
 $flux_drop$;
 `.trim();
+}
+
+/** Executes {@link buildDeprovisionSql} against the shared cluster (transactional). */
+export async function deprovisionProject(tenantId: string): Promise<void> {
+  const identity = deriveTenantIdentity(tenantId);
+  const sql = buildDeprovisionSql(identity);
 
   try {
     await executeTransactionalSql(sql);

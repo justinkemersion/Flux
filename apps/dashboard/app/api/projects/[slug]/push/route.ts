@@ -2,16 +2,22 @@ import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
-import { deriveShortId } from "@flux/core/standalone";
 import { projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { executePooledPush } from "@/src/lib/pooled-push";
+import {
+  POOLED_PUSH_MAX_SQL_BYTES,
+  extractPooledPushBearer,
+  isValidFluxProjectHash,
+  parsePooledPushJsonBody,
+  tenantApiSchemaFromProjectId,
+  validatePooledPushServiceRole,
+  validatePooledPushSqlPayload,
+} from "@/src/lib/pooled-push-validators";
 
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ slug: string }> };
-
-const MAX_SQL_BYTES = 4 * 1024 * 1024;
 
 function jsonError(
   message: string,
@@ -19,18 +25,6 @@ function jsonError(
   extra?: Record<string, unknown>,
 ): Response {
   return Response.json({ error: message, ...(extra ?? {}) }, { status });
-}
-
-function isValidHash(h: string): boolean {
-  return h.length === FLUX_PROJECT_HASH_HEX_LEN && /^[a-f0-9]+$/u.test(h);
-}
-
-function extractBearer(header: string | null): string | null {
-  if (!header) return null;
-  const trimmed = header.trim();
-  if (!trimmed.toLowerCase().startsWith("bearer ")) return null;
-  const token = trimmed.slice(7).trim();
-  return token.length > 0 ? token : null;
 }
 
 /**
@@ -76,7 +70,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const slug = rawSlug.trim();
   if (!slug) return jsonError("slug is required", 400);
 
-  const token = extractBearer(req.headers.get("authorization"));
+  const token = extractPooledPushBearer(req.headers.get("authorization"));
   if (!token) return jsonError("Missing bearer token", 401);
 
   let body: unknown;
@@ -86,34 +80,21 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return jsonError("Invalid JSON body", 400);
   }
 
-  if (
-    !body ||
-    typeof body !== "object" ||
-    !("hash" in body) ||
-    !("sql" in body) ||
-    typeof (body as { hash: unknown }).hash !== "string" ||
-    typeof (body as { sql: unknown }).sql !== "string"
-  ) {
-    return jsonError(
-      'Expected JSON body with string "hash" and "sql" fields',
-      400,
-    );
+  const parsedBody = parsePooledPushJsonBody(body);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
   }
+  const { hash, sql } = parsedBody;
 
-  const hash = (body as { hash: string }).hash.trim().toLowerCase();
-  const sql = (body as { sql: string }).sql;
-
-  if (!isValidHash(hash)) {
+  if (!isValidFluxProjectHash(hash)) {
     return jsonError(
       `hash must be a ${String(FLUX_PROJECT_HASH_HEX_LEN)}-char lowercase hex id`,
       400,
     );
   }
-  if (sql.length === 0) {
-    return jsonError("sql is empty", 400);
-  }
-  if (Buffer.byteLength(sql, "utf8") > MAX_SQL_BYTES) {
-    return jsonError("sql exceeds maximum size", 413);
+  const sqlCheck = validatePooledPushSqlPayload(sql, POOLED_PUSH_MAX_SQL_BYTES);
+  if (!sqlCheck.ok) {
+    return jsonError(sqlCheck.error, sqlCheck.status);
   }
 
   await initSystemDb();
@@ -152,15 +133,16 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return jsonError("Invalid or expired token", 401);
   }
 
-  if (payload.role !== "service_role") {
-    return jsonError("Forbidden: service_role required", 403);
+  const roleCheck = validatePooledPushServiceRole(payload);
+  if (!roleCheck.ok) {
+    return jsonError(roleCheck.error, 403);
   }
 
-  const shortId = deriveShortId(project.id);
-  if (!/^[a-f0-9]{12}$/.test(shortId)) {
-    return jsonError("Derived shortId is malformed; refusing push", 500);
+  const schemaRes = tenantApiSchemaFromProjectId(project.id);
+  if (!schemaRes.ok) {
+    return jsonError(schemaRes.error, 500);
   }
-  const schema = `t_${shortId}_api`;
+  const { schema } = schemaRes;
 
   try {
     await executePooledPush({ schema, sql });

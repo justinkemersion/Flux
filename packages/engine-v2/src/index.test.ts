@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   TenantShortIdCollisionError,
   buildClusterBootstrapSql,
+  buildDeprovisionSql,
   buildTenantBootstrapSql,
   deriveTenantIdentity,
 } from "./index.ts";
@@ -53,6 +54,56 @@ test("buildClusterBootstrapSql wires db_schemas and tenant context hook", () => 
   assert.match(sql, /flux_set_tenant_context/);
   assert.match(sql, /SET LOCAL search_path/);
   assert.match(sql, /20000ms/);
+});
+
+test("buildDeprovisionSql drops tenant schema and role idempotently", () => {
+  const id = deriveTenantIdentity("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  const sql = buildDeprovisionSql(id);
+  assert.match(sql, /DROP SCHEMA IF EXISTS "t_cccccccccccc_api" CASCADE/);
+  assert.match(sql, /DROP ROLE "t_cccccccccccc_role"/);
+  assert.match(sql, /rolname = 't_cccccccccccc_role'/);
+});
+
+test("buildTenantBootstrapSql escapes single quotes in tenant COMMENT literal", () => {
+  const tenantId = "dddddddd-dddd-4ddd-8ddd-dd'dddddddddd";
+  const id = deriveTenantIdentity(tenantId);
+  const sql = buildTenantBootstrapSql(id, tenantId);
+  assert.match(
+    sql,
+    /COMMENT ON SCHEMA "t_dddddddddddd_api" IS 'tenant:dddddddd-dddd-4ddd-8ddd-dd''dddddddddd'/,
+  );
+});
+
+test("buildTenantBootstrapSql throws when FLUX_V2_ROLE_CONNECTION_LIMIT is invalid", () => {
+  const prev = process.env.FLUX_V2_ROLE_CONNECTION_LIMIT;
+  process.env.FLUX_V2_ROLE_CONNECTION_LIMIT = "0";
+  try {
+    const id = deriveTenantIdentity("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+    assert.throws(
+      () => buildTenantBootstrapSql(id, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+      /FLUX_V2_ROLE_CONNECTION_LIMIT must be a positive integer/,
+    );
+  } finally {
+    if (prev === undefined) delete process.env.FLUX_V2_ROLE_CONNECTION_LIMIT;
+    else process.env.FLUX_V2_ROLE_CONNECTION_LIMIT = prev;
+  }
+});
+
+test("buildTenantBootstrapSql uses FLUX_V2_ROLE_DATABASE_NAME when set", () => {
+  const prev = process.env.FLUX_V2_ROLE_DATABASE_NAME;
+  process.env.FLUX_V2_ROLE_DATABASE_NAME = "flux_shared";
+  try {
+    const id = deriveTenantIdentity("ffffffff-ffff-4fff-8fff-ffffffffffff");
+    const sql = buildTenantBootstrapSql(id, "ffffffff-ffff-4fff-8fff-ffffffffffff");
+    assert.match(sql, /IN DATABASE "flux_shared"/);
+  } finally {
+    if (prev === undefined) delete process.env.FLUX_V2_ROLE_DATABASE_NAME;
+    else process.env.FLUX_V2_ROLE_DATABASE_NAME = prev;
+  }
+});
+
+test("buildClusterBootstrapSql embeds statement timeout from argument", () => {
+  assert.match(buildClusterBootstrapSql(3_000), /3000ms/);
 });
 
 test("TenantShortIdCollisionError exposes fields", () => {
