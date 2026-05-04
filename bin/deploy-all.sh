@@ -112,7 +112,7 @@ run_stage() {
 
 run_stage "v2 shared data plane" "$SCRIPT_DIR/deploy-v2-shared.sh"
 run_stage "gateway" "$SCRIPT_DIR/deploy-gateway.sh"
-run_stage "dashboard control plane" "$SCRIPT_DIR/deploy.sh"
+run_stage "dashboard control plane" "$SCRIPT_DIR/deploy-web.sh"
 
 echo ""
 echo "--- Flux Deploy All: Complete ---"

@@ -5,7 +5,7 @@
 #   FLUX_DEPLOY_GIT_SYNC=1    —  run `git pull --ff-only` in the repo first (convenience on a server).
 #   FLUX_DEPLOY_PRUNE_BUILDER=1 —  also `docker builder prune -f` (frees more NVMe; next build is colder).
 #   FLUX_DEPLOY_RESTART_ONLY=1 — skip image build and prune; `compose up --no-build` only
-#                                (used by bin/restart-web.sh).
+#                                (set by bin/restart-web.sh).
 #
 # Prerequisite: `docker/web/.env` exists, Traefik + external network `flux-network` (see repo docs).
 set -euo pipefail

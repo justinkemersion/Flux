@@ -221,7 +221,7 @@ Run in this order on the server:
 
 1. `./bin/deploy-v2-shared.sh`
 2. `./bin/deploy-gateway.sh`
-3. `./bin/deploy.sh`
+3. `./bin/deploy-web.sh`
 
 Orchestrated equivalent:
 
