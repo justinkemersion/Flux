@@ -4,6 +4,8 @@
 #
 #   FLUX_DEPLOY_GIT_SYNC=1    —  run `git pull --ff-only` in the repo first (convenience on a server).
 #   FLUX_DEPLOY_PRUNE_BUILDER=1 —  also `docker builder prune -f` (frees more NVMe; next build is colder).
+#   FLUX_DEPLOY_RESTART_ONLY=1 — skip image build and prune; `compose up --no-build` only
+#                                (used by bin/restart-web.sh).
 #
 # Prerequisite: `docker/web/.env` exists, Traefik + external network `flux-network` (see repo docs).
 set -euo pipefail
@@ -18,7 +20,10 @@ CONTAINER_NAME="flux-web"
 GATEWAY_NAME="${FLUX_GATEWAY_CONTAINER_NAME:-flux-gateway}"
 CHECK_HOST="${FLUX_DEPLOY_CHECK_HOST:-flux.vsl-base.com}"
 
-echo "--- Flux Deploy: Initializing ---"
+FLUX_WEB_TAG="Deploy"
+[[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]] && FLUX_WEB_TAG="Restart"
+
+echo "--- Flux ${FLUX_WEB_TAG}: Initializing ---"
 echo "  repo: $REPO_ROOT"
 if grep -Eq '^\s*FLUX_TENANT_PROBE_GATEWAY_URL=' "$REPO_ROOT/docker/web/.env" 2>/dev/null; then
   echo "  tenant_probe_gateway: configured"
@@ -29,7 +34,7 @@ fi
 
 # 1. Optional: synchronize with origin (skip locally if unset)
 if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
-  echo "--- Flux Deploy: Git sync (ff-only) ---"
+  echo "--- Flux ${FLUX_WEB_TAG}: Git sync (ff-only) ---"
   if [[ ! -d "$REPO_ROOT/.git" ]]; then
     echo "  skip: not a git checkout"
   else
@@ -37,27 +42,30 @@ if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
   fi
 fi
 
-# 2. Build image (--pull: refresh base image layers; context is repo root for Dockerfile + CLI)
-echo "--- Flux Deploy: Building control plane ($CONTAINER_NAME) ---"
-$COMPOSE build --pull
-
-# 3. Deterministic restart
-echo "--- Flux Deploy: Cycling container ---"
-$COMPOSE up -d --remove-orphans
-
-# 4. Prune
-echo "--- Flux Deploy: Pruning dangling images ---"
-docker image prune -f
-
-if [[ "${FLUX_DEPLOY_PRUNE_BUILDER:-}" == "1" ]]; then
-  echo "--- Flux Deploy: Pruning build cache (builder) ---"
-  docker builder prune -f
+# 2–4. Build (unless restart-only), cycle, prune
+if [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]]; then
+  echo "--- Flux ${FLUX_WEB_TAG}: Cycling container (no image build) ---"
+  $COMPOSE up -d --remove-orphans --no-build
 else
-  echo "  (Set FLUX_DEPLOY_PRUNE_BUILDER=1 to also prune docker build cache to save more disk.)"
+  echo "--- Flux ${FLUX_WEB_TAG}: Building control plane ($CONTAINER_NAME) ---"
+  $COMPOSE build --pull
+
+  echo "--- Flux ${FLUX_WEB_TAG}: Cycling container ---"
+  $COMPOSE up -d --remove-orphans
+
+  echo "--- Flux ${FLUX_WEB_TAG}: Pruning dangling images ---"
+  docker image prune -f
+
+  if [[ "${FLUX_DEPLOY_PRUNE_BUILDER:-}" == "1" ]]; then
+    echo "--- Flux ${FLUX_WEB_TAG}: Pruning build cache (builder) ---"
+    docker builder prune -f
+  else
+    echo "  (Set FLUX_DEPLOY_PRUNE_BUILDER=1 to also prune docker build cache to save more disk.)"
+  fi
 fi
 
 # 5. Health check
-echo "--- Flux Deploy: Verifying container ---"
+echo "--- Flux ${FLUX_WEB_TAG}: Verifying container ---"
 sleep 5
 RUNNING="$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo false)"
 if [[ "$RUNNING" != "true" ]]; then
@@ -70,7 +78,7 @@ echo "  $CONTAINER_NAME: running"
 docker ps --filter "name=^${CONTAINER_NAME}\$" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 
 # 6. Ingress / router verification (Traefik labels + network + Host probe)
-echo "--- Flux Deploy: Verifying gateway route ---"
+echo "--- Flux ${FLUX_WEB_TAG}: Verifying gateway route ---"
 if ! docker ps --format '{{.Names}}' | grep -qxF "${GATEWAY_NAME}"; then
   echo "  WARN: Gateway container '${GATEWAY_NAME}' is not running."
   echo "        Traefik must be up to route ${CHECK_HOST}."
@@ -106,6 +114,6 @@ else
 fi
 
 echo ""
-echo "--- Flux Deploy: Operational ---"
+echo "--- Flux ${FLUX_WEB_TAG}: Operational ---"
 echo "  logs:  docker logs -f $CONTAINER_NAME"
 echo "  check: docker inspect $CONTAINER_NAME --format '{{.State.Health.Status}}'   # if HEALTHCHECK is added"

@@ -4,6 +4,8 @@
 #
 #   FLUX_DEPLOY_GIT_SYNC=1         — run `git pull --ff-only` first.
 #   FLUX_DEPLOY_PRUNE_BUILDER=1    — also run `docker builder prune -f`.
+#   FLUX_DEPLOY_RESTART_ONLY=1     — skip image build and prune; `compose up --no-build` only
+#                                    (used by bin/restart-v2-shared.sh).
 #   FLUX_V2_COMPOSE_FILE           — compose file override.
 #   FLUX_V2_ENV_FILE               — env file to source (default: docker/v2-shared/.env).
 #   FLUX_V2_POSTGRES_CONTAINER     — default: flux-postgres-v2
@@ -35,7 +37,10 @@ PROBE_CONTAINER="${FLUX_V2_PROBE_CONTAINER:-flux-node-gateway}"
 # Internal URL used only for exec-from-container probes; not used from the host.
 PGRST_INTERNAL_URL="${FLUX_V2_POSTGREST_URL:-http://flux-postgrest-pool:3000/}"
 
-echo "--- v2 Shared Deploy: Initializing ---"
+V2_TAG="Deploy"
+[[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]] && V2_TAG="Restart"
+
+echo "--- v2 Shared ${V2_TAG}: Initializing ---"
 echo "  repo: $REPO_ROOT"
 echo "  compose: $COMPOSE_FILE"
 echo "  env: $ENV_FILE"
@@ -81,7 +86,7 @@ if [[ "${FLUX_ALLOW_WEAK_PASSWORDS:-}" != "1" ]]; then
 fi
 
 if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
-  echo "--- v2 Shared Deploy: Git sync (ff-only) ---"
+  echo "--- v2 Shared ${V2_TAG}: Git sync (ff-only) ---"
   if [[ ! -d "$REPO_ROOT/.git" ]]; then
     echo "  skip: not a git checkout"
   else
@@ -89,26 +94,31 @@ if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
   fi
 fi
 
-echo "--- v2 Shared Deploy: Validating compose ---"
+echo "--- v2 Shared ${V2_TAG}: Validating compose ---"
 $COMPOSE config >/dev/null
 
-echo "--- v2 Shared Deploy: Building images ---"
-$COMPOSE build --pull
-
-echo "--- v2 Shared Deploy: Cycling services ---"
-$COMPOSE up -d --remove-orphans
-
-echo "--- v2 Shared Deploy: Pruning dangling images ---"
-docker image prune -f
-
-if [[ "${FLUX_DEPLOY_PRUNE_BUILDER:-}" == "1" ]]; then
-  echo "--- v2 Shared Deploy: Pruning build cache (builder) ---"
-  docker builder prune -f
+if [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]]; then
+  echo "--- v2 Shared ${V2_TAG}: Cycling services (no image build) ---"
+  $COMPOSE up -d --remove-orphans --no-build
 else
-  echo "  (Set FLUX_DEPLOY_PRUNE_BUILDER=1 to also prune docker build cache.)"
+  echo "--- v2 Shared ${V2_TAG}: Building images ---"
+  $COMPOSE build --pull
+
+  echo "--- v2 Shared ${V2_TAG}: Cycling services ---"
+  $COMPOSE up -d --remove-orphans
+
+  echo "--- v2 Shared ${V2_TAG}: Pruning dangling images ---"
+  docker image prune -f
+
+  if [[ "${FLUX_DEPLOY_PRUNE_BUILDER:-}" == "1" ]]; then
+    echo "--- v2 Shared ${V2_TAG}: Pruning build cache (builder) ---"
+    docker builder prune -f
+  else
+    echo "  (Set FLUX_DEPLOY_PRUNE_BUILDER=1 to also prune docker build cache.)"
+  fi
 fi
 
-echo "--- v2 Shared Deploy: Verifying containers ---"
+echo "--- v2 Shared ${V2_TAG}: Verifying containers ---"
 for container in "$PG_CONTAINER" "$PGB_CONTAINER" "$PGRST_CONTAINER"; do
   running="$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || echo false)"
   if [[ "$running" != "true" ]]; then
@@ -134,9 +144,9 @@ done
 #   - re-applies GRANT anon TO authenticator every run
 # ---------------------------------------------------------------------------
 if [[ "${FLUX_V2_SKIP_GLOBAL_DB_BOOTSTRAP:-}" == "1" ]]; then
-  echo "--- v2 Shared Deploy: Global Database Bootstrap skipped (FLUX_V2_SKIP_GLOBAL_DB_BOOTSTRAP=1) ---"
+  echo "--- v2 Shared ${V2_TAG}: Global Database Bootstrap skipped (FLUX_V2_SKIP_GLOBAL_DB_BOOTSTRAP=1) ---"
 else
-  echo "--- v2 Shared Deploy: Global Database Bootstrap ---"
+  echo "--- v2 Shared ${V2_TAG}: Global Database Bootstrap ---"
   _pg_user="${SHARED_POSTGRES_USER:-postgres}"
   _pg_db="${SHARED_POSTGRES_DB:-postgres}"
   if docker exec -i "$PG_CONTAINER" \
@@ -172,9 +182,9 @@ fi
 # already exist and the PostgREST containers are not being rebuilt from scratch.
 # ---------------------------------------------------------------------------
 if [[ "${FLUX_V2_SKIP_CLUSTER_BOOTSTRAP:-}" == "1" ]]; then
-  echo "--- v2 Shared Deploy: Cluster bootstrap skipped (FLUX_V2_SKIP_CLUSTER_BOOTSTRAP=1) ---"
+  echo "--- v2 Shared ${V2_TAG}: Cluster bootstrap skipped (FLUX_V2_SKIP_CLUSTER_BOOTSTRAP=1) ---"
 else
-  echo "--- v2 Shared Deploy: Cluster bootstrap (PostgREST hooks) ---"
+  echo "--- v2 Shared ${V2_TAG}: Cluster bootstrap (PostgREST hooks) ---"
   # Derive the statement timeout (ms) — mirrors FLUX_V2_ROLE_STATEMENT_TIMEOUT_MS default.
   _stmt_timeout_ms="${FLUX_V2_ROLE_STATEMENT_TIMEOUT_MS:-15000}"
   _pg_user="${SHARED_POSTGRES_USER:-postgres}"
@@ -245,9 +255,9 @@ fi
 # resolves flux-postgrest-pool.  The host cannot reach expose:-only containers.
 # ---------------------------------------------------------------------------
 if [[ "${FLUX_V2_SKIP_POSTGREST_PROBE:-}" == "1" ]]; then
-  echo "--- v2 Shared Deploy: PostgREST probe skipped (FLUX_V2_SKIP_POSTGREST_PROBE=1) ---"
+  echo "--- v2 Shared ${V2_TAG}: PostgREST probe skipped (FLUX_V2_SKIP_POSTGREST_PROBE=1) ---"
 elif docker ps --format '{{.Names}}' | grep -qxF "${PROBE_CONTAINER}"; then
-  echo "--- v2 Shared Deploy: PostgREST probe (from ${PROBE_CONTAINER}) ---"
+  echo "--- v2 Shared ${V2_TAG}: PostgREST probe (from ${PROBE_CONTAINER}) ---"
   # Prefer curl when available; fallback to node fetch for minimal images.
   # 401 is expected for unauthenticated requests and is considered healthy.
   probe_status="$(
@@ -272,7 +282,7 @@ else
 fi
 
 echo ""
-echo "--- v2 Shared Deploy: Operational ---"
+echo "--- v2 Shared ${V2_TAG}: Operational ---"
 echo "  logs postgres:  docker logs -f $PG_CONTAINER"
 echo "  logs pgbouncer: docker logs -f $PGB_CONTAINER"
 echo "  logs postgrest: docker logs -f $PGRST_CONTAINER"

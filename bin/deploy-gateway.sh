@@ -4,6 +4,8 @@
 #
 #   FLUX_DEPLOY_GIT_SYNC=1       — run `git pull --ff-only` first.
 #   FLUX_DEPLOY_PRUNE_BUILDER=1  — also run `docker builder prune -f`.
+#   FLUX_DEPLOY_RESTART_ONLY=1   — skip image build and prune; `compose up --no-build` only
+#                                  (used by bin/restart-gateway.sh).
 #   FLUX_GATEWAY_NAME            — gateway container name override (default: flux-node-gateway).
 #   FLUX_GATEWAY_HEALTH_URL      — liveness URL (default: http://127.0.0.1:4000/health).
 #   FLUX_GATEWAY_DEEP_URL        — readiness URL (default: http://127.0.0.1:4000/health/deep).
@@ -24,11 +26,14 @@ HEALTH_URL="${FLUX_GATEWAY_HEALTH_URL:-http://127.0.0.1:4000/health}"
 DEEP_URL="${FLUX_GATEWAY_DEEP_URL:-http://127.0.0.1:4000/health/deep}"
 ROUTE_HOST="${FLUX_GATEWAY_ROUTE_HOST:-}"
 
-echo "--- Gateway Deploy: Initializing ---"
+GATEWAY_TAG="Deploy"
+[[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]] && GATEWAY_TAG="Restart"
+
+echo "--- Gateway ${GATEWAY_TAG}: Initializing ---"
 echo "  repo: $REPO_ROOT"
 
 if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
-  echo "--- Gateway Deploy: Git sync (ff-only) ---"
+  echo "--- Gateway ${GATEWAY_TAG}: Git sync (ff-only) ---"
   if [[ ! -d "$REPO_ROOT/.git" ]]; then
     echo "  skip: not a git checkout"
   else
@@ -36,23 +41,28 @@ if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
   fi
 fi
 
-echo "--- Gateway Deploy: Building ($CONTAINER_NAME) ---"
-$COMPOSE build --pull
-
-echo "--- Gateway Deploy: Cycling container ---"
-$COMPOSE up -d --remove-orphans
-
-echo "--- Gateway Deploy: Pruning dangling images ---"
-docker image prune -f
-
-if [[ "${FLUX_DEPLOY_PRUNE_BUILDER:-}" == "1" ]]; then
-  echo "--- Gateway Deploy: Pruning build cache (builder) ---"
-  docker builder prune -f
+if [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]]; then
+  echo "--- Gateway ${GATEWAY_TAG}: Cycling container (no image build) ---"
+  $COMPOSE up -d --remove-orphans --no-build
 else
-  echo "  (Set FLUX_DEPLOY_PRUNE_BUILDER=1 to also prune docker build cache.)"
+  echo "--- Gateway ${GATEWAY_TAG}: Building ($CONTAINER_NAME) ---"
+  $COMPOSE build --pull
+
+  echo "--- Gateway ${GATEWAY_TAG}: Cycling container ---"
+  $COMPOSE up -d --remove-orphans
+
+  echo "--- Gateway ${GATEWAY_TAG}: Pruning dangling images ---"
+  docker image prune -f
+
+  if [[ "${FLUX_DEPLOY_PRUNE_BUILDER:-}" == "1" ]]; then
+    echo "--- Gateway ${GATEWAY_TAG}: Pruning build cache (builder) ---"
+    docker builder prune -f
+  else
+    echo "  (Set FLUX_DEPLOY_PRUNE_BUILDER=1 to also prune docker build cache.)"
+  fi
 fi
 
-echo "--- Gateway Deploy: Verifying container ---"
+echo "--- Gateway ${GATEWAY_TAG}: Verifying container ---"
 sleep 3
 RUNNING="$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo false)"
 if [[ "$RUNNING" != "true" ]]; then
@@ -65,7 +75,7 @@ echo "  $CONTAINER_NAME: running"
 docker ps --filter "name=^${CONTAINER_NAME}\$" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 
 if command -v curl >/dev/null 2>&1; then
-  echo "--- Gateway Deploy: Health checks ---"
+  echo "--- Gateway ${GATEWAY_TAG}: Health checks ---"
   HEALTH_CODE="$(curl -sS -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")"
   if [[ "$HEALTH_CODE" != "200" ]]; then
     echo "  ERROR: liveness check failed (${HEALTH_CODE}) at ${HEALTH_URL}" >&2
@@ -95,5 +105,5 @@ else
 fi
 
 echo ""
-echo "--- Gateway Deploy: Operational ---"
+echo "--- Gateway ${GATEWAY_TAG}: Operational ---"
 echo "  logs: docker logs -f $CONTAINER_NAME"
