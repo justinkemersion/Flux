@@ -119,7 +119,7 @@ async function cmdUpdate(): Promise<void> {
   );
   console.log();
   console.log(
-    `  curl -fsSL ${bundle} -o /tmp/flux.mjs && node /tmp/flux.mjs --help`,
+    `  curl -fsSL ${bundle} -o /tmp/flux.cjs && node /tmp/flux.cjs --help`,
   );
   console.log();
   console.log(chalk.dim("Or copy to a dir on PATH:"));

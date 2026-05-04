@@ -11,7 +11,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 # Full monorepo (see repo-root .dockerignore); CLI dist must exist before dashboard
-# build so /api/install/cli can stream packages/cli/dist/index.js from the image.
+# build so /api/install/cli can stream packages/cli/dist/index.cjs from the image.
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @flux/cli run build

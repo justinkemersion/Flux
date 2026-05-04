@@ -120,8 +120,8 @@ declare -A DETAIL=(
 
 if command -v pnpm >/dev/null 2>&1 && pnpm --filter @flux/cli exec tsx src/index.ts --help >/dev/null 2>&1; then
   FLUX_CMD=(pnpm --filter @flux/cli exec tsx src/index.ts)
-elif [[ -f "$ROOT_DIR/packages/cli/dist/index.js" ]]; then
-  FLUX_CMD=(node "$ROOT_DIR/packages/cli/dist/index.js")
+elif [[ -f "$ROOT_DIR/packages/cli/dist/index.cjs" ]]; then
+  FLUX_CMD=(node "$ROOT_DIR/packages/cli/dist/index.cjs")
 elif command -v pnpm >/dev/null 2>&1 && pnpm --filter @flux/cli exec flux --version >/dev/null 2>&1; then
   FLUX_CMD=(pnpm --filter @flux/cli exec flux)
 elif command -v flux >/dev/null 2>&1; then

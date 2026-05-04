@@ -3,7 +3,10 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/index.ts"],
   outDir: "dist",
-  format: ["esm"],
+  // CJS so bundled Commander (CJS + require(node builtins)) works; ESM output hits esbuild’s
+  // unsupported dynamic `require("events")` inside wrapped CJS. Package remains `"type":"module"`
+  // for `src/`; the published runnable artifact is `dist/index.cjs`.
+  format: ["cjs"],
   platform: "node",
   target: "node20",
   clean: true,
@@ -17,10 +20,20 @@ export default defineConfig({
   treeshake: true,
   bundle: true,
   // Shebang comes from src/index.ts; avoid duplicating tsup banner (breaks tsup parse).
-  outExtension: () => ({ js: ".js" }),
-  // Bundle workspace packages into the artifact; keep Commander et al. external (CJS `require` breaks in ESM bundle).
-  noExternal: ["@flux/core/standalone", "@flux/sdk"],
-  external: ["commander", "chalk", "ora", "zod"],
+  outExtension: () => ({ js: ".cjs" }),
+  // Single-file bundle for `curl …/api/install/cli | node` — no adjacent node_modules.
+  // Do not bundle `@flux/core` (root): it pulls dockerode / native addons. Use `@flux/core/standalone` only.
+  noExternal: [
+    "@flux/core/standalone",
+    "@flux/sdk",
+    "chalk",
+    "commander",
+    "open",
+    "ora",
+    "strip-ansi",
+    "zod",
+  ],
+  external: [],
   esbuildOptions: (o) => {
     o.legalComments = "none";
   },

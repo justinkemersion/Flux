@@ -1,5 +1,5 @@
-import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import {
+  FLUX_PROJECT_HASH_HEX_LEN,
   type FluxProjectEnvEntry,
   type FluxProjectSummary,
   type ImportSqlFileResult,

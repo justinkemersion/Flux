@@ -5,10 +5,10 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const RELATIVE_BUNDLE = join("packages", "cli", "dist", "index.js");
+const RELATIVE_BUNDLE = join("packages", "cli", "dist", "index.cjs");
 
 /**
- * `packages/cli/dist/index.js` from the monorepo root. Tries common process.cwd()
+ * `packages/cli/dist/index.cjs` from the monorepo root. Tries common process.cwd()
  * layouts (monorepo root, apps/dashboard) without walking parent directories, so
  * the path stays friendly to the bundler’s static analysis.
  */
@@ -26,16 +26,16 @@ function resolveCliPathFromMonorepoRoot(): string | null {
 }
 
 const BUILD_HINT =
-  "Build the CLI first: pnpm --filter @flux/cli run build (produces packages/cli/dist/index.js).";
+  "Build the CLI first: pnpm --filter @flux/cli run build (produces packages/cli/dist/index.cjs).";
 
 /**
- * GET /api/install/cli — stream the bundled ESM `flux` CLI (Node 20+).
+ * GET /api/install/cli — stream the bundled CommonJS `flux` CLI (Node 20+).
  */
 export function GET() {
   const filePath = resolveCliPathFromMonorepoRoot();
   if (!filePath) {
     return NextResponse.json(
-      { error: "CLI bundle not found at packages/cli/dist/index.js.", hint: BUILD_HINT },
+      { error: "CLI bundle not found at packages/cli/dist/index.cjs.", hint: BUILD_HINT },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }

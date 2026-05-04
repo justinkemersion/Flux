@@ -28,7 +28,7 @@ const FLUX_INSTALL_SCRIPT = [
   "  echo -e \"  ${EM}Node.js ${_nv} detected.${RS}\"",
   "  _mj=$(node -e \"console.log(parseInt(process.versions.node.split('.')[0]||0, 10))\" 2>/dev/null) || _mj=0",
   "  if [ \"${_mj:-0}\" -lt 20 ] 2>/dev/null; then",
-  "    echo -e \"  ${AM}! Node 20+ required for ESM CLI (current: ${_nv}).${RS}\"",
+  "    echo -e \"  ${AM}! Node 20+ required for the Flux CLI (current: ${_nv}).${RS}\"",
   "  fi",
   "  unset _mj",
   "else",

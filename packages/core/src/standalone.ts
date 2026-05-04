@@ -3,6 +3,8 @@
  * or the full `ProjectManager` control plane in `index.ts`.
  */
 
+export { FLUX_PROJECT_HASH_HEX_LEN } from "./tenant-suffix.ts";
+
 export type ImportSqlFileResult = {
   tablesMoved: number;
   sequencesMoved: number;
