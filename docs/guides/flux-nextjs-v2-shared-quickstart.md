@@ -4,6 +4,8 @@ Purpose: bootstrap a brand-new Next.js app that uses a Flux pooled (`v2_shared`)
 
 This guide is intentionally minimal and copy/paste friendly.
 
+**Before you copy/paste:** read the repo root **[`AGENTS.md`](../../AGENTS.md)** — it lists v2_shared footguns (API hostname, tenant schema, PostgREST profile headers, JWT + `GRANT`, TLS from Node) that cause **404 / 403 / 42501** and burn hours if missed.
+
 ---
 
 ## 0) Prerequisites
@@ -11,7 +13,23 @@ This guide is intentionally minimal and copy/paste friendly.
 - Node.js 20+
 - npm
 - Flux account with a project in `v2_shared` mode
-- Flux service URL for that project (example: `https://api.<slug>.<hash>.vsl-base.com`)
+- Flux **PostgREST** base URL for that project (see **hostname** notes below)
+
+### Hostname: `flux list` URL vs triple-dash URL
+
+The dashboard / `flux list` may show:
+
+`https://api.<slug>.<hash>.<domain>`
+
+On some deployments, **table routes** (`GET /notes`) return **404** on that host while the same path works on:
+
+`https://api--<slug>--<hash>.<domain>`
+
+Use whichever responds to `curl -sS -o /dev/null -w "%{http_code}" "https://…/notes"` with **200** (or **401** — still routed) vs **404**.
+
+### Tenant API schema (`t_<shortId>_api`)
+
+v2_shared stores tenant tables in a per-tenant schema such as `t_5ecfa3ab72d1_api`, **not** `public`. Your SQL must create objects **in that schema**, and HTTP clients that talk **directly** to PostgREST must send **`Accept-Profile`** / **`Content-Profile`** for that schema unless you go through the Flux gateway (which injects them — see main [`README.md`](../../README.md) *JWT and schema isolation handshake*).
 
 If you prefer CLI provisioning, create a pooled project first:
 
@@ -19,7 +37,7 @@ If you prefer CLI provisioning, create a pooled project first:
 flux create my-pooled-app --mode v2_shared
 ```
 
-Then copy the service URL from `flux list` or the dashboard project card.
+Then copy the working API base URL from `flux list`, the dashboard, or `curl` probing as above. Add a repo-root **`flux.json`** with `"slug"` / `"hash"` so `flux push ./file.sql` does not need `-p` / `--hash` every time.
 
 ---
 
@@ -40,11 +58,14 @@ Create `.env.local`:
 
 ```bash
 cat > .env.local <<'EOF'
-FLUX_SERVICE_URL=https://api.<slug>.<hash>.vsl-base.com
+# PostgREST origin (no trailing /rest/v1). Use triple-dash host if short URL 404s on /tablename.
+FLUX_SERVICE_URL=https://api--<slug>--<hash>.vsl-base.com
+# Required for direct PostgREST fetch: same schema PostgREST uses for your tenant (see AGENTS.md).
+FLUX_POSTGREST_SCHEMA=t_<shortId>_api
 EOF
 ```
 
-Use the Flux API service URL exactly (no trailing `/rest/v1`).
+Replace `t_<shortId>_api` with the real schema name for your tenant (Postgres error text, operator docs, or the profile headers the gateway would send).
 
 ---
 
@@ -53,6 +74,8 @@ Use the Flux API service URL exactly (no trailing `/rest/v1`).
 Create `src/lib/flux.ts`:
 
 ```ts
+const profile = process.env.FLUX_POSTGREST_SCHEMA?.trim();
+
 export async function fluxFetch(path: string, init?: RequestInit): Promise<Response> {
   const base = process.env.FLUX_SERVICE_URL;
   if (!base) throw new Error("FLUX_SERVICE_URL is required");
@@ -61,6 +84,13 @@ export async function fluxFetch(path: string, init?: RequestInit): Promise<Respo
 
   const headers = new Headers(init?.headers);
   headers.set("content-type", "application/json");
+  if (profile) {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "GET" || method === "HEAD") headers.set("Accept-Profile", profile);
+    if (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE") {
+      headers.set("Content-Profile", profile);
+    }
+  }
 
   return fetch(url, {
     ...init,
@@ -69,6 +99,8 @@ export async function fluxFetch(path: string, init?: RequestInit): Promise<Respo
   });
 }
 ```
+
+Add **Authorization: Bearer &lt;JWT&gt;** in the same helper once you mint HS256 tokens with the tenant’s gateway secret (`PGRST_JWT_SECRET` / dashboard). Policies need matching **`GRANT`** on the schema and tables, not only RLS — see [`AGENTS.md`](../../AGENTS.md).
 
 ---
 
@@ -116,23 +148,28 @@ Expected:
 
 ## 6) Add a tiny test table in Flux
 
-Create `flux-init.sql` in your Next.js project:
+Create `flux-init.sql` in your Next.js project. **Qualify the schema** for v2_shared (replace `t_<shortId>_api` with your tenant API schema):
 
 ```bash
 cat > flux-init.sql <<'EOF'
-create table if not exists notes (
+create table if not exists t_<shortId>_api.notes (
   id uuid primary key default gen_random_uuid(),
   body text not null,
   created_at timestamptz not null default now()
 );
+
+grant usage on schema t_<shortId>_api to authenticated;
+grant select, insert, update, delete on table t_<shortId>_api.notes to authenticated;
 EOF
 ```
 
 Apply it to your project:
 
 ```bash
-flux push ./flux-init.sql -p my-pooled-app
+flux push ./flux-init.sql
 ```
+
+(with `flux.json` containing `"slug": "my-pooled-app"`, or pass `-p my-pooled-app` / `--hash` as documented in `flux push --help`).
 
 ---
 

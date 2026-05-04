@@ -23,6 +23,7 @@ The goal is to make it straightforward to run **many isolated backends** on a **
 - [End-to-end validation](#end-to-end-validation)
 - [CLI reference](#cli-reference)
 - [Security and operations](#security-and-operations)
+- [AGENTS.md (v2_shared client apps)](#agentsmd-v2_shared-client-apps)
 - [Docs and guides](#docs-and-guides)
 - [Trajectory TODOs (internal)](#trajectory-todos-internal)
 - [Contributing mindset](#contributing-mindset)
@@ -490,8 +491,15 @@ pnpm run flux -- reap --hours 72
 
 ---
 
+## AGENTS.md (v2_shared client apps)
+
+Root **[`AGENTS.md`](./AGENTS.md)** is the short operator/agent checklist for **external** applications (Next.js, workers, etc.) calling **pooled `v2_shared`** PostgREST: correct **API hostnames** (short vs triple-dash), **tenant API schema** (`t_<shortId>_api`), **`Accept-Profile` / `Content-Profile`** when not using the Node gateway, **JWT + RLS + `GRANT`**, **TLS** trust from Node, **`flux.json`** ergonomics, and **Auth.js** secrets. Update it whenever we fix a recurring integration footgun.
+
+---
+
 ## Docs and guides
 
+- **`AGENTS.md`** (repo root) — v2_shared **client-app** pitfalls; keep in sync with [`docs/guides/flux-nextjs-v2-shared-quickstart.md`](./docs/guides/flux-nextjs-v2-shared-quickstart.md).
 - **`docs/production-security-audit.md`** — Production security posture, pinned images, and credential API behavior.
 - **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
 - **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
