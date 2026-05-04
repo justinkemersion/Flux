@@ -53,7 +53,7 @@ From [notes-for-justin/v2-gateway-testing-accomplishments-and-current-state.md](
 |-------|---------|-----------------|
 | Tenant schema / role bootstrap | [packages/engine-v2/src/index.ts](../packages/engine-v2/src/index.ts) (`buildTenantBootstrapSql`, `provisionProject`) | Unit tests on SQL builders (see [packages/engine-v2/src/index.test.ts](../packages/engine-v2/src/index.test.ts)); no DB integration in CI yet |
 | ShortId collision | `TenantShortIdCollisionError`, `checkTenantOwnership` | Unit coverage for identity derivation; collision path ideally integration-tested with Postgres |
-| Pooled push `service_role` JWT | `apps/dashboard/app/api/projects/[slug]/push/route.ts` | Validators unit-tested; JWT verify + DB + `v1_dedicated` rejection still route/integration scope |
+| Pooled push `service_role` JWT | `pooled-push-route.ts` + thin `route.ts` | Route handler tests with mocked `loadProject` / `executePooledPush` |
 | SQL size limits | `POOLED_PUSH_MAX_SQL_BYTES` in `pooled-push-validators.ts` | Covered by `pooled-push-validators.test.ts` |
 | Cluster hooks (`flux_postgrest_config`, `flux_set_tenant_context`) | `buildClusterBootstrapSql` | Substring / snapshot assertions in engine-v2 unit tests |
 
@@ -77,7 +77,7 @@ From [notes-for-justin/v2-gateway-testing-accomplishments-and-current-state.md](
 |----------|------|
 | **P0** | Keep CI green: `pnpm test` at repo root; fix regressions in tested packages first. |
 | **P1** | Expand **@flux/engine-v2** tests: deprovision SQL, env edge cases done; optional Postgres integration (Testcontainers or CI service container) for `provisionProject` / `checkTenantOwnership`. |
-| **P2** | **Dashboard push route:** pure validators live in `pooled-push-validators.ts` with tests; follow-up: mocked route tests for JWT + `v1_dedicated` rejection. |
+| **P2** | **Dashboard push route:** `runPooledPushPost` in `pooled-push-route.ts` + `pooled-push-route.test.ts` cover bearer, hash, SQL size, mode split, JWT/role, success, PG errors, and timeout → 504. |
 | **P3** | **E2E:** Minimal [`bin/e2e-v2-shared-smoke.sh`](../bin/e2e-v2-shared-smoke.sh) (curl with `Host:` → gateway → PostgREST). Playwright / full UI still optional. |
 | **P4** | **Perf SLOs:** Define target `%200` / p95; iterate gateway timeout and limiter settings with fixed k6 scenarios. |
 
@@ -110,7 +110,8 @@ From [notes-for-justin/v2-gateway-testing-accomplishments-and-current-state.md](
 |------|------|
 | [packages/engine-v2/src/index.ts](../packages/engine-v2/src/index.ts) | Shared tenant DDL, cluster bootstrap SQL, `buildDeprovisionSql` |
 | [apps/dashboard/src/lib/pooled-push-validators.ts](../apps/dashboard/src/lib/pooled-push-validators.ts) | Hash/body/SQL size / role / schema helpers for pooled push |
-| `apps/dashboard/app/api/projects/[slug]/push/route.ts` | Pooled push HTTP API |
+| [apps/dashboard/src/lib/pooled-push-route.ts](../apps/dashboard/src/lib/pooled-push-route.ts) | Shared POST handler + injectable deps (tests + route) |
+| `apps/dashboard/app/api/projects/[slug]/push/route.ts` | Pooled push HTTP API (wires real DB + `executePooledPush`) |
 | [apps/dashboard/src/lib/pooled-push.ts](../apps/dashboard/src/lib/pooled-push.ts) | Transactional execution |
 | [bin/e2e-v2-shared-smoke.sh](../bin/e2e-v2-shared-smoke.sh) | Minimal gateway → PostgREST smoke (curl) |
 | [packages/gateway/](../packages/gateway/) | Tenant resolution, proxy, JWT to upstream |
@@ -123,4 +124,4 @@ From [notes-for-justin/v2-gateway-testing-accomplishments-and-current-state.md](
 
 | Date | Change |
 |------|--------|
-| 2026-05-04 | Initial review; CI + root tests; hardening sprint: expanded engine-v2 tests, `pooled-push-validators` + unit tests, `bin/e2e-v2-shared-smoke.sh`. |
+| 2026-05-04 | Review, CI, engine-v2 + validator hardening, `e2e-v2-shared-smoke.sh`; pooled push `runPooledPushPost` + route security tests; push timeout → 504 fix (before PG-shaped `message`-only branch). |
