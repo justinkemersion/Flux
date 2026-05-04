@@ -30,7 +30,7 @@ Operator and client-app pitfalls for pooled tenants: [AGENTS.md](../AGENTS.md), 
 
 | Item | Detail |
 |------|--------|
-| **CI** | A minimal GitHub Actions workflow now runs `pnpm install` + `pnpm test` on push/PR (see [.github/workflows/ci.yml](../.github/workflows/ci.yml)). Extend later with lint, `tsc --noEmit`, and dashboard build. |
+| **CI** | [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs `pnpm test` on push/PR. Optional **v2-gateway-smoke** job on push to `main`/`master` when `FLUX_SMOKE_CI=true` (see job `if:`). Manual smoke: [.github/workflows/v2-gateway-smoke.yml](../.github/workflows/v2-gateway-smoke.yml). |
 | **Monorepo test entry** | Root [package.json](../package.json) defines `pnpm test` as `pnpm -r --if-present test`, so only workspaces that declare a `test` script participate. `@flux/core` and `@flux/engine-v1` omit `test` until they have real suites (previously they shipped a stub that always exited 1). |
 | **Deploy scripts** | Shared v2 bootstrap is tied to [bin/deploy-v2-shared.sh](../bin/deploy-v2-shared.sh) (global `authenticator` / `anon`, cluster hooks). After changing [packages/engine-v2/src/index.ts](../packages/engine-v2/src/index.ts), re-verify deploy ordering and PostgREST reload behavior on a staging cluster. |
 
@@ -78,7 +78,7 @@ From [notes-for-justin/v2-gateway-testing-accomplishments-and-current-state.md](
 | **P0** | Keep CI green: `pnpm test` at repo root; fix regressions in tested packages first. |
 | **P1** | Expand **@flux/engine-v2** tests: deprovision SQL, env edge cases done; optional Postgres integration (Testcontainers or CI service container) for `provisionProject` / `checkTenantOwnership`. |
 | **P2** | **Dashboard push route:** `runPooledPushPost` in `pooled-push-route.ts` + `pooled-push-route.test.ts` cover bearer, hash, SQL size, mode split, JWT/role, success, PG errors, and timeout → 504. |
-| **P3** | **E2E:** Minimal [`bin/e2e-v2-shared-smoke.sh`](../bin/e2e-v2-shared-smoke.sh) (curl with `Host:` → gateway → PostgREST). Playwright / full UI still optional. |
+| **P3** | **E2E:** [`bin/e2e-v2-shared-smoke.sh`](../bin/e2e-v2-shared-smoke.sh). **CI:** default workflow stays test-only; opt-in push job when repo variable `FLUX_SMOKE_CI=true` + secrets `FLUX_SMOKE_GATEWAY_URL` / `FLUX_SMOKE_KNOWN_HOST` (optional `FLUX_SMOKE_BEARER`). **Manual:** workflow [`v2-gateway-smoke.yml`](../.github/workflows/v2-gateway-smoke.yml) (`workflow_dispatch`). Playwright still optional. |
 | **P4** | **Perf SLOs:** Define target `%200` / p95; iterate gateway timeout and limiter settings with fixed k6 scenarios. |
 
 **Product / tech debt:** [packages/gateway/src/app.ts](../packages/gateway/src/app.ts) documents a **TODO** for optional **v1** routing through the gateway — decide whether to implement, defer, or document as out of scope.
@@ -124,4 +124,4 @@ From [notes-for-justin/v2-gateway-testing-accomplishments-and-current-state.md](
 
 | Date | Change |
 |------|--------|
-| 2026-05-04 | Review, CI, engine-v2 + validator hardening, `e2e-v2-shared-smoke.sh`; pooled push `runPooledPushPost` + route security tests; push timeout → 504 fix (before PG-shaped `message`-only branch). |
+| 2026-05-04 | Review, CI, engine-v2 + validator hardening, `e2e-v2-shared-smoke.sh`; pooled push `runPooledPushPost` + route security tests; push timeout → 504 fix; opt-in CI + manual `workflow_dispatch` v2 gateway smoke. |

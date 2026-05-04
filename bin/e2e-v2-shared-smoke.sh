@@ -15,6 +15,12 @@
 #   FLUX_SMOKE_BEARER="$(... mint HS256 with project jwt_secret, sub, ...)" \
 #     ./bin/e2e-v2-shared-smoke.sh
 #
+# GitHub Actions (opt-in, keeps default CI fast):
+#   1) Manual: workflow "V2 gateway smoke" (workflow_dispatch) — enter gateway URL + host.
+#   2) After green tests on main: set repo variable FLUX_SMOKE_CI=true and add secrets
+#      FLUX_SMOKE_GATEWAY_URL, FLUX_SMOKE_KNOWN_HOST (optional FLUX_SMOKE_BEARER).
+#      See .github/workflows/ci.yml job v2-gateway-smoke.
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

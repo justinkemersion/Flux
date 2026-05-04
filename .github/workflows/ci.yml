@@ -25,3 +25,24 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+  # Opt-in: set repo variable FLUX_SMOKE_CI=true and repository secrets
+  # FLUX_SMOKE_GATEWAY_URL + FLUX_SMOKE_KNOWN_HOST (optional FLUX_SMOKE_BEARER).
+  # Runs only on push to main/master after unit tests pass — PRs stay fast.
+  v2-gateway-smoke:
+    name: V2 gateway smoke (opt-in)
+    runs-on: ubuntu-latest
+    needs: test
+    if: >-
+      vars.FLUX_SMOKE_CI == 'true' &&
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GET / through gateway (known Host)
+        env:
+          FLUX_SMOKE_GATEWAY_URL: ${{ secrets.FLUX_SMOKE_GATEWAY_URL }}
+          FLUX_SMOKE_KNOWN_HOST: ${{ secrets.FLUX_SMOKE_KNOWN_HOST }}
+          FLUX_SMOKE_BEARER: ${{ secrets.FLUX_SMOKE_BEARER }}
+        run: ./bin/e2e-v2-shared-smoke.sh

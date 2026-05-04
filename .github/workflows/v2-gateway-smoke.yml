@@ -1,0 +1,34 @@
+# Manual near-CI: hit a real gateway + v2 hostname with curl (no Playwright).
+# Does not run on push/PR — invoke from the Actions tab when you have a known host.
+
+name: V2 gateway smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      gateway_url:
+        description: Gateway base URL (no trailing slash), e.g. https://gw.example.com
+        required: true
+        type: string
+      known_host:
+        description: Value for the Host header (tenant API hostname the gateway resolves)
+        required: true
+        type: string
+      bearer_token:
+        description: Optional Bearer JWT (leave empty if gateway allows unauthenticated GET /)
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GET / through gateway
+        env:
+          FLUX_SMOKE_GATEWAY_URL: ${{ inputs.gateway_url }}
+          FLUX_SMOKE_KNOWN_HOST: ${{ inputs.known_host }}
+          FLUX_SMOKE_BEARER: ${{ inputs.bearer_token }}
+        run: ./bin/e2e-v2-shared-smoke.sh
