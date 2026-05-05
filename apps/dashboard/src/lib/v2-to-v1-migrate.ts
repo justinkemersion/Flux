@@ -1,17 +1,21 @@
 import { unlink } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import type { ProjectManager } from "@flux/core";
 import { resolveTenantApiSchemaName } from "@flux/core";
 import {
+  assertPgDumpOnPath,
   assertSchemaOwnershipComment,
+  assertSequenceSnapshotsMatch,
+  assertSharedPostgresUrlConfigured,
   buildMigrationPlanFromCatalogRow,
   loadPreflight,
   pgDumpTenantSchemaToFile,
+  snapshotSequencesInSchema,
   type MigrateApiResult,
   type MigrateCliPayload,
   type MigrationPlan,
+  type SequenceSnapshot,
 } from "@flux/migrate";
 import { deprovisionProject } from "@flux/engine-v2";
 import { domains, projects } from "@/src/db/schema";
@@ -19,20 +23,15 @@ import type { SystemDb } from "@/src/lib/db";
 import { generateProjectJwtSecret } from "@/src/lib/provisioning-engine";
 import { evictHostnames, v2SharedGatewayCacheHostnames } from "@/src/lib/gateway-cache";
 
-function requireSharedUrl(): string {
-  const u = process.env.FLUX_SHARED_POSTGRES_URL?.trim();
-  if (!u) {
-    throw new Error(
-      "FLUX_SHARED_POSTGRES_URL is required for v2→v1 migration (pg_dump source).",
-    );
-  }
-  return u;
+function sharedPostgresUrl(): string {
+  assertSharedPostgresUrlConfigured();
+  return process.env.FLUX_SHARED_POSTGRES_URL!.trim();
 }
 
 async function withSharedClient<T>(
   fn: (query: (sql: string) => Promise<Record<string, unknown>[]>) => Promise<T>,
 ): Promise<T> {
-  const c = new Client({ connectionString: requireSharedUrl() });
+  const c = new Client({ connectionString: sharedPostgresUrl() });
   await c.connect();
   try {
     return await fn(async (sql) => {
@@ -42,6 +41,32 @@ async function withSharedClient<T>(
   } finally {
     await c.end();
   }
+}
+
+async function snapshotTargetSequences(
+  pm: ProjectManager,
+  projectName: string,
+  hash: string,
+  schemaName: string,
+): Promise<SequenceSnapshot> {
+  const lit = schemaName.replace(/'/g, "''");
+  const rows = (await pm.queryTenantJsonRows(
+    projectName,
+    hash,
+    `
+    SELECT sequencename::text AS name, last_value::text AS last
+    FROM pg_sequences
+    WHERE schemaname = '${lit}'
+    ORDER BY sequencename
+    `,
+  )) as { name?: string; last?: string }[];
+  const m = new Map<string, string>();
+  for (const r of rows) {
+    if (typeof r.name === "string" && typeof r.last === "string") {
+      m.set(r.name, r.last);
+    }
+  }
+  return m;
 }
 
 async function collectDomainHostnames(
@@ -129,9 +154,20 @@ export async function runV2SharedToV1DedicatedMigration(input: {
     };
   }
 
+  if (payload.staged === true && payload.newJwtSecret === true) {
+    return {
+      ok: false,
+      phase: "planning",
+      error:
+        "--new-jwt-secret cannot be combined with --staged (catalog jwt_secret would not match the dedicated stack). Re-run a full migrate to rotate secrets.",
+    };
+  }
+
   if (payload.dumpOnly === true) {
+    assertSharedPostgresUrlConfigured();
+    assertPgDumpOnPath();
     const path = await pgDumpTenantSchemaToFile({
-      databaseUrl: requireSharedUrl(),
+      databaseUrl: sharedPostgresUrl(),
       plan,
     });
     return {
@@ -147,6 +183,10 @@ export async function runV2SharedToV1DedicatedMigration(input: {
       ? generateProjectJwtSecret()
       : row.jwtSecret!.trim();
 
+  assertSharedPostgresUrlConfigured();
+  assertPgDumpOnPath();
+
+  let wroteMigrating = false;
   let dumpPath: string | null = null;
   try {
     if (lockWrites) {
@@ -154,6 +194,7 @@ export async function runV2SharedToV1DedicatedMigration(input: {
         .update(projects)
         .set({ migrationStatus: "migrating" })
         .where(eq(projects.id, row.id));
+      wroteMigrating = true;
       const hosts = [
         ...v2SharedGatewayCacheHostnames(slug, hash, isProd),
         ...(await collectDomainHostnames(db, row.id)),
@@ -164,14 +205,18 @@ export async function runV2SharedToV1DedicatedMigration(input: {
     await pm.nukeContainersOnly(slug, hash).catch(() => undefined);
     await pm.removeTenantPrivateNetworkAllowMissing(slug, hash);
 
-    await pm.provisionProject(row.name, {
-      isProduction: isProd,
-      customJwtSecret: jwtSecret,
-      apiSchemaName: plan.tenantSchema,
-    }, hash);
+    await pm.provisionProject(
+      row.name,
+      {
+        isProduction: isProd,
+        customJwtSecret: jwtSecret,
+        apiSchemaName: plan.tenantSchema,
+      },
+      hash,
+    );
 
     dumpPath = await pgDumpTenantSchemaToFile({
-      databaseUrl: requireSharedUrl(),
+      databaseUrl: sharedPostgresUrl(),
       plan,
     });
 
@@ -200,6 +245,17 @@ export async function runV2SharedToV1DedicatedMigration(input: {
       }
     }
 
+    const srcSeq = await withSharedClient((q) =>
+      snapshotSequencesInSchema(q, plan.tenantSchema),
+    );
+    const tgtSeq = await snapshotTargetSequences(
+      pm,
+      row.name,
+      hash,
+      plan.tenantSchema,
+    );
+    assertSequenceSnapshotsMatch(srcSeq, tgtSeq, plan.tenantSchema);
+
     if (!payload.staged) {
       const apiSchemaStrategy = "tenant_schema";
       const resolvedName = resolveTenantApiSchemaName({
@@ -219,6 +275,8 @@ export async function runV2SharedToV1DedicatedMigration(input: {
         })
         .where(eq(projects.id, row.id));
 
+      await new Promise((r) => setTimeout(r, 150));
+
       const hosts = [
         ...v2SharedGatewayCacheHostnames(slug, hash, isProd),
         ...(await collectDomainHostnames(db, row.id)),
@@ -229,6 +287,12 @@ export async function runV2SharedToV1DedicatedMigration(input: {
         .update(projects)
         .set({ migrationStatus: null })
         .where(eq(projects.id, row.id));
+
+      const hosts = [
+        ...v2SharedGatewayCacheHostnames(slug, hash, isProd),
+        ...(await collectDomainHostnames(db, row.id)),
+      ];
+      await evictHostnames(hosts);
     }
 
     if (payload.dropSourceAfter && !payload.staged) {
@@ -245,12 +309,18 @@ export async function runV2SharedToV1DedicatedMigration(input: {
     };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    await db
-      .update(projects)
-      .set({ migrationStatus: null })
-      .where(eq(projects.id, row.id));
     return { ok: false, phase: "failed", error: msg };
   } finally {
+    if (wroteMigrating) {
+      try {
+        await db
+          .update(projects)
+          .set({ migrationStatus: null })
+          .where(eq(projects.id, row.id));
+      } catch {
+        /* best-effort: catalog must not stay stuck in migrating */
+      }
+    }
     if (dumpPath) {
       try {
         await unlink(dumpPath);

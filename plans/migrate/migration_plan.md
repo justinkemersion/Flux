@@ -1,6 +1,19 @@
 # 📦 Flux Migration Spec (v2_shared → v1_dedicated)
 
-**Status:** Canonical design (v0 implementation target)
+## Status: IMPLEMENTED (v0)
+
+- Mirrored schema model adopted (`t_<shortid>_api` on v2, new v1, and post-migrate dedicated).
+- Migration is schema-preserving (no SQL rewrite / transform layer in v0).
+- Core, dashboard, gateway (`migration_status` → 503), CLI, and `@flux/migrate` helpers are wired.
+- Orchestration supports dry-run, staged mode, optional source drop, and binary preflight (`pg_dump`, shared URL).
+
+**Remaining hardening (see repo issues / follow-up PRs):** deeper PostgREST+JWT smoke after restore, broader E2E matrix, advisory lock against concurrent migrate, and removing `FLUX_V1_TENANT_SCHEMA` once tenant-schema v1 is default everywhere.
+
+**Feature flag removal checklist:** migration stable in production; new v1 tenant-schema path clean; then drop `FLUX_V1_TENANT_SCHEMA` and make tenant schema the default for new v1 projects.
+
+---
+
+**Status (design):** Canonical operational flow for v0+
 **Date:** 2026-05-04
 **Scope:** Data-plane migration with control-plane switch
 **Source:**  (refined and aligned)

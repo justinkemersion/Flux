@@ -1,8 +1,9 @@
 /**
  * Derives a deterministic short identifier from a tenant UUID.
  *
- * Keep this implementation local to @flux/gateway to avoid runtime coupling to
- * @flux/core source-path exports inside production container images.
+ * Same algorithm as `deriveShortId` in `@flux/core/standalone`. PostgREST
+ * `Accept-Profile` / `Content-Profile` must use `defaultTenantApiSchemaFromProjectId`
+ * from `@flux/core/api-schema-strategy` so profile schema matches the catalog UUID.
  *
  * Algorithm: strip hyphens, take the first 12 hex chars.
  * Collision probability is ~1/2^48 (negligible for realistic tenant counts).

@@ -869,6 +869,11 @@ async function main(): Promise<void> {
           `flux migrate requires v2_shared; this project is ${meta.mode}.`,
         );
       }
+      if (opts.staged && opts.newJwtSecret) {
+        throw new Error(
+          "--new-jwt-secret cannot be used with --staged (catalog jwt_secret would not match the new stack). Run a full migrate without --staged to rotate secrets.",
+        );
+      }
       const result = await client.migrateV2ToV1({
         slug,
         hash,

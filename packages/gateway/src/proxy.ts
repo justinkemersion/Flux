@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { Agent, fetch } from "undici";
 import { env } from "./env.ts";
+import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
 import type { TenantResolution } from "./types.ts";
 
 /**
@@ -73,7 +74,7 @@ export async function proxyRequest(
   // first entry in db-schemas ("public") and all tenant queries hit the wrong
   // schema.  Accept-Profile selects the schema for GET/HEAD; Content-Profile for
   // POST/PATCH/PUT/DELETE with a body.  Setting both on every request is safe.
-  const tenantSchema = `t_${tenant.shortid}_api`;
+  const tenantSchema = defaultTenantApiSchemaFromProjectId(tenant.tenantId);
   reqHeaders.set("accept-profile", tenantSchema);
   reqHeaders.set("content-profile", tenantSchema);
 

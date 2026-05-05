@@ -16,3 +16,9 @@ export {
   schemaCommentSql,
 } from "./inspect.ts";
 export { pgDumpTenantSchemaToFile } from "./dump.ts";
+export { assertPgDumpOnPath, assertSharedPostgresUrlConfigured } from "./preflight.ts";
+export {
+  assertSequenceSnapshotsMatch,
+  snapshotSequencesInSchema,
+  type SequenceSnapshot,
+} from "./sequences.ts";

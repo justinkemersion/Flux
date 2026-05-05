@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
 
 function setGatewayEnv(poolUrl: string): void {
   process.env.FLUX_SYSTEM_DATABASE_URL ??= "postgres://test:test@localhost:5432/flux";
@@ -65,12 +66,13 @@ test("proxy forwards internal auth token and POST body", async () => {
   const tenant = {
     tenantId: "7cdd9f01-81de-45c9-a661-c4f24b2f89f1",
     projectId: "7cdd9f01-81de-45c9-a661-c4f24b2f89f1",
-    shortid: "aabbccddeeff",
+    shortid: "7cdd9f0181de",
     mode: "v2_shared" as const,
     slug: "demo",
     jwtSecret: null,
     migrationStatus: null as string | null,
   };
+  const expectedProfile = defaultTenantApiSchemaFromProjectId(tenant.tenantId);
 
   try {
     const internalToken = "internal-bridge-token";
@@ -83,8 +85,8 @@ test("proxy forwards internal auth token and POST body", async () => {
     assert.equal(seenUserId, undefined);
     assert.equal(seenRole, undefined);
     assert.equal(seenTenantId, tenant.tenantId);
-    assert.equal(seenAcceptProfile, `t_${tenant.shortid}_api`);
-    assert.equal(seenContentProfile, `t_${tenant.shortid}_api`);
+    assert.equal(seenAcceptProfile, expectedProfile);
+    assert.equal(seenContentProfile, expectedProfile);
 
     seenMethod = undefined;
     seenContentType = undefined;

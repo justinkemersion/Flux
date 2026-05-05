@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./standalone": "./src/standalone.ts"
+    "./standalone": "./src/standalone.ts",
+    "./api-schema-strategy": "./src/api-schema-strategy.ts"
   },
   "scripts": {
     "test": "tsx --test src/**/*.test.ts"
