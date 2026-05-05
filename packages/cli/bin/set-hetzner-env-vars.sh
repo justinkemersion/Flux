@@ -1,6 +1,10 @@
 ssh-add ~/.ssh/id_ed25519_emersion
-# Point your local Docker CLI to the Hetzner VPS                                                                  
-export DOCKER_HOST="ssh://root@178.104.205.138"
+
+# Do NOT set DOCKER_HOST here. Exporting it sends every `docker` / dashboard provision to that host
+# and is easy to confuse with local `pnpm dev`. When you intentionally want remote Docker:
+#   source ../../../bin/use-remote-docker-hetzner.sh
+# To reset this shell back to your laptop:
+#   source ../../../bin/use-local-docker.sh
 
 # Point Flux to the base domain
 export FLUX_DOMAIN="vsl-base.com"

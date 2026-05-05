@@ -1,28 +1,12 @@
 import { FluxLanding } from "@/src/components/flux-landing";
-import { getFleetReliability } from "@/src/lib/fleet-monitor";
-import { getLandingFleetShowcase } from "@/src/lib/fleet-showcase";
-import { queryCodexAction } from "@/src/lib/actions";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Flux: The Backbone of Your Platform",
+  title: "Flux — PostgreSQL, ready to use",
   description:
-    "Enterprise Postgres, instant PostgREST, two execution modes. One CLI, one dashboard—shared infrastructure for scale or isolated stacks for compliance. PostgreSQL 16 + PostgREST 12.",
+    "A clean API over your database. No setup. No abstraction. Start free and upgrade when your app grows.",
 };
 
-export const dynamic = "force-dynamic";
-export const maxDuration = 60;
-
-export default async function Home() {
-  const [fleetShowcase, reliability] = await Promise.all([
-    getLandingFleetShowcase(),
-    getFleetReliability(),
-  ]);
-  return (
-    <FluxLanding
-      fleetShowcase={fleetShowcase}
-      reliability={reliability}
-      queryCodexAction={queryCodexAction}
-    />
-  );
+export default function Home() {
+  return <FluxLanding />;
 }
