@@ -11,7 +11,10 @@ import {
   buildApiSchemaPrivilegesSql,
   buildDisableRowLevelSecurityForSchemaSql,
 } from "./api-schema-privileges.ts";
-import { assertFluxApiSchemaIdentifier } from "./api-schema-strategy.ts";
+import {
+  assertFluxApiSchemaIdentifier,
+  LEGACY_FLUX_API_SCHEMA,
+} from "./api-schema-strategy.ts";
 import {
   materializePreparedSqlFile,
   queryPostgresMajorVersion,
@@ -87,13 +90,22 @@ export {
 export {
   assertFluxApiSchemaIdentifier,
   defaultTenantApiSchemaFromProjectId,
+  defaultTenantRoleFromProjectId,
+  deriveTenantSchemaShortId,
   fluxV1TenantSchemaEnabled,
   isTenantSchemaStrategyProject,
+  LEGACY_FLUX_API_SCHEMA,
   resolveTenantApiSchemaName,
   resolveV1ProvisionApiSchemaName,
   type ApiSchemaStrategy,
   type ProjectApiSchemaInput,
 } from "./api-schema-strategy.ts";
+export {
+  FLUX_GATEWAY_DRAINING_MIGRATION_STATUS,
+  FLUX_SILENT_MIGRATION_MUTEX_STATUS,
+  fluxMigrationStatusIsActiveLease,
+  type FluxCatalogMigrationStatus,
+} from "./migration-status.ts";
 export { FLUX_AUTH_SCHEMA_AND_UID_SQL } from "./auth-compat-sql.ts";
 export {
   FLUX_PROJECT_HASH_HEX_LEN,
@@ -260,8 +272,8 @@ ${buildApiSchemaPrivilegesSql(apiSchemaName)}
 `.trim();
 }
 
-/** Default bootstrap for legacy `api` schema (incl. flux-system). */
-export const BOOTSTRAP_SQL = buildBootstrapSql("api");
+/** Default bootstrap for legacy {@link LEGACY_FLUX_API_SCHEMA} (incl. flux-system). */
+export const BOOTSTRAP_SQL = buildBootstrapSql(LEGACY_FLUX_API_SCHEMA);
 
 /** PostgREST `PGRST_DB_SCHEMAS` value: primary API schema + public. */
 export function pgrstDbSchemasEnvValue(apiSchemaName: string): string {
@@ -1696,9 +1708,9 @@ export class ProjectManager {
     await this.ensureFluxNetwork(log);
     await this.ensureFluxGateway(log);
     const slug = slugifyProjectName(name);
-    let apiSchemaName = options?.apiSchemaName?.trim() || "api";
+    let apiSchemaName = options?.apiSchemaName?.trim() || LEGACY_FLUX_API_SCHEMA;
     if (isPlatformSystemStackSlug(slug)) {
-      apiSchemaName = "api";
+      apiSchemaName = LEGACY_FLUX_API_SCHEMA;
     } else {
       assertFluxApiSchemaIdentifier(apiSchemaName);
     }
@@ -2605,7 +2617,7 @@ export class ProjectManager {
       viewsMoved: 0,
     };
 
-    const apiSchema = options?.apiSchemaName?.trim() || "api";
+    const apiSchema = options?.apiSchemaName?.trim() || LEGACY_FLUX_API_SCHEMA;
     assertFluxApiSchemaIdentifier(apiSchema);
 
     const { slug: normalizedSlug, containerId, password } =
@@ -2758,14 +2770,15 @@ export class ProjectManager {
     hash: string,
     options?: { apiSchemaName?: string },
   ): Promise<void> {
-    const apiSchema = options?.apiSchemaName?.trim() || "api";
+    const apiSchema = options?.apiSchemaName?.trim() || LEGACY_FLUX_API_SCHEMA;
     assertFluxApiSchemaIdentifier(apiSchema);
     const { containerId, password } =
       await this.resolveRunningPostgresCredentials(projectName, hash);
     const qApi = `"${apiSchema.replace(/"/g, '""')}"`;
+    const qLegacy = `"${LEGACY_FLUX_API_SCHEMA.replace(/"/g, '""')}"`;
     const dropLegacyApi =
-      apiSchema !== "api"
-        ? `DROP SCHEMA IF EXISTS "api" CASCADE;\n`
+      apiSchema !== LEGACY_FLUX_API_SCHEMA
+        ? `DROP SCHEMA IF EXISTS ${qLegacy} CASCADE;\n`
         : "";
     const resetSql = `
 DROP SCHEMA IF EXISTS ${qApi} CASCADE;

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { ProjectManager } from "@flux/core";
+import { LEGACY_FLUX_API_SCHEMA, type ProjectManager } from "@flux/core";
 import { dispatchProvisionProject } from "./provisioning-engine";
 import {
   deriveTenantIdentity,
@@ -42,7 +42,7 @@ test("dispatchProvisionProject routes v1_dedicated through ProjectManager", asyn
   });
 
   assert.equal(called, true);
-  assert.equal(seenApiSchema, "api");
+  assert.equal(seenApiSchema, LEGACY_FLUX_API_SCHEMA);
   assert.equal(result.mode, "v1_dedicated");
   assert.equal(result.slug, "my-app");
   assert.equal(result.hash, "abc1234");

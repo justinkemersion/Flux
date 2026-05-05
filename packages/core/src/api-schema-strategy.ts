@@ -4,6 +4,9 @@
 
 import { deriveShortId } from "./standalone.ts";
 
+/** v1 dedicated / flux-system default PostgREST schema name (historical Supabase-style layout). */
+export const LEGACY_FLUX_API_SCHEMA = "api" as const;
+
 export type ApiSchemaStrategy = "legacy_api" | "tenant_schema";
 
 export type ProjectApiSchemaInput = {
@@ -30,16 +33,31 @@ export function assertFluxApiSchemaIdentifier(name: string): void {
 }
 
 /**
- * `t_<12 hex>_api` derived from catalog UUID (same algorithm as v2 pooled push).
+ * 12-hex segment from catalog project UUID (same algorithm as v2 pooled push / engine-v2).
  */
-export function defaultTenantApiSchemaFromProjectId(projectId: string): string {
+export function deriveTenantSchemaShortId(projectId: string): string {
   const shortId = deriveShortId(projectId);
   if (!/^[a-f0-9]{12}$/.test(shortId)) {
     throw new Error(
-      `Cannot derive tenant API schema: invalid shortId "${shortId}" from project id`,
+      `Cannot derive tenant short id: invalid shortId "${shortId}" from project id`,
     );
   }
-  return `t_${shortId}_api`;
+  return shortId;
+}
+
+/**
+ * `t_<12 hex>_api` derived from catalog UUID (same algorithm as v2 pooled push).
+ */
+export function defaultTenantApiSchemaFromProjectId(projectId: string): string {
+  return `t_${deriveTenantSchemaShortId(projectId)}_api`;
+}
+
+/**
+ * Per-tenant DB role on the shared cluster (`SET ROLE` target in gateway-minted JWTs).
+ * Must stay aligned with {@link defaultTenantApiSchemaFromProjectId} naming.
+ */
+export function defaultTenantRoleFromProjectId(projectId: string): string {
+  return `t_${deriveTenantSchemaShortId(projectId)}_role`;
 }
 
 /**
@@ -59,7 +77,7 @@ export function resolveTenantApiSchemaName(
   if (project.apiSchemaStrategy === "tenant_schema") {
     return defaultTenantApiSchemaFromProjectId(project.id);
   }
-  return "api";
+  return LEGACY_FLUX_API_SCHEMA;
 }
 
 export function isTenantSchemaStrategyProject(project: ProjectApiSchemaInput): boolean {
@@ -75,5 +93,5 @@ export function resolveV1ProvisionApiSchemaName(projectId: string): string {
   if (fluxV1TenantSchemaEnabled()) {
     return defaultTenantApiSchemaFromProjectId(projectId);
   }
-  return "api";
+  return LEGACY_FLUX_API_SCHEMA;
 }

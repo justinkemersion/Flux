@@ -1,3 +1,4 @@
+import { FLUX_GATEWAY_DRAINING_MIGRATION_STATUS } from "@flux/core";
 import { Hono } from "hono";
 import {
   resolveTenant,
@@ -131,7 +132,9 @@ export function createApp(): Hono {
       );
     }
 
-    if ((tenant.migrationStatus ?? null) === "migrating") {
+    if (
+      (tenant.migrationStatus ?? null) === FLUX_GATEWAY_DRAINING_MIGRATION_STATUS
+    ) {
       log({
         host: rawHost,
         tenantId: tenant.tenantId,

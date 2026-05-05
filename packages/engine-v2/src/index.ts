@@ -5,7 +5,11 @@
  * JWT issuance remains in gateway.
  */
 import pg from "pg";
-import { deriveShortId } from "@flux/core/standalone";
+import {
+  defaultTenantApiSchemaFromProjectId,
+  defaultTenantRoleFromProjectId,
+  deriveTenantSchemaShortId,
+} from "@flux/core";
 
 const { Client } = pg;
 
@@ -26,6 +30,8 @@ export class TenantShortIdCollisionError extends Error {
   readonly existingTenantId: string;
 
   constructor(shortId: string, requestedTenantId: string, existingTenantId: string) {
+    // Message uses shortId (always 12 hex here); same naming as
+    // defaultTenantApiSchemaFromProjectId(validUuidWithThisPrefix).
     super(
       `ShortId collision: schema "t_${shortId}_api" is already owned by tenant ` +
       `"${existingTenantId}", but provisioning was requested for a different tenant ` +
@@ -79,17 +85,11 @@ function parsePositiveIntEnv(name: string, fallback: number): number {
 }
 
 export function deriveTenantIdentity(tenantId: string): TenantIdentity {
-  const shortId = deriveShortId(tenantId);
-  if (!/^[a-f0-9]{12}$/.test(shortId)) {
-    throw new Error(
-      `Derived shortId "${shortId}" is invalid for tenant "${tenantId}". Expected 12 lowercase hex chars.`,
-    );
-  }
-
+  const shortId = deriveTenantSchemaShortId(tenantId);
   return {
     shortId,
-    schema: `t_${shortId}_api`,
-    role: `t_${shortId}_role`,
+    schema: defaultTenantApiSchemaFromProjectId(tenantId),
+    role: defaultTenantRoleFromProjectId(tenantId),
   };
 }
 
@@ -181,7 +181,8 @@ SELECT pg_notify('pgrst', 'reload config');
  *
  * flux_postgrest_config  — PostgREST pre-config hook.
  *   Dynamically builds the db-schemas list by querying pg_namespace for all
- *   tenant schemas matching the t_<shortid>_api pattern.  PostgREST calls
+ *   tenant schemas matching the t_<12-hex>_api pattern (same naming as
+ *   `defaultTenantApiSchemaFromProjectId` in `@flux/core`).  PostgREST calls
  *   this function on every "reload config" notification, so new tenants become
  *   visible without restarting the PostgREST container.
  *
@@ -236,7 +237,8 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Derive schema from role name: t_<shortid>_role -> t_<shortid>_api
+  -- Derive schema from role name (must match defaultTenantRoleFromProjectId /
+  -- defaultTenantApiSchemaFromProjectId in @flux/core).
   _schema := substring(_role FROM '^t_[0-9a-f]{12}') || '_api';
 
   -- SET LOCAL is transaction-scoped and works correctly in PgBouncer

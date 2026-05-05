@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   defaultTenantApiSchemaFromProjectId,
+  defaultTenantRoleFromProjectId,
+  LEGACY_FLUX_API_SCHEMA,
   resolveTenantApiSchemaName,
 } from "./api-schema-strategy.ts";
 
@@ -9,6 +11,13 @@ test("defaultTenantApiSchemaFromProjectId derives t_<12hex>_api", () => {
   assert.equal(
     defaultTenantApiSchemaFromProjectId("550e8400-e29b-41d4-a716-446655440000"),
     "t_550e8400e29b_api",
+  );
+});
+
+test("defaultTenantRoleFromProjectId derives matching pooled DB role", () => {
+  assert.equal(
+    defaultTenantRoleFromProjectId("550e8400-e29b-41d4-a716-446655440000"),
+    "t_550e8400e29b_role",
   );
 });
 
@@ -32,7 +41,7 @@ test("resolveTenantApiSchemaName: v1 legacy uses api", () => {
       apiSchemaName: null,
       apiSchemaStrategy: "legacy_api",
     }),
-    "api",
+    LEGACY_FLUX_API_SCHEMA,
   );
 });
 

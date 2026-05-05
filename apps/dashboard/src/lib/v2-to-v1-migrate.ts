@@ -1,8 +1,13 @@
 import { unlink } from "node:fs/promises";
-import { and, eq } from "drizzle-orm";
+import { and, eq, type InferSelectModel } from "drizzle-orm";
 import { Client } from "pg";
 import type { ProjectManager } from "@flux/core";
-import { resolveTenantApiSchemaName } from "@flux/core";
+import {
+  fluxMigrationStatusIsActiveLease,
+  FLUX_GATEWAY_DRAINING_MIGRATION_STATUS,
+  FLUX_SILENT_MIGRATION_MUTEX_STATUS,
+  resolveTenantApiSchemaName,
+} from "@flux/core";
 import {
   assertPgDumpOnPath,
   assertSchemaOwnershipComment,
@@ -22,6 +27,61 @@ import { domains, projects } from "@/src/db/schema";
 import type { SystemDb } from "@/src/lib/db";
 import { generateProjectJwtSecret } from "@/src/lib/provisioning-engine";
 import { evictHostnames, v2SharedGatewayCacheHostnames } from "@/src/lib/gateway-cache";
+import { validateDedicatedPostgrestOpenApi } from "@/src/lib/migrate-postgrest-validate";
+
+export type ProjectRowForMigrate = InferSelectModel<typeof projects>;
+
+export type MigrationLeaseResult =
+  | { ok: true; row: ProjectRowForMigrate }
+  | { ok: false; reason: "not_found" | "busy" };
+
+/**
+ * Takes a row lock on the project, then sets a migration lease status so a second
+ * concurrent `flux migrate` fails fast. Uses {@link FLUX_SILENT_MIGRATION_MUTEX_STATUS}
+ * when `lockWrites` is false so the gateway does not 503 tenant traffic.
+ */
+export async function claimProjectMigrationLease(
+  db: SystemDb,
+  userId: string,
+  slug: string,
+  hash: string,
+  lockWrites: boolean,
+): Promise<MigrationLeaseResult> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projects)
+      .where(
+        and(
+          eq(projects.userId, userId),
+          eq(projects.slug, slug),
+          eq(projects.hash, hash),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    const locked = rows[0];
+    if (!locked) {
+      return { ok: false, reason: "not_found" };
+    }
+    if (fluxMigrationStatusIsActiveLease(locked.migrationStatus)) {
+      return { ok: false, reason: "busy" };
+    }
+    const next = lockWrites
+      ? FLUX_GATEWAY_DRAINING_MIGRATION_STATUS
+      : FLUX_SILENT_MIGRATION_MUTEX_STATUS;
+    await tx
+      .update(projects)
+      .set({ migrationStatus: next })
+      .where(eq(projects.id, locked.id));
+    const [after] = await tx
+      .select()
+      .from(projects)
+      .where(eq(projects.id, locked.id))
+      .limit(1);
+    return { ok: true, row: after ?? locked };
+  });
+}
 
 function sharedPostgresUrl(): string {
   assertSharedPostgresUrlConfigured();
@@ -93,7 +153,7 @@ export async function runV2SharedToV1DedicatedMigration(input: {
 
   const lockWrites = payload.noLockWrites ? false : payload.lockWrites !== false;
 
-  const [row] = await db
+  let [row] = await db
     .select()
     .from(projects)
     .where(
@@ -109,7 +169,7 @@ export async function runV2SharedToV1DedicatedMigration(input: {
     return { ok: false, phase: "failed", error: "Project not found." };
   }
 
-  if (row.migrationStatus === "migrating") {
+  if (fluxMigrationStatusIsActiveLease(row.migrationStatus)) {
     return {
       ok: false,
       phase: "failed",
@@ -178,23 +238,31 @@ export async function runV2SharedToV1DedicatedMigration(input: {
     };
   }
 
+  assertSharedPostgresUrlConfigured();
+  assertPgDumpOnPath();
+
+  const lease = await claimProjectMigrationLease(db, userId, slug, hash, lockWrites);
+  if (!lease.ok) {
+    if (lease.reason === "not_found") {
+      return { ok: false, phase: "failed", error: "Project not found." };
+    }
+    return {
+      ok: false,
+      phase: "failed",
+      error: "Migration already in progress for this project.",
+    };
+  }
+  row = lease.row;
+
   const jwtSecret =
     payload.newJwtSecret === true || !plan.preserveJwtSecret
       ? generateProjectJwtSecret()
       : row.jwtSecret!.trim();
 
-  assertSharedPostgresUrlConfigured();
-  assertPgDumpOnPath();
-
-  let wroteMigrating = false;
+  let hasMigrationLease = true;
   let dumpPath: string | null = null;
   try {
     if (lockWrites) {
-      await db
-        .update(projects)
-        .set({ migrationStatus: "migrating" })
-        .where(eq(projects.id, row.id));
-      wroteMigrating = true;
       const hosts = [
         ...v2SharedGatewayCacheHostnames(slug, hash, isProd),
         ...(await collectDomainHostnames(db, row.id)),
@@ -256,6 +324,14 @@ export async function runV2SharedToV1DedicatedMigration(input: {
     );
     assertSequenceSnapshotsMatch(srcSeq, tgtSeq, plan.tenantSchema);
 
+    await validateDedicatedPostgrestOpenApi({
+      slug,
+      hash,
+      isProduction: isProd,
+      jwtSecret,
+      tenantSchema: plan.tenantSchema,
+    });
+
     if (!payload.staged) {
       const apiSchemaStrategy = "tenant_schema";
       const resolvedName = resolveTenantApiSchemaName({
@@ -311,14 +387,14 @@ export async function runV2SharedToV1DedicatedMigration(input: {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, phase: "failed", error: msg };
   } finally {
-    if (wroteMigrating) {
+    if (hasMigrationLease) {
       try {
         await db
           .update(projects)
           .set({ migrationStatus: null })
           .where(eq(projects.id, row.id));
       } catch {
-        /* best-effort: catalog must not stay stuck in migrating */
+        /* best-effort: catalog must not stay stuck on migration lease */
       }
     }
     if (dumpPath) {

@@ -1,3 +1,4 @@
+import { defaultTenantRoleFromProjectId } from "@flux/core/api-schema-strategy";
 import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 import { env } from "./env.ts";
 
@@ -54,7 +55,7 @@ export async function mintJwt(tenant: {
   const expiresAtSec = now + effectiveTtl;
 
   const token = await new SignJWT({
-    role: `t_${tenant.shortid}_role`,
+    role: defaultTenantRoleFromProjectId(tenant.tenantId),
     tenant_id: tenant.tenantId,
   })
     .setProtectedHeader({ alg: "HS256" })

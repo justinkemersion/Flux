@@ -1,7 +1,10 @@
 import type { Context } from "hono";
 import { Agent, fetch } from "undici";
 import { env } from "./env.ts";
-import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
+import {
+  defaultTenantApiSchemaFromProjectId,
+  defaultTenantRoleFromProjectId,
+} from "@flux/core/api-schema-strategy";
 import type { TenantResolution } from "./types.ts";
 
 /**
@@ -105,7 +108,10 @@ export async function proxyRequest(
       resHeaders.set(name, value);
     }
     resHeaders.set("x-tenant-id", tenant.tenantId);
-    resHeaders.set("x-tenant-role", `t_${tenant.shortid}_role`);
+    resHeaders.set(
+      "x-tenant-role",
+      defaultTenantRoleFromProjectId(tenant.tenantId),
+    );
 
     // Stream response body — no buffering
     return new Response(upstreamRes.body as unknown as BodyInit, {

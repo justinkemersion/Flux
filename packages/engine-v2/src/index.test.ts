@@ -18,7 +18,7 @@ test("deriveTenantIdentity maps UUID to schema and role", () => {
 test("deriveTenantIdentity rejects non-hex shortId prefix", () => {
   assert.throws(
     () => deriveTenantIdentity("zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz"),
-    /invalid for tenant/,
+    /Cannot derive tenant short id/,
   );
 });
 

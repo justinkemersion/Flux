@@ -1,7 +1,10 @@
 import type Docker from "dockerode";
 
 import { buildApiSchemaPrivilegesSql } from "./api-schema-privileges.ts";
-import { assertFluxApiSchemaIdentifier } from "./api-schema-strategy.ts";
+import {
+  assertFluxApiSchemaIdentifier,
+  LEGACY_FLUX_API_SCHEMA,
+} from "./api-schema-strategy.ts";
 import {
   createFluxPgRunner,
   type FluxPgRunner,
@@ -295,11 +298,14 @@ export async function movePublicSchemaObjectsToTargetSchema(
   return { tablesMoved, sequencesMoved, viewsMoved };
 }
 
-/** @deprecated Prefer {@link movePublicSchemaObjectsToTargetSchema} with `"api"`. */
+/**
+ * @deprecated Prefer {@link movePublicSchemaObjectsToTargetSchema} with
+ * {@link LEGACY_FLUX_API_SCHEMA} for the historical default layout.
+ */
 export async function movePublicSchemaObjectsToApi(
   run: FluxPgRunner,
 ): Promise<MovePublicToApiResult> {
-  return movePublicSchemaObjectsToTargetSchema(run, "api");
+  return movePublicSchemaObjectsToTargetSchema(run, LEGACY_FLUX_API_SCHEMA);
 }
 
 export async function runMovePublicSchemaToTargetWithDockerExec(
@@ -324,6 +330,6 @@ export async function runMovePublicToApiWithDockerExec(
     containerId,
     password,
     pgUser,
-    "api",
+    LEGACY_FLUX_API_SCHEMA,
   );
 }

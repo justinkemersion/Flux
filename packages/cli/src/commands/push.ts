@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { access, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import { LEGACY_FLUX_API_SCHEMA } from "@flux/core";
 import type { ImportSqlFileResult } from "@flux/core/standalone";
 import chalk from "chalk";
 import ora from "ora";
@@ -41,7 +42,7 @@ export async function cmdPush(
 
   const schemaHint =
     metadata.mode === "v1_dedicated"
-      ? `${metadata.mode}, schema ${metadata.apiSchema ?? "api"}`
+      ? `${metadata.mode}, schema ${metadata.apiSchema ?? LEGACY_FLUX_API_SCHEMA}`
       : metadata.mode;
   console.log(
     chalk.blue(

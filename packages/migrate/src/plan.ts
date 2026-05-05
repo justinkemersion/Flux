@@ -1,5 +1,7 @@
-import { defaultTenantApiSchemaFromProjectId } from "@flux/core";
-import { deriveShortId } from "@flux/core/standalone";
+import {
+  defaultTenantApiSchemaFromProjectId,
+  deriveTenantSchemaShortId,
+} from "@flux/core";
 
 import type { MigrationPlan } from "./types.ts";
 
@@ -26,10 +28,7 @@ export function buildMigrationPlanFromCatalogRow(
   if (!row.jwtSecret?.trim()) {
     throw new Error("Project jwt_secret is missing; repair before migrating.");
   }
-  const shortId = deriveShortId(row.id);
-  if (!/^[a-f0-9]{12}$/.test(shortId)) {
-    throw new Error("Derived shortId is invalid; refusing to migrate.");
-  }
+  const shortId = deriveTenantSchemaShortId(row.id);
   const tenantSchema = defaultTenantApiSchemaFromProjectId(row.id);
   return {
     projectSlug: row.slug,

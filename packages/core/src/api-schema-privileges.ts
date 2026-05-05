@@ -3,7 +3,10 @@
  * Reused after {@link movePublicSchemaObjectsToTargetSchema} and in initial bootstrap SQL.
  */
 
-import { assertFluxApiSchemaIdentifier } from "./api-schema-strategy.ts";
+import {
+  assertFluxApiSchemaIdentifier,
+  LEGACY_FLUX_API_SCHEMA,
+} from "./api-schema-strategy.ts";
 
 function qSchema(schema: string): string {
   assertFluxApiSchemaIdentifier(schema);
@@ -36,8 +39,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ${s} GRANT ALL ON SEQUENCES
 `.trim();
 }
 
-/** Legacy default: `api` schema (existing v1 dedicated projects). */
-export const API_SCHEMA_PRIVILEGES_SQL = buildApiSchemaPrivilegesSql("api");
+/** Legacy default: same identifier as `LEGACY_FLUX_API_SCHEMA` (existing v1 dedicated projects). */
+export const API_SCHEMA_PRIVILEGES_SQL =
+  buildApiSchemaPrivilegesSql(LEGACY_FLUX_API_SCHEMA);
 
 export function buildDisableRowLevelSecurityForSchemaSql(
   apiSchemaName: string,
@@ -75,4 +79,4 @@ $flux_disable_tenant_rls$;
  * claims; PostgREST’s `anon` role may see no rows until policies are rewritten for Flux.
  */
 export const DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL =
-  buildDisableRowLevelSecurityForSchemaSql("api");
+  buildDisableRowLevelSecurityForSchemaSql(LEGACY_FLUX_API_SCHEMA);
