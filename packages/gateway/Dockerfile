@@ -34,7 +34,7 @@ RUN corepack enable pnpm
 # (Avoids sending `apps/dashboard` app sources in the build context.)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/gateway ./packages/gateway
-COPY packages/core/package.json ./packages/core/package.json
+COPY packages/core ./packages/core
 COPY packages/cli/package.json ./packages/cli/package.json
 COPY packages/sdk/package.json ./packages/sdk/package.json
 COPY packages/engine-v1/package.json ./packages/engine-v1/package.json
@@ -44,16 +44,20 @@ COPY apps/dashboard/package.json ./apps/dashboard/package.json
 
 RUN pnpm install --frozen-lockfile
 
-# ESM bundle: keep node_modules resolution for native/runtime externals (e.g. pg, ioredis).
+# ESM bundle: include workspace TypeScript packages (e.g. @flux/core) in the
+# output bundle, but keep selected runtime deps external.
 RUN pnpm dlx esbuild packages/gateway/src/server.ts \
   --bundle \
   --platform=node \
-  --format=esm \
-  --outfile=packages/gateway/dist/server.mjs \
-  --packages=external
+  --format=cjs \
+  --outfile=packages/gateway/dist/server.cjs \
+  --external:pg \
+  --external:ioredis \
+  --external:cpu-features \
+  --external:ssh2
 
 RUN pnpm --filter @flux/gateway deploy --legacy --prod /out \
-  && cp /w/packages/gateway/dist/server.mjs /out/server.mjs
+  && cp /w/packages/gateway/dist/server.cjs /out/server.cjs
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
@@ -71,4 +75,4 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "require('http').get('http://127.0.0.1:'+(process.env.PORT||4000)+'/health',(res)=>{res.resume();res.on('end',()=>process.exit(res.statusCode>=200&&res.statusCode<300?0:1));}).on('error',()=>process.exit(1));"
 
-CMD ["node", "server.mjs"]
+CMD ["node", "server.cjs"]

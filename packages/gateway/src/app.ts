@@ -1,4 +1,4 @@
-import { FLUX_GATEWAY_DRAINING_MIGRATION_STATUS } from "@flux/core";
+import { FLUX_GATEWAY_DRAINING_MIGRATION_STATUS } from "@flux/core/migration-status";
 import { Hono } from "hono";
 import {
   resolveTenant,

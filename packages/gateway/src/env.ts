@@ -1,12 +1,10 @@
 import { config as loadDotEnv } from "dotenv";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { z } from "zod";
 
-// Load packages/gateway/.env when present. Does not override vars already set
-// (systemd, Docker, shell exports win).
-const gatewayPackageDir = dirname(fileURLToPath(import.meta.url));
-loadDotEnv({ path: join(gatewayPackageDir, "..", ".env") });
+// Load packages/gateway/.env when present (repo root usage). Does not override
+// vars already set (systemd, Docker, shell exports win).
+loadDotEnv({ path: join(process.cwd(), "packages/gateway/.env") });
 
 const envSchema = z.object({
   // --- Required ---

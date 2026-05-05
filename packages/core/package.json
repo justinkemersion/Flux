@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./standalone": "./src/standalone.ts",
-    "./api-schema-strategy": "./src/api-schema-strategy.ts"
+    "./api-schema-strategy": "./src/api-schema-strategy.ts",
+    "./migration-status": "./src/migration-status.ts"
   },
   "scripts": {
     "test": "tsx --test src/**/*.test.ts"

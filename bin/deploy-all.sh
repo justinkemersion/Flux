@@ -52,7 +52,7 @@ check_docs_freshness() {
   local updated_line
   updated_line="$(awk '/^-\s*Last updated:\s*`[0-9]{4}-[0-9]{2}-[0-9]{2}`/{print; exit}' "$doc")"
   if [[ -z "$updated_line" ]]; then
-    echo "  WARN: docs freshness check skipped (no 'Last updated: `YYYY-MM-DD`' line in ${doc})." >&2
+    echo "  WARN: docs freshness check skipped (no 'Last updated: \`YYYY-MM-DD\`' line in ${doc})." >&2
     return 0
   fi
 
