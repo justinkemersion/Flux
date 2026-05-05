@@ -12,7 +12,7 @@
  * (60 s by default) — "zombie routing" window is bounded.
  */
 
-import { fluxApiUrlForSlug, fluxApiUrlForV2Shared } from "@flux/core";
+import { fluxApiUrlForV2Shared, fluxTenantV1LegacyDottedHostname } from "@flux/core";
 
 /**
  * Normalised hostnames to DEL for v2_shared: current flat `api--` ingress shape plus
@@ -26,9 +26,7 @@ export function v2SharedGatewayCacheHostnames(
   const flat = new URL(
     fluxApiUrlForV2Shared(slug, hash, isProduction),
   ).hostname.toLowerCase();
-  const legacy = new URL(
-    fluxApiUrlForSlug(slug, hash, isProduction),
-  ).hostname.toLowerCase();
+  const legacy = fluxTenantV1LegacyDottedHostname(slug, hash).toLowerCase();
   return flat === legacy ? [flat] : [flat, legacy];
 }
 

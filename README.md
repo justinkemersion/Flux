@@ -111,9 +111,9 @@ Treat it as an operator-level source of truth.
 
 ### Mesh HTTP probes from `flux-web` (internal)
 
-Fleet monitor and v2 “start” power actions probe each tenant by HTTP. By default the code uses the public URL from `fluxApiUrlForSlug` (e.g. `https://api.<slug>.<hash>.<domain>`). **Inside the `flux-web` container** that `fetch` often fails even when the tenant is healthy: Traefik / ACME may not cover the extra `.<hash>` label, or internal DNS may not resolve the public hostname the same way as a browser on the internet.
+Fleet monitor and v2 “start” power actions probe each tenant by HTTP. By default the code uses the public URL from `fluxApiUrlForSlug` / `fluxApiUrlForCatalog` (canonical: `https://api--<slug>--<hash>.<domain>`). **Inside the `flux-web` container** that `fetch` often fails even when the tenant is healthy: Traefik / ACME may not cover the public name, or internal DNS may not resolve it the same way as a browser on the internet.
 
-**Recommended in production:** set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` (both `flux-web` and `flux-node-gateway` are on `flux-network`). Probes then call that internal base URL and send `Host: api.<slug>.<hash>.<domain>` so the Node gateway routes exactly like a real client, without TLS to the public name. See `apps/dashboard/src/lib/tenant-api-probe.ts`.
+**Recommended in production:** set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` (both `flux-web` and `flux-node-gateway` are on `flux-network`). Probes then call that internal base URL and send `Host: api--<slug>--<hash>.<domain>` so the Node gateway routes exactly like a real client, without TLS to the public name. See `apps/dashboard/src/lib/tenant-api-probe.ts`.
 
 ### JWT and schema isolation handshake
 

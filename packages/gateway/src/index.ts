@@ -11,7 +11,9 @@ export {
   evictHostname,
   normalizeHost,
   fetchProjectJwtSecret,
+  parseFluxSubdomain,
 } from "./tenant-resolver.ts";
+export type { ParsedFluxSubdomain } from "./tenant-resolver.ts";
 export { tenantIdToShortid } from "./shortid.ts";
 export { mintJwt } from "./jwt-issuer.ts";
 export { acquireRateSlot } from "./rate-limiter.ts";

@@ -1,7 +1,7 @@
 // packages/cli/sdk-test.ts
 import { createClient } from '@flux/sdk';
 
-const flux = createClient("http://api.final-win.flux.localhost");
+const flux = createClient("http://api--final-win--abc1234.flux.localhost");
 
 async function runTest() {
   console.log('📡 Calling the Flux API...');

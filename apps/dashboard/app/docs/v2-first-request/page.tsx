@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { fluxApiUrlForV2Shared } from "@flux/core/standalone";
 import { CodeBlock } from "@/src/components/docs/code-block";
 
 export const metadata: Metadata = {
@@ -25,7 +26,7 @@ export default async function V2FirstRequestGuide({
   const params = await searchParams;
   const slug = safeParam(params.slug, "<slug>");
   const hash = safeParam(params.hash, "<hash>");
-  const apiUrl = `https://api--${slug}--${hash}.vsl-base.com`;
+  const apiUrl = fluxApiUrlForV2Shared(slug, hash, process.env.NODE_ENV === "production");
 
   const firstRequest = `const token = await window.Clerk?.session?.getToken({ template: "flux" });
 

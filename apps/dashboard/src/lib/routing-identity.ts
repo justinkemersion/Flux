@@ -1,6 +1,5 @@
 import {
   type FluxCatalogProjectMode,
-  fluxTenantPostgrestHostname,
   fluxTenantV2SharedHostname,
 } from "@flux/core/standalone";
 
@@ -16,18 +15,15 @@ export function hashSegment(key: string): string {
 }
 
 /**
- * Spec-table style hostname when `apiUrl` is absent. `v2_shared` uses flat ingress shape;
- * `v1_dedicated` or omitted (legacy list rows) uses dot-separated dedicated PostgREST host.
+ * Spec-table style hostname when `apiUrl` is absent. Both engines use the same flattened
+ * `api--<slug>--<hash>.<domain>` host; `mode` is kept for call-site compatibility only.
  */
 export function projectApiInterface(
   slug: string,
   hash: string,
-  mode?: FluxCatalogProjectMode,
+  _mode?: FluxCatalogProjectMode,
 ): string {
-  if (mode === "v2_shared") {
-    return fluxTenantV2SharedHostname(slug, hash);
-  }
-  return fluxTenantPostgrestHostname(slug, hash);
+  return fluxTenantV2SharedHostname(slug, hash);
 }
 
 export function uptimeReadoutForStatus(

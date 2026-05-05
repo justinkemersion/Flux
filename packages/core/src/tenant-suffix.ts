@@ -14,7 +14,8 @@ export const FLUX_SYSTEM_HASH = "5y57e70";
 /**
  * Generates a random 7-char hex id for a new project. Used as the `hash` segment in
  * `flux-${hash}-${slug}-{db,api}` Docker names, the tenant volume, Traefik middleware names,
- * and the public hostname `api.${slug}.${hash}.${domain}`.
+ * and the public canonical hostname `api--${slug}--${hash}.${domain}` (legacy dotted
+ * `api.${slug}.${hash}.${domain}` remains supported for v1 Traefik compatibility).
  *
  * Entropy: `crypto.randomBytes(4)` → 8 hex chars, sliced to 7 → 2^28 ≈ 268M ids. Collisions
  * within a single user's namespace are rejected by the `(userId, slug)` unique index in the

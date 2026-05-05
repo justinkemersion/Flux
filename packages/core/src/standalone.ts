@@ -117,6 +117,7 @@ export {
   fluxApiUrlForSlug,
   fluxTenantDomain,
   fluxTenantPostgrestHostname,
+  fluxTenantV1LegacyDottedHostname,
   fluxTenantV2SharedHostname,
   fluxApiUrlForV2Shared,
   type FluxCatalogProjectMode,

@@ -98,7 +98,7 @@ export type MigrationResult = {
 4. **Provision target** — `ProjectManager.provisionProject` with tenant schema + preserved JWT; no routing flip until switch phase.
 5. **restore.ts** — Drop/recreate tenant schema on target, apply dump, reapply parameterized grants / `auth.uid()`, reload PostgREST.
 6. **validate.ts** — Row counts, sequences, smoke JWT + GET.
-7. **switch.ts** — `projects.mode = v1_dedicated`, infra pointers, evict gateway `hostname:*` cache.
+7. **switch.ts** — `projects.mode = v1_dedicated`, infra pointers, evict gateway `hostname:*` cache. The tenant’s **canonical public API URL** (`https://api--<slug>--<hash>.<domain>`) is unchanged by the switch; only routing/infra behind it changes. No application URL rewrite is required.
 
 On any failure **before** switch: source stays live; clear `migration_status`; target may be abandoned.
 

@@ -15,17 +15,17 @@ This guide is intentionally minimal and copy/paste friendly.
 - Flux account with a project in `v2_shared` mode
 - Flux **PostgREST** base URL for that project (see **hostname** notes below)
 
-### Hostname: `flux list` URL vs triple-dash URL
+### Hostname: canonical flattened URL (and legacy dotted)
 
-The dashboard / `flux list` may show:
-
-`https://api.<slug>.<hash>.<domain>`
-
-On some deployments, **table routes** (`GET /notes`) return **404** on that host while the same path works on:
+The dashboard / `flux list` show the **canonical** tenant API base:
 
 `https://api--<slug>--<hash>.<domain>`
 
-Use whichever responds to `curl -sS -o /dev/null -w "%{http_code}" "https://…/notes"` with **200** (or **401** — still routed) vs **404**.
+Older material may still reference the **legacy** dotted dedicated host:
+
+`https://api.<slug>.<hash>.<domain>`
+
+Dedicated v1 stacks accept both; pooled `v2_shared` traffic uses the flattened host at the gateway. Verify with `curl -sS -o /dev/null -w "%{http_code}" "https://…/notes"` (**200** or **401** means routed; **404** means wrong host or path).
 
 ### Tenant API schema (`t_<shortId>_api`)
 

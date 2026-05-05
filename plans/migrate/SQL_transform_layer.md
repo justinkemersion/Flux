@@ -325,7 +325,7 @@ Acceptance:
 
 * Dump restores without schema-name transform.
 * JWT secret can be preserved.
-* API URL can be preserved.
+* **API URL is preserved** — the same flattened `api--<slug>--<hash>.<domain>` origin remains valid before and after migration.
 * Source v2 schema remains until cleanup.
 
 ---

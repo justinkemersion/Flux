@@ -12,8 +12,8 @@ const DEFAULT_GATEWAY_PROBE_URL = "http://flux-node-gateway:4000";
 /**
  * When set (e.g. `http://flux-node-gateway:4000`), tenant health probes from the
  * dashboard (fleet monitor, v2 "start" power) issue HTTP to this base URL and set
- * the `Host` header to the public tenant API hostname (`api--<slug>--<hash>.<domain>` for
- * v2_shared, `api.<slug>.<hash>.<domain>` for v1_dedicated).
+ * the `Host` header to the public tenant API hostname (canonical flattened
+ * `api--<slug>--<hash>.<domain>` for both engines; the gateway resolves it for `v2_shared`).
  *
  * Without this, `fetch("https://api…")` from inside `flux-web` often fails in production
  * (TLS / wildcard depth for extra labels, split-horizon DNS, or hairpin NAT) even when

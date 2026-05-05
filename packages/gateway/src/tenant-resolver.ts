@@ -3,10 +3,13 @@ import { safeRedis } from "./redis.ts";
 import { memGet, memSet, memDel } from "./cache.ts";
 import { tenantIdToShortid } from "./shortid.ts";
 import { env } from "./env.ts";
+import { parseFluxSubdomain } from "./tenant-subdomain-parse.ts";
 import { z } from "zod";
 import type { TenantResolution, ProjectMode } from "./types.ts";
 
 export type { TenantResolution, ProjectMode };
+export type { ParsedFluxSubdomain } from "./tenant-subdomain-parse.ts";
+export { parseFluxSubdomain } from "./tenant-subdomain-parse.ts";
 
 /** Where in the lookup chain the tenant resolution was satisfied. */
 export type CacheSource = "memory" | "redis" | "db" | null;
@@ -66,8 +69,8 @@ export function normalizeHost(raw: string): string {
  *  3. DB: exact match in `domains` table — covers all custom domains (apex, www, etc.).
  *  4. DB: Flux subdomain fallbacks when host ends with FLUX_BASE_DOMAIN:
  *     a) v2_shared ingress shape `api--<slug>--<7-hex-hash>.<base>` (single DNS label).
- *     b) v1_dedicated Traefik shape `api.<slug>.<7-hex-hash>.<base>` (@flux/core
- *        fluxTenantPostgrestHostname default prefix `api`).
+ *     b) v1_dedicated legacy Traefik shape `api.<slug>.<7-hex-hash>.<base>` (see
+ *        `fluxTenantV1LegacyDottedHostname` in `@flux/core`).
  *     c) Legacy / dev single-label `<slug>-<hash>.<base>` (first label only).
  *     All query `projects` by slug + hash.
  *  5. Returns null → caller responds 404.
@@ -136,63 +139,12 @@ async function resolveUncached(host: string): Promise<ResolvedTenant | null> {
 
   // 4. Subdomain slug fallbacks — only for Flux-managed subdomains
   const baseDomain = env.FLUX_BASE_DOMAIN.toLowerCase();
-  if (host !== baseDomain && host.endsWith(`.${baseDomain}`)) {
-    const prefix = host.slice(0, host.length - baseDomain.length - 1);
-    const parts = prefix.split(".");
-    const HASH_HEX_LEN = 7;
-    const hashHexRe = new RegExp(`^[0-9a-f]{${HASH_HEX_LEN}}$`, "i");
-
-    // 4a-flat. Single label: api--<slug>--<hash>.<base> (v2_shared gateway ingress).
-    if (parts.length === 1) {
-      const label = parts[0] ?? "";
-      if (label.toLowerCase().startsWith("api--")) {
-        const segs = label.split("--");
-        if (
-          segs.length >= 3 &&
-          segs[0]!.toLowerCase() === "api"
-        ) {
-          const hashPart = segs[segs.length - 1]!.toLowerCase();
-          if (hashHexRe.test(hashPart)) {
-            const slug = segs.slice(1, -1).join("--");
-            if (slug) {
-              const slugRow = await queryBySlugAndHash(slug, hashPart);
-              if (slugRow) {
-                await cacheResolution(cacheKey, slugRow);
-                return { resolution: slugRow, cacheSource: "db" };
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 4b-dot. Traefik v1: api.<slug>.<hash>.<base> → prefix is three labels.
-    const hashPart = parts[2]?.toLowerCase() ?? "";
-    if (
-      parts.length === 3 &&
-      parts[0]!.toLowerCase() === "api" &&
-      hashHexRe.test(hashPart)
-    ) {
-      const slug = parts[1]!;
-      const slugRow = await queryBySlugAndHash(slug, hashPart);
-      if (slugRow) {
-        await cacheResolution(cacheKey, slugRow);
-        return { resolution: slugRow, cacheSource: "db" };
-      }
-    }
-    // 4c. Legacy single-label: <slug>-<hash>.<base> (e.g. myapp-a1b2c3d.flux.localhost).
-    const label = parts[0] ?? "";
-    const lastDash = label.lastIndexOf("-");
-    if (lastDash > 0) {
-      const slug = label.slice(0, lastDash);
-      const hash = label.slice(lastDash + 1).toLowerCase();
-      if (slug && hash) {
-        const slugRow = await queryBySlugAndHash(slug, hash);
-        if (slugRow) {
-          await cacheResolution(cacheKey, slugRow);
-          return { resolution: slugRow, cacheSource: "db" };
-        }
-      }
+  const parsed = parseFluxSubdomain(host, baseDomain);
+  if (parsed) {
+    const slugRow = await queryBySlugAndHash(parsed.slug, parsed.hash);
+    if (slugRow) {
+      await cacheResolution(cacheKey, slugRow);
+      return { resolution: slugRow, cacheSource: "db" };
     }
   }
 

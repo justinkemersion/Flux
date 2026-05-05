@@ -474,4 +474,5 @@ Which means:
 * fewer bugs
 * simpler mental model
 * stronger product story
+* **Public API URL shape is preserved** across `v2_shared → v1_dedicated` migration: both engines use the same canonical flattened host `https://api--<slug>--<hash>.<domain>`, so application env vars and client base URLs do **not** need to be rewritten when the catalog `mode` flips.
 

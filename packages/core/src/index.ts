@@ -50,7 +50,8 @@ import {
   fluxApiHttpsForTenantUrls,
   fluxApiUrlForSlug,
   fluxTenantDomain,
-  fluxTenantPostgrestHostname,
+  fluxTenantV1LegacyDottedHostname,
+  fluxTenantV2SharedHostname,
 } from "./tenant-catalog-urls.ts";
 
 export {
@@ -58,6 +59,7 @@ export {
   fluxTenantDomain,
   fluxApiHttpsForTenantUrls,
   fluxTenantPostgrestHostname,
+  fluxTenantV1LegacyDottedHostname,
   fluxApiUrlForSlug,
   type FluxCatalogProjectMode,
   fluxTenantV2SharedHostname,
@@ -704,11 +706,14 @@ export function fluxTraefikCertResolverName(): string | null {
 }
 
 /**
- * Traefik v3 `Host()` matcher: backticks wrap the literal hostname (required syntax).
- * Example: `Host(\`api.acme.abc1234.vsl-base.com\`)`.
+ * Traefik v3 `Host()` matcher: backticks wrap literal hostnames (required syntax).
+ * Canonical flattened host OR legacy dotted v1 host so existing clients keep working.
+ * Example: `Host(\`api--acme--abc1234.example.com\`) || Host(\`api.acme.abc1234.example.com\`)`.
  */
 function traefikHostRule(slug: string, hash: string): string {
-  return `Host(\`${fluxTenantPostgrestHostname(slug, hash)}\`)`;
+  const flat = fluxTenantV2SharedHostname(slug, hash);
+  const dotted = fluxTenantV1LegacyDottedHostname(slug, hash);
+  return `Host(\`${flat}\`) || Host(\`${dotted}\`)`;
 }
 
 /**
@@ -822,18 +827,18 @@ const TRAEFIK_CORS_ALLOW_HEADERS =
  *   - Router / service id   `flux-${hash}-${slug}-api`
  *   - CORS middleware id    `flux-${hash}-${slug}-cors`
  *   - Strip middleware id   `flux-${hash}-${slug}-stripprefix`
- *   - Router rule           ``Host(`api.${slug}.${hash}.${domain}`)``
+ *   - Router rule           flattened `api--…` **or** legacy dotted `api.…` (see {@link traefikHostRule})
  *
  * All four share the same `flux-${hash}-${slug}` base ({@link fluxTenantStackBaseId}) and the
- * hostname produced by {@link fluxTenantPostgrestHostname} so Traefik can never mismatch a
- * router’s `.rule` with its `.service`.
+ * hostnames from {@link fluxTenantV2SharedHostname} and {@link fluxTenantV1LegacyDottedHostname}
+ * so Traefik can never mismatch a router’s `.rule` with its `.service`.
  *
  * `perProjectExtraOrigins` is layered on top of the built-in dashboard origins and
  * {@link FLUX_EXTRA_ALLOWED_ORIGINS_ENV}; the resolved list is stamped both into the Traefik
  * `accesscontrolalloworiginlist` middleware **and** the {@link FLUX_CORS_EXTRA_ORIGINS_LABEL}
  * label so the next reconcile/recreate can read it back without callers re-passing it.
  */
-function postgrestTraefikDockerLabels(
+export function postgrestTraefikDockerLabels(
   slug: string,
   hash: string,
   stripSupabaseRestPrefix: boolean,
@@ -963,7 +968,7 @@ function logTraefikLabelsForTenant(
   onStatus?: (message: string) => void,
 ): void {
   const sink = onStatus ?? ((m: string) => { console.log(m); });
-  const header = `[flux] Traefik labels (${stage}) for ${fluxTenantStackBaseId(hash, slug)} → ${fluxTenantPostgrestHostname(slug, hash)}`;
+  const header = `[flux] Traefik labels (${stage}) for ${fluxTenantStackBaseId(hash, slug)} → ${fluxTenantV2SharedHostname(slug, hash)} (legacy: ${fluxTenantV1LegacyDottedHostname(slug, hash)})`;
   sink(header);
   const keys = Object.keys(labels).sort((a, b) => a.localeCompare(b));
   for (const k of keys) {

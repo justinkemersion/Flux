@@ -11,19 +11,17 @@ Canonical deep dives in this repo:
 
 ---
 
-## 1) API base URL: short host vs **triple-dash** host
+## 1) API base URL: canonical **triple-dash** host (and legacy dotted)
 
-`flux list` / the dashboard may show:
-
-`https://api.<slug>.<hash>.vsl-base.com`
-
-For some deployments or project states, **PostgREST table routes** (`GET /mytable`) return **404** on that host while the same paths work on:
+`flux list` / the dashboard show the **canonical** tenant API origin for both engines:
 
 `https://api--<slug>--<hash>.vsl-base.com`
 
 (double dashes **around** the slug).
 
-**Rule:** if `/tablename` is 404 on the short URL, try the triple-dash host (still same `PGRST_JWT_SECRET` / gateway secret). Prefer verifying with `curl` before wiring env vars.
+**Legacy (transitional):** older v1 dedicated stacks may still answer on the dotted host `https://api.<slug>.<hash>.vsl-base.com`. New stacks accept **both** hostnames at Traefik; the flattened URL is the single external contract to wire in apps.
+
+**Rule:** Prefer the URL from `flux list` / dashboard (flattened). If you must debug an old client still on the dotted host, keep the same `PGRST_JWT_SECRET` / gateway secret. Prefer verifying with `curl` before wiring env vars.
 
 ---
 

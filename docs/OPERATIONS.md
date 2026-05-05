@@ -68,15 +68,15 @@ flux create yeastcoast
 
 ### Namespacing hash (why the API URL moved)
 
-Flux stacks are **owner-scoped**: container names and the public PostgREST hostname include a **short hex suffix** derived from the provision owner key (`getTenantSuffix` — MD5 slice). The public API host is shaped like:
+Flux stacks are **owner-scoped**: container names and the public PostgREST hostname include a **short hex suffix** derived from the provision owner key (`getTenantSuffix` — MD5 slice). The **canonical** public API host is:
 
-`https://api.<slug>.<tenantSuffix>.<FLUX_DOMAIN>`
+`https://api--<slug>--<tenantSuffix>.<FLUX_DOMAIN>`
 
-(not the older two-label `api.<slug>.<domain>` pattern when namespacing is in play).
+(single DNS label with double dashes around the slug). Dedicated v1 stacks also accept the **legacy** dotted host `https://api.<slug>.<tenantSuffix>.<FLUX_DOMAIN>` for backward compatibility.
 
-- [ ] **Read the CLI output / logs** after `flux create` and note the printed **gateway API URL** (or run `flux list` with the same `DOCKER_HOST`). **Do not assume** the URL from a previous deploy — after nuke + create, **Traefik host rules and URLs can change** with the suffix.
+- [ ] **Read the CLI output / logs** after `flux create` and note the printed **PostgREST API URL** (or run `flux list` with the same `DOCKER_HOST`). **Do not assume** the URL from a previous deploy — after nuke + create, **Traefik host rules and URLs can change** with the suffix.
 
-- [ ] Copy the **exact** `https://api....` base URL — you will need it for Phase 7 (`NEXT_PUBLIC_SUPABASE_URL` / app config).
+- [ ] Copy the **exact** `https://api--…` base URL — you will need it for Phase 7 (`NEXT_PUBLIC_SUPABASE_URL` / app config).
 
 ---
 

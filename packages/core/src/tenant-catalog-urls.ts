@@ -62,44 +62,54 @@ function fluxControlPlaneTargetIsRemoteEngine(): boolean {
 }
 
 /**
- * Hostname for tenant PostgREST (Traefik `Host()`), e.g. `api.acme.abc1234.example.com`.
- * Omit or pass an empty `hostnamePrefix` for legacy `{slug}.{domain}` only (no hash segment).
+ * Legacy v1 Traefik hostname: `api.<slug>.<hash>.<domain>`.
+ * Used for Traefik `Host()` compatibility and gateway cache eviction for pre-flatten URLs.
+ */
+export function fluxTenantV1LegacyDottedHostname(slug: string, hash: string): string {
+  const domain = fluxTenantDomain();
+  return `api.${slug}.${hash}.${domain}`;
+}
+
+/**
+ * @deprecated Use {@link fluxTenantV1LegacyDottedHostname}. The third argument is ignored.
+ * Kept for transitional imports; canonical tenant API hostnames are {@link fluxTenantV2SharedHostname}.
  */
 export function fluxTenantPostgrestHostname(
   slug: string,
   hash: string,
-  hostnamePrefix = "api",
+  _hostnamePrefix = "api",
 ): string {
-  const domain = fluxTenantDomain();
-  if (!hostnamePrefix || hostnamePrefix.length === 0) {
-    return `${slug}.${domain}`;
-  }
-  return `${hostnamePrefix}.${slug}.${hash}.${domain}`;
+  return fluxTenantV1LegacyDottedHostname(slug, hash);
 }
 
 /**
- * HTTP(S) origin for a tenant API as routed by Traefik.
+ * HTTP(S) origin for a tenant API. Same flattened host as {@link fluxApiUrlForV2Shared}.
+ * See {@link fluxApiUrlForV2Shared} for the canonical URL contract.
+ *
  * Uses `https://` when `FLUX_DOMAIN` is set, `isProduction`, or a **remote** `DOCKER_HOST` (SSH) —
  * the same case where edge Traefik labels apply. Otherwise `http://` (local `docker` on Unix).
+ *
+ * @deprecated The fourth argument `hostnamePrefix` is ignored. Canonical shape is always
+ *   `https://api--<slug>--<hash>.<domain>`.
  */
 export function fluxApiUrlForSlug(
   slug: string,
   hash: string,
   isProduction = false,
-  hostnamePrefix = "api",
+  _hostnamePrefix = "api",
 ): string {
   const useHttps =
     fluxApiHttpsForTenantUrls() || isProduction || fluxControlPlaneTargetIsRemoteEngine();
   const scheme = useHttps ? "https" : "http";
-  return `${scheme}://${fluxTenantPostgrestHostname(slug, hash, hostnamePrefix)}`;
+  return `${scheme}://${fluxTenantV2SharedHostname(slug, hash)}`;
 }
 
 /** Catalog execution mode: dedicated PostgREST vs pooled gateway + shared cluster. */
 export type FluxCatalogProjectMode = "v1_dedicated" | "v2_shared";
 
 /**
- * Hostname for v2_shared tenants at the edge (single DNS label, SSL-friendly routing).
- * Example: `api--acme--abc1234.vsl-base.com`.
+ * Hostname for {@link fluxApiUrlForV2Shared} (no scheme): `api--<slug>--<hash>.<domain>`.
+ * Same shape for v2_shared and v1_dedicated. Example: `api--acme--abc1234.vsl-base.com`.
  */
 export function fluxTenantV2SharedHostname(slug: string, hash: string): string {
   const domain = fluxTenantDomain();
@@ -107,7 +117,13 @@ export function fluxTenantV2SharedHostname(slug: string, hash: string): string {
 }
 
 /**
- * Public API URL for v2_shared (gateway → PostgREST pool). Same HTTPS selection as
+ * Canonical Flux API URL.
+ *
+ * NOTE:
+ * This is the only supported external API hostname format.
+ * Do not construct API URLs manually.
+ *
+ * Full origin (scheme + host) for v2_shared (gateway → PostgREST pool). Same HTTPS selection as
  * {@link fluxApiUrlForSlug}.
  */
 export function fluxApiUrlForV2Shared(
@@ -122,16 +138,14 @@ export function fluxApiUrlForV2Shared(
 }
 
 /**
- * Returns the catalog API URL for the given mode: flat `api--` host for `v2_shared`,
- * dot-separated {@link fluxApiUrlForSlug} for `v1_dedicated`.
+ * Returns the catalog API URL for the given mode. Both modes use the same flattened
+ * `api--<slug>--<hash>.<domain>` contract; the mode argument is kept for API stability.
  */
 export function fluxApiUrlForCatalog(
   slug: string,
   hash: string,
   isProduction: boolean,
-  mode: FluxCatalogProjectMode,
+  _mode: FluxCatalogProjectMode,
 ): string {
-  return mode === "v2_shared"
-    ? fluxApiUrlForV2Shared(slug, hash, isProduction)
-    : fluxApiUrlForSlug(slug, hash, isProduction);
+  return fluxApiUrlForV2Shared(slug, hash, isProduction);
 }
