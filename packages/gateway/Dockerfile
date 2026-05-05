@@ -39,6 +39,7 @@ COPY packages/cli/package.json ./packages/cli/package.json
 COPY packages/sdk/package.json ./packages/sdk/package.json
 COPY packages/engine-v1/package.json ./packages/engine-v1/package.json
 COPY packages/engine-v2/package.json ./packages/engine-v2/package.json
+COPY packages/migrate/package.json ./packages/migrate/package.json
 COPY apps/dashboard/package.json ./apps/dashboard/package.json
 
 RUN pnpm install --frozen-lockfile
