@@ -1,6 +1,7 @@
 import type Docker from "dockerode";
 
-import { API_SCHEMA_PRIVILEGES_SQL } from "./api-schema-privileges.ts";
+import { buildApiSchemaPrivilegesSql } from "./api-schema-privileges.ts";
+import { assertFluxApiSchemaIdentifier } from "./api-schema-strategy.ts";
 import {
   createFluxPgRunner,
   type FluxPgRunner,
@@ -25,8 +26,9 @@ function sqlStringLiteral(s: string): string {
  * Supabase-style dumps sometimes create objects in both `public` and `api`; moving `public` → `api`
  * then fails with "already exists". In that case we drop the redundant `public` copy.
  */
-async function apiHasRelationNamed(
+async function targetSchemaHasRelationNamed(
   run: FluxPgRunner,
+  targetSchema: string,
   relname: string,
 ): Promise<boolean> {
   const { rows } = await run.query(
@@ -35,7 +37,7 @@ async function apiHasRelationNamed(
       SELECT 1
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'api' AND c.relname = ${sqlStringLiteral(relname)}::name
+      WHERE n.nspname = ${sqlStringLiteral(targetSchema)}::name AND c.relname = ${sqlStringLiteral(relname)}::name
     ) AS exists
     `,
   );
@@ -184,18 +186,20 @@ async function listPublicMatviews(run: FluxPgRunner): Promise<string[]> {
 }
 
 /**
- * Moves user tables, sequences, views, and materialized views from `public` to `api`, then
- * reapplies {@link API_SCHEMA_PRIVILEGES_SQL}.
+ * Moves user tables, sequences, views, and materialized views from `public` into the target
+ * API schema, then reapplies grants for that schema.
  *
- * When the dump already created the same object in `api`, drops the duplicate in `public`
+ * When the dump already created the same object in the target schema, drops the duplicate in `public`
  * (`… CASCADE`) instead of moving.
  *
  * Uses sequential `psql` sessions inside the container (no host TCP). Not wrapped in a single
  * DB transaction — same practical behavior as implicit commits per DDL statement.
  */
-export async function movePublicSchemaObjectsToApi(
+export async function movePublicSchemaObjectsToTargetSchema(
   run: FluxPgRunner,
+  targetSchema: string,
 ): Promise<MovePublicToApiResult> {
+  assertFluxApiSchemaIdentifier(targetSchema);
   let tablesMoved = 0;
   let sequencesMoved = 0;
   let viewsMoved = 0;
@@ -204,21 +208,26 @@ export async function movePublicSchemaObjectsToApi(
   const fkEdges = await listPublicFkParentChild(run);
   const ordered = orderTablesForMove(baseTables, fkEdges);
 
+  const tSchema = qIdent(targetSchema);
   for (const relname of ordered) {
-    if (await apiHasRelationNamed(run, relname)) {
+    if (await targetSchemaHasRelationNamed(run, targetSchema, relname)) {
       await run.query(`DROP TABLE public.${qIdent(relname)} CASCADE`);
     } else {
-      await run.query(`ALTER TABLE public.${qIdent(relname)} SET SCHEMA api`);
+      await run.query(
+        `ALTER TABLE public.${qIdent(relname)} SET SCHEMA ${tSchema}`,
+      );
     }
     tablesMoved++;
   }
 
   const sequences = await listPublicSequences(run);
   for (const relname of sequences) {
-    if (await apiHasRelationNamed(run, relname)) {
+    if (await targetSchemaHasRelationNamed(run, targetSchema, relname)) {
       await run.query(`DROP SEQUENCE public.${qIdent(relname)} CASCADE`);
     } else {
-      await run.query(`ALTER SEQUENCE public.${qIdent(relname)} SET SCHEMA api`);
+      await run.query(
+        `ALTER SEQUENCE public.${qIdent(relname)} SET SCHEMA ${tSchema}`,
+      );
     }
     sequencesMoved++;
   }
@@ -230,10 +239,10 @@ export async function movePublicSchemaObjectsToApi(
     progress = false;
     for (const v of [...remainingViews].sort()) {
       try {
-        if (await apiHasRelationNamed(run, v)) {
+        if (await targetSchemaHasRelationNamed(run, targetSchema, v)) {
           await run.query(`DROP VIEW public.${qIdent(v)} CASCADE`);
         } else {
-          await run.query(`ALTER VIEW public.${qIdent(v)} SET SCHEMA api`);
+          await run.query(`ALTER VIEW public.${qIdent(v)} SET SCHEMA ${tSchema}`);
         }
         remainingViews.delete(v);
         viewsMoved++;
@@ -246,7 +255,7 @@ export async function movePublicSchemaObjectsToApi(
   if (remainingViews.size > 0) {
     const names = [...remainingViews].join(", ");
     throw new Error(
-      `Could not move all views from public to api (remaining: ${names}). ` +
+      `Could not move all views from public to ${targetSchema} (remaining: ${names}). ` +
         `Resolve dependencies or move manually.`,
     );
   }
@@ -258,13 +267,13 @@ export async function movePublicSchemaObjectsToApi(
     matProgress = false;
     for (const relname of [...remainingMat].sort()) {
       try {
-        if (await apiHasRelationNamed(run, relname)) {
+        if (await targetSchemaHasRelationNamed(run, targetSchema, relname)) {
           await run.query(
             `DROP MATERIALIZED VIEW public.${qIdent(relname)} CASCADE`,
           );
         } else {
           await run.query(
-            `ALTER MATERIALIZED VIEW public.${qIdent(relname)} SET SCHEMA api`,
+            `ALTER MATERIALIZED VIEW public.${qIdent(relname)} SET SCHEMA ${tSchema}`,
           );
         }
         remainingMat.delete(relname);
@@ -281,9 +290,27 @@ export async function movePublicSchemaObjectsToApi(
     );
   }
 
-  await run.query(API_SCHEMA_PRIVILEGES_SQL);
+  await run.query(buildApiSchemaPrivilegesSql(targetSchema));
 
   return { tablesMoved, sequencesMoved, viewsMoved };
+}
+
+/** @deprecated Prefer {@link movePublicSchemaObjectsToTargetSchema} with `"api"`. */
+export async function movePublicSchemaObjectsToApi(
+  run: FluxPgRunner,
+): Promise<MovePublicToApiResult> {
+  return movePublicSchemaObjectsToTargetSchema(run, "api");
+}
+
+export async function runMovePublicSchemaToTargetWithDockerExec(
+  docker: Docker,
+  containerId: string,
+  password: string,
+  pgUser: string,
+  targetSchema: string,
+): Promise<MovePublicToApiResult> {
+  const run = createFluxPgRunner(docker, containerId, password, pgUser);
+  return movePublicSchemaObjectsToTargetSchema(run, targetSchema);
 }
 
 export async function runMovePublicToApiWithDockerExec(
@@ -292,6 +319,11 @@ export async function runMovePublicToApiWithDockerExec(
   password: string,
   pgUser: string,
 ): Promise<MovePublicToApiResult> {
-  const run = createFluxPgRunner(docker, containerId, password, pgUser);
-  return movePublicSchemaObjectsToApi(run);
+  return runMovePublicSchemaToTargetWithDockerExec(
+    docker,
+    containerId,
+    password,
+    pgUser,
+    "api",
+  );
 }

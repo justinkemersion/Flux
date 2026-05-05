@@ -115,6 +115,12 @@ export const projects = pgTable(
      * Distinct from the pooled PostgREST `FLUX_GATEWAY_JWT_SECRET` / `PGRST_JWT_SECRET` pair.
      */
     jwtSecret: text("jwt_secret"),
+    /** When set, gateway may return 503 for tenant traffic during v2→v1 migration. */
+    migrationStatus: text("migration_status"),
+    /** Explicit PostgREST API schema override; usually null (derive from mode + strategy). */
+    apiSchemaName: text("api_schema_name"),
+    /** `legacy_api` | `tenant_schema` for v1_dedicated; null for v2 or implicit legacy. */
+    apiSchemaStrategy: text("api_schema_strategy"),
   },
   (t) => [uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug)],
 );

@@ -10,9 +10,14 @@ import {
 
 test("dispatchProvisionProject routes v1_dedicated through ProjectManager", async () => {
   let called = false;
+  let seenApiSchema: string | undefined;
   const projectManager = {
-    provisionProject: async () => {
+    provisionProject: async (
+      _name: string,
+      opts?: { apiSchemaName?: string },
+    ) => {
       called = true;
+      seenApiSchema = opts?.apiSchemaName;
       return {
         name: "My App",
         slug: "my-app",
@@ -37,6 +42,7 @@ test("dispatchProvisionProject routes v1_dedicated through ProjectManager", asyn
   });
 
   assert.equal(called, true);
+  assert.equal(seenApiSchema, "api");
   assert.equal(result.mode, "v1_dedicated");
   assert.equal(result.slug, "my-app");
   assert.equal(result.hash, "abc1234");

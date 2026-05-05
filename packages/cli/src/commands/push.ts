@@ -39,9 +39,13 @@ export async function cmdPush(
 
   const metadata = await client.getProjectMetadata(hash);
 
+  const schemaHint =
+    metadata.mode === "v1_dedicated"
+      ? `${metadata.mode}, schema ${metadata.apiSchema ?? "api"}`
+      : metadata.mode;
   console.log(
     chalk.blue(
-      `Applying ${chalk.bold(file)} to project ${chalk.bold(slug)} (${chalk.dim(metadata.mode)})…`,
+      `Applying ${chalk.bold(file)} to project ${chalk.bold(slug)} (${chalk.dim(schemaHint)})…`,
     ),
   );
 

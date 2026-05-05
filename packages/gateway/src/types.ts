@@ -8,4 +8,6 @@ export interface TenantResolution {
   slug: string;
   /** Per-project HS256 key (Base64); null until backfilled by repair. */
   jwtSecret: string | null;
+  /** When `migrating`, the gateway should shed traffic (503) for this host. */
+  migrationStatus: string | null;
 }

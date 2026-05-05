@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import {
   FLUX_PROJECT_HASH_HEX_LEN,
+  resolveTenantApiSchemaName,
   slugifyProjectName,
 } from "@flux/core";
 import { projects } from "@/src/db/schema";
@@ -52,7 +53,14 @@ export async function GET(
   }
 
   const [row] = await db
-    .select({ slug: projects.slug, hash: projects.hash, mode: projects.mode })
+    .select({
+      id: projects.id,
+      slug: projects.slug,
+      hash: projects.hash,
+      mode: projects.mode,
+      apiSchemaName: projects.apiSchemaName,
+      apiSchemaStrategy: projects.apiSchemaStrategy,
+    })
     .from(projects)
     .where(and(eq(projects.userId, auth.userId), eq(projects.hash, hash)))
     .limit(1);
@@ -60,11 +68,19 @@ export async function GET(
     return jsonError("Project not found for this hash.", 404);
   }
 
+  const apiSchema = resolveTenantApiSchemaName({
+    id: row.id,
+    mode: row.mode,
+    apiSchemaName: row.apiSchemaName,
+    apiSchemaStrategy: row.apiSchemaStrategy as "legacy_api" | "tenant_schema" | null,
+  });
+
   return Response.json(
     {
       slug: row.slug,
       hash: row.hash,
       mode: row.mode,
+      apiSchema,
     },
     { headers: { "Cache-Control": "private, no-store" } },
   );

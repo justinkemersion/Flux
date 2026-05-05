@@ -131,6 +131,22 @@ export function createApp(): Hono {
       );
     }
 
+    if ((tenant.migrationStatus ?? null) === "migrating") {
+      log({
+        host: rawHost,
+        tenantId: tenant.tenantId,
+        mode: tenant.mode,
+        status: 503,
+        start,
+        rateLimited: false,
+        cache: cacheSource,
+      });
+      return c.json(
+        { error: "project is migrating; try again later" },
+        503,
+      );
+    }
+
     // 2b. Optional inbound Bearer — verify HS256 with per-project jwt_secret (not the pool secret).
     const authz = c.req.header("authorization")?.trim();
     let downstreamJwt: string | undefined;

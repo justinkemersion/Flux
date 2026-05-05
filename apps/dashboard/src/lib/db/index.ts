@@ -221,6 +221,12 @@ async function _init(): Promise<void> {
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS jwt_secret TEXT;
   `);
 
+  await pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS migration_status TEXT;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS api_schema_name TEXT;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS api_schema_strategy TEXT;
+  `);
+
   // New projects default to pooled Standard stack; existing rows keep prior mode.
   await pool.query(`
     ALTER TABLE projects ALTER COLUMN mode SET DEFAULT 'v2_shared';

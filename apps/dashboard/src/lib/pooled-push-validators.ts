@@ -1,5 +1,4 @@
-import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
-import { deriveShortId } from "@flux/core/standalone";
+import { defaultTenantApiSchemaFromProjectId, FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 
 /** Matches pooled push route body limit (4 MiB UTF-8 byte length). */
 export const POOLED_PUSH_MAX_SQL_BYTES = 4 * 1024 * 1024;
@@ -67,9 +66,9 @@ export function validatePooledPushServiceRole(
 export function tenantApiSchemaFromProjectId(projectId: string):
   | { ok: true; schema: string }
   | { ok: false; error: string } {
-  const shortId = deriveShortId(projectId);
-  if (!/^[a-f0-9]{12}$/.test(shortId)) {
+  try {
+    return { ok: true, schema: defaultTenantApiSchemaFromProjectId(projectId) };
+  } catch {
     return { ok: false, error: "Derived shortId is malformed; refusing push" };
   }
-  return { ok: true, schema: `t_${shortId}_api` };
 }

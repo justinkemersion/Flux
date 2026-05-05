@@ -798,6 +798,96 @@ async function main(): Promise<void> {
     }
   });
 
+  const migrateCmd = program
+    .command("migrate")
+    .description(
+      "Migrate a v2_shared (pooled) project to v1_dedicated via the control plane (downtime expected)",
+    )
+    .option(
+      "-p, --project <slug>",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option("--to <mode>", "Target mode", "v1_dedicated")
+    .option("--dry-run", "Show plan and preflight only", false)
+    .option("-y, --yes", "Confirm destructive migration", false)
+    .option(
+      "--staged",
+      "Provision dedicated DB and restore, but do not flip catalog mode yet",
+      false,
+    )
+    .option(
+      "--dump-only",
+      "Only run pg_dump from the shared cluster to a temp file (no Docker changes)",
+      false,
+    )
+    .option("--new-jwt-secret", "Rotate jwt_secret on switch", false)
+    .option(
+      "--no-lock-writes",
+      "Do not enter gateway maintenance (migration_status)",
+      false,
+    )
+    .option(
+      "--drop-source-after",
+      "After success, drop the tenant from the shared cluster (destructive)",
+      false,
+    )
+    .option("--hash <hex>", hashFlagDesc);
+
+  migrateCmd.action(async () => {
+    try {
+      const opts = migrateCmd.opts<{
+        project?: string;
+        to: string;
+        dryRun: boolean;
+        yes: boolean;
+        staged: boolean;
+        dumpOnly: boolean;
+        newJwtSecret: boolean;
+        noLockWrites: boolean;
+        dropSourceAfter: boolean;
+        hash?: string;
+      }>();
+      if (opts.to !== "v1_dedicated") {
+        throw new Error('Only --to v1_dedicated is supported today.');
+      }
+      const flux = await readFluxJson(process.cwd());
+      const slug = resolveProjectSlug(
+        opts.project ?? "",
+        flux,
+        "-p, --project",
+      );
+      const client = getApiClient();
+      const hash = resolveHash(opts.hash, flux);
+      const meta = await client.getProjectMetadata(hash);
+      if (meta.slug !== slug) {
+        throw new Error(
+          `flux.json hash resolves to slug "${meta.slug}" but --project is "${slug}".`,
+        );
+      }
+      if (meta.mode !== "v2_shared") {
+        throw new Error(
+          `flux migrate requires v2_shared; this project is ${meta.mode}.`,
+        );
+      }
+      const result = await client.migrateV2ToV1({
+        slug,
+        hash,
+        dryRun: opts.dryRun,
+        yes: opts.yes,
+        staged: opts.staged,
+        dumpOnly: opts.dumpOnly,
+        newJwtSecret: opts.newJwtSecret,
+        noLockWrites: opts.noLockWrites,
+        dropSourceAfter: opts.dropSourceAfter,
+        preserveJwtSecret: !opts.newJwtSecret,
+        lockWrites: !opts.noLockWrites,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
   const dbReset = program
     .command("db-reset")
     .description(

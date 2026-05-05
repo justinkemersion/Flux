@@ -1,6 +1,7 @@
 import { and, count, eq } from "drizzle-orm";
 import type { FluxProjectSummary } from "@flux/core/standalone";
 import {
+  fluxV1TenantSchemaEnabled,
   generateProjectHash,
   slugifyProjectName,
 } from "@flux/core";
@@ -25,6 +26,13 @@ const HASH_ALLOC_ATTEMPTS = 32;
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
+}
+
+function initialApiSchemaStrategy(
+  mode: "v1_dedicated" | "v2_shared",
+): string | null {
+  if (mode === "v2_shared") return null;
+  return fluxV1TenantSchemaEnabled() ? "tenant_schema" : "legacy_api";
 }
 
 function describeError(err: unknown): string {
@@ -205,6 +213,7 @@ export async function POST(req: Request): Promise<Response> {
         userId: auth.userId,
         mode,
         jwtSecret: project.projectJwtSecret,
+        apiSchemaStrategy: initialApiSchemaStrategy(mode),
       })
       .returning({ id: projects.id });
     try {

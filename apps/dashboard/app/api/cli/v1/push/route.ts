@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
+import { FLUX_PROJECT_HASH_HEX_LEN, resolveTenantApiSchemaName } from "@flux/core";
 import { projects } from "@/src/db/schema";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
@@ -81,7 +81,12 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const owned = await db
-    .select({ id: projects.id })
+    .select({
+      id: projects.id,
+      mode: projects.mode,
+      apiSchemaName: projects.apiSchemaName,
+      apiSchemaStrategy: projects.apiSchemaStrategy,
+    })
     .from(projects)
     .where(
       and(
@@ -96,9 +101,19 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError("Project not found for this API key", 404);
   }
 
+  const row = owned[0]!;
+  const apiSchema = resolveTenantApiSchemaName({
+    id: row.id,
+    mode: row.mode,
+    apiSchemaName: row.apiSchemaName,
+    apiSchemaStrategy: row.apiSchemaStrategy as "legacy_api" | "tenant_schema" | null,
+  });
+
   const pm = getProjectManager();
   try {
-    await pm.pushSqlFromCli(slug, hash, sql);
+    await pm.pushSqlFromCli(slug, hash, sql, {
+      searchPathSchemas: [apiSchema, "public"],
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (

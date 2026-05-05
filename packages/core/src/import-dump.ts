@@ -38,6 +38,11 @@ export type ImportSqlFileOptions = {
    * and local testing.
    */
   disableRowLevelSecurityInApi?: boolean;
+  /**
+   * Primary API schema (`api` or `t_<shortId>_api`). Controls grants, RLS disable, and public→schema moves.
+   * Defaults to `api`.
+   */
+  apiSchemaName?: string;
 };
 
 const AUTH_PRELUDE = `

@@ -69,6 +69,7 @@ test("proxy forwards internal auth token and POST body", async () => {
     mode: "v2_shared" as const,
     slug: "demo",
     jwtSecret: null,
+    migrationStatus: null as string | null,
   };
 
   try {

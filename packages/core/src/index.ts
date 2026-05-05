@@ -8,9 +8,10 @@ import jwt from "jsonwebtoken";
 
 import { FLUX_AUTH_SCHEMA_AND_UID_SQL } from "./auth-compat-sql.ts";
 import {
-  API_SCHEMA_PRIVILEGES_SQL,
-  DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
+  buildApiSchemaPrivilegesSql,
+  buildDisableRowLevelSecurityForSchemaSql,
 } from "./api-schema-privileges.ts";
+import { assertFluxApiSchemaIdentifier } from "./api-schema-strategy.ts";
 import {
   materializePreparedSqlFile,
   queryPostgresMajorVersion,
@@ -26,7 +27,10 @@ import {
   demuxDockerLogBufferIfMultiplexed,
   demuxDockerLogStream,
 } from "./docker-log-stream.ts";
-import { runMovePublicToApiWithDockerExec } from "./schema-move-public-to-api.ts";
+import {
+  runMovePublicSchemaToTargetWithDockerExec,
+  runMovePublicToApiWithDockerExec,
+} from "./schema-move-public-to-api.ts";
 import {
   FLUX_PROJECT_HASH_HEX_LEN,
   FLUX_SYSTEM_HASH,
@@ -60,6 +64,10 @@ export {
 
 export type { ImportSqlFileOptions } from "./import-dump.ts";
 export type { MovePublicToApiResult } from "./schema-move-public-to-api.ts";
+export {
+  movePublicSchemaObjectsToTargetSchema,
+  movePublicSchemaObjectsToApi,
+} from "./schema-move-public-to-api.ts";
 
 export type { ImportSqlFileResult, FluxProjectEnvEntry, FluxProjectSummary } from "./standalone.ts";
 export { slugifyProjectName, fluxTenantStatusFromContainerPair } from "./standalone.ts";
@@ -69,10 +77,23 @@ export {
   queryPostgresMajorVersion,
   sanitizePlainSqlDumpForPostgresMajor,
 } from "./import-dump.ts";
+export { queryPsqlJsonRows, queryPsqlScalar } from "./postgres-internal-exec.ts";
 export {
   API_SCHEMA_PRIVILEGES_SQL,
   DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
+  buildApiSchemaPrivilegesSql,
+  buildDisableRowLevelSecurityForSchemaSql,
 } from "./api-schema-privileges.ts";
+export {
+  assertFluxApiSchemaIdentifier,
+  defaultTenantApiSchemaFromProjectId,
+  fluxV1TenantSchemaEnabled,
+  isTenantSchemaStrategyProject,
+  resolveTenantApiSchemaName,
+  resolveV1ProvisionApiSchemaName,
+  type ApiSchemaStrategy,
+  type ProjectApiSchemaInput,
+} from "./api-schema-strategy.ts";
 export { FLUX_AUTH_SCHEMA_AND_UID_SQL } from "./auth-compat-sql.ts";
 export {
   FLUX_PROJECT_HASH_HEX_LEN,
@@ -204,9 +225,16 @@ const POSTGRES_USER = "postgres";
  * Default privileges for objects created by `postgres` (typical migration role) ensure new tables
  * and sequences stay visible to PostgREST roles without manual GRANTs.
  */
-export const BOOTSTRAP_SQL = `
--- Schema that PostgREST will expose (default: first entry of PGRST_DB_SCHEMAS=api,public)
-CREATE SCHEMA IF NOT EXISTS api;
+/**
+ * Builds initial tenant Postgres bootstrap DDL (roles + API schema + grants).
+ * `flux-system` uses {@link BOOTSTRAP_SQL} (`api`); new stacks may use `t_<shortId>_api`.
+ */
+export function buildBootstrapSql(apiSchemaName: string): string {
+  assertFluxApiSchemaIdentifier(apiSchemaName);
+  const q = `"${apiSchemaName.replace(/"/g, '""')}"`;
+  return `
+-- Schema that PostgREST will expose (default: first entry of PGRST_DB_SCHEMAS)
+CREATE SCHEMA IF NOT EXISTS ${q};
 
 -- Role that PostgREST connects as; cannot log in directly
 DO $$ BEGIN
@@ -228,8 +256,18 @@ GRANT authenticated TO authenticator;
 
 ${FLUX_AUTH_SCHEMA_AND_UID_SQL}
 
-${API_SCHEMA_PRIVILEGES_SQL}
+${buildApiSchemaPrivilegesSql(apiSchemaName)}
 `.trim();
+}
+
+/** Default bootstrap for legacy `api` schema (incl. flux-system). */
+export const BOOTSTRAP_SQL = buildBootstrapSql("api");
+
+/** PostgREST `PGRST_DB_SCHEMAS` value: primary API schema + public. */
+export function pgrstDbSchemasEnvValue(apiSchemaName: string): string {
+  assertFluxApiSchemaIdentifier(apiSchemaName);
+  return `${apiSchemaName},public`;
+}
 
 function randomHexChars(byteLength: number): string {
   return randomBytes(byteLength).toString("hex");
@@ -764,8 +802,6 @@ function fleetHttpsOriginsRegex(domain: string): string {
 const TRAEFIK_CORS_ALLOW_HEADERS =
   "apikey,Authorization,Content-Type,X-Client-Info,Accept-Profile,Content-Profile,Prefer,Accept,Range";
 
-/** PostgREST `db-schemas`: default `api`; include `public` for Supabase-style dumps. */
-const PGRST_DB_SCHEMAS_VALUE = "api,public";
 
 /**
  * Traefik labels for the tenant PostgREST router (shared by provision and label updates).
@@ -1269,6 +1305,11 @@ export interface ProvisionOptions {
    * carry the persisted list forward unchanged.
    */
   additionalAllowedOrigins?: readonly string[];
+  /**
+   * Primary PostgREST schema (`api` or mirrored `t_<shortId>_api`). Defaults to `api`.
+   * Forced to `api` for the `flux-system` stack regardless of this option.
+   */
+  apiSchemaName?: string;
 }
 
 /** Required for {@link ProjectManager.nukeProject} — confirms permanent data loss. */
@@ -1655,6 +1696,14 @@ export class ProjectManager {
     await this.ensureFluxNetwork(log);
     await this.ensureFluxGateway(log);
     const slug = slugifyProjectName(name);
+    let apiSchemaName = options?.apiSchemaName?.trim() || "api";
+    if (isPlatformSystemStackSlug(slug)) {
+      apiSchemaName = "api";
+    } else {
+      assertFluxApiSchemaIdentifier(apiSchemaName);
+    }
+    const tenantBootstrapSql = buildBootstrapSql(apiSchemaName);
+    const pgrstSchemasValue = pgrstDbSchemasEnvValue(apiSchemaName);
     const projectHash = hash ?? generateProjectHash();
     const privateNet = await this.ensureProjectPrivateNetwork(
       projectHash,
@@ -1779,7 +1828,7 @@ export class ProjectManager {
       this.docker,
       pgInspect.Id,
       postgresPassword,
-      BOOTSTRAP_SQL,
+      tenantBootstrapSql,
       POSTGRES_USER,
     );
     log?.("Postgres is up; bootstrap SQL applied.");
@@ -1876,7 +1925,7 @@ export class ProjectManager {
         Env: [
           `PGRST_DB_URI=${dbUri}`,
           `PGRST_JWT_SECRET=${jwtSecret}`,
-          `PGRST_DB_SCHEMAS=${PGRST_DB_SCHEMAS_VALUE}`,
+          `PGRST_DB_SCHEMAS=${pgrstSchemasValue}`,
           `PGRST_DB_ANON_ROLE=anon`,
         ],
         ExposedPorts: { "3000/tcp": {} },
@@ -2485,6 +2534,7 @@ export class ProjectManager {
     projectName: string,
     hash: string,
     sql: string,
+    options?: { searchPathSchemas?: readonly string[] },
   ): Promise<void> {
     const creds = await this.resolveRunningPostgresCredentials(projectName, hash);
     const secret =
@@ -2503,7 +2553,14 @@ export class ProjectManager {
       }
     }
 
-    const wrapped = `BEGIN;\n${sql}\nNOTIFY pgrst, 'reload schema';\nCOMMIT;\n`;
+    let pathList = "api, public";
+    if (options?.searchPathSchemas && options.searchPathSchemas.length > 0) {
+      for (const s of options.searchPathSchemas) {
+        assertFluxApiSchemaIdentifier(s);
+      }
+      pathList = options.searchPathSchemas.join(", ");
+    }
+    const wrapped = `BEGIN;\nSET LOCAL search_path TO ${pathList};\n${sql}\nNOTIFY pgrst, 'reload schema';\nCOMMIT;\n`;
     await runPsqlSqlInsideContainer(
       this.docker,
       creds.containerId,
@@ -2548,6 +2605,9 @@ export class ProjectManager {
       viewsMoved: 0,
     };
 
+    const apiSchema = options?.apiSchemaName?.trim() || "api";
+    assertFluxApiSchemaIdentifier(apiSchema);
+
     const { slug: normalizedSlug, containerId, password } =
       await this.resolveRunningPostgresCredentials(slug, hash);
 
@@ -2568,11 +2628,12 @@ export class ProjectManager {
 
       let moveResult = emptyResult;
       if (options?.moveFromPublic === true) {
-        moveResult = await runMovePublicToApiWithDockerExec(
+        moveResult = await runMovePublicSchemaToTargetWithDockerExec(
           this.docker,
           containerId,
           password,
           POSTGRES_USER,
+          apiSchema,
         );
       }
 
@@ -2580,7 +2641,7 @@ export class ProjectManager {
         this.docker,
         containerId,
         password,
-        API_SCHEMA_PRIVILEGES_SQL,
+        buildApiSchemaPrivilegesSql(apiSchema),
         POSTGRES_USER,
       );
       if (options?.disableRowLevelSecurityInApi === true) {
@@ -2588,7 +2649,7 @@ export class ProjectManager {
           this.docker,
           containerId,
           password,
-          DISABLE_ROW_LEVEL_SECURITY_FOR_RLS_ENABLED_API_TABLES_SQL,
+          buildDisableRowLevelSecurityForSchemaSql(apiSchema),
           POSTGRES_USER,
         );
       }
@@ -2617,6 +2678,77 @@ export class ProjectManager {
   }
 
   /**
+   * Drops the tenant API schema and replays a plain SQL file (e.g. `pg_dump` output), then reapplies
+   * Flux grants and signals PostgREST to reload.
+   */
+  async replaceTenantApiSchemaFromPlainSqlFile(
+    projectName: string,
+    hash: string,
+    hostFilePath: string,
+    apiSchemaName: string,
+  ): Promise<void> {
+    assertFluxApiSchemaIdentifier(apiSchemaName);
+    const { containerId, password, slug } =
+      await this.resolveRunningPostgresCredentials(projectName, hash);
+    const q = `"${apiSchemaName.replace(/"/g, '""')}"`;
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      containerId,
+      password,
+      `DROP SCHEMA IF EXISTS ${q} CASCADE;`,
+      POSTGRES_USER,
+    );
+    await runPsqlHostFileInsideContainer(
+      this.docker,
+      containerId,
+      password,
+      hostFilePath,
+      POSTGRES_USER,
+    );
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      containerId,
+      password,
+      buildApiSchemaPrivilegesSql(apiSchemaName),
+      POSTGRES_USER,
+    );
+    await runPsqlSqlInsideContainer(
+      this.docker,
+      containerId,
+      password,
+      `NOTIFY pgrst, 'reload schema';`,
+      POSTGRES_USER,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const apiName = postgrestContainerName(hash, slug);
+    try {
+      await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
+    } catch (err: unknown) {
+      const code = getHttpStatus(err);
+      if (code !== 404 && code !== 409) throw err;
+    }
+  }
+
+  /**
+   * Runs a read-only SELECT inside the tenant Postgres container; rows as JSON objects.
+   */
+  async queryTenantJsonRows(
+    projectName: string,
+    hash: string,
+    selectSql: string,
+  ): Promise<unknown[]> {
+    const { containerId, password } =
+      await this.resolveRunningPostgresCredentials(projectName, hash);
+    return queryPsqlJsonRows(
+      this.docker,
+      containerId,
+      password,
+      selectSql,
+      POSTGRES_USER,
+    );
+  }
+
+  /**
    * Drops `public` and `auth` (if present) and reapplies {@link BOOTSTRAP_SQL} so the next
    * {@link importSqlFile} runs against a clean slate. Does not remove the Docker volume (use
    * {@link nukeProject} for that).
@@ -2624,11 +2756,20 @@ export class ProjectManager {
   async resetTenantDatabaseForImport(
     projectName: string,
     hash: string,
+    options?: { apiSchemaName?: string },
   ): Promise<void> {
+    const apiSchema = options?.apiSchemaName?.trim() || "api";
+    assertFluxApiSchemaIdentifier(apiSchema);
     const { containerId, password } =
       await this.resolveRunningPostgresCredentials(projectName, hash);
+    const qApi = `"${apiSchema.replace(/"/g, '""')}"`;
+    const dropLegacyApi =
+      apiSchema !== "api"
+        ? `DROP SCHEMA IF EXISTS "api" CASCADE;\n`
+        : "";
     const resetSql = `
-DROP SCHEMA IF EXISTS auth CASCADE;
+DROP SCHEMA IF EXISTS ${qApi} CASCADE;
+${dropLegacyApi}DROP SCHEMA IF EXISTS auth CASCADE;
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 ALTER SCHEMA public OWNER TO postgres;
@@ -2647,7 +2788,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
       this.docker,
       containerId,
       password,
-      BOOTSTRAP_SQL,
+      buildBootstrapSql(apiSchema),
       POSTGRES_USER,
     );
   }

@@ -1,5 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { fluxApiUrlForSlug, fluxApiUrlForV2Shared, slugifyProjectName } from "@flux/core";
+import {
+  fluxApiUrlForSlug,
+  fluxApiUrlForV2Shared,
+  resolveV1ProvisionApiSchemaName,
+  slugifyProjectName,
+} from "@flux/core";
 import type { ProjectManager } from "@flux/core";
 import { deprovisionProject } from "@flux/engine-v2";
 import { getEngineV2 } from "@/src/lib/flux";
@@ -88,6 +93,7 @@ export async function dispatchProvisionProject(
   input: DispatchProvisionInput,
 ): Promise<DispatchProvisionResult> {
   if (input.mode === "v1_dedicated") {
+    const apiSchemaName = resolveV1ProvisionApiSchemaName(input.tenantId);
     const provisioned = await input.projectManager.provisionProject(
       input.projectName,
       {
@@ -96,6 +102,7 @@ export async function dispatchProvisionProject(
           ? { stripSupabaseRestPrefix: input.stripSupabaseRestPrefix }
           : {}),
         isProduction: input.isProduction,
+        apiSchemaName,
       },
       input.projectHash,
     );

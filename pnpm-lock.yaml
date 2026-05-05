@@ -22,6 +22,9 @@ importers:
       '@flux/engine-v2':
         specifier: workspace:*
         version: link:../../packages/engine-v2
+      '@flux/migrate':
+        specifier: workspace:*
+        version: link:../../packages/migrate
       ai:
         specifier: ^4.3.19
         version: 4.3.19(react@19.2.4)(zod@4.3.6)
@@ -240,6 +243,22 @@ importers:
       '@types/pg':
         specifier: ^8.11.14
         version: 8.20.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+
+  packages/migrate:
+    dependencies:
+      '@flux/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
       tsx:
         specifier: ^4.21.0
         version: 4.21.0

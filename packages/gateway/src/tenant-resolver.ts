@@ -46,6 +46,7 @@ const tenantResolutionSchema = z.object({
   shortid: z.string().min(1),
   mode: z.enum(["v1_dedicated", "v2_shared"]),
   slug: z.string().min(1),
+  migrationStatus: z.string().nullable().optional(),
 });
 
 /**
@@ -113,6 +114,7 @@ async function resolveUncached(host: string): Promise<ResolvedTenant | null> {
         const resolution: TenantResolution = {
           ...result.data,
           jwtSecret: null,
+          migrationStatus: result.data.migrationStatus ?? null,
         };
         memSet(cacheKey, resolution);
         return { resolution, cacheSource: "redis" };
@@ -229,12 +231,14 @@ async function queryByExactDomain(
     slug: string;
     mode: string;
     jwt_secret: string | null;
+    migration_status: string | null;
   }>(
     `SELECT d.project_id,
             p.id   AS tenant_id,
             p.slug,
             p.mode,
-            p.jwt_secret
+            p.jwt_secret,
+            p.migration_status
      FROM   domains d
      JOIN   projects p ON p.id = d.project_id
      WHERE  d.hostname = $1
@@ -249,6 +253,7 @@ async function queryByExactDomain(
     row.slug,
     row.mode,
     row.jwt_secret,
+    row.migration_status,
   );
 }
 
@@ -261,10 +266,11 @@ async function queryBySlugAndHash(
     slug: string;
     mode: string;
     jwt_secret: string | null;
+    migration_status: string | null;
   }>(
     // Filter by both slug AND hash so the lookup is deterministic regardless
     // of how many users share the same slug across the platform.
-    `SELECT id, slug, mode, jwt_secret
+    `SELECT id, slug, mode, jwt_secret, migration_status
      FROM   projects
      WHERE  slug = $1
        AND  hash = $2
@@ -273,7 +279,14 @@ async function queryBySlugAndHash(
   );
   const row = rows[0];
   if (!row) return null;
-  return toResolution(row.id, row.id, row.slug, row.mode, row.jwt_secret);
+  return toResolution(
+    row.id,
+    row.id,
+    row.slug,
+    row.mode,
+    row.jwt_secret,
+    row.migration_status,
+  );
 }
 
 function toResolution(
@@ -282,6 +295,7 @@ function toResolution(
   slug: string,
   mode: string,
   jwtSecret: string | null,
+  migrationStatus: string | null,
 ): TenantResolution {
   return {
     tenantId,
@@ -290,6 +304,7 @@ function toResolution(
     mode: mode as ProjectMode,
     slug,
     jwtSecret,
+    migrationStatus,
   };
 }
 
