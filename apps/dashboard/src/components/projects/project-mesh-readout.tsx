@@ -1,7 +1,6 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import Link from "next/link";
 import { useState } from "react";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import { ProjectExportControl } from "@/src/components/projects/project-export-control";
@@ -20,32 +19,6 @@ export function ProjectMeshReadout({ project }: Props) {
   return (
     <div className="mb-4 space-y-5">
       <ProjectManifest slug={project.slug} />
-
-      <section className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
-        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Actions
-        </h3>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link
-            href={`/projects/${encodeURIComponent(project.slug)}`}
-            className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            Open Console
-          </Link>
-          <a
-            href={`#logs-${project.slug}`}
-            className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            View Logs
-          </a>
-          <a
-            href={`#database-${project.slug}`}
-            className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            Run Migration
-          </a>
-        </div>
-      </section>
 
       <section id={`database-${project.slug}`}>
         <ProjectExportControl hash={project.hash} />
