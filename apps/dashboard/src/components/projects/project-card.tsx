@@ -1191,7 +1191,7 @@ export function ProjectCard({
                   className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
                 >
                   Type{" "}
-                  <span className="font-mono font-semibold">{p.name}</span> to
+                  <span className="font-geist-sans font-semibold">{p.name}</span> to
                   confirm
                 </label>
                 <input
@@ -1297,7 +1297,7 @@ export function ProjectCard({
                   className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
                 >
                   Type{" "}
-                  <span className="font-mono font-semibold">{`RESET ${p.name}`}</span>{" "}
+                  <span className="font-geist-sans font-semibold">{`RESET ${p.name}`}</span>{" "}
                   to confirm
                 </label>
                 <input
