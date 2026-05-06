@@ -22,7 +22,6 @@ import {
 } from "@/src/components/projects/project-card";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
-import { FleetHealthGrid } from "@/src/components/fleet/fleet-health-grid";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
 import { ProjectsFleetBar } from "@/src/components/projects/projects-fleet-bar";
 import { ProjectSummaryCard } from "@/src/components/projects/project-summary-card";
@@ -371,7 +370,6 @@ export default function ProjectsPage() {
       />
 
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-8 sm:px-8 sm:py-10 lg:px-10">
-        <FleetHealthGrid />
         <div className="mb-8 flex min-w-0 flex-wrap items-center justify-end gap-3">
           {userPlan === "hobby" ? (
             <button
