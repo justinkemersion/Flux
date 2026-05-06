@@ -45,9 +45,12 @@ curl -sL https://flux.vsl-base.com/install | bash
 export FLUX_API_BASE="https://flux.vsl-base.com/api"
 export FLUX_API_TOKEN="flx_live_…"
 flux login
-flux create "my-app"
-flux push ./schema.sql
+flux create "percept"
+flux list   # copy slug + 7-char hash for the project row
+flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
 ```
+
+The **`--project`** and **`--hash`** values must match **your** `flux list` output (the line above uses example values). Alternatively, add **`slug`** and **`hash`** to **`flux.json`** so `flux push` can resolve the project without repeating flags—see [Configuration](/docs/reference/config).
 
 Your app then calls the **Service URL** for the project (see [Service URLs](/docs/concepts/service-urls)) with the right auth model for your engine.
 

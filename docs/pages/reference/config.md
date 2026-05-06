@@ -17,7 +17,7 @@ Flux configuration spans **repo-level** developer ergonomics and **per-project**
 
 ### flux.json
 
-Place **`flux.json`** at a repository root with **slug** (and **hash** when required) so `flux push ./migration.sql` can target the right project without repeating CLI flags.
+Place **`flux.json`** at a repository root with **`slug`** and **`hash`** (both from **`flux list`**) so commands like **`flux push db/migrations/0001_moods.sql`** resolve the project **without** repeating **`--project`** / **`--hash`** on every invocation.
 
 ### Dashboard
 
@@ -31,10 +31,12 @@ Structured CLI + architecture rules for assistants live in `FLUX_CODEX_JSON` (`a
 
 ```json
 {
-  "slug": "my-app",
-  "hash": "a1b2c3d"
+  "slug": "percept",
+  "hash": "b915ec8"
 }
 ```
+
+Use the **slug** and **hash** from **`flux list`** for your real project (the values above are illustrative).
 
 Exact schema follows CLI expectations—run `flux push --help` for current options.
 

@@ -24,7 +24,7 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux login` | Verify API token / base URL |
 | `flux create` | Provision a project |
 | `flux list` | Show projects and Service URLs |
-| `flux push` | Apply SQL migration file(s) |
+| `flux push` | Apply SQL file(s) to a project—pass **`--project <slug>`** and **`--hash <7hex>`** from **`flux list`** (or use **`flux.json`**) |
 | `flux dump` | Export schema/data (see flags locally) |
 | `flux logs` | Tail project logs when wired |
 
@@ -46,7 +46,10 @@ Install: [Installation](/docs/getting-started/installation).
 ```bash
 flux --help
 flux push --help
+flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
 ```
+
+Use your own **slug** and **hash** from **`flux list`** (example values above).
 
 ## Next steps
 

@@ -21,9 +21,13 @@ On **v2 shared**, tables for your API must live in the tenant schema (e.g. `t_<s
 
 ## How it works
 
+Target the project explicitly (slug and 7-character hash from **`flux list`**, or the same fields in **`flux.json`**):
+
 ```bash
-flux push ./migrations/001_init.sql
+flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
 ```
+
+Replace **`percept`** / **`b915ec8`** with the values from your listing.
 
 Author SQL idempotently where possible (`IF NOT EXISTS`, defensive guards). For pooled tenants, set `search_path` or schema-qualify objects explicitly.
 

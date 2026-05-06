@@ -31,8 +31,9 @@ Developers consume the **Service URL** and credentials appropriate to their engi
 ## Example
 
 ```bash
-flux list
 flux create "billing-svc"
+flux list
+# Later: flux push … --project <slug> --hash <hash>   # values from flux list
 ```
 
 Output includes identifiers you use in URLs and automation—not interchangeable with “just a Postgres URL” unless you bypass PostgREST entirely (not the default product path).

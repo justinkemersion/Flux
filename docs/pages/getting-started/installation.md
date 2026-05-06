@@ -57,6 +57,8 @@ flux --help
 flux list
 ```
 
+For commands that target an **existing** project (for example **`flux push`**), the CLI expects **`--project <slug>`** and **`--hash <7hex>`** taken from your **`flux list`** row, unless **`flux.json`** supplies them—see [Create a project](/docs/getting-started/create-project) and [Configuration](/docs/reference/config).
+
 ## Next steps
 
 - [Create a project](/docs/getting-started/create-project)

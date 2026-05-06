@@ -21,12 +21,14 @@ After push, wait briefly for reload before assuming new tables exist in PostgRES
 
 ## How it works
 
+Every push must resolve a project. From your machine, pass **`--project`** and **`--hash`** from **`flux list`** (example values—use yours):
+
 ```bash
-flux push ./db/migrations/001_init.sql
-flux push ./db/migrations/002_indexes.sql
+flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
+flux push db/migrations/002_indexes.sql --project percept --hash b915ec8
 ```
 
-In CI, use non-interactive tokens and pinned `FLUX_API_BASE`.
+In CI, use non-interactive tokens, pinned **`FLUX_API_BASE`**, and either the same flags or a checked-in **`flux.json`** with **`slug`** + **`hash`** so pipelines do not drift.
 
 ## Example
 
