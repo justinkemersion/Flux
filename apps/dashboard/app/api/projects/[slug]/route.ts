@@ -60,10 +60,14 @@ export async function GET(
       id: project.id,
       name: project.name,
       slug: project.slug,
+      hash: project.hash,
       mode: project.mode,
       status: statusFromV2CatalogHealth(project),
       apiUrl,
-      createdAt: project.createdAt,
+      createdAt:
+        project.createdAt instanceof Date
+          ? project.createdAt.toISOString()
+          : project.createdAt,
       healthStatus: project.healthStatus ?? null,
       lastHeartbeatAt: project.lastHeartbeatAt
         ? project.lastHeartbeatAt.toISOString()
@@ -90,10 +94,14 @@ export async function GET(
     id: project.id,
     name: project.name,
     slug: project.slug,
-    mode: project.mode,
+    hash: project.hash,
+    mode: project.mode ?? "v1_dedicated",
     status: summary?.status ?? "missing",
     apiUrl: summary?.apiUrl ?? apiUrl,
-    createdAt: project.createdAt,
+    createdAt:
+      project.createdAt instanceof Date
+        ? project.createdAt.toISOString()
+        : project.createdAt,
     healthStatus: project.healthStatus ?? null,
     lastHeartbeatAt: project.lastHeartbeatAt
       ? project.lastHeartbeatAt.toISOString()

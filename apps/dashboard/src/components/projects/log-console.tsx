@@ -147,11 +147,11 @@ const V2_LOGS_EXPLAINER =
 
 function LogConsoleV2PooledInfo(): ReactNode {
   return (
-    <div className="border border-zinc-800 bg-zinc-950/80 p-3">
-      <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+    <div className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <div className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
         Logs
       </div>
-      <p className="font-mono text-xs leading-relaxed text-zinc-500">
+      <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
         {V2_LOGS_EXPLAINER}
       </p>
     </div>
@@ -177,10 +177,10 @@ function LogConsoleDocker({ slug, hash, maxLines }: DockerProps) {
   }, []);
 
   return (
-    <div className="border border-zinc-800 bg-zinc-950/80 p-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+    <div className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
         <span>
-          Logs / {tap === "open" ? "LIVE" : tap === "err" ? "FAULT" : "ARM"}
+          Logs {tap === "open" ? "(live)" : tap === "err" ? "(error)" : ""}
         </span>
         <div className="flex gap-px border border-zinc-800">
           {(["api", "db"] as const).map((s) => (

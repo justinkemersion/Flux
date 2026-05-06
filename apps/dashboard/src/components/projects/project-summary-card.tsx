@@ -3,7 +3,7 @@
 import { Check, Clipboard, Loader2, Wrench } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import type { ProjectRow } from "@/src/components/projects/project-card";
+import type { ProjectRow } from "@/src/components/projects/project-types";
 import {
   deriveTelemetryDisplay,
   fleetTelemetryLabel,
@@ -23,15 +23,15 @@ function fleetStatusLabel(status: DisplayStatus): string {
     case "running":
       return "Online";
     case "stopped":
-      return "STANDBY_HALTED";
+      return "Offline";
     case "transitioning":
-      return "POWER_TRANSITION";
+      return "Starting";
     case "partial":
-      return "SUBSYSTEM_PARTIAL";
+      return "Error";
     case "missing":
-      return "STACK_MISSING";
+      return "Error";
     case "corrupted":
-      return "CONFIG_DRIFT";
+      return "Error";
     default: {
       const _e: never = status;
       return _e;
@@ -62,15 +62,15 @@ function StatusTag({
           : "bg-red-500";
   return (
     <span className="inline-flex max-w-[min(100%,16rem)] flex-col items-end gap-0.5">
-      <span className="inline-flex items-center justify-end gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-200">
+      <span className="inline-flex items-center justify-end gap-2 text-xs font-medium text-zinc-200">
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`}
           aria-hidden
         />
         <span className="text-right">{fleetTelemetryLabel(m)}</span>
       </span>
-      <span className="text-right font-mono text-[9px] uppercase tracking-[0.1em] text-zinc-500">
-        stack {fleetStatusLabel(displayStatus)}
+      <span className="text-right text-xs text-zinc-500">
+        {fleetStatusLabel(displayStatus)}
       </span>
     </span>
   );
@@ -307,7 +307,7 @@ export function ProjectSummaryCard({
         className="flex flex-wrap gap-2 border-t border-zinc-800/80 px-5 py-4 opacity-40 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 sm:px-6"
       >
         <button type="button" onClick={onOpenDetail} className={bladeBtn}>
-          OPEN_CONSOLE
+          Open Console
         </button>
         <button
           type="button"
@@ -320,7 +320,7 @@ export function ProjectSummaryCard({
           ) : (
             <Wrench className="h-3 w-3" aria-hidden />
           )}
-          REPAIR
+          Repair
         </button>
         {showStartButton ? (
           <button

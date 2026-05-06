@@ -45,7 +45,7 @@ export function StatusBadge({ status }: { status: DisplayStatus }) {
           className={`${base} bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200`}
         >
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          Transitioning
+          Starting
         </span>
       );
     case "missing":
@@ -57,7 +57,7 @@ export function StatusBadge({ status }: { status: DisplayStatus }) {
             className="h-1.5 w-1.5 rounded-full bg-red-500"
             aria-hidden
           />
-          Missing
+          Error
         </span>
       );
     case "corrupted":
@@ -69,7 +69,7 @@ export function StatusBadge({ status }: { status: DisplayStatus }) {
             className="h-1.5 w-1.5 rounded-full bg-orange-500"
             aria-hidden
           />
-          Drift
+          Error
         </span>
       );
     case "partial":
@@ -78,7 +78,7 @@ export function StatusBadge({ status }: { status: DisplayStatus }) {
           className={`${base} bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100`}
         >
           <span className="h-1.5 w-1.5 rounded-full bg-orange-500" aria-hidden />
-          Partial
+          Error
         </span>
       );
     default: {

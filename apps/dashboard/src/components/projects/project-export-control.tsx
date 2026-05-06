@@ -68,18 +68,18 @@ export function ProjectExportControl({ hash }: Props) {
   return (
     <>
       <section
-        className="border border-zinc-800 bg-zinc-950 p-3 font-mono"
+        className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/40"
         aria-label="Project database tools"
       >
-        <div className="mb-3 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-          DATABASE_TOOLS
+        <div className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+          Database
         </div>
         <button
           type="button"
           onClick={() => setToolsOpen(true)}
-          className="border border-zinc-700 bg-black px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white"
+          className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
         >
-          [ OPEN_DATABASE_TOOLS ]
+          Open database tools
         </button>
       </section>
 
@@ -108,7 +108,7 @@ export function ProjectExportControl({ hash }: Props) {
 
                 <h3
                   id="database-tools-title"
-                  className="pr-8 text-sm font-semibold uppercase tracking-[0.14em] text-zinc-200"
+                  className="pr-8 text-sm font-semibold text-zinc-200"
                 >
                   Database Tools
                 </h3>
@@ -124,7 +124,7 @@ export function ProjectExportControl({ hash }: Props) {
                   <div className="grid grid-cols-1 border border-zinc-800 text-[11px] text-zinc-300 sm:grid-cols-[1fr_auto]">
                     <label className="contents cursor-pointer">
                       <span className="border-b border-zinc-800 bg-black px-3 py-2 sm:border-r">
-                        [ ] Schema Only
+                        Schema only
                       </span>
                       <span className="border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-right">
                         <input
@@ -137,7 +137,7 @@ export function ProjectExportControl({ hash }: Props) {
                     </label>
                     <label className="contents cursor-pointer">
                       <span className="border-b border-zinc-800 bg-black px-3 py-2 sm:border-r">
-                        [ ] Data Only
+                        Data only
                       </span>
                       <span className="border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-right">
                         <input
@@ -150,7 +150,7 @@ export function ProjectExportControl({ hash }: Props) {
                     </label>
                     <label className="contents cursor-pointer">
                       <span className="bg-black px-3 py-2 sm:border-r">
-                        [ ] Include DROP commands
+                        Include DROP commands
                       </span>
                       <span className="bg-zinc-950 px-3 py-2 text-right">
                         <input
@@ -166,9 +166,9 @@ export function ProjectExportControl({ hash }: Props) {
                     <button
                       type="button"
                       onClick={downloadDump}
-                      className="border border-zinc-700 bg-black px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white"
+                      className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white"
                     >
-                      [ DOWNLOAD_SQL_DUMP ]
+                      Download SQL dump
                     </button>
                   </div>
                 </section>

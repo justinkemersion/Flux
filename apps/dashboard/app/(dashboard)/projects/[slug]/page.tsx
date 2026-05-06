@@ -9,9 +9,7 @@ import {
   useState,
 } from "react";
 import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
-import {
-  type ProjectRow,
-} from "@/src/components/projects/project-card";
+import type { ProjectRow } from "@/src/components/projects/project-types";
 import { ProjectHeader } from "@/src/components/projects/project-header";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
 import { StatusBadge } from "@/src/components/projects/project-status-badge";
@@ -36,7 +34,7 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
     if (!slug) return;
     setErr(null);
     try {
-      const res = await fetch("/api/projects");
+      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}`);
       const payload: unknown = await readResponseJson(res, {
         apiLabel: "projects API",
       });
@@ -48,16 +46,10 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
           ),
         );
       }
-      if (
-        !payload ||
-        typeof payload !== "object" ||
-        !("projects" in payload) ||
-        !Array.isArray((payload as { projects: unknown }).projects)
-      ) {
-        throw new Error("Invalid response from projects API.");
+      if (!payload || typeof payload !== "object") {
+        throw new Error("Invalid response from project API.");
       }
-      const list = (payload as { projects: ProjectRow[] }).projects;
-      setProject(list.find((p) => p.slug === slug) ?? null);
+      setProject(payload as ProjectRow);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       setProject(null);
@@ -135,13 +127,21 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
           </>
         }
         primaryActions={
-          <Link
-            href="/projects"
-            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 font-mono text-xs text-zinc-300 transition-colors hover:border-zinc-600"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Back to fleet
-          </Link>
+          <>
+            <Link
+              href="/projects"
+              className="inline-flex h-9 shrink-0 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              Open Console
+            </Link>
+            <Link
+              href="/projects"
+              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 font-mono text-xs text-zinc-300 transition-colors hover:border-zinc-600"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Back to fleet
+            </Link>
+          </>
         }
       />
       <ProjectMeshReadout project={project} />

@@ -5,13 +5,13 @@ import {
   fleetTelemetryLabel,
 } from "@/src/lib/fleet-telemetry-display";
 
-const borderBase = "border border-zinc-800/90";
+const borderBase = "border";
 
 const wrap: Record<FleetTelemetryLevel, string> = {
-  operational: `${borderBase} bg-zinc-950/80`,
-  initializing: `${borderBase} bg-zinc-950/80`,
-  standby: `${borderBase} bg-zinc-950/60`,
-  offline: `${borderBase} bg-zinc-950/80`,
+  operational: `${borderBase} border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/50`,
+  initializing: `${borderBase} border-zinc-300 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900`,
+  standby: `${borderBase} border-zinc-300 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900`,
+  offline: `${borderBase} border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/50`,
 };
 
 const dot: Record<FleetTelemetryLevel, string> = {
@@ -22,10 +22,10 @@ const dot: Record<FleetTelemetryLevel, string> = {
 };
 
 const text: Record<FleetTelemetryLevel, string> = {
-  operational: "text-emerald-200",
-  initializing: "text-zinc-400",
-  standby: "text-zinc-500",
-  offline: "text-red-200",
+  operational: "text-emerald-800 dark:text-emerald-200",
+  initializing: "text-zinc-700 dark:text-zinc-300",
+  standby: "text-zinc-700 dark:text-zinc-300",
+  offline: "text-red-800 dark:text-red-200",
 };
 
 type Props = {
@@ -54,7 +54,7 @@ export function MeshTelemetryPill({
 
   return (
     <span
-      className={`inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-sm px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] ${wrap[level]}`}
+      className={`inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${wrap[level]}`}
       title="PostgREST mesh (catalog + Docker; 2m default tick)"
     >
       <span
@@ -62,8 +62,19 @@ export function MeshTelemetryPill({
         aria-hidden
       />
       <span className={`min-w-0 font-medium ${text[level]}`}>
-        {fleetTelemetryLabel(level)}
+        {humanTelemetryLabel(level, fleetTelemetryLabel(level))}
       </span>
     </span>
   );
+}
+
+function humanTelemetryLabel(
+  level: FleetTelemetryLevel,
+  fallback: string,
+): string {
+  if (level === "initializing") return "Starting";
+  if (level === "standby") return "Offline";
+  if (level === "offline") return "Error";
+  if (level === "operational") return "Online";
+  return fallback;
 }

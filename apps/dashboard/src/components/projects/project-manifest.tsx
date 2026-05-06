@@ -185,31 +185,28 @@ export function ProjectManifest({ slug }: Props) {
   }, [load]);
 
   return (
-    <div className="border border-zinc-800 bg-zinc-950/80 p-3">
-      <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-        Connection
-      </div>
+    <section className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <h3 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        API URL
+      </h3>
       {err ? (
         <p className="mb-2 font-mono text-xs text-red-400">{err}</p>
       ) : null}
       <div className="space-y-3">
         <div>
-          <p className="mb-1 font-mono text-[9px] uppercase text-zinc-600">
-            API URL
-          </p>
-          <div className="flex min-w-0 items-start justify-between gap-2 border border-zinc-800 bg-black p-2">
-            <code className="min-w-0 flex-1 break-all text-xs text-zinc-300">
+          <div className="flex min-w-0 items-start justify-between gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-950">
+            <code className="min-w-0 flex-1 break-all text-xs text-zinc-700 dark:text-zinc-300">
               {data?.apiUrl ?? "—"}
             </code>
             {data?.apiUrl ? <CopyBtn text={data.apiUrl} /> : null}
           </div>
         </div>
         <div>
-          <p className="mb-1 font-mono text-[9px] uppercase text-zinc-600">
+          <p className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
             Environment
           </p>
-          <div className="flex min-w-0 items-start justify-between gap-2 border border-zinc-800 bg-black p-2">
-            <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-300">
+          <div className="flex min-w-0 items-start justify-between gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-950">
+            <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-700 dark:text-zinc-300">
               {envBlock ? renderEnvPreview(envBlock) : "SYNC..."}
             </pre>
             {envBlock ? (
@@ -225,18 +222,18 @@ export function ProjectManifest({ slug }: Props) {
         </div>
         <div>
           <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="font-mono text-[9px] uppercase text-zinc-600">
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
               POSTGRES_PASSWORD
             </p>
             {data?.passwordSource && data.passwordSource !== "unavailable" ? (
-              <span className="font-mono text-[9px] uppercase text-zinc-600">
+              <span className="font-mono text-[9px] uppercase text-zinc-500">
                 {data.passwordSource === "container"
                   ? "SRC:CONTAINER"
                   : "SRC:HMAC_DERIVE"}
               </span>
             ) : null}
           </div>
-          <div className="flex min-w-0 items-start justify-between gap-2 border border-zinc-800 bg-black p-2">
+          <div className="flex min-w-0 items-start justify-between gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-950">
             <div className="min-w-0 flex-1 text-xs">
               {data ? (
                 <RevealField
@@ -259,6 +256,6 @@ export function ProjectManifest({ slug }: Props) {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

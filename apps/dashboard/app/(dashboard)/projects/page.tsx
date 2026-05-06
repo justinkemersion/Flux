@@ -19,8 +19,8 @@ import {
   HOBBY_LIMIT_API_MESSAGE,
   PRO_LIMIT_API_MESSAGE,
   ProjectCard,
-  type ProjectRow,
 } from "@/src/components/projects/project-card";
+import type { ProjectRow } from "@/src/components/projects/project-types";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
 import { FleetHealthGrid } from "@/src/components/fleet/fleet-health-grid";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
@@ -347,18 +347,18 @@ export default function ProjectsPage() {
 
   const { fleetLine, fleetDegraded } = useMemo(() => {
     if (loadError) {
-      return { fleetLine: "SYSTEM_FLEET_FAULT", fleetDegraded: true };
+      return { fleetLine: "Fleet error", fleetDegraded: true };
     }
     if (fetching && projectList.length === 0) {
-      return { fleetLine: "SYSTEM_FLEET_SYNC", fleetDegraded: false };
+      return { fleetLine: "Syncing projects", fleetDegraded: false };
     }
     const bad = projectList.some(
       (p) => p.status === "missing" || p.status === "corrupted",
     );
     if (bad) {
-      return { fleetLine: "SYSTEM_FLEET_ATTENTION", fleetDegraded: true };
+      return { fleetLine: "Needs attention", fleetDegraded: true };
     }
-    return { fleetLine: "SYSTEM_FLEET_NOMINAL", fleetDegraded: false };
+    return { fleetLine: "All projects healthy", fleetDegraded: false };
   }, [loadError, fetching, projectList]);
 
   return (
@@ -383,11 +383,11 @@ export default function ProjectsPage() {
               {upgradeLoading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
               ) : null}
-              {upgradeLoading ? "Redirecting…" : "Upgrade_to_Pro"}
+              {upgradeLoading ? "Redirecting…" : "Upgrade to Pro"}
             </button>
           ) : userPlan === "pro" ? (
             <span className="inline-flex h-9 items-center rounded-md border border-zinc-800 bg-zinc-900/40 px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-400/90">
-              PRO_TIER
+              Pro plan
             </span>
           ) : null}
         </div>
@@ -410,10 +410,10 @@ export default function ProjectsPage() {
         ) : projectList.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center py-16 sm:py-24">
             <div className="flex w-full max-w-2xl flex-col items-center justify-center rounded-md border border-zinc-800 bg-transparent px-8 py-20 text-center sm:py-28">
-              <p className="max-w-md font-mono text-xs uppercase leading-relaxed tracking-[0.2em] text-zinc-500">
-                NO_RESOURCES_ALLOCATED.
+              <p className="max-w-md text-sm leading-relaxed text-zinc-500">
+                No projects yet.
                 <br />
-                AWAITING_PROVISIONING_COMMAND.
+                Create one to get started.
               </p>
             </div>
           </div>

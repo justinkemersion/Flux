@@ -29,9 +29,6 @@ function isSuccess(status: string): boolean {
   return status === "running";
 }
 
-/**
- * High-density block strip: emerald = probe OK, red = failure, dim zinc voids = pending (initializing).
- */
 export function TelemetrySparkline({
   slug,
   pollMs = 8000,
@@ -105,56 +102,53 @@ export function TelemetrySparkline({
     return () => clearInterval(t);
   }, [load, pollMs]);
 
-  const slotCount = 20;
-  const blocks = entries
-    ? entries.map((e, i) => ({
-        key: `${e.recordedAt}-${i}`,
-        ok: isSuccess(e.healthStatus),
-      }))
-    : [];
-  const pad = Math.max(0, slotCount - blocks.length);
-  const pendingPad =
-    meshLevel === "initializing" && blocks.length === 0 && !err;
+  const recent = entries ?? [];
+  const healthyCount = recent.filter((e) => isSuccess(e.healthStatus)).length;
+  const totalCount = recent.length;
+  const latest = totalCount > 0 ? recent[totalCount - 1] : null;
 
   return (
-    <div className="border border-zinc-800 bg-zinc-950/80 p-3">
-      <div className="mb-2 flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-        <span>Status</span>
-        <span className="text-zinc-600">
-          {err
-            ? "SYNC_ERR"
-            : pendingPad
-              ? "PENDING_FIRST_PROBE"
-              : `${String(blocks.length)}/${String(slotCount)}`}
+    <section className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/20">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+          Status
+        </span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          {err ? "Sync error" : fleetLabel(meshLevel)}
         </span>
       </div>
       {err ? (
-        <p className="font-mono text-xs text-red-400">{err}</p>
+        <p className="text-sm text-red-500">{err}</p>
       ) : null}
-      <div
-        className="grid gap-px border border-zinc-800/80 bg-zinc-800"
-        style={{
-          gridTemplateColumns: `repeat(${String(slotCount)}, minmax(0, 1fr))`,
-        }}
-        aria-label="Last twenty mesh probes, oldest to newest"
-      >
-        {Array.from({ length: pad }, (_, i) => (
-          <div
-            key={`void-${i}`}
-            className={`h-3 ${
-              pendingPad ? "bg-zinc-700/50" : "bg-zinc-900"
-            }`}
-            title={pendingPad ? "Pending" : "—"}
-          />
-        ))}
-        {blocks.map((b) => (
-          <div
-            key={b.key}
-            className={`h-3 ${b.ok ? "bg-emerald-500" : "bg-red-500"}`}
-            title={b.ok ? "NOMINAL" : "FAULT"}
-          />
-        ))}
+      <div className="grid gap-2 text-sm text-zinc-600 dark:text-zinc-300 sm:grid-cols-3">
+        <div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">Last checks</p>
+          <p>{totalCount === 0 ? "No data yet" : `${healthyCount}/${totalCount} healthy`}</p>
+        </div>
+        <div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">Latest probe</p>
+          <p>{latest ? new Date(latest.recordedAt).toLocaleTimeString() : "Waiting"}</p>
+        </div>
+        <div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">Project state</p>
+          <p>{stackStatus === "running" ? "Online" : "Offline"}</p>
+        </div>
       </div>
-    </div>
+    </section>
   );
+}
+
+function fleetLabel(level: FleetTelemetryLevel): string {
+  switch (level) {
+    case "operational":
+      return "Online";
+    case "initializing":
+      return "Starting";
+    case "standby":
+      return "Offline";
+    case "offline":
+      return "Error";
+    default:
+      return "Status";
+  }
 }

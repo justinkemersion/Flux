@@ -30,36 +30,15 @@ import {
   readResponseJson,
 } from "@/src/lib/fetch-json";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
+import type {
+  ProjectRow,
+  ServerStatus,
+} from "@/src/components/projects/project-types";
 import { createPortal } from "react-dom";
 
 /** Full-screen dialogs: portal to `document.body` so `fixed` is not clipped by card / mesh readout ancestors. Z: settings z-[240], delete+reset z-[250]. */
 
-type ServerStatus =
-  | "running"
-  | "stopped"
-  | "partial"
-  | "missing"
-  | "corrupted";
-
-export type ProjectRow = {
-  id: string;
-  name: string;
-  slug: string;
-  /** Catalog / Docker stack hash (7 hex), required for CLI `--hash` and hostnames. */
-  hash: string;
-  /** When omitted, UI assumes v1_dedicated (legacy list payloads). */
-  mode?: "v1_dedicated" | "v2_shared";
-  status: ServerStatus;
-  apiUrl: string;
-  createdAt: string;
-  /** Mesh probe (2m) — from flux-system. */
-  healthStatus?: string | null;
-  lastHeartbeatAt?: string | null;
-  /** Loaded only after "Reveal keys" — not returned by list API. */
-  anonKey?: string | null;
-  serviceRoleKey?: string | null;
-  postgresConnectionString?: string | null;
-};
+export type { ProjectRow } from "@/src/components/projects/project-types";
 
 export const HOBBY_LIMIT_API_MESSAGE =
   "Project limit reached. Please upgrade to Pro.";
@@ -191,17 +170,8 @@ function CliSnippetBlock({ slug, hash }: { slug: string; hash: string }) {
   return (
     <div className="rounded-md border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/30">
       <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-        CLI snippet
+        CLI
       </h3>
-      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        <code className="font-mono text-[11px]">--hash</code> is the stack id: it
-        matches Docker resources{" "}
-        <code className="font-mono text-[11px]">flux-{"{hash}"}-{"{slug}"}-*</code>{" "}
-        and the hash shown on the project card. Use it when the CLI cannot resolve
-        the project from flux-system (for example remote Docker or missing{" "}
-        <code className="font-mono text-[11px]">FLUX_OWNER_KEY</code>). Swap in
-        your SQL file path.
-      </p>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-zinc-200 bg-white px-3 py-2.5 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
           {line}
@@ -819,7 +789,7 @@ export function ProjectCard({
           }
         />
 
-        {!(meshReadoutCompanion && isV2Shared) ? (
+        {!meshReadoutCompanion ? (
           <section className="mt-6" aria-labelledby={`connect-heading-${p.id}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -874,7 +844,7 @@ export function ProjectCard({
             <div className="mt-6 flex flex-col gap-6">
               {isV2Shared ? (
                 <CopyableField
-                  label="Service URL"
+                    label="API URL"
                   value={p.apiUrl || null}
                   isSecret={false}
                   visuallyTruncate
@@ -901,7 +871,7 @@ export function ProjectCard({
                   />
                   {meshReadoutCompanion ? null : (
                     <CopyableField
-                      label="Service URL"
+                      label="API URL"
                       value={p.apiUrl || null}
                       isSecret={false}
                       visuallyTruncate
