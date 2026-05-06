@@ -9,7 +9,7 @@ Flux **v2** runs many tenants on a **shared PostgreSQL cluster** and **PostgREST
 
 ## What you will learn
 
-- Hard invariants (from `docs/flux-v2-architecture.md`)
+- Hard invariants (see [full v2 specification](/docs/architecture/flux-v2-architecture))
 - Soft isolation tradeoffs on Free/Pro
 - Why gateway correctness is critical
 
@@ -17,7 +17,7 @@ Flux **v2** runs many tenants on a **shared PostgreSQL cluster** and **PostgREST
 
 v2 exists to reduce container sprawl and memory overhead versus **v1 dedicated**. It does **not** remove Postgres or PostgREST from the picture—it changes how they are shared.
 
-Authoritative spec (in this repository): `docs/flux-v2-architecture.md`.
+Authoritative spec: **[Flux v2 architecture specification](/docs/architecture/flux-v2-architecture)** — the dashboard renders `docs/flux-v2-architecture.md` from this repository (single source, no duplicate).
 
 ### Invariants (summary)
 

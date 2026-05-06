@@ -15,6 +15,19 @@ export type LoadedDocPage = {
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/u;
 
+/** Slug paths that load from `docs/<file>` instead of `docs/pages/`. Value = path under repo root. */
+const REPO_DOC_ALIASES: Record<string, string> = {
+  "architecture/flux-v2-architecture": join("docs", "flux-v2-architecture.md"),
+};
+
+const REPO_DOC_ALIAS_METADATA: Record<string, DocsFrontmatter> = {
+  "architecture/flux-v2-architecture": {
+    title: "Flux v2 — architecture specification",
+    description:
+      "Authoritative v2 invariants, threat model, JWT contracts, and implementation gates for Flux.",
+  },
+};
+
 function tryRepoRoots(): string[] {
   return [join(process.cwd(), "..", ".."), process.cwd()];
 }
@@ -46,6 +59,26 @@ function parseFrontmatter(raw: string): LoadedDocPage {
 
 /** slug [] = index.md at docs/pages root */
 export async function loadDocPage(slug: string[]): Promise<LoadedDocPage | null> {
+  const slugKey = slug.join("/");
+  const aliasRel = REPO_DOC_ALIASES[slugKey];
+  if (aliasRel) {
+    for (const root of tryRepoRoots()) {
+      const filePath = join(root, aliasRel);
+      try {
+        const raw = await readFile(filePath, "utf8");
+        const parsed = parseFrontmatter(raw);
+        const overlay = REPO_DOC_ALIAS_METADATA[slugKey];
+        return {
+          frontmatter: { ...parsed.frontmatter, ...overlay },
+          body: parsed.body,
+        };
+      } catch {
+        /* try next root */
+      }
+    }
+    return null;
+  }
+
   const rel =
     slug.length === 0 ? "index.md" : `${slug.join("/")}.md`;
   for (const root of tryRepoRoots()) {

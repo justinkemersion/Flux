@@ -27,7 +27,7 @@ A bug that puts tenant A’s data in tenant B’s role is a **critical** inciden
 
 ## How it works
 
-Free/Pro-style pooled tiers accept **cluster-level blast radius** by design (see `docs/flux-v2-architecture.md`). Mitigations are operational and architectural, not “magic”.
+Free/Pro-style pooled tiers accept **cluster-level blast radius** by design (see the [v2 architecture specification](/docs/architecture/flux-v2-architecture)). Mitigations are operational and architectural, not “magic”.
 
 ## Example
 

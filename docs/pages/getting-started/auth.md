@@ -19,7 +19,7 @@ Flux ties HTTP authentication to **PostgreSQL roles** and, when you enable it, *
 2. On **v2**, the **gateway** verifies that token and mints a **bridge JWT** PostgREST trusts, with a **role** claim scoped to the tenant.
 3. Postgres evaluates **GRANT**s first, then **RLS** policies for qualified roles.
 
-If you skip the gateway in development and hit PostgREST directly, you must configure **PGRST_JWT_SECRET**-compatible tokens yourself and set schema headers—production traffic for v2 should not expose PostgREST publicly (see invariants in `docs/flux-v2-architecture.md`).
+If you skip the gateway in development and hit PostgREST directly, you must configure **PGRST_JWT_SECRET**-compatible tokens yourself and set schema headers—production traffic for v2 should not expose PostgREST publicly (see invariants in the [v2 architecture specification](/docs/architecture/flux-v2-architecture)).
 
 ## How it works
 

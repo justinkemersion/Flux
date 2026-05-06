@@ -44,6 +44,10 @@ export const DOCS_NAV: DocsNavSection[] = [
     label: "Architecture",
     items: [
       { title: "Flux v2 shared", slug: ["architecture", "flux-v2"] },
+      {
+        title: "V2 specification (full)",
+        slug: ["architecture", "flux-v2-architecture"],
+      },
       { title: "Gateway", slug: ["architecture", "gateway"] },
       { title: "Bridge JWTs", slug: ["architecture", "bridge-jwts"] },
       { title: "Tenant isolation", slug: ["architecture", "tenant-isolation"] },

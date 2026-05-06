@@ -1,4 +1,10 @@
+import Link from "next/link";
 import { GetStartedButton } from "./get-started-button";
+
+const focusSecondary =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
+
+const secondaryCtaClass = `inline-flex items-center justify-center rounded-md border border-zinc-600/70 bg-zinc-950/30 px-5 py-2.5 text-sm font-medium text-zinc-400 transition-colors hover:border-zinc-500 hover:bg-zinc-900/40 hover:text-zinc-200 ${focusSecondary}`;
 
 export function Hero() {
   return (
@@ -15,8 +21,11 @@ export function Hero() {
         <br />
         No setup.
       </p>
-      <div className="mt-10">
+      <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
         <GetStartedButton />
+        <Link href="/docs/architecture/flux-v2" className={secondaryCtaClass}>
+          Explore the Architecture
+        </Link>
       </div>
     </section>
   );
