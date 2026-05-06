@@ -11,17 +11,9 @@ const focusable =
 const focusableLanding =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 
-/** Calm bar typography — matches docs direction (readable sans, not terminal-mini). */
-const barText =
-  "text-[13px] leading-snug text-zinc-600 dark:text-zinc-400";
+const barMuted = "text-xs text-zinc-500 dark:text-zinc-500";
 
-const barTextLanding = "text-[13px] leading-snug text-zinc-400";
-
-const clockClass =
-  "text-[12px] tabular-nums tracking-wide text-zinc-500 dark:text-zinc-500";
-
-const clockClassLanding =
-  "text-[12px] tabular-nums tracking-wide text-zinc-500";
+const barMutedLanding = "text-xs text-zinc-500";
 
 function formatUtc(d: Date): string {
   const p = (n: number) => n.toString().padStart(2, "0");
@@ -34,44 +26,42 @@ function formatUtc(d: Date): string {
   return `${y}-${mo}-${day} ${h}:${m}:${s} UTC`;
 }
 
-function headerMaxWidth(pathname: string): string {
-  if (pathname === "/") return "max-w-5xl";
-  if (pathname.startsWith("/docs")) return "max-w-5xl";
-  if (pathname.startsWith("/settings") || pathname.startsWith("/projects")) {
-    return "max-w-6xl";
-  }
-  return "max-w-3xl";
-}
-
 export function WorkspaceHeader() {
   const pathname = usePathname();
+  if (pathname === "/projects") {
+    return null;
+  }
   const isLanding = pathname === "/";
-  const contentMaxClassName = headerMaxWidth(pathname);
+  const contentMaxClassName = isLanding
+    ? "max-w-5xl"
+    : pathname.startsWith("/settings")
+      ? "max-w-6xl"
+      : "max-w-3xl";
 
   const headerSurface = isLanding
-    ? "border-b border-zinc-800/90 bg-zinc-950"
-    : "border-b border-zinc-200/90 bg-zinc-50/95 backdrop-blur-sm dark:border-zinc-800/90 dark:bg-zinc-950/95";
+    ? "border-b border-zinc-800 bg-zinc-950"
+    : "border-b border-zinc-200 bg-zinc-50/90 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/90";
 
   const brandClass = isLanding
-    ? `inline-flex items-center text-[15px] font-semibold tracking-tight text-zinc-100 transition-colors hover:text-white ${focusableLanding} rounded-md`
-    : `inline-flex items-center text-[15px] font-semibold tracking-tight text-zinc-900 transition-colors hover:text-zinc-700 dark:text-zinc-50 dark:hover:text-zinc-200 ${focusable} rounded-md`;
+    ? `inline-flex items-center text-sm font-semibold tracking-tight text-zinc-100 transition-colors hover:text-white ${focusableLanding} rounded-md`
+    : `inline-flex items-center text-sm font-semibold tracking-tight text-zinc-900 transition-colors hover:text-zinc-700 dark:text-zinc-100 dark:hover:text-zinc-300 ${focusable} rounded-md`;
 
   return (
     <header className={`relative z-40 w-full ${headerSurface}`}>
       <div
-        className={`mx-auto flex w-full items-center gap-6 px-4 py-3.5 sm:px-8 sm:px-10 ${contentMaxClassName}`}
+        className={`mx-auto flex w-full items-center gap-4 px-4 py-3 sm:px-8 sm:px-10 ${contentMaxClassName}`}
         role="navigation"
         aria-label="Primary"
       >
-        <div className="min-w-0 shrink-0 text-left">
+        <div className="min-w-0 flex-1 text-left">
           <Link href="/" className={brandClass}>
             Flux
           </Link>
         </div>
-        <div className="flex min-w-0 flex-1 justify-center px-2">
+        <div className="shrink-0 text-center">
           <UtcClock isLanding={isLanding} />
         </div>
-        <div className="min-w-0 shrink-0">
+        <div className="min-w-0 flex-1 text-right">
           <StatusBarSession isLanding={isLanding} />
         </div>
       </div>
@@ -81,6 +71,7 @@ export function WorkspaceHeader() {
 
 function UtcClock({ isLanding }: { isLanding: boolean }) {
   const [now, setNow] = useState(() => new Date());
+  const muted = isLanding ? barMutedLanding : barMuted;
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -91,7 +82,7 @@ function UtcClock({ isLanding }: { isLanding: boolean }) {
 
   return (
     <time
-      className={`${isLanding ? clockClassLanding : clockClass} whitespace-nowrap`}
+      className={`${muted} whitespace-nowrap tabular-nums`}
       dateTime={now.toISOString()}
       suppressHydrationWarning
     >
@@ -103,58 +94,27 @@ function UtcClock({ isLanding }: { isLanding: boolean }) {
 function StatusBarSession({ isLanding }: { isLanding: boolean }) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
-  const muted = isLanding ? barTextLanding : barText;
+  const muted = isLanding ? barMutedLanding : barMuted;
   const focus = isLanding ? focusableLanding : focusable;
-  const hoverLink = isLanding
-    ? "hover:text-zinc-100"
-    : "hover:text-zinc-900 dark:hover:text-zinc-100";
-
-  const docsLinkClass = `font-medium ${muted} shrink-0 rounded-md transition-colors ${hoverLink} ${focus}`;
-
-  const sepClass = isLanding
-    ? "select-none text-zinc-600"
-    : "select-none text-zinc-300 dark:text-zinc-600";
-
-  const authBtnClass = `${muted} shrink-0 rounded-md transition-colors ${hoverLink} ${focus}`;
-
-  const DocsCluster = () => (
-    <>
-      <span className={sepClass} aria-hidden="true">
-        |
-      </span>
-      <Link href="/docs" className={docsLinkClass}>
-        Docs
-      </Link>
-    </>
-  );
+  const hoverMuted = isLanding
+    ? "hover:text-zinc-200"
+    : "hover:text-zinc-800 dark:hover:text-zinc-300";
 
   if (status === "loading") {
-    return (
-      <div
-        className={`flex flex-row flex-wrap items-center justify-end gap-x-2.5 gap-y-1 ${muted}`}
-      >
-        <span className="inline-block shrink-0">Loading session…</span>
-        <DocsCluster />
-      </div>
-    );
+    return <span className={`${muted} inline-block`}>Loading session…</span>;
   }
 
   if (!session?.user) {
     return (
-      <div
-        className={`flex flex-row flex-wrap items-center justify-end gap-x-2.5 gap-y-1`}
+      <button
+        type="button"
+        onClick={() =>
+          void signIn("github", { callbackUrl: pathname || "/" })
+        }
+        className={`${muted} rounded-md transition-colors ${hoverMuted} ${focus}`}
       >
-        <button
-          type="button"
-          onClick={() =>
-            void signIn("github", { callbackUrl: pathname || "/" })
-          }
-          className={authBtnClass}
-        >
-          Sign in with GitHub
-        </button>
-        <DocsCluster />
-      </div>
+        Sign in with GitHub
+      </button>
     );
   }
 
@@ -166,10 +126,10 @@ function StatusBarSession({ isLanding }: { isLanding: boolean }) {
 
   return (
     <div
-      className={`flex flex-row flex-wrap items-center justify-end gap-x-2.5 gap-y-1`}
+      className={`${muted} flex flex-col items-end gap-1 sm:inline-flex sm:flex-row sm:items-baseline sm:gap-2`}
     >
       <span
-        className={`max-w-[min(100%,14rem)] truncate sm:max-w-[min(100%,24rem)] ${muted}`}
+        className="max-w-full truncate text-left sm:max-w-[min(100%,28rem)] sm:text-right"
         title={id}
       >
         {id}
@@ -181,11 +141,10 @@ function StatusBarSession({ isLanding }: { isLanding: boolean }) {
             callbackUrl: pathname.startsWith("/projects") ? "/projects" : "/",
           });
         }}
-        className={authBtnClass}
+        className={`shrink-0 rounded-md bg-transparent text-left sm:inline sm:text-right ${focus} transition-colors ${hoverMuted}`}
       >
         Sign out
       </button>
-      <DocsCluster />
     </div>
   );
 }

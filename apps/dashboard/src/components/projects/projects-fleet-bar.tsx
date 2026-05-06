@@ -84,6 +84,12 @@ export function ProjectsFleetBar({
             UTC
           </span>
           <Link
+            href="/docs"
+            className={`rounded-md px-2 py-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300 ${focus}`}
+          >
+            Docs
+          </Link>
+          <Link
             href="/settings/keys"
             className={`rounded-md px-2 py-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300 ${focus}`}
           >
