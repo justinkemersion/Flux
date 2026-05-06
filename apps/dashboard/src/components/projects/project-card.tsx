@@ -8,12 +8,17 @@ import {
   EyeOff,
   Loader2,
   RefreshCw,
-  Settings,
   Trash2,
   Wrench,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
+import { ProjectHeader } from "@/src/components/projects/project-header";
+import {
+  StatusBadge,
+  type DisplayStatus,
+} from "@/src/components/projects/project-status-badge";
 import {
   useCallback,
   useEffect,
@@ -56,89 +61,10 @@ export type ProjectRow = {
   postgresConnectionString?: string | null;
 };
 
-type DisplayStatus = ServerStatus | "transitioning";
-
 export const HOBBY_LIMIT_API_MESSAGE =
   "Project limit reached. Please upgrade to Pro.";
 export const PRO_LIMIT_API_MESSAGE =
   "Project limit reached (10 projects on Pro).";
-
-function StatusBadge({ status }: { status: DisplayStatus }) {
-  const base =
-    "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium";
-  switch (status) {
-    case "running":
-      return (
-        <span
-          className={`${base} bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200`}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-emerald-500"
-            aria-hidden
-          />
-          Online
-        </span>
-      );
-    case "stopped":
-      return (
-        <span
-          className={`${base} bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100`}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"
-            aria-hidden
-          />
-          Offline
-        </span>
-      );
-    case "transitioning":
-      return (
-        <span
-          className={`${base} bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200`}
-        >
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          Transitioning
-        </span>
-      );
-    case "missing":
-      return (
-        <span
-          className={`${base} bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200`}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-red-500"
-            aria-hidden
-          />
-          Missing
-        </span>
-      );
-    case "corrupted":
-      return (
-        <span
-          className={`${base} bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200`}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-orange-500"
-            aria-hidden
-          />
-          Drift
-        </span>
-      );
-    case "partial":
-      return (
-        <span
-          className={`${base} bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100`}
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" aria-hidden />
-          Partial
-        </span>
-      );
-    default: {
-      const _exhaustive: never = status;
-      return _exhaustive;
-    }
-  }
-}
 
 function CopyableField({
   label,
@@ -314,6 +240,11 @@ type ProjectCardProps = {
   onRepaired?: () => void;
   /** When true (e.g. opened from list “Settings”), open the settings modal once on mount. */
   autoOpenSettings?: boolean;
+  /**
+   * When true, this card is rendered under `ProjectMeshReadout` in the same modal. Skip UI that
+   * duplicates the mesh readout Connection panel and streaming logs.
+   */
+  meshReadoutCompanion?: boolean;
 };
 
 export function ProjectCard({
@@ -323,6 +254,7 @@ export function ProjectCard({
   onCredentialsRevealed,
   onRepaired,
   autoOpenSettings = false,
+  meshReadoutCompanion = false,
 }: ProjectCardProps) {
   const [isBusy, setIsBusy] = useState(false);
   const [powerIntent, setPowerIntent] = useState<"start" | "stop" | null>(
@@ -763,201 +695,184 @@ export function ProjectCard({
   return (
     <>
       <article className="flex flex-col rounded-md border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              {p.name}
-            </h2>
-            <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-              {p.slug}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <StatusBadge status={currentStatus} />
-            <MeshTelemetryPill
-              healthStatus={p.healthStatus}
-              lastHeartbeatAt={p.lastHeartbeatAt}
-              createdAt={p.createdAt}
-              stackStatus={p.status}
-            />
-            {currentStatus === "missing" ||
-            currentStatus === "corrupted" ||
-            (isV2Shared && p.healthStatus === "error") ? (
-              <button
-                type="button"
-                onClick={() => void runRepair()}
-                disabled={repairBusy}
-                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-orange-300 bg-orange-50 px-2.5 text-xs font-medium text-orange-950 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100 dark:hover:bg-orange-900/50"
-              >
-                {repairBusy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                ) : (
-                  <Wrench className="h-3.5 w-3.5" aria-hidden />
-                )}
-                Repair
-              </button>
-            ) : null}
-            {showStartButton ? (
-              <button
-                type="button"
-                onClick={() => void togglePower()}
-                disabled={!canToggle && !(isBusy && powerIntent === "start")}
-                className={powerStartBtn}
-                title="Start project"
-                aria-label={`Start ${p.name}`}
-              >
-                {isBusy && powerIntent === "start" ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    <span>[ START ]</span>
-                  </span>
-                ) : (
-                  "[ START ]"
-                )}
-              </button>
-            ) : null}
-            {showStopButton ? (
-              <button
-                type="button"
-                onClick={() => void togglePower()}
-                disabled={!canToggle && !(isBusy && powerIntent === "stop")}
-                className={powerBtn}
-                title="Stop project"
-                aria-label={`Stop ${p.name}`}
-              >
-                {isBusy && powerIntent === "stop" ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    <span>[ STOP ]</span>
-                  </span>
-                ) : (
-                  "[ STOP ]"
-                )}
-              </button>
-            ) : null}
-            {!isV2Shared ? (
-              <button
-                type="button"
-                onClick={openSettingsModal}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                aria-label={`Project settings for ${p.name}`}
-                title="Project settings"
-              >
-                <Settings className="h-4 w-4" aria-hidden />
-              </button>
-            ) : null}
-            {isV2Shared ? (
-              <button
-                type="button"
-                onClick={() => setGettingStartedOpen(true)}
-                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
-              >
-                Getting Started
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={openDeleteModal}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-              aria-label={`Delete project ${p.name}`}
-              title="Delete project"
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-            </button>
-            {!isV2Shared ? (
-              <button
-                type="button"
-                onClick={openResetModal}
-                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-2.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
-                aria-label={`Factory reset ${p.name}`}
-                title="Factory reset (destructive)"
-              >
-                <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                Factory reset
-              </button>
-            ) : null}
-          </div>
-        </header>
-
-        <section className="mt-6" aria-labelledby={`connect-heading-${p.id}`}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2
-                id={`connect-heading-${p.id}`}
-                className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
-              >
-                How to connect
-              </h2>
-              <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-                {isV2Shared
-                  ? "Pooled project: use the service URL with short-lived JWTs from the Flux gateway. Per-tenant Docker Postgres strings and static anon/service keys are not exposed from this UI."
-                  : "Everything you need to reach Postgres and the REST API. Load secrets once; they are not stored in the project list."}
-              </p>
-            </div>
-            {!credentialsLoaded && canRevealCredentials ? (
-              <button
-                type="button"
-                onClick={() => void revealKeys()}
-                disabled={revealBusy}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                {revealBusy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                ) : (
-                  <Eye className="h-4 w-4" aria-hidden />
-                )}
-                Load connection secrets
-              </button>
-            ) : null}
-          </div>
-
-          {revealError ? (
-            <p
-              className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-400"
-              role="alert"
-            >
-              {revealError}
-            </p>
-          ) : null}
-          {keysRotationNotice ? (
-            <p
-              className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
-              role="status"
-            >
-              JWT secret was updated. Previously copied anon/service keys are now
-              stale. Click <strong className="font-medium">Load connection secrets</strong>{" "}
-              to refresh them before using signed-out requests.
-            </p>
-          ) : null}
-
-          <div className="mt-6 flex flex-col gap-6">
-            {isV2Shared ? (
-              <CopyableField
-                label="Service URL"
-                value={p.apiUrl || null}
-                isSecret={false}
-                visuallyTruncate
-                prominent
+        <ProjectHeader
+          title={p.name}
+          subtitle={p.slug}
+          statusRow={
+            <>
+              <StatusBadge status={currentStatus} />
+              <MeshTelemetryPill
+                healthStatus={p.healthStatus}
+                lastHeartbeatAt={p.lastHeartbeatAt}
+                createdAt={p.createdAt}
+                stackStatus={p.status}
               />
-            ) : (
-              <>
-                <CopyableField
-                  label="Postgres connection string"
-                  value={
-                    credentialsLoaded ? (p.postgresConnectionString ?? null) : null
-                  }
-                  isSecret
-                  prominent
-                  emptyHint={connectSecretEmptyHint}
-                />
-                <CopyableField
-                  label="Anon key"
-                  value={credentialsLoaded ? (p.anonKey ?? null) : null}
-                  isSecret={false}
-                  visuallyTruncate
-                  prominent
-                  emptyHint={connectSecretEmptyHint}
-                />
+            </>
+          }
+          primaryActions={
+            <>
+              <Link
+                href={`/projects/${encodeURIComponent(p.slug)}`}
+                className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              >
+                Open Console
+              </Link>
+              {!isV2Shared ? (
+                <button
+                  type="button"
+                  onClick={openSettingsModal}
+                  className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  aria-label={`Project settings for ${p.name}`}
+                >
+                  Settings
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setGettingStartedOpen(true)}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+                >
+                  Getting Started
+                </button>
+              )}
+            </>
+          }
+          secondaryActions={
+            <>
+              {currentStatus === "missing" ||
+              currentStatus === "corrupted" ||
+              (isV2Shared && p.healthStatus === "error") ? (
+                <button
+                  type="button"
+                  onClick={() => void runRepair()}
+                  disabled={repairBusy}
+                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-orange-300 bg-orange-50 px-2.5 text-xs font-medium text-orange-950 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100 dark:hover:bg-orange-900/50"
+                >
+                  {repairBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <Wrench className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  Repair
+                </button>
+              ) : null}
+              {showStartButton ? (
+                <button
+                  type="button"
+                  onClick={() => void togglePower()}
+                  disabled={!canToggle && !(isBusy && powerIntent === "start")}
+                  className={powerStartBtn}
+                  title="Start project"
+                  aria-label={`Start ${p.name}`}
+                >
+                  {isBusy && powerIntent === "start" ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      <span>[ START ]</span>
+                    </span>
+                  ) : (
+                    "[ START ]"
+                  )}
+                </button>
+              ) : null}
+              {showStopButton ? (
+                <button
+                  type="button"
+                  onClick={() => void togglePower()}
+                  disabled={!canToggle && !(isBusy && powerIntent === "stop")}
+                  className={powerBtn}
+                  title="Stop project"
+                  aria-label={`Stop ${p.name}`}
+                >
+                  {isBusy && powerIntent === "stop" ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      <span>[ STOP ]</span>
+                    </span>
+                  ) : (
+                    "[ STOP ]"
+                  )}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={openDeleteModal}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                aria-label={`Delete project ${p.name}`}
+                title="Delete project"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden />
+              </button>
+              {!isV2Shared ? (
+                <button
+                  type="button"
+                  onClick={openResetModal}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-2.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
+                  aria-label={`Factory reset ${p.name}`}
+                  title="Factory reset (destructive)"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                  Factory reset
+                </button>
+              ) : null}
+            </>
+          }
+        />
+
+        {!(meshReadoutCompanion && isV2Shared) ? (
+          <section className="mt-6" aria-labelledby={`connect-heading-${p.id}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2
+                  id={`connect-heading-${p.id}`}
+                  className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+                >
+                  How to connect
+                </h2>
+                <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
+                  {isV2Shared
+                    ? "Pooled project: use the service URL with short-lived JWTs from the Flux gateway. Per-tenant Docker Postgres strings and static anon/service keys are not exposed from this UI."
+                    : "Everything you need to reach Postgres and the REST API. Load secrets once; they are not stored in the project list."}
+                </p>
+              </div>
+              {!credentialsLoaded && canRevealCredentials ? (
+                <button
+                  type="button"
+                  onClick={() => void revealKeys()}
+                  disabled={revealBusy}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  {revealBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Eye className="h-4 w-4" aria-hidden />
+                  )}
+                  Load connection secrets
+                </button>
+              ) : null}
+            </div>
+
+            {revealError ? (
+              <p
+                className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-400"
+                role="alert"
+              >
+                {revealError}
+              </p>
+            ) : null}
+            {keysRotationNotice ? (
+              <p
+                className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                role="status"
+              >
+                JWT secret was updated. Previously copied anon/service keys are now
+                stale. Click <strong className="font-medium">Load connection secrets</strong>{" "}
+                to refresh them before using signed-out requests.
+              </p>
+            ) : null}
+
+            <div className="mt-6 flex flex-col gap-6">
+              {isV2Shared ? (
                 <CopyableField
                   label="Service URL"
                   value={p.apiUrl || null}
@@ -965,49 +880,78 @@ export function ProjectCard({
                   visuallyTruncate
                   prominent
                 />
-                <CopyableField
-                  label="Service role key"
-                  value={credentialsLoaded ? (p.serviceRoleKey ?? null) : null}
-                  isSecret
-                  prominent
-                  emptyHint={connectSecretEmptyHint}
-                />
-              </>
-            )}
-          </div>
-
-          {!credentialsLoaded && !canRevealCredentials ? (
-            <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-              {isV2Shared ? (
-                <>
-                  Use the service URL above with gateway-issued JWTs. If the API
-                  stays unhealthy, try <strong className="font-medium">Repair</strong>{" "}
-                  or <strong className="font-medium">Delete</strong>.
-                </>
               ) : (
                 <>
-                  Secrets stay hidden until the stack is healthy. Use{" "}
-                  <strong className="font-medium">Repair</strong> if Docker is out
-                  of sync, or <strong className="font-medium">Delete</strong> to
-                  remove this project.
+                  <CopyableField
+                    label="Postgres connection string"
+                    value={
+                      credentialsLoaded ? (p.postgresConnectionString ?? null) : null
+                    }
+                    isSecret
+                    prominent
+                    emptyHint={connectSecretEmptyHint}
+                  />
+                  <CopyableField
+                    label="Anon key"
+                    value={credentialsLoaded ? (p.anonKey ?? null) : null}
+                    isSecret={false}
+                    visuallyTruncate
+                    prominent
+                    emptyHint={connectSecretEmptyHint}
+                  />
+                  {meshReadoutCompanion ? null : (
+                    <CopyableField
+                      label="Service URL"
+                      value={p.apiUrl || null}
+                      isSecret={false}
+                      visuallyTruncate
+                      prominent
+                    />
+                  )}
+                  <CopyableField
+                    label="Service role key"
+                    value={credentialsLoaded ? (p.serviceRoleKey ?? null) : null}
+                    isSecret
+                    prominent
+                    emptyHint={connectSecretEmptyHint}
+                  />
                 </>
               )}
-            </p>
-          ) : null}
-          {credentialsLoaded && !isV2Shared ? (
-            <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
-              Update the JWT signing secret or CORS from project settings when
-              your auth setup changes.
-            </p>
-          ) : null}
-        </section>
+            </div>
+
+            {!credentialsLoaded && !canRevealCredentials ? (
+              <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                {isV2Shared ? (
+                  <>
+                    Use the service URL above with gateway-issued JWTs. If the API
+                    stays unhealthy, try <strong className="font-medium">Repair</strong>{" "}
+                    or <strong className="font-medium">Delete</strong>.
+                  </>
+                ) : (
+                  <>
+                    Secrets stay hidden until the stack is healthy. Use{" "}
+                    <strong className="font-medium">Repair</strong> if Docker is out
+                    of sync, or <strong className="font-medium">Delete</strong> to
+                    remove this project.
+                  </>
+                )}
+              </p>
+            ) : null}
+            {credentialsLoaded && !isV2Shared ? (
+              <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+                Update the JWT signing secret or CORS from project settings when
+                your auth setup changes.
+              </p>
+            ) : null}
+          </section>
+        ) : null}
 
         <div className="mt-8">
           <CliSnippetBlock slug={p.slug} hash={p.hash} />
         </div>
 
         <div className="mt-6">
-          {!isV2Shared ? (
+          {!isV2Shared && !meshReadoutCompanion ? (
             <button
               type="button"
               onClick={() => setLogsOpen((open) => !open)}
@@ -1018,7 +962,7 @@ export function ProjectCard({
             </button>
           ) : null}
 
-          {!isV2Shared && logsOpen ? (
+          {!isV2Shared && !meshReadoutCompanion && logsOpen ? (
             <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40">
               <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
                 <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
