@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 
 const copyBtnClass =
-  "inline-flex items-center gap-1 rounded border border-zinc-700/90 bg-zinc-950/50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-400 transition-[color,background-color,border-color] hover:border-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
+  "inline-flex items-center gap-1 rounded-md border border-zinc-600/80 bg-zinc-900/80 px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-zinc-400 transition-[color,background-color,border-color] hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 
 type CodeBlockProps = {
   code: string;
@@ -154,11 +154,11 @@ export function CodeBlock({
 
   return (
     <div
-      className={`group relative overflow-x-auto rounded-md border border-zinc-800 bg-zinc-900 text-zinc-200 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] dark:border-zinc-800/90 ${className}`}
+      className={`group relative overflow-x-auto rounded-lg border border-zinc-300 bg-zinc-950 text-zinc-200 shadow-sm ring-1 ring-black/5 dark:border-zinc-800 dark:bg-zinc-950 dark:ring-white/[0.04] ${className}`}
     >
-      <div className="flex min-h-9 items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5">
+      <div className="flex min-h-10 items-center justify-between gap-2 border-b border-zinc-800/90 bg-zinc-900/70 px-3 py-2 dark:border-zinc-800/80">
         {label ? (
-          <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
             {label}
           </span>
         ) : (
@@ -181,7 +181,7 @@ export function CodeBlock({
         </button>
       </div>
       <pre
-        className={`whitespace-pre font-mono leading-relaxed text-zinc-200 ${padding} ${textSize}`}
+        className={`whitespace-pre font-mono leading-relaxed text-zinc-100 ${padding} ${textSize}`}
       >
         {renderHighlightedCode(trimmed, language)}
       </pre>

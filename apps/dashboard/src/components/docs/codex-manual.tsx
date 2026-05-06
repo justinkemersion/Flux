@@ -1,12 +1,22 @@
 import Link from "next/link";
 import { FLUX_CODEX_JSON } from "@/src/lib/flux-codex-static";
 import { CodeBlock } from "./code-block";
+import {
+  docsBody,
+  docsDlTerm,
+  docsDlTermMono,
+  docsDivider,
+  docsFlagTerm,
+  docsFocus,
+  docsInlineCode,
+  docsMuted,
+  docsNavLabel,
+  docsProseLink,
+  docsSectionTitle,
+  docsSubsectionTitle,
+} from "./docs-styles";
 
-const focus =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
-
-const navItem =
-  "block w-full rounded-sm border border-transparent py-1.5 pl-0 text-left text-sm text-zinc-500 transition-[color,border-color] hover:border-zinc-200 hover:bg-zinc-50/60 hover:text-zinc-800 dark:hover:border-zinc-800 dark:hover:bg-zinc-900/30 dark:hover:text-zinc-200";
+const navItem = `block w-full rounded-sm border border-transparent py-1.5 pl-0 text-left text-sm text-zinc-500 transition-[color,border-color] hover:border-zinc-200 hover:bg-zinc-50/60 hover:text-zinc-800 dark:hover:border-zinc-800 dark:hover:bg-zinc-900/30 dark:hover:text-zinc-200 ${docsFocus}`;
 
 const installSnippet = `curl -sL https://flux.vsl-base.com/install | bash
 
@@ -34,13 +44,11 @@ const navIds = [
 function DocNav() {
   return (
     <nav className="lg:sticky lg:top-24" aria-label="On this page">
-      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
-        On this page
-      </p>
+      <p className={docsNavLabel}>On this page</p>
       <ul className="mt-3 space-y-0.5">
         {navIds.map((item) => (
           <li key={item.id}>
-            <a href={`#${item.id}`} className={`${navItem} ${focus}`}>
+            <a href={`#${item.id}`} className={navItem}>
               {item.label}
             </a>
           </li>
@@ -52,18 +60,16 @@ function DocNav() {
 
 export function CodexManual() {
   return (
-    <div className="lg:grid lg:grid-cols-[minmax(0,10.5rem)_minmax(0,1fr)] lg:items-start lg:gap-10 xl:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] xl:gap-14">
+    <div className="lg:grid lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] lg:items-start lg:gap-12 xl:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] xl:gap-16">
       <div className="mb-8 border-b border-zinc-200 pb-4 lg:mb-0 lg:border-0 lg:pb-0 dark:border-zinc-800">
         <div className="lg:hidden">
-          <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
-            On this page
-          </p>
-          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-500 dark:text-zinc-500">
+          <p className={docsNavLabel}>On this page</p>
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-zinc-500 dark:text-zinc-400">
             {navIds.map((item) => (
               <li key={item.id}>
                 <a
                   href={`#${item.id}`}
-                  className={`${focus} rounded-sm hover:text-zinc-800 dark:hover:text-zinc-300`}
+                  className={`${docsFocus} rounded-sm transition-colors hover:text-zinc-900 dark:hover:text-zinc-200`}
                 >
                   {item.label}
                 </a>
@@ -76,374 +82,293 @@ export function CodexManual() {
         </div>
       </div>
 
-      <div className="min-w-0 space-y-14 text-zinc-800 dark:text-zinc-300">
+      <div className="min-w-0 space-y-16">
 
-        {/* ── Installation ─────────────────────────────────────────── */}
-        <section id="install" className="scroll-mt-8">
-          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
-            Installation
-          </h2>
-          <p className="mt-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Install the CLI
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <section id="install" className="scroll-mt-10">
+          <h2 className={docsSectionTitle}>Installation</h2>
+          <p className={`mt-3 ${docsBody}`}>
             You need{" "}
-            <strong className="font-medium text-zinc-800 dark:text-zinc-200">
+            <strong className="font-semibold text-zinc-800 dark:text-zinc-200">
               Node.js 20 or later
             </strong>{" "}
-            and <code className="font-mono text-zinc-700 dark:text-zinc-300">curl</code>.
-            The installer places the <code className="font-mono text-zinc-700 dark:text-zinc-300">flux</code>{" "}
-            binary in <code className="font-mono text-zinc-700 dark:text-zinc-300">~/.local/bin</code> by default.
-            If your shell cannot find <code className="font-mono text-zinc-700 dark:text-zinc-300">flux</code> after
-            installation, add that directory to your <code className="font-mono text-zinc-700 dark:text-zinc-300">PATH</code>:
+            and <code className={docsInlineCode}>curl</code>. The installer puts{" "}
+            <code className={docsInlineCode}>flux</code> in{" "}
+            <code className={docsInlineCode}>~/.local/bin</code> by default. If your shell cannot find{" "}
+            <code className={docsInlineCode}>flux</code>, add that directory to your{" "}
+            <code className={docsInlineCode}>PATH</code>:
           </p>
           <div className="mt-4">
             <CodeBlock code={installSnippet} label="bash" />
           </div>
-          <p className="mt-3 text-sm text-zinc-500">
+          <p className={`mt-3 ${docsMuted}`}>
             Example:{" "}
-            <code className="font-mono text-zinc-500 dark:text-zinc-500">
-              export PATH=&quot;$HOME/.local/bin:$PATH&quot;
-            </code>
+            <code className={docsInlineCode}>export PATH=&quot;$HOME/.local/bin:$PATH&quot;</code>
           </p>
         </section>
 
-        {/* ── Authentication ───────────────────────────────────────── */}
-        <section id="authentication" className="scroll-mt-8">
-          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
-            Authentication
-          </h2>
-          <p className="mt-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Connect the CLI to your account
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <section id="authentication" className="scroll-mt-10">
+          <h2 className={docsSectionTitle}>Authentication</h2>
+          <p className={`mt-3 ${docsBody}`}>
             Create an API key in{" "}
-            <Link
-              href="/settings/keys"
-              className={`text-zinc-800 underline-offset-2 transition-colors duration-200 hover:underline dark:text-zinc-200 ${focus} rounded-sm`}
-            >
+            <Link href="/settings/keys" className={docsProseLink}>
               Settings → API keys
             </Link>
-            . Then set two environment variables so the CLI knows where to connect and how to authenticate:
+            . Set two environment variables so the CLI knows where to connect and how to authenticate:
           </p>
           <div className="mt-4">
             <CodeBlock code={envSnippet} label="env" />
           </div>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Verify the connection:
-          </p>
+          <p className={`mt-3 ${docsBody}`}>Verify the connection:</p>
           <div className="mt-3">
             <CodeBlock code={loginSnippet} label="bash" />
           </div>
-          <p className="mt-3 text-sm text-zinc-500">
-            Self-hosted installs: set{" "}
-            <code className="font-mono text-zinc-500">FLUX_API_BASE</code> to your
-            dashboard origin plus <code className="font-mono text-zinc-500">/api</code> (no trailing slash).
+          <p className={`mt-3 ${docsMuted}`}>
+            Self-hosted installs: set <code className={docsInlineCode}>FLUX_API_BASE</code> to your
+            dashboard origin plus <code className={docsInlineCode}>/api</code> (no trailing slash).
           </p>
         </section>
 
-        {/* ── Create a project ─────────────────────────────────────── */}
-        <section id="create" className="scroll-mt-8">
-          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
-            Creating a project
-          </h2>
-          <p className="mt-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Running <code className="font-mono text-zinc-600 dark:text-zinc-400">flux create</code>
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            This provisions a Postgres database and a REST API for your app. Flux prints the
-            connection details when it finishes.
+        <section id="create" className="scroll-mt-10">
+          <h2 className={docsSectionTitle}>Creating a project</h2>
+          <p className={`mt-3 ${docsBody}`}>
+            Run <code className={docsInlineCode}>flux create</code> to provision a Postgres database
+            and REST API for your app. Flux prints connection details when it finishes.
           </p>
           <div className="mt-4">
             <CodeBlock code={createSnippet} label="bash" />
           </div>
-          <p className="mt-3 text-sm text-zinc-500">
-            Push a SQL file with{" "}
-            <code className="font-mono text-zinc-500">flux push ./schema.sql</code>. List your
-            projects with <code className="font-mono text-zinc-500">flux list</code>.
+          <p className={`mt-3 ${docsMuted}`}>
+            Apply SQL with <code className={docsInlineCode}>flux push ./schema.sql</code>. List
+            projects with <code className={docsInlineCode}>flux list</code>.
           </p>
         </section>
 
-        {/* ── Accessing data ───────────────────────────────────────── */}
-        <section id="accessing-data" className="scroll-mt-8">
-          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
-            Accessing data
-          </h2>
-          <p className="mt-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Using your project&apos;s API URL
+        <section id="accessing-data" className="scroll-mt-10">
+          <h2 className={docsSectionTitle}>Accessing data</h2>
+          <p className={`mt-3 ${docsBody}`}>
+            After <code className={docsInlineCode}>flux create</code>, use the API URL from the output
+            as your base URL. The API is a standard REST interface — call it from a browser, server,
+            or CLI.
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            After <code className="font-mono text-zinc-700 dark:text-zinc-300">flux create</code>,
-            use the API URL printed in the output as your base URL. The API is a standard REST
-            interface — query it from a browser, server, or command line.
-          </p>
-          <dl className="mt-4 space-y-4 border-t border-zinc-200/80 pt-4 dark:border-zinc-800/80">
+          <dl className={`mt-5 space-y-5 pt-5 ${docsDivider}`}>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+              <dt className={docsDlTerm}>
                 Dedicated stack{" "}
-                <span className="normal-case tracking-normal text-zinc-400">
+                <span className={docsDlTermMono}>
                   ({FLUX_CODEX_JSON.executionModesAndTiers.v1Dedicated.modeKey})
                 </span>
               </dt>
-              <dd className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Each project has its own database and API. Authenticate using the project API
-                credentials — typically an <code className="font-mono text-zinc-700 dark:text-zinc-300">anon</code> or{" "}
-                <code className="font-mono text-zinc-700 dark:text-zinc-300">service_role</code> token
-                depending on how much trust you need.
+              <dd className={`mt-2 ${docsBody}`}>
+                Each project has its own database and API. Authenticate with project API credentials —
+                typically an <code className={docsInlineCode}>anon</code> or{" "}
+                <code className={docsInlineCode}>service_role</code> token, depending on how much trust
+                you need.
               </dd>
             </div>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-emerald-600/90 dark:text-emerald-400/85">
+              <dt className={`${docsDlTerm} text-emerald-800 dark:text-emerald-400`}>
                 Pooled stack{" "}
-                <span className="normal-case tracking-normal text-zinc-400">
+                <span className={docsDlTermMono}>
                   ({FLUX_CODEX_JSON.executionModesAndTiers.v2Shared.modeKey})
                 </span>
               </dt>
-              <dd className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Use the Service URL with your app&apos;s auth tokens — no static database keys.
-                Flux validates the token, identifies your project, and routes the request to the
-                right data. See the{" "}
-                <Link
-                  href="/docs/v2-first-request"
-                  className={`text-zinc-800 underline-offset-2 transition-colors hover:underline dark:text-zinc-200 ${focus} rounded-sm`}
-                >
+              <dd className={`mt-2 ${docsBody}`}>
+                Use the Service URL with your app&apos;s auth tokens — no static database keys. Flux
+                validates the token, identifies your project, and routes the request. See the{" "}
+                <Link href="/docs/v2-first-request" className={docsProseLink}>
                   pooled stack guide
                 </Link>{" "}
                 for a full walkthrough.
               </dd>
             </div>
           </dl>
-          <p className="mt-3 text-sm text-zinc-500">
-            From browser or server code, call the API like any REST endpoint — for
-            example, <code className="font-mono text-zinc-500">GET /your_table</code>.
+          <p className={`mt-4 ${docsMuted}`}>
+            For example: <code className={docsInlineCode}>GET /your_table</code>.
           </p>
         </section>
 
-        {/* ── Dedicated vs Pooled ──────────────────────────────────── */}
-        <section id="execution-modes" className="scroll-mt-8">
-          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
-            Dedicated vs Pooled
-          </h2>
-          <p className="mt-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Two infrastructure models, one CLI
+        <section id="execution-modes" className="scroll-mt-10">
+          <h2 className={docsSectionTitle}>Dedicated vs Pooled</h2>
+          <p className={`mt-3 ${docsBody}`}>
+            Flux supports two infrastructure models. Both use the same CLI and dashboard; the
+            difference is how resources are arranged.{" "}
+            <code className={docsInlineCode}>v1</code> and{" "}
+            <code className={docsInlineCode}>v2</code> are internal engine identifiers, not a quality
+            ranking.
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Flux supports two ways to run a project. Both use the same CLI and dashboard — the
-            difference is how the underlying infrastructure is arranged.{" "}
-            <code className="font-mono text-zinc-700 dark:text-zinc-300">v1</code> and{" "}
-            <code className="font-mono text-zinc-700 dark:text-zinc-300">v2</code> are internal
-            engine identifiers, not a quality ranking.
-          </p>
-          <dl className="mt-6 space-y-5 border-t border-zinc-200/80 pt-5 dark:border-zinc-800/80">
+          <dl className={`mt-6 space-y-6 pt-6 ${docsDivider}`}>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+              <dt className={docsDlTerm}>
                 Dedicated stack{" "}
-                <span className="normal-case tracking-normal text-zinc-400">
+                <span className={docsDlTermMono}>
                   ({FLUX_CODEX_JSON.executionModesAndTiers.v1Dedicated.modeKey})
                 </span>
               </dt>
-              <dd className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Each project gets its own Postgres instance and its own API container. Resources
-                are not shared with other projects. This is the strongest isolation boundary.
+              <dd className={`mt-2 ${docsBody}`}>
+                Each project gets its own Postgres instance and API container. Resources are not shared
+                with other tenants. This is the strongest isolation boundary.
               </dd>
-              <dd className="mt-2 text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
-                <span className="font-medium text-zinc-700 dark:text-zinc-300">Good for: </span>
-                workloads that require dedicated resources, regulated industries, or large
-                production apps where shared infrastructure is not acceptable.
+              <dd className={`mt-2 ${docsMuted}`}>
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">Good for:</span>{" "}
+                workloads that need dedicated resources, regulated industries, or production apps where
+                shared infrastructure is not acceptable.
               </dd>
             </div>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-emerald-600/90 dark:text-emerald-400/85">
+              <dt className={`${docsDlTerm} text-emerald-800 dark:text-emerald-400`}>
                 Pooled stack{" "}
-                <span className="normal-case tracking-normal text-zinc-400">
+                <span className={docsDlTermMono}>
                   ({FLUX_CODEX_JSON.executionModesAndTiers.v2Shared.modeKey})
                 </span>
               </dt>
-              <dd className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Multiple projects share a Postgres cluster. Each project is isolated at the
-                database schema and role level — your tables are not accessible to other tenants.
-                A lightweight gateway handles authentication and routing.
+              <dd className={`mt-2 ${docsBody}`}>
+                Multiple projects share a Postgres cluster. Each tenant is isolated at the schema and
+                database-role level. A gateway handles authentication and routing.
               </dd>
-              <dd className="mt-2 text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
-                <span className="font-medium text-zinc-700 dark:text-zinc-300">Good for: </span>
-                side projects, MVPs, and production apps that do not require dedicated
-                infrastructure. More resource-efficient, lower cost.
+              <dd className={`mt-2 ${docsMuted}`}>
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">Good for:</span> side
+                projects, MVPs, and production apps that do not require dedicated stacks — lower cost
+                and efficient resource use.
               </dd>
             </div>
           </dl>
         </section>
 
-        {/* ── Plans & tiers ────────────────────────────────────────── */}
-        <section id="tiers-plans" className="scroll-mt-8">
-          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
-            Plans &amp; tiers
-          </h2>
-          <p className="mt-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Free, Pro, and Enterprise
+        <section id="tiers-plans" className="scroll-mt-10">
+          <h2 className={docsSectionTitle}>Plans &amp; tiers</h2>
+          <p className={`mt-3 ${docsBody}`}>
+            Tiers describe where your data lives and what limits apply. Free and Pro run on the pooled
+            stack; Enterprise defaults to dedicated stacks for stronger isolation.
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Tiers define where your data lives and what resource limits apply. Free and Pro run
-            on the pooled stack. Enterprise defaults to a dedicated stack for stronger
-            isolation.
-          </p>
-          <dl className="mt-6 space-y-4 border-t border-zinc-200/80 pt-5 dark:border-zinc-800/80">
+          <dl className={`mt-6 space-y-5 pt-6 ${docsDivider}`}>
             <div>
-              <dt className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+              <dt className={docsDlTerm}>
                 {FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.name}{" "}
-                <span className="font-mono text-[10px] font-normal uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">
+                <span className={docsDlTermMono}>
                   ({FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.engineMode})
                 </span>
               </dt>
-              <dd className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+              <dd className={`mt-2 ${docsMuted}`}>
                 {FLUX_CODEX_JSON.executionModesAndTiers.tiers.free.useCases}
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+              <dt className={docsDlTerm}>
                 {FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.name}{" "}
-                <span className="font-mono text-[10px] font-normal uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">
+                <span className={docsDlTermMono}>
                   ({FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.engineMode})
                 </span>
               </dt>
-              <dd className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+              <dd className={`mt-2 ${docsMuted}`}>
                 {FLUX_CODEX_JSON.executionModesAndTiers.tiers.pro.useCases}
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+              <dt className={docsDlTerm}>
                 {FLUX_CODEX_JSON.executionModesAndTiers.tiers.enterprise.name}{" "}
-                <span className="font-mono text-[10px] font-normal tracking-[0.06em] text-zinc-400 dark:text-zinc-500">
+                <span className={docsDlTermMono}>
                   ({FLUX_CODEX_JSON.executionModesAndTiers.tiers.enterprise.engineMode})
                 </span>
               </dt>
-              <dd className="mt-1 text-sm text-zinc-500 dark:text-zinc-500">
+              <dd className={`mt-2 ${docsMuted}`}>
                 {FLUX_CODEX_JSON.executionModesAndTiers.tiers.enterprise.useCases}
               </dd>
             </div>
           </dl>
-          <p className="mt-5 text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
-            A simple rule: if you need resources that are fully separated from other projects,
-            choose Enterprise. Otherwise, start on Free and upgrade to Pro as your traffic grows.
+          <p className={`mt-6 ${docsMuted}`}>
+            Simple rule: choose Enterprise when you need infrastructure fully separated from other
+            projects. Otherwise start on Free and move to Pro as traffic grows.
           </p>
         </section>
 
-        {/* ── Managing projects ────────────────────────────────────── */}
-        <section id="managing" className="scroll-mt-8">
-          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
-            Managing projects
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Flux separates <strong className="text-zinc-800 dark:text-zinc-200">power operations</strong>{" "}
+        <section id="managing" className="scroll-mt-10">
+          <h2 className={docsSectionTitle}>Managing projects</h2>
+          <p className={`mt-3 ${docsBody}`}>
+            Flux separates{" "}
+            <strong className="font-semibold text-zinc-800 dark:text-zinc-200">
+              routine operations
+            </strong>{" "}
             (stop/start — containers off or on, data kept) from{" "}
-            <strong className="text-zinc-800 dark:text-zinc-200">destructive operations</strong>{" "}
-            (reset, delete), which permanently remove data or the project itself.
+            <strong className="font-semibold text-zinc-800 dark:text-zinc-200">
+              destructive actions
+            </strong>{" "}
+            (reset, delete), which remove data or the project permanently.
           </p>
-          <dl className="mt-5 space-y-4 border-t border-zinc-200/80 pt-4 dark:border-zinc-800/80">
+          <dl className={`mt-6 space-y-5 pt-6 ${docsDivider}`}>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
-                Stop
-              </dt>
-              <dd className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Shuts down the API and database. Your data stays on disk. Use this to pause a
-                project without losing anything.
+              <dt className={docsDlTerm}>Stop</dt>
+              <dd className={`mt-2 ${docsBody}`}>
+                Shuts down the API and database. Data stays on disk — use this to pause a project
+                without losing anything.
               </dd>
             </div>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
-                Start
-              </dt>
-              <dd className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Brings the project back online using the same database and configuration. This
-                does not create a new project.
+              <dt className={docsDlTerm}>Start</dt>
+              <dd className={`mt-2 ${docsBody}`}>
+                Brings the project back with the same database and configuration. Does not create a new
+                project from scratch.
               </dd>
             </div>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-amber-600/90 dark:text-amber-400/90">
-                Repair
-              </dt>
-              <dd className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Reconciles the project stack when something is out of sync — for example, if a
-                container stopped unexpectedly. Repair restarts or recreates the affected
-                services without touching the database contents.
+              <dt className={`${docsDlTerm} text-amber-800 dark:text-amber-400`}>Repair</dt>
+              <dd className={`mt-2 ${docsBody}`}>
+                Reconciles the stack when something is out of sync (for example a container stopped
+                unexpectedly). Restarts or recreates services without wiping database contents.
               </dd>
             </div>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-red-600/90 dark:text-red-400/80">
+              <dt className={`${docsDlTerm} text-red-800 dark:text-red-400`}>
                 Factory reset / Nuke
               </dt>
-              <dd className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Factory reset wipes all data and reprovisions an empty database. Nuke removes the
-                project entirely — containers, data, and the project record. Both are
-                irreversible.
+              <dd className={`mt-2 ${docsBody}`}>
+                Factory reset wipes data and reprovisions an empty database. Nuke removes the project
+                entirely — containers, volumes, and catalog row. Both are irreversible.
               </dd>
             </div>
           </dl>
-          <p className="mt-4 text-sm text-zinc-500">
-            Export your data at any time with{" "}
-            <code className="font-mono text-zinc-500">flux dump</code> (see flags in the
-            Reference section below).
+          <p className={`mt-5 ${docsMuted}`}>
+            Export anytime with <code className={docsInlineCode}>flux dump</code> (see Reference below).
           </p>
         </section>
 
-        {/* ── Reference ────────────────────────────────────────────── */}
-        <section id="advanced" className="scroll-mt-8">
-          <h2 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
-            Reference
-          </h2>
-          <p className="mt-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Project naming and identifiers
+        <section id="advanced" className="scroll-mt-10">
+          <h2 className={docsSectionTitle}>Reference</h2>
+
+          <h3 className={`mt-4 ${docsSubsectionTitle}`}>Project naming and identifiers</h3>
+          <p className={`mt-3 ${docsBody}`}>
+            Flux assigns a short identifier (hash) used in hostnames and resource names. Pattern:{" "}
+            <code className={docsInlineCode}>{FLUX_CODEX_JSON.hashingConvention.pattern}</code>. You
+            choose the slug; Flux assigns the hash.
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            When you create a project, Flux generates a short identifier (hash) that is used
-            internally in hostnames and resource names. The pattern is{" "}
-            <code className="font-mono text-zinc-700 dark:text-zinc-300">
-              {FLUX_CODEX_JSON.hashingConvention.pattern}
-            </code>
-            . You choose the slug; Flux assigns the hash.
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Database passwords for each project are derived deterministically from the project
-            identity and a server secret. You do not set or manage these passwords directly — the
-            control plane handles them.
+          <p className={`mt-3 ${docsBody}`}>
+            Database passwords are derived from project identity and a server secret. You do not manage
+            these directly — the control plane handles them.
           </p>
 
-          <p className="mt-6 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            <code className="font-mono text-zinc-600 dark:text-zinc-400">flux dump</code> flags
-          </p>
-          <dl className="mt-3 space-y-3 border-t border-zinc-200/80 pt-3 dark:border-zinc-800/80">
+          <h3 className={`mt-8 ${docsSubsectionTitle}`}>
+            <code className={docsInlineCode}>flux dump</code> flags
+          </h3>
+          <dl className={`mt-4 space-y-4 pt-4 ${docsDivider}`}>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
-                --schema-only
-              </dt>
-              <dd className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                Export table definitions only — no row data.
+              <dt className={docsFlagTerm}>--schema-only</dt>
+              <dd className={`mt-1.5 ${docsMuted}`}>Table definitions only — no row data.</dd>
+            </div>
+            <div>
+              <dt className={docsFlagTerm}>--data-only</dt>
+              <dd className={`mt-1.5 ${docsMuted}`}>Row data only — no definitions.</dd>
+            </div>
+            <div>
+              <dt className={docsFlagTerm}>--clean</dt>
+              <dd className={`mt-1.5 ${docsMuted}`}>
+                Adds <code className={docsInlineCode}>DROP</code> before each{" "}
+                <code className={docsInlineCode}>CREATE</code> so the dump can be replayed on an existing
+                database.
               </dd>
             </div>
             <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
-                --data-only
-              </dt>
-              <dd className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                Export row data only — no table definitions.
-              </dd>
-            </div>
-            <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
-                --clean
-              </dt>
-              <dd className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                Includes <code className="font-mono text-zinc-700 dark:text-zinc-300">DROP</code> statements
-                before each <code className="font-mono text-zinc-700 dark:text-zinc-300">CREATE</code>, so the
-                dump can be replayed cleanly on an existing database.
-              </dd>
-            </div>
-            <div>
-              <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
-                --public-only
-              </dt>
-              <dd className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                Restricts the export to the{" "}
-                <code className="font-mono text-zinc-700 dark:text-zinc-300">public</code> schema only.
+              <dt className={docsFlagTerm}>--public-only</dt>
+              <dd className={`mt-1.5 ${docsMuted}`}>
+                Restricts export to the <code className={docsInlineCode}>public</code> schema only.
               </dd>
             </div>
           </dl>

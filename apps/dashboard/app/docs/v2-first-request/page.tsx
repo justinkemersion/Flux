@@ -2,6 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { fluxApiUrlForV2Shared } from "@flux/core/standalone";
 import { CodeBlock } from "@/src/components/docs/code-block";
+import {
+  docsBackLink,
+  docsBody,
+  docsInlineCode,
+  docsMuted,
+  docsPageSubtitle,
+  docsPageTitle,
+  docsProseLink,
+  docsSectionTitle,
+  docsSubsectionTitle,
+} from "@/src/components/docs/docs-styles";
 
 export const metadata: Metadata = {
   title: "Pooled Stack: First Request — Flux Docs",
@@ -125,115 +136,110 @@ console.log(data);`;
 }`;
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-8">
-      <div className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
-        <Link
-          href="/docs"
-          className="font-mono text-[11px] uppercase tracking-[0.14em] text-zinc-400 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
-        >
+    <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-8">
+      <header className="border-b border-zinc-200 pb-8 dark:border-zinc-800">
+        <Link href="/docs" className={docsBackLink}>
           ← Documentation
         </Link>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-          Pooled Stack: First Request
-        </h1>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+        <h1 className={`mt-4 ${docsPageTitle}`}>Pooled stack: first request</h1>
+        <p className={docsPageSubtitle}>
           Pooled stack projects use your app&apos;s auth tokens — no static API keys required.
         </p>
-      </div>
+      </header>
 
-      <section className="mt-8">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          1. How it works
-        </h2>
-        <ul className="mt-3 space-y-1.5 text-sm text-zinc-600 dark:text-zinc-400">
+      <section className="mt-10">
+        <h2 className={docsSectionTitle}>1. How it works</h2>
+        <ul className={`mt-4 list-disc space-y-2 pl-5 ${docsBody}`}>
           <li>Dedicated stack projects use static API key patterns.</li>
           <li>Pooled stack projects use your Service URL and user auth tokens.</li>
           <li>
-            There are no static anonymous or service-role keys for pooled projects. Flux
-            validates tokens at the gateway and routes requests to the correct database.
+            There are no static anonymous or service-role keys for pooled projects. Flux validates
+            tokens at the gateway and routes requests to the correct database.
           </li>
         </ul>
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          2. Your first request
-        </h2>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-          Paste this in a browser console or a quick script to verify your connection:
+      <section className="mt-12">
+        <h2 className={docsSectionTitle}>2. Your first request</h2>
+        <p className={`mt-3 ${docsMuted}`}>
+          Paste this in a browser console or a short script to verify your connection:
         </p>
-        <div className="mt-3">
+        <div className="mt-4">
           <CodeBlock code={firstRequest} label="ts" language="ts" />
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          3. Use this in your app
-        </h2>
-        <div className="mt-3 space-y-5">
+      <section className="mt-12">
+        <h2 className={docsSectionTitle}>3. Use this in your app</h2>
+        <div className="mt-4 space-y-8">
           <div>
-            <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              Browser (React / Next.js client component)
-            </h3>
-            <CodeBlock code={browserExample} label="ts" language="ts" />
+            <h3 className={docsSubsectionTitle}>Browser (React / Next.js client component)</h3>
+            <div className="mt-3">
+              <CodeBlock code={browserExample} label="ts" language="ts" />
+            </div>
           </div>
           <div>
-            <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              Server (Next.js route handler or server action)
-            </h3>
-            <CodeBlock code={serverExample} label="ts" language="ts" />
+            <h3 className={docsSubsectionTitle}>Server (Next.js route handler or server action)</h3>
+            <div className="mt-3">
+              <CodeBlock code={serverExample} label="ts" language="ts" />
+            </div>
           </div>
           <div>
-            <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              cURL (debugging)
-            </h3>
-            <CodeBlock code={curlExample} label="bash" language="bash" />
+            <h3 className={docsSubsectionTitle}>cURL (debugging)</h3>
+            <div className="mt-3">
+              <CodeBlock code={curlExample} label="bash" language="bash" />
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          4. Common patterns
-        </h2>
-        <div className="mt-3 space-y-5">
+      <section className="mt-12">
+        <h2 className={docsSectionTitle}>4. Common patterns</h2>
+        <div className="mt-4 space-y-8">
           <div>
-            <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">Insert</h3>
-            <CodeBlock code={insertExample} label="ts" language="ts" />
+            <h3 className={docsSubsectionTitle}>Insert</h3>
+            <div className="mt-3">
+              <CodeBlock code={insertExample} label="ts" language="ts" />
+            </div>
           </div>
           <div>
-            <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">Filter</h3>
-            <CodeBlock code={filterExample} label="ts" language="ts" />
+            <h3 className={docsSubsectionTitle}>Filter</h3>
+            <div className="mt-3">
+              <CodeBlock code={filterExample} label="ts" language="ts" />
+            </div>
           </div>
           <div>
-            <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">Update</h3>
-            <CodeBlock code={updateExample} label="ts" language="ts" />
+            <h3 className={docsSubsectionTitle}>Update</h3>
+            <div className="mt-3">
+              <CodeBlock code={updateExample} label="ts" language="ts" />
+            </div>
           </div>
           <div>
-            <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">Delete</h3>
-            <CodeBlock code={deleteExample} label="ts" language="ts" />
+            <h3 className={docsSubsectionTitle}>Delete</h3>
+            <div className="mt-3">
+              <CodeBlock code={deleteExample} label="ts" language="ts" />
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          5. What works and what doesn&apos;t
-        </h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/20">
-            <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">Works</p>
-            <ul className="mt-2 space-y-1 text-sm text-emerald-700 dark:text-emerald-100/90">
+      <section className="mt-12">
+        <h2 className={docsSectionTitle}>5. What works and what doesn&apos;t</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-emerald-200/90 bg-emerald-50/70 p-4 dark:border-emerald-900/55 dark:bg-emerald-950/25">
+            <p className={`text-sm font-semibold text-emerald-900 dark:text-emerald-200`}>Works</p>
+            <ul className={`mt-3 space-y-2 text-sm leading-relaxed text-emerald-900/90 dark:text-emerald-100/90`}>
               <li>
-                <code className="font-mono text-[12px]">Authorization: Bearer &lt;token&gt;</code>
+                <code className="rounded bg-emerald-200/60 px-1 py-0.5 font-mono text-[12px] text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-50">
+                  Authorization: Bearer &lt;token&gt;
+                </code>
               </li>
               <li>Clerk, Auth.js, or any provider that issues JWTs</li>
             </ul>
           </div>
-          <div className="rounded-md border border-red-200 bg-red-50/60 p-3 dark:border-red-900/60 dark:bg-red-950/20">
-            <p className="text-sm font-medium text-red-800 dark:text-red-200">Doesn&apos;t work</p>
-            <ul className="mt-2 space-y-1 text-sm text-red-700 dark:text-red-100/90">
+          <div className="rounded-lg border border-red-200/90 bg-red-50/70 p-4 dark:border-red-900/55 dark:bg-red-950/25">
+            <p className={`text-sm font-semibold text-red-900 dark:text-red-200`}>Doesn&apos;t work</p>
+            <ul className={`mt-3 space-y-2 text-sm leading-relaxed text-red-900/90 dark:text-red-100/90`}>
               <li>Supabase client with an anon key</li>
               <li>Direct PostgREST credentials</li>
               <li>Unauthenticated requests (unless explicitly allowed by policy)</li>
@@ -242,62 +248,50 @@ console.log(data);`;
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          6. Common errors
-        </h2>
-        <div className="mt-3 space-y-4 text-sm text-zinc-600 dark:text-zinc-400">
+      <section className="mt-12">
+        <h2 className={docsSectionTitle}>6. Common errors</h2>
+        <div className={`mt-4 space-y-6 ${docsBody}`}>
           <div>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200">401 Unauthorized</h3>
-            <ul className="mt-1 list-disc space-y-1 pl-5">
+            <h3 className={docsSubsectionTitle}>401 Unauthorized</h3>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5">
               <li>Token is missing or was not included in the request</li>
               <li>Token has expired — fetch a fresh one from your auth provider</li>
-              <li>Wrong JWT template — make sure your auth provider is configured for Flux</li>
+              <li>Wrong JWT template — ensure your provider is configured for Flux</li>
             </ul>
           </div>
           <div>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200">403 Forbidden</h3>
-            <ul className="mt-1 list-disc space-y-1 pl-5">
+            <h3 className={docsSubsectionTitle}>403 Forbidden</h3>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5">
               <li>Row-level security policies are blocking the request</li>
-              <li>The database role does not have the required permissions on that table</li>
+              <li>The database role lacks permissions on that table</li>
             </ul>
           </div>
           <div>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200">Empty response</h3>
-            <ul className="mt-1 list-disc space-y-1 pl-5">
+            <h3 className={docsSubsectionTitle}>Empty response</h3>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5">
               <li>The table exists but has no rows yet</li>
-              <li>Your filter conditions did not match any rows</li>
+              <li>Your filters did not match any rows</li>
             </ul>
           </div>
         </div>
       </section>
 
-      <section className="mt-8 pb-10">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          7. Next steps
-        </h2>
-        <ul className="mt-3 space-y-1.5 text-sm text-zinc-600 dark:text-zinc-400">
+      <section className="mt-12 pb-12">
+        <h2 className={docsSectionTitle}>7. Next steps</h2>
+        <ul className={`mt-4 list-disc space-y-2 pl-5 ${docsBody}`}>
           <li>
-            Store your Service URL in an environment variable (e.g.{" "}
-            <code className="font-mono text-[12px] text-zinc-700 dark:text-zinc-300">
-              NEXT_PUBLIC_FLUX_URL
-            </code>
-            )
+            Store your Service URL in an environment variable (for example{" "}
+            <code className={docsInlineCode}>NEXT_PUBLIC_FLUX_URL</code>)
           </li>
-          <li>Use your auth provider to obtain fresh tokens — avoid hardcoding them</li>
-          <li>
-            Wrap your requests in a shared helper so auth headers stay in one place:
-          </li>
+          <li>Use your auth provider for fresh tokens — do not hardcode them</li>
+          <li>Centralize requests in a small helper:</li>
         </ul>
-        <div className="mt-3">
+        <div className="mt-4">
           <CodeBlock code={helperExample} label="ts" language="ts" />
         </div>
-        <p className="mt-5 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className={`mt-8 ${docsMuted}`}>
           Back to{" "}
-          <Link
-            href="/docs"
-            className="text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-300"
-          >
+          <Link href="/docs" className={docsProseLink}>
             Documentation
           </Link>
           .
