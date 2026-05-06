@@ -144,7 +144,7 @@ export function FleetManifest({ initialShowcase }: Props) {
         ))}
         <li>
           <Link
-            href="/docs#install"
+            href="/docs/getting-started/installation"
             className={`group flex h-full min-h-[12rem] flex-col justify-between border border-dashed border-zinc-800 bg-zinc-950/20 p-5 transition-[border-color,background-color] duration-200 ease-linear hover:border-zinc-600 hover:bg-zinc-900/30 md:p-6 ${focus} rounded-none`}
           >
             <div>

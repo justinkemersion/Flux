@@ -473,7 +473,7 @@ const data = await res.json();`,
             Close
           </button>
           <Link
-            href={`/docs/v2-first-request?slug=${encodeURIComponent(slug)}&hash=${encodeURIComponent(hash)}`}
+            href={`/docs/getting-started/first-request?slug=${encodeURIComponent(slug)}&hash=${encodeURIComponent(hash)}`}
             onClick={() => {
               handleClose();
               document.body.style.overflow = "";
