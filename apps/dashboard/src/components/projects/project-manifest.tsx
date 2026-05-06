@@ -82,7 +82,7 @@ function CopyBtn({
     <button
       type="button"
       onClick={() => void copy()}
-      className="shrink-0 border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-[10px] tracking-wide text-zinc-300 hover:border-zinc-500"
+      className="inline-flex h-8 shrink-0 items-center rounded-md border border-zinc-300 bg-white px-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
       aria-label={ariaLabel}
       title={title}
     >

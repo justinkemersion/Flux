@@ -74,7 +74,7 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
         <p className="font-mono text-sm text-red-400">{err}</p>
         <Link
           href="/projects"
-          className="mt-4 inline-flex items-center gap-2 border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-xs text-zinc-300 hover:border-zinc-600"
+          className="mt-4 inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Back to fleet
@@ -100,7 +100,7 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
         </p>
         <Link
           href="/projects"
-          className="mt-4 inline-flex items-center gap-2 border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-xs text-zinc-300 hover:border-zinc-600"
+          className="mt-4 inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Back to fleet
@@ -136,7 +136,7 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
             </Link>
             <Link
               href="/projects"
-              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 font-mono text-xs text-zinc-300 transition-colors hover:border-zinc-600"
+              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
               Back to fleet

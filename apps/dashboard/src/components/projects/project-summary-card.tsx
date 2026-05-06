@@ -227,14 +227,10 @@ export function ProjectSummaryCard({
     }
   }
 
-  const bladeBtn =
-    "rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-300 transition-[opacity,color,border-color] duration-200 hover:border-zinc-500 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
-
-  const startBladeBtn =
-    "rounded-md border border-emerald-600/80 bg-zinc-900 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-emerald-400 transition-[opacity,color,border-color] duration-200 hover:border-emerald-500 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
-
-  const bladeBtnDisabled =
-    "disabled:cursor-not-allowed disabled:opacity-40";
+  const actionBtn =
+    "inline-flex h-9 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/40 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800";
+  const startActionBtn =
+    "inline-flex h-9 items-center justify-center rounded-md border border-emerald-400 bg-emerald-50 px-3 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-40 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-950/60";
 
   const showStartButton =
     !isV2Shared &&
@@ -303,17 +299,15 @@ export function ProjectSummaryCard({
         </p>
       ) : null}
 
-      <div
-        className="flex flex-wrap gap-2 border-t border-zinc-800/80 px-5 py-4 opacity-40 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 sm:px-6"
-      >
-        <button type="button" onClick={onOpenDetail} className={bladeBtn}>
+      <div className="flex flex-wrap gap-2 border-t border-zinc-800/80 px-5 py-4 sm:px-6">
+        <button type="button" onClick={onOpenDetail} className={actionBtn}>
           Open Console
         </button>
         <button
           type="button"
           onClick={() => void runRepair()}
           disabled={repairBusy}
-          className={`inline-flex items-center justify-center gap-2 ${bladeBtn} ${bladeBtnDisabled}`}
+          className={`inline-flex items-center gap-2 ${actionBtn}`}
         >
           {repairBusy ? (
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -327,16 +321,16 @@ export function ProjectSummaryCard({
             type="button"
             onClick={() => void runStart()}
             disabled={busy && powerAction !== "start"}
-            className={`${startBladeBtn} ${bladeBtnDisabled}`}
+            className={startActionBtn}
             aria-label="Start project"
           >
             {busy && powerAction === "start" ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                [ START ]
+                Start
               </span>
             ) : (
-              "[ START ]"
+              "Start"
             )}
           </button>
         ) : null}
@@ -345,16 +339,16 @@ export function ProjectSummaryCard({
             type="button"
             onClick={() => void runStop()}
             disabled={busy && powerAction !== "stop"}
-            className={`${bladeBtn} ${bladeBtnDisabled}`}
+            className={actionBtn}
             aria-label="Stop project"
           >
             {busy && powerAction === "stop" ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                [ STOP ]
+                Stop
               </span>
             ) : (
-              "[ STOP ]"
+              "Stop"
             )}
           </button>
         ) : null}

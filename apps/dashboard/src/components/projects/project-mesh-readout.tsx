@@ -18,7 +18,7 @@ export function ProjectMeshReadout({ project }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   return (
-    <div className="mb-4 space-y-6">
+    <div className="mb-4 space-y-5">
       <ProjectManifest slug={project.slug} />
 
       <section className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
@@ -33,13 +33,13 @@ export function ProjectMeshReadout({ project }: Props) {
             Open Console
           </Link>
           <a
-            href="#logs"
+            href={`#logs-${project.slug}`}
             className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
           >
             View Logs
           </a>
           <a
-            href="#database"
+            href={`#database-${project.slug}`}
             className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
           >
             Run Migration
@@ -47,11 +47,11 @@ export function ProjectMeshReadout({ project }: Props) {
         </div>
       </section>
 
-      <section id="database">
+      <section id={`database-${project.slug}`}>
         <ProjectExportControl hash={project.hash} />
       </section>
 
-      <section id="logs">
+      <section id={`logs-${project.slug}`}>
         <LogConsole
           key={`${project.slug}-${project.hash}`}
           slug={project.slug}
