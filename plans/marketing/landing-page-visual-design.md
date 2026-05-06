@@ -57,7 +57,7 @@ SaaS-style feature overload
 ### Final Selection
 
 ```txt
-Headlines: IBM Plex Serif
+Headlines: Geist Sans
 Body/UI:   IBM Plex Sans
 Code:      IBM Plex Mono
 ```
@@ -66,7 +66,7 @@ Code:      IBM Plex Mono
 
 ## Why
 
-- Serif → adds personality and trust
+- Geist Sans → keeps headlines clean and modern
 - Sans → keeps UI readable and neutral
 - Mono → reinforces developer context
 
@@ -77,7 +77,7 @@ Code:      IBM Plex Mono
 ### Hero
 
 ```txt
-serif
+sans
 large scale
 medium weight (not heavy bold)
 tight tracking

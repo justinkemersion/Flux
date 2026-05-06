@@ -6,7 +6,7 @@ export function Hero() {
       <h1
         id="flux-hero-heading"
         className="max-w-xl text-4xl font-medium leading-tight tracking-tight text-white sm:text-5xl"
-        style={{ fontFamily: "var(--font-landing-serif), Georgia, serif" }}
+        style={{ fontFamily: "var(--font-landing-headline), ui-sans-serif, system-ui, sans-serif" }}
       >
         PostgreSQL, ready to use.
       </h1>

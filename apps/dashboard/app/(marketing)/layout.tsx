@@ -1,9 +1,9 @@
-import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
+import { Geist, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 
-const landingSerif = IBM_Plex_Serif({
+const landingHeadline = Geist({
   subsets: ["latin"],
   weight: ["400", "500"],
-  variable: "--font-landing-serif",
+  variable: "--font-landing-headline",
   display: "swap",
 });
 
@@ -28,7 +28,7 @@ export default function MarketingLayout({
 }>) {
   return (
     <div
-      className={`${landingSerif.variable} ${landingSans.variable} ${landingMono.variable} flex min-h-full flex-1 flex-col bg-zinc-950 text-zinc-100 antialiased`}
+      className={`${landingHeadline.variable} ${landingSans.variable} ${landingMono.variable} flex min-h-full flex-1 flex-col bg-zinc-950 text-zinc-100 antialiased`}
       style={{
         fontFamily: "var(--font-landing-sans), ui-sans-serif, system-ui, sans-serif",
       }}

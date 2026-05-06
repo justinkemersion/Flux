@@ -92,7 +92,7 @@ No setup.
 ### Requirements
 
 - centered layout
-- serif headline
+- Geist Sans headline
 - sans body text
 - single CTA button
 
@@ -291,7 +291,7 @@ centered elements
 Follow visual design doc:
 
 ```txt
-Hero → serif
+Hero → Geist Sans
 Body → sans
 CLI → mono
 ```
