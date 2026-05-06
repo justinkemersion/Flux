@@ -127,21 +127,13 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
           </>
         }
         primaryActions={
-          <>
-            <Link
-              href="/projects"
-              className="inline-flex h-9 shrink-0 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-            >
-              Open Console
-            </Link>
-            <Link
-              href="/projects"
-              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              Back to fleet
-            </Link>
-          </>
+          <Link
+            href="/projects"
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Back to projects
+          </Link>
         }
       />
       <ProjectMeshReadout project={project} />

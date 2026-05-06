@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import {
   deriveTelemetryDisplay,
-  fleetTelemetryLabel,
 } from "@/src/lib/fleet-telemetry-display";
 import { projectApiInterface } from "@/src/lib/routing-identity";
 import {
@@ -61,19 +60,31 @@ function StatusTag({
           ? "bg-zinc-600"
           : "bg-red-500";
   return (
-    <span className="inline-flex max-w-[min(100%,16rem)] flex-col items-end gap-0.5">
-      <span className="inline-flex items-center justify-end gap-2 text-xs font-medium text-zinc-200">
-        <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`}
-          aria-hidden
-        />
-        <span className="text-right">{fleetTelemetryLabel(m)}</span>
-      </span>
-      <span className="text-right text-xs text-zinc-500">
-        {fleetStatusLabel(displayStatus)}
-      </span>
+    <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-900/70 px-2.5 py-1 text-xs text-zinc-300">
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`}
+        aria-hidden
+      />
+      <span className="font-medium text-zinc-200">{fleetStatusLabel(displayStatus)}</span>
+      <span className="text-zinc-500">•</span>
+      <span className="text-zinc-400">{meshLabel(m)}</span>
     </span>
   );
+}
+
+function meshLabel(level: ReturnType<typeof deriveTelemetryDisplay>): string {
+  switch (level) {
+    case "operational":
+      return "Healthy";
+    case "initializing":
+      return "Starting";
+    case "standby":
+      return "Standby";
+    case "offline":
+      return "Unavailable";
+    default:
+      return "Status";
+  }
 }
 
 const easeOut = [0.22, 1, 0.36, 1] as const;
@@ -253,20 +264,20 @@ export function ProjectSummaryCard({
       className="group relative flex flex-col rounded-md border border-zinc-800 bg-black shadow-[inset_0_0_0_1px_rgb(255_255_255/0.05),inset_0_0_100px_-24px_rgb(99_102_241/0.02)] transition-[border-color] duration-200 group-hover:border-zinc-600 group-focus-within:border-zinc-600"
       aria-label={`Project ${p.slug}`}
     >
-      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 sm:p-6">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <div className="flex flex-col gap-4 p-5 sm:gap-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
             <h2
-              className="font-sans text-lg font-bold tracking-tight text-white transition-[text-shadow] duration-200 group-hover:[text-shadow:0_0_28px_rgba(245,158,11,0.18)] sm:text-xl"
+              className="truncate font-serif text-2xl font-medium tracking-tight text-white sm:text-[1.7rem]"
             >
-              {p.slug}
+              {p.name}
             </h2>
-            <span className="font-mono text-sm text-zinc-500">
-              #{p.hash}
-            </span>
+            <p className="mt-1 text-sm text-zinc-500">{p.slug}</p>
           </div>
+          <StatusTag displayStatus={displayStatus} project={p} />
+        </div>
 
-          <div className="mt-4 flex min-w-0 items-stretch gap-2 rounded-md border border-zinc-800/80 bg-zinc-900 px-3 py-2.5">
+        <div className="flex min-w-0 items-stretch gap-2 rounded-md border border-zinc-800/80 bg-zinc-900 px-3 py-2.5">
             <code className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-300">
               {apiHref}
             </code>
@@ -282,11 +293,6 @@ export function ProjectSummaryCard({
                 <Clipboard className="h-3.5 w-3.5" aria-hidden />
               )}
             </button>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 justify-end sm:pt-0.5">
-          <StatusTag displayStatus={displayStatus} project={p} />
         </div>
       </div>
 
