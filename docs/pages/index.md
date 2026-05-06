@@ -56,6 +56,6 @@ Your app then calls the **Service URL** for the project (see [Service URLs](/doc
 
 ## Next steps
 
-- New here: [What is Flux?](/docs/introduction/what-is-flux)
+- New here: [Why Flux?](/docs/introduction/why-flux)
 - Ready to install: [Installation](/docs/getting-started/installation)
 - Reviewing security: [Authentication model](/docs/security/authentication-model)

@@ -108,7 +108,11 @@ export function getAdjacentDocs(slug: string[]): {
 } {
   const flat = getDocsFlatNav();
   if (slug.length === 0) {
-    return { prev: null, next: flat[0] ?? null };
+    // Root /docs already orients readers; skip straight to Why Flux (not What is Flux again).
+    const whyFlux = flat.find(
+      (item) => item.slug.join("/") === "introduction/why-flux",
+    );
+    return { prev: null, next: whyFlux ?? flat[0] ?? null };
   }
   const key = slug.join("/");
   const idx = flat.findIndex((item) => item.slug.join("/") === key);
