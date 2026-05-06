@@ -100,21 +100,39 @@ function StatusBarSession({ isLanding }: { isLanding: boolean }) {
     ? "hover:text-zinc-200"
     : "hover:text-zinc-800 dark:hover:text-zinc-300";
 
+  const docsLinkClass = `shrink-0 rounded-md transition-colors ${hoverMuted} ${focus}`;
+
   if (status === "loading") {
-    return <span className={`${muted} inline-block`}>Loading session…</span>;
+    return (
+      <div
+        className={`${muted} flex flex-col items-end gap-1 sm:inline-flex sm:flex-row sm:items-baseline sm:gap-2`}
+      >
+        <Link href="/docs" className={docsLinkClass}>
+          Docs
+        </Link>
+        <span className="inline-block">Loading session…</span>
+      </div>
+    );
   }
 
   if (!session?.user) {
     return (
-      <button
-        type="button"
-        onClick={() =>
-          void signIn("github", { callbackUrl: pathname || "/" })
-        }
-        className={`${muted} rounded-md transition-colors ${hoverMuted} ${focus}`}
+      <div
+        className={`${muted} flex flex-col items-end gap-1 sm:inline-flex sm:flex-row sm:items-baseline sm:gap-2`}
       >
-        Sign in with GitHub
-      </button>
+        <Link href="/docs" className={docsLinkClass}>
+          Docs
+        </Link>
+        <button
+          type="button"
+          onClick={() =>
+            void signIn("github", { callbackUrl: pathname || "/" })
+          }
+          className={`rounded-md transition-colors ${hoverMuted} ${focus}`}
+        >
+          Sign in with GitHub
+        </button>
+      </div>
     );
   }
 
@@ -128,6 +146,9 @@ function StatusBarSession({ isLanding }: { isLanding: boolean }) {
     <div
       className={`${muted} flex flex-col items-end gap-1 sm:inline-flex sm:flex-row sm:items-baseline sm:gap-2`}
     >
+      <Link href="/docs" className={docsLinkClass}>
+        Docs
+      </Link>
       <span
         className="max-w-full truncate text-left sm:max-w-[min(100%,28rem)] sm:text-right"
         title={id}
