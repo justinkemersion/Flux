@@ -23,7 +23,7 @@ export function Hero() {
       </p>
       <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
         <GetStartedButton />
-        <Link href="/docs/architecture/flux-v2" className={secondaryCtaClass}>
+        <Link href="/docs/introduction/what-is-flux" className={secondaryCtaClass}>
           Explore the Architecture
         </Link>
       </div>
