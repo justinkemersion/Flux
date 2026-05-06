@@ -5,9 +5,9 @@ export function Bullets() {
         Why Flux
       </h2>
       <ul className="mx-auto flex max-w-sm flex-col items-center gap-5 text-center text-base leading-snug text-zinc-300">
-        <li>Start instantly</li>
-        <li>Clean API</li>
-        <li>Scales as you grow</li>
+        <li>Migration-first workflow</li>
+        <li>JWT-aware APIs</li>
+        <li>Shared or dedicated infrastructure</li>
       </ul>
     </section>
   );

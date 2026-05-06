@@ -17,9 +17,9 @@ export function Hero() {
         PostgreSQL, ready to use.
       </h1>
       <p className="mt-8 max-w-md text-base leading-relaxed text-zinc-400">
-        A clean API over your database.
+        SQL migrations, REST APIs, and JWT-aware access
         <br />
-        No setup.
+        without building the infrastructure yourself.
       </p>
       <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
         <GetStartedButton />

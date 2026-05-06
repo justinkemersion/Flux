@@ -4,7 +4,7 @@ import { MarketingLanding } from "./marketing-landing";
 export const metadata: Metadata = {
   title: "Flux — PostgreSQL, ready to use",
   description:
-    "A clean API over your database. No setup. Start instantly from the terminal; scale as you grow.",
+    "SQL migrations, REST APIs, and JWT-aware access without building the infrastructure yourself. Migration-first workflow, shared or dedicated infrastructure.",
 };
 
 export default function Home() {
