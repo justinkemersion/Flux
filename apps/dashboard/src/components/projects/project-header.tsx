@@ -39,7 +39,7 @@ export function ProjectHeader({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1 space-y-2.5">
           <div>
-            <h2 className="truncate font-serif text-2xl font-medium tracking-tight text-zinc-900 dark:text-zinc-50">
+            <h2 className="font-geist-sans truncate text-2xl font-medium tracking-tight text-zinc-900 dark:text-zinc-50">
               {title}
             </h2>
             <p className="mt-1 truncate text-sm text-zinc-500 dark:text-zinc-400">
