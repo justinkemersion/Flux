@@ -8,10 +8,13 @@ import {
   useEffect,
   useState,
 } from "react";
+import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
 import {
   type ProjectRow,
 } from "@/src/components/projects/project-card";
+import { ProjectHeader } from "@/src/components/projects/project-header";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
+import { StatusBadge } from "@/src/components/projects/project-status-badge";
 import {
   errorMessageFromJsonBody,
   readResponseJson,
@@ -116,18 +119,31 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
 
   return (
     <div className="mx-auto w-full max-w-4xl flex-1 flex-col px-4 py-8 sm:px-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href="/projects"
-          className="inline-flex items-center gap-2 border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-xs text-zinc-300 hover:border-zinc-600"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          FLEET
-        </Link>
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500">
-          MESH_READOUT / {project.slug}
-        </span>
-      </div>
+      <ProjectHeader
+        variant="flush"
+        title={project.name}
+        subtitle={project.slug}
+        statusRow={
+          <>
+            <StatusBadge status={project.status} />
+            <MeshTelemetryPill
+              healthStatus={project.healthStatus}
+              lastHeartbeatAt={project.lastHeartbeatAt}
+              createdAt={project.createdAt}
+              stackStatus={project.status}
+            />
+          </>
+        }
+        primaryActions={
+          <Link
+            href="/projects"
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 font-mono text-xs text-zinc-300 transition-colors hover:border-zinc-600"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Back to fleet
+          </Link>
+        }
+      />
       <ProjectMeshReadout project={project} />
     </div>
   );

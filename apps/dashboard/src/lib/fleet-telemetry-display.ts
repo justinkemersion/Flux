@@ -32,7 +32,7 @@ function toMs(
  * **Initializing** — no heartbeat yet, project **&lt; 5m** old (grace: no probe result ≠ failure).
  * **Offline (red)** — `healthStatus === 'error'`, or heartbeat **&gt; 5m** old, or no heartbeat and project
  * is **not** in the grace window (and not standby).
- * **Operational** — `healthStatus === 'running'` and last heartbeat **≤ 5m**.
+ * **Online** (display label) — `healthStatus === 'running'` and last heartbeat **≤ 5m**.
  */
 export function deriveTelemetryDisplay(
   input: DeriveTelemetryInput,
@@ -80,7 +80,7 @@ export function deriveTelemetryDisplay(
 export function fleetTelemetryLabel(level: FleetTelemetryLevel): string {
   switch (level) {
     case "operational":
-      return "Operational";
+      return "Online";
     case "initializing":
       return "Initializing...";
     case "standby":

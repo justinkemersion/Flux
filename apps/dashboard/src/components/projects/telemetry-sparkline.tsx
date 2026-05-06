@@ -119,7 +119,7 @@ export function TelemetrySparkline({
   return (
     <div className="border border-zinc-800 bg-zinc-950/80 p-3">
       <div className="mb-2 flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-        <span>MESH_TELEMETRY</span>
+        <span>Status</span>
         <span className="text-zinc-600">
           {err
             ? "SYNC_ERR"

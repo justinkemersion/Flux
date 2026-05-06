@@ -37,7 +37,7 @@ type Props = {
 };
 
 /**
- * Mesh readout: Operational / Initializing (pending zinc) / Standby (dim) / Offline (red).
+ * Mesh readout: Online / Initializing (pending zinc) / Standby (dim) / Offline (red).
  */
 export function MeshTelemetryPill({
   healthStatus,

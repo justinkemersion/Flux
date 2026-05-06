@@ -82,6 +82,13 @@ REMOTE_ROOT="${FLUX_REMOTE_REPO_ROOT}"
 REMOTE_ROOT="${REMOTE_ROOT%/}"
 
 # Paths relative to repo root (edit here if you add new env surfaces).
+#
+# Not synced (on purpose):
+#   apps/dashboard/.env
+#   apps/dashboard/.env.local
+# Those are for Next.js on your laptop (`pnpm --filter dashboard dev`): OAuth callbacks,
+# localhost URLs, and tooling secrets differ from what flux-web reads inside Docker.
+# Server-side dashboard config stays in docker/web/.env (see FILES below).
 FILES=(
   "docker/web/.env"
   "packages/gateway/.env"
