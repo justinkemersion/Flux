@@ -440,7 +440,7 @@ export default function ProjectsPage() {
       {detailSlug && detailProject && mounted
         ? createPortal(
             <div
-              className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-3 backdrop-blur-sm sm:pt-4"
+              className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-zinc-950/85 p-4 pt-3 backdrop-blur-md sm:pt-4"
               role="presentation"
               onClick={closeProjectDetail}
             >
@@ -478,7 +478,7 @@ export default function ProjectsPage() {
       {createOpen && mounted
         ? createPortal(
             <div
-              className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-3 backdrop-blur-sm sm:pt-4"
+              className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-zinc-950/75 p-4 pt-3 backdrop-blur-md sm:pt-4"
               role="presentation"
               onClick={closeCreateModal}
             >

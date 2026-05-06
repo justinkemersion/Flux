@@ -101,15 +101,15 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
   return (
     <div className="space-y-8 text-center sm:text-left">
       <div>
-        <h1 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-zinc-300">
-          Key_vault
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
+          API Keys
         </h1>
-        <p className="mx-auto mt-2 max-w-2xl font-mono text-[11px] leading-relaxed text-zinc-500">
+        <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
           CLI and automation use Bearer tokens. Raw secrets are shown once at creation and are
           never stored; only a SHA-256 hash is kept. Export{" "}
-          <span className="text-zinc-400">FLUX_API_TOKEN</span> locally and point{" "}
-          <span className="text-zinc-400">FLUX_API_BASE</span> at this app&apos;s origin +{" "}
-          <span className="text-zinc-400">/api</span>.
+          <code className="font-mono text-zinc-400">FLUX_API_TOKEN</code> locally and point{" "}
+          <code className="font-mono text-zinc-400">FLUX_API_BASE</code> at this app&apos;s origin +{" "}
+          <code className="font-mono text-zinc-400">/api</code>.
         </p>
       </div>
 
@@ -119,9 +119,9 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
       >
         <h2
           id="new-key-heading"
-          className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 sm:text-left"
+          className="mb-3 text-center text-sm font-semibold text-zinc-300 sm:text-left"
         >
-          Issue_key
+          Create key
         </h2>
         <form
           className="mx-auto flex max-w-lg flex-col gap-3 sm:mx-0 sm:flex-row sm:items-end"
@@ -131,7 +131,7 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
           }}
         >
           <label className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-600">
+            <span className="text-xs font-medium text-zinc-500">
               Label
             </span>
             <input
@@ -139,24 +139,24 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
               type="text"
               placeholder="Default Key"
               autoComplete="off"
-              className="border border-zinc-700 bg-zinc-950 px-2 py-2 font-mono text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none"
+              className="border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none"
             />
           </label>
           <button
             type="submit"
             disabled={pending}
-            className="shrink-0 border border-zinc-600 bg-zinc-950 px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-200 hover:border-zinc-500 hover:bg-zinc-900 disabled:opacity-50"
+            className="shrink-0 rounded-md border border-zinc-600 bg-zinc-950 px-4 py-2 text-sm font-medium text-zinc-200 hover:border-zinc-500 hover:bg-zinc-900 disabled:opacity-50"
           >
             {pending ? "Working…" : "Generate"}
           </button>
         </form>
         {formError ? (
-          <p className="mt-3 font-mono text-xs text-red-400" role="alert">
+          <p className="mt-3 text-sm text-red-400" role="alert">
             {formError}
           </p>
         ) : null}
         {actionError ? (
-          <p className="mt-3 font-mono text-xs text-red-400" role="alert">
+          <p className="mt-3 text-sm text-red-400" role="alert">
             {actionError}
           </p>
         ) : null}
@@ -168,15 +168,15 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
           aria-live="polite"
         >
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-200/90">
-              New_secret — copy_now
+            <span className="text-xs font-medium text-amber-200/90">
+              New secret (copy now)
             </span>
             <button
               type="button"
               onClick={() => {
                 void navigator.clipboard.writeText(plaintext);
               }}
-              className="border border-amber-800/80 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-100 hover:bg-amber-950/40"
+              className="rounded-md border border-amber-800/80 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-950/40"
             >
               Copy
             </button>
@@ -184,16 +184,16 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
           <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-amber-100/95">
             {plaintext}
           </pre>
-          <p className="mt-2 font-mono text-[10px] text-amber-200/70">
+          <p className="mt-2 text-xs text-amber-200/70">
             This string is not stored. Refresh clears this panel; the key remains in the list
             below as an opaque entry.
           </p>
           <button
             type="button"
             onClick={() => setPlaintext(null)}
-            className="mt-3 border border-zinc-700 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-400 hover:border-zinc-500"
+            className="mt-3 rounded-md border border-zinc-700 px-2 py-1 text-xs font-medium text-zinc-400 hover:border-zinc-500"
           >
-            Dismiss_banner
+            Dismiss
           </button>
         </section>
       ) : null}
@@ -204,12 +204,12 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
       >
         <h2
           id="vault-list-heading"
-          className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 sm:text-left"
+          className="mb-3 text-center text-sm font-semibold text-zinc-300 sm:text-left"
         >
-          Keys_{rows.length}
+          Keys ({rows.length})
         </h2>
         {rows.length === 0 ? (
-          <p className="border border-zinc-800 bg-zinc-900/20 px-3 py-4 font-mono text-xs text-zinc-600">
+          <p className="border border-zinc-800 bg-zinc-900/20 px-3 py-4 text-sm text-zinc-500">
             No keys yet. Generate one above.
           </p>
         ) : (
@@ -217,22 +217,22 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
             {rows.map((k) => (
               <li
                 key={k.id}
-                className="border border-zinc-800 bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed"
+                className="border border-zinc-800 bg-zinc-950 p-3 text-sm leading-relaxed"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <span className="text-zinc-300">{k.name}</span>
+                  <span className="font-medium text-zinc-300">{k.name}</span>
                   <span className={k.revokedAt ? "text-red-400" : "text-emerald-400"}>
-                    {k.revokedAt ? "[ ● REVOKED ]" : "[ ● ACTIVE ]"}
+                    {k.revokedAt ? "Revoked" : "Active"}
                   </span>
                 </div>
                 <div className="mt-2 grid gap-1 text-zinc-500 sm:grid-cols-2">
                   <div>
                     <span className="text-zinc-600">id </span>
-                    <span className="break-all text-zinc-400">{k.id}</span>
+                    <span className="break-all font-mono text-zinc-400">{k.id}</span>
                   </div>
                   <div>
                     <span className="text-zinc-600">prefix </span>
-                    <span className="text-zinc-400">{k.keyPrefix}_…</span>
+                    <span className="font-mono text-zinc-400">{k.keyPrefix}_…</span>
                   </div>
                   <div>
                     <span className="text-zinc-600">created </span>
@@ -249,7 +249,7 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
                       type="button"
                       onClick={() => onRevoke(k.id)}
                       disabled={pending}
-                      className="border border-amber-900/80 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-600 hover:border-amber-700 disabled:opacity-50"
+                      className="rounded-md border border-amber-900/80 px-2 py-1 text-xs font-medium text-amber-500 hover:border-amber-700 disabled:opacity-50"
                     >
                       {confirmAction?.id === k.id && confirmAction.kind === "revoke"
                         ? "Click to Confirm"
@@ -260,7 +260,7 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
                       type="button"
                       onClick={() => onDelete(k.id)}
                       disabled={pending}
-                      className="border border-red-900/80 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-red-600 hover:border-red-700 disabled:opacity-50"
+                      className="rounded-md border border-red-900/80 px-2 py-1 text-xs font-medium text-red-500 hover:border-red-700 disabled:opacity-50"
                     >
                       {confirmAction?.id === k.id && confirmAction.kind === "delete"
                         ? "Click to Confirm"

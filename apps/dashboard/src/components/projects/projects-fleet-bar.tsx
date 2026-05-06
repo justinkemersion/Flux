@@ -83,6 +83,12 @@ export function ProjectsFleetBar({
           <span className="whitespace-nowrap text-xs text-zinc-600" title={`UTC ${formatUtc(now)}`}>
             UTC
           </span>
+          <Link
+            href="/settings/keys"
+            className={`rounded-md px-2 py-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300 ${focus}`}
+          >
+            Settings
+          </Link>
           <button
             type="button"
             onClick={() => {

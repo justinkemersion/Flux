@@ -15,10 +15,7 @@ import {
 import Link from "next/link";
 import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
 import { ProjectHeader } from "@/src/components/projects/project-header";
-import {
-  StatusBadge,
-  type DisplayStatus,
-} from "@/src/components/projects/project-status-badge";
+import { type DisplayStatus } from "@/src/components/projects/project-status-badge";
 import {
   useCallback,
   useEffect,
@@ -651,9 +648,9 @@ export function ProjectCard({
       (currentStatus === "transitioning" && powerIntent === "stop"));
 
   const powerBtn =
-    "inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition-[color,border-color,opacity] hover:border-zinc-500 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700";
+    "inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-zinc-300/70 bg-white px-3 text-sm font-medium text-zinc-700 transition-[color,border-color,opacity] hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-100";
   const powerStartBtn =
-    "inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-emerald-600/80 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-emerald-400 transition-[color,border-color,opacity] hover:border-emerald-500 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/50 disabled:cursor-not-allowed disabled:opacity-40";
+    "inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-emerald-300/80 bg-emerald-50 px-3 text-sm font-medium text-emerald-800 transition-[color,border-color,opacity] hover:border-emerald-400 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/40 disabled:cursor-not-allowed disabled:opacity-40 dark:border-emerald-700/80 dark:bg-emerald-950/30 dark:text-emerald-200 dark:hover:bg-emerald-950/60";
 
   const logSourceBtn =
     "rounded px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50";
@@ -664,13 +661,12 @@ export function ProjectCard({
 
   return (
     <>
-      <article className="flex flex-col rounded-md border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <article className="flex flex-col rounded-md border border-zinc-200/70 bg-white p-6 shadow-sm dark:border-zinc-800/80 dark:bg-zinc-950">
         <ProjectHeader
           title={p.name}
           subtitle={p.slug}
           statusRow={
             <>
-              <StatusBadge status={currentStatus} />
               <MeshTelemetryPill
                 healthStatus={p.healthStatus}
                 lastHeartbeatAt={p.lastHeartbeatAt}
@@ -700,7 +696,7 @@ export function ProjectCard({
                 <button
                   type="button"
                   onClick={() => setGettingStartedOpen(true)}
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+                  className="inline-flex h-9 shrink-0 items-center rounded-md border border-zinc-300/70 bg-white px-3 text-sm font-medium text-zinc-700 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
                 >
                   Getting Started
                 </button>
@@ -738,10 +734,10 @@ export function ProjectCard({
                   {isBusy && powerIntent === "start" ? (
                     <span className="inline-flex items-center gap-1.5">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                      <span>[ START ]</span>
+                      <span>Starting</span>
                     </span>
                   ) : (
-                    "[ START ]"
+                    "Start"
                   )}
                 </button>
               ) : null}
@@ -757,10 +753,10 @@ export function ProjectCard({
                   {isBusy && powerIntent === "stop" ? (
                     <span className="inline-flex items-center gap-1.5">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                      <span>[ STOP ]</span>
+                      <span>Stopping</span>
                     </span>
                   ) : (
-                    "[ STOP ]"
+                    "Stop"
                   )}
                 </button>
               ) : null}
@@ -773,18 +769,6 @@ export function ProjectCard({
               >
                 <Trash2 className="h-4 w-4" aria-hidden />
               </button>
-              {!isV2Shared ? (
-                <button
-                  type="button"
-                  onClick={openResetModal}
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-2.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
-                  aria-label={`Factory reset ${p.name}`}
-                  title="Factory reset (destructive)"
-                >
-                  <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                  Factory reset
-                </button>
-              ) : null}
             </>
           }
         />
@@ -1012,12 +996,12 @@ export function ProjectCard({
       {settingsOpen && mounted
         ? createPortal(
             <div
-              className="fixed inset-0 z-[240] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-3 backdrop-blur-sm sm:pt-4"
+              className="fixed inset-0 z-[240] flex items-start justify-center overflow-y-auto bg-zinc-950/70 p-4 pt-3 backdrop-blur-md sm:pt-4"
               role="presentation"
               onClick={closeSettingsModal}
             >
               <div
-                className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+                className="relative w-full max-w-md rounded-md border border-zinc-200/70 bg-white p-6 shadow-2xl dark:border-zinc-800/80 dark:bg-zinc-900"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={`settings-title-${p.id}`}
@@ -1128,6 +1112,21 @@ export function ProjectCard({
                       </button>
                     </div>
                   </form>
+                  {!isV2Shared ? (
+                    <div className="mt-6 border-t border-zinc-200/70 pt-4 dark:border-zinc-800/80">
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Destructive operation
+                      </p>
+                      <button
+                        type="button"
+                        onClick={openResetModal}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40"
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                        Factory reset project
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>,
@@ -1138,12 +1137,12 @@ export function ProjectCard({
       {deleteOpen && mounted
         ? createPortal(
             <div
-              className="fixed inset-0 z-[250] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-3 backdrop-blur-sm sm:pt-4"
+              className="fixed inset-0 z-[250] flex items-start justify-center overflow-y-auto bg-zinc-950/75 p-4 pt-3 backdrop-blur-md sm:pt-4"
               role="presentation"
               onClick={closeDeleteModal}
             >
               <div
-                className="relative w-full max-w-md rounded-md border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+                className="relative w-full max-w-md rounded-md border border-zinc-200/70 bg-white p-6 shadow-2xl dark:border-zinc-800/80 dark:bg-zinc-900"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={`delete-title-${p.id}`}
@@ -1245,7 +1244,7 @@ export function ProjectCard({
       {resetOpen && mounted
         ? createPortal(
             <div
-              className="fixed inset-0 z-[250] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-3 backdrop-blur-sm sm:pt-4"
+              className="fixed inset-0 z-[250] flex items-start justify-center overflow-y-auto bg-zinc-950/75 p-4 pt-3 backdrop-blur-md sm:pt-4"
               role="presentation"
               onClick={closeResetModal}
             >
