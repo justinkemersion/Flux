@@ -22,6 +22,10 @@ services:
       POSTGRES_DB: ${SHARED_POSTGRES_DB:-postgres}
     volumes:
       - postgres-v2-data:/var/lib/postgresql/data
+    # Host-run dashboard dev cannot resolve Docker DNS names like flux-postgres-v2.
+    # Expose Postgres to localhost for FLUX_SHARED_POSTGRES_URL in .env.local.
+    ports:
+      - "15433:5432"
     healthcheck:
       test:
         [

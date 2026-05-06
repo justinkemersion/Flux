@@ -259,7 +259,7 @@ export async function runV2SharedToV1DedicatedMigration(input: {
       ? generateProjectJwtSecret()
       : row.jwtSecret!.trim();
 
-  let hasMigrationLease = true;
+  const hasMigrationLease = true;
   let dumpPath: string | null = null;
   try {
     if (lockWrites) {

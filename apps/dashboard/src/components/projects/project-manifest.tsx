@@ -57,8 +57,8 @@ function renderEnvPreview(block: string): ReactNode {
 
 function CopyBtn({
   text,
-  idleLabel = "COPY",
-  doneLabel = "COPIED",
+  idleLabel = "Copy",
+  doneLabel = "Copied",
   ariaLabel,
   title,
 }: {
@@ -82,7 +82,7 @@ function CopyBtn({
     <button
       type="button"
       onClick={() => void copy()}
-      className="shrink-0 border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-zinc-300 hover:border-zinc-500"
+      className="shrink-0 border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-[10px] tracking-wide text-zinc-300 hover:border-zinc-500"
       aria-label={ariaLabel}
       title={title}
     >
@@ -187,7 +187,7 @@ export function ProjectManifest({ slug }: Props) {
   return (
     <div className="border border-zinc-800 bg-zinc-950/80 p-3">
       <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-        CONNECTION_MANIFEST
+        Connection
       </div>
       {err ? (
         <p className="mb-2 font-mono text-xs text-red-400">{err}</p>
@@ -195,7 +195,7 @@ export function ProjectManifest({ slug }: Props) {
       <div className="space-y-3">
         <div>
           <p className="mb-1 font-mono text-[9px] uppercase text-zinc-600">
-            POSTGREST API
+            API URL
           </p>
           <div className="flex min-w-0 items-start justify-between gap-2 border border-zinc-800 bg-black p-2">
             <code className="min-w-0 flex-1 break-all text-xs text-zinc-300">
@@ -206,7 +206,7 @@ export function ProjectManifest({ slug }: Props) {
         </div>
         <div>
           <p className="mb-1 font-mono text-[9px] uppercase text-zinc-600">
-            APP .ENV
+            Environment
           </p>
           <div className="flex min-w-0 items-start justify-between gap-2 border border-zinc-800 bg-black p-2">
             <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-300">
@@ -215,8 +215,8 @@ export function ProjectManifest({ slug }: Props) {
             {envBlock ? (
               <CopyBtn
                 text={envBlock}
-                idleLabel="COPY .ENV"
-                doneLabel="COPIED .ENV"
+                idleLabel="Copy"
+                doneLabel="Copied"
                 ariaLabel="Copy environment variables"
                 title="Copy environment variables"
               />

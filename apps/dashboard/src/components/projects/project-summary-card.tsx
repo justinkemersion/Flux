@@ -21,7 +21,7 @@ type DisplayStatus = ServerStatus | "transitioning";
 function fleetStatusLabel(status: DisplayStatus): string {
   switch (status) {
     case "running":
-      return "ACTIVE_RUNNING";
+      return "Online";
     case "stopped":
       return "STANDBY_HALTED";
     case "transitioning":

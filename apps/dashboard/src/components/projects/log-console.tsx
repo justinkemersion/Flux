@@ -149,7 +149,7 @@ function LogConsoleV2PooledInfo(): ReactNode {
   return (
     <div className="border border-zinc-800 bg-zinc-950/80 p-3">
       <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-        LOG_TAP / POOLED
+        Logs
       </div>
       <p className="font-mono text-xs leading-relaxed text-zinc-500">
         {V2_LOGS_EXPLAINER}
@@ -180,7 +180,7 @@ function LogConsoleDocker({ slug, hash, maxLines }: DockerProps) {
     <div className="border border-zinc-800 bg-zinc-950/80 p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
         <span>
-          LOG_TAP / {tap === "open" ? "LIVE" : tap === "err" ? "FAULT" : "ARM"}
+          Logs / {tap === "open" ? "LIVE" : tap === "err" ? "FAULT" : "ARM"}
         </span>
         <div className="flex gap-px border border-zinc-800">
           {(["api", "db"] as const).map((s) => (

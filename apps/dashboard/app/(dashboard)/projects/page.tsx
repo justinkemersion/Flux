@@ -462,6 +462,7 @@ export default function ProjectsPage() {
                 <ProjectCard
                   key={detailProject.id}
                   project={detailProject}
+                  meshReadoutCompanion
                   onDelete={() => {
                     handleProjectDeleted(detailProject.slug);
                     closeProjectDetail();
