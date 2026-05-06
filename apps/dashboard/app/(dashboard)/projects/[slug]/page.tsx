@@ -18,6 +18,9 @@ import {
   readResponseJson,
 } from "@/src/lib/fetch-json";
 
+const docsFocus =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-50 dark:focus-visible:ring-zinc-500/50 dark:focus-visible:ring-offset-zinc-950";
+
 /**
  * Deep link for `flux open <slug>` — Mesh Readout for a single project.
  */
@@ -127,13 +130,21 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
           </>
         }
         primaryActions={
-          <Link
-            href="/projects"
-            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Back to projects
-          </Link>
+          <>
+            <Link
+              href="/docs"
+              className={`inline-flex h-9 shrink-0 items-center rounded-md px-3 text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100 ${docsFocus}`}
+            >
+              Docs
+            </Link>
+            <Link
+              href="/projects"
+              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Back to projects
+            </Link>
+          </>
         }
       />
       <ProjectMeshReadout project={project} />
