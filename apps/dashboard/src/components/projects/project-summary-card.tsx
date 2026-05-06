@@ -268,7 +268,7 @@ export function ProjectSummaryCard({
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
             <h2
-              className="truncate font-serif text-2xl font-medium tracking-tight text-white sm:text-[1.7rem]"
+              className="font-geist-sans truncate text-2xl font-medium tracking-tight text-white sm:text-[1.7rem]"
             >
               {p.name}
             </h2>
