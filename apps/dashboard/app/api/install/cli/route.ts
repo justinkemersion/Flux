@@ -1,27 +1,23 @@
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const RELATIVE_BUNDLE = join("packages", "cli", "dist", "index.cjs");
+function resolveCliBundlePath(): string | null {
+  const envPath = process.env.FLUX_CLI_BUNDLE_PATH?.trim();
+  if (envPath && existsSync(envPath)) return envPath;
 
-/**
- * `packages/cli/dist/index.cjs` from the monorepo root. Tries common process.cwd()
- * layouts (monorepo root, apps/dashboard) without walking parent directories, so
- * the path stays friendly to the bundler’s static analysis.
- */
-function resolveCliPathFromMonorepoRoot(): string | null {
-  const candidates = [
-    join(/* turbopackIgnore: true */ process.cwd(), RELATIVE_BUNDLE),
-    join(/* turbopackIgnore: true */ process.cwd(), "..", "..", RELATIVE_BUNDLE),
+  const staticCandidates = [
+    join("/app", "packages", "cli", "dist", "index.cjs"),
+    join("/workspace", "packages", "cli", "dist", "index.cjs"),
   ];
-  for (const c of candidates) {
-    if (existsSync(c)) {
-      return c;
-    }
+  for (const p of staticCandidates) {
+    if (existsSync(p)) return p;
   }
+
   return null;
 }
 
@@ -32,7 +28,7 @@ const BUILD_HINT =
  * GET /api/install/cli — stream the bundled CommonJS `flux` CLI (Node 20+).
  */
 export function GET() {
-  const filePath = resolveCliPathFromMonorepoRoot();
+  const filePath = resolveCliBundlePath();
   if (!filePath) {
     return NextResponse.json(
       { error: "CLI bundle not found at packages/cli/dist/index.cjs.", hint: BUILD_HINT },
