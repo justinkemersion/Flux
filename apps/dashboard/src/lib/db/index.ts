@@ -359,12 +359,12 @@ async function _init(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS project_backups_project_created_idx
       ON project_backups (project_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS project_backups_project_kind_created_idx
-      ON project_backups (project_id, kind, created_at DESC);
     CREATE INDEX IF NOT EXISTS project_backups_status_idx
       ON project_backups (status, created_at DESC);
     CREATE INDEX IF NOT EXISTS project_backups_offsite_status_idx
       ON project_backups (offsite_status, created_at DESC);
+    -- project_backups_project_kind_created_idx is created below, after ADD COLUMN kind,
+    -- so upgrades from pre-2026 schemas (no kind column) do not hit "column does not exist".
   `);
 
   await pool.query(`
