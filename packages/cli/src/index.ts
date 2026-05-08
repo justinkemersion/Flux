@@ -548,7 +548,8 @@ async function cmdBackupList(
   resolveOptionalName(fromCli, flux, "positional [name] or -p, --project");
   const hash = resolveHash(cliHash, flux);
   const client = getApiClient();
-  const { backups, reconciledAt } = await client.listProjectBackups(hash);
+  const { backups, reconciledAt, backupVolumeAbsoluteRoot } =
+    await client.listProjectBackups(hash);
   sectionBanner("Backups");
   const classification = classifyNewestBackup(backups);
   printBackupTrustSummary(classification);
@@ -557,13 +558,26 @@ async function cmdBackupList(
       chalk.dim(`  Checked artifacts on server at ${reconciledAt}.`),
     );
   }
-  if (backups[0]?.primaryArtifactRelativePath) {
+  if (backupVolumeAbsoluteRoot) {
     console.log(
-      chalk.dim(
-        `  Newest dump file (relative to FLUX_BACKUPS_LOCAL_DIR): ${backups[0].primaryArtifactRelativePath}`,
-      ),
+      chalk.dim(`  Backup volume root on API server: ${backupVolumeAbsoluteRoot}`),
     );
   }
+  if (backups[0]?.primaryArtifactAbsolutePath) {
+    console.log(
+      chalk.dim(`  Newest artifact (absolute on API server): ${backups[0].primaryArtifactAbsolutePath}`),
+    );
+  }
+  if (backups[0]?.primaryArtifactRelativePath) {
+    console.log(
+      chalk.dim(`  Relative to volume root: ${backups[0].primaryArtifactRelativePath}`),
+    );
+  }
+  console.log(
+    chalk.dim(
+      "  Host ls at the volume path can be empty when flux-web uses a Docker named volume — dumps live inside the volume; use docker exec against flux-web or bind-mount for host-visible files.",
+    ),
+  );
   console.log();
   if (backups.length === 0) {
     console.log(chalk.dim("  No backup rows yet."));

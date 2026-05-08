@@ -4,7 +4,9 @@ import { projects } from "@/src/db/schema";
 import { auth } from "@/src/lib/auth";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
+import { getBackupStorage } from "@/src/lib/backup-storage";
 import {
+  absoluteBackupArtifactPath,
   createBackupForProject,
   listBackupsForProject,
   reconcileListedBackupArtifacts,
@@ -16,6 +18,8 @@ function serializeBackupForCli(row: BackupRow) {
     id: row.id,
     /** Relative to FLUX_BACKUPS_LOCAL_DIR on the control plane (canonical layout). */
     primaryArtifactRelativePath: `${row.projectId}/${row.id}.dump`,
+    /** Same artifact as resolved inside flux-web (named Docker volumes often hide this from host ls). */
+    primaryArtifactAbsolutePath: absoluteBackupArtifactPath(row),
     format: row.format,
     status: row.status,
     sizeBytes: row.sizeBytes,
@@ -97,9 +101,11 @@ export async function GET(req: Request, context: Ctx): Promise<Response> {
 
   const rows = await listBackupsForProject(resolved.project.id);
   const reconciled = await reconcileListedBackupArtifacts(rows);
+  const storage = getBackupStorage();
   return Response.json(
     {
       backups: reconciled.map(serializeBackupForCli),
+      backupVolumeAbsoluteRoot: storage.absoluteLocalRoot(),
       reconciledAt: new Date().toISOString(),
     },
     {

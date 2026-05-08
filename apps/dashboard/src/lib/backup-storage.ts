@@ -7,6 +7,8 @@ export type OffsiteUploadResult = {
 
 export interface BackupStorage {
   ensureRoots(): Promise<void>;
+  /** Resolved FLUX_BACKUPS_LOCAL_DIR (absolute). */
+  absoluteLocalRoot(): string;
   localPathForBackup(projectId: string, backupId: string): string;
   uploadOffsite(localPath: string, offsiteKey: string): Promise<OffsiteUploadResult>;
 }
@@ -34,6 +36,10 @@ class FilesystemBackupStorage implements BackupStorage {
 
   private resolvedOffsiteRoot(): string {
     return path.resolve(this.config.offsiteRoot);
+  }
+
+  absoluteLocalRoot(): string {
+    return this.resolvedLocalRoot();
   }
 
   async ensureRoots(): Promise<void> {

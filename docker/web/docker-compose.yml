@@ -36,7 +36,7 @@ services:
     volumes:
       # Control plane needs Docker to provision flux-system + tenant projects.
       - /var/run/docker.sock:/var/run/docker.sock
-      # v1_dedicated backup artifacts (defaults: /srv/flux/backups* in container). Entrypoint chowns for user nextjs.
+      # v1_dedicated backups: named volume → files exist inside Docker volume, not at this host path unless bind-mounted.
       - flux-web-backups:/srv/flux/backups
       - flux-web-backups-offsite:/srv/flux/backups-offsite
     # The image runs as `nextjs` (non-root). The host socket is root:docker mode 660 — add that

@@ -120,6 +120,8 @@ const backupItemSchema = z.object({
   id: z.string(),
   /** Relative path under FLUX_BACKUPS_LOCAL_DIR on the control plane. */
   primaryArtifactRelativePath: z.string().optional(),
+  /** Resolved path on the API server (inside flux-web / Docker). */
+  primaryArtifactAbsolutePath: z.string().optional(),
   format: z.string(),
   status: z.string(),
   sizeBytes: z.number().nullable().optional(),
@@ -138,6 +140,7 @@ const backupItemSchema = z.object({
 
 const listBackupsResponseSchema = z.object({
   backups: z.array(backupItemSchema),
+  backupVolumeAbsoluteRoot: z.string().optional(),
   reconciledAt: z.string().optional(),
 });
 
@@ -162,6 +165,7 @@ export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
 export type ProjectBackup = z.infer<typeof backupItemSchema>;
 export type ListProjectBackupsResult = {
   backups: ProjectBackup[];
+  backupVolumeAbsoluteRoot?: string;
   reconciledAt?: string;
 };
 
@@ -856,6 +860,7 @@ export class ApiClient {
     }
     return {
       backups: parsed.data.backups,
+      backupVolumeAbsoluteRoot: parsed.data.backupVolumeAbsoluteRoot,
       reconciledAt: parsed.data.reconciledAt,
     };
   }

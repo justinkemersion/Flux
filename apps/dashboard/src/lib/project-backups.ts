@@ -15,8 +15,8 @@ import { getProjectManager } from "@/src/lib/flux";
 export type BackupRow = typeof projectBackups.$inferSelect;
 const execFileAsync = promisify(execFile);
 
-/** Resolved path under FLUX_BACKUPS_LOCAL_DIR — prefer over `row.localPath`, which can drift. */
-function canonicalBackupLocalPath(row: Pick<BackupRow, "projectId" | "id">): string {
+/** Absolute primary artifact path on the API server (FLUX_BACKUPS_LOCAL_DIR layout). */
+export function absoluteBackupArtifactPath(row: Pick<BackupRow, "projectId" | "id">): string {
   return getBackupStorage().localPathForBackup(row.projectId, row.id);
 }
 const CREATE_LOCK_TTL_MS = 30 * 60 * 1000;
@@ -107,7 +107,7 @@ async function markBackupArtifactInvalidFromReconcile(
   row: BackupRow,
   artifactError: string,
 ): Promise<BackupRow | null> {
-  const canonical = canonicalBackupLocalPath(row);
+  const canonical = absoluteBackupArtifactPath(row);
   const storedNorm = row.localPath?.trim()
     ? path.normalize(row.localPath.trim())
     : "";
@@ -151,7 +151,7 @@ export async function reconcileListedBackupArtifacts(
 
   const db = getDb();
   for (const row of slice) {
-    const canonical = canonicalBackupLocalPath(row);
+    const canonical = absoluteBackupArtifactPath(row);
 
     if (
       backupClaimsTrustedArtifact(row) &&
@@ -312,7 +312,7 @@ export async function replicateBackupOffsite(backupId: string): Promise<void> {
     .update(projectBackups)
     .set({ offsiteStatus: "running", offsiteError: null, offsiteKey })
     .where(eq(projectBackups.id, backup.id));
-  await storage.uploadOffsite(canonicalBackupLocalPath(backup), offsiteKey);
+  await storage.uploadOffsite(absoluteBackupArtifactPath(backup), offsiteKey);
   await db
     .update(projectBackups)
     .set({
@@ -335,7 +335,7 @@ export async function runBackupArtifactValidation(backupId: string): Promise<voi
     .update(projectBackups)
     .set({ artifactValidationStatus: "pending", artifactValidationError: null })
     .where(eq(projectBackups.id, backup.id));
-  const artifactPath = canonicalBackupLocalPath(backup);
+  const artifactPath = absoluteBackupArtifactPath(backup);
   const fs = await stat(artifactPath);
   if (!fs.isFile() || fs.size <= 0) {
     throw new Error("Backup artifact is missing or empty.");
@@ -461,7 +461,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
     if (backup.status !== "complete") {
       throw new Error("Backup must be complete before restore verification.");
     }
-    const artifactPath = canonicalBackupLocalPath(backup);
+    const artifactPath = absoluteBackupArtifactPath(backup);
     const fs = await stat(artifactPath);
     if (!fs.isFile() || fs.size <= 0) {
       throw new Error("Backup file does not exist or is empty.");
@@ -591,7 +591,7 @@ export async function streamBackupFile(backupId: string): Promise<{
   if (backup.status !== "complete") {
     throw new Error("Backup is not ready for download.");
   }
-  const artifactPath = canonicalBackupLocalPath(backup);
+  const artifactPath = absoluteBackupArtifactPath(backup);
   return { backup, stream: createReadStream(artifactPath) };
 }
 
