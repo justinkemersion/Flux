@@ -33,6 +33,8 @@ function serializeBackupForCli(row: BackupRow) {
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+/** Never serve stale backup rows (reconciliation mutates catalog truth per request). */
+export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ hash: string }> };
 

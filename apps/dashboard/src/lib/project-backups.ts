@@ -14,6 +14,11 @@ import { getProjectManager } from "@/src/lib/flux";
 
 export type BackupRow = typeof projectBackups.$inferSelect;
 const execFileAsync = promisify(execFile);
+
+/** Resolved path under FLUX_BACKUPS_LOCAL_DIR — prefer over `row.localPath`, which can drift. */
+function canonicalBackupLocalPath(row: Pick<BackupRow, "projectId" | "id">): string {
+  return getBackupStorage().localPathForBackup(row.projectId, row.id);
+}
 const CREATE_LOCK_TTL_MS = 30 * 60 * 1000;
 const VERIFY_LOCK_TTL_MS = 60 * 60 * 1000;
 /** Cap disk checks on GET /backups (newest-first complete rows). */
@@ -89,11 +94,16 @@ async function markBackupArtifactInvalidFromReconcile(
   row: BackupRow,
   artifactError: string,
 ): Promise<BackupRow | null> {
+  const canonical = canonicalBackupLocalPath(row);
+  const storedNorm = row.localPath?.trim()
+    ? path.normalize(row.localPath.trim())
+    : "";
   if (
     row.artifactValidationStatus === "artifact_invalid" &&
     row.artifactValidationError === artifactError &&
     row.restoreVerificationStatus === "skipped" &&
-    row.restoreVerificationError === RESTORE_SKIP_AFTER_ARTIFACT_FAIL
+    row.restoreVerificationError === RESTORE_SKIP_AFTER_ARTIFACT_FAIL &&
+    storedNorm === path.normalize(canonical)
   ) {
     return null;
   }
@@ -108,6 +118,7 @@ async function markBackupArtifactInvalidFromReconcile(
       restoreVerificationStatus: "skipped",
       restoreVerificationError: RESTORE_SKIP_AFTER_ARTIFACT_FAIL,
       restoreVerificationAt: null,
+      localPath: canonical,
     })
     .where(eq(projectBackups.id, row.id))
     .returning();
@@ -125,13 +136,28 @@ export async function reconcileListedBackupArtifacts(
   const slice = completeOrdered.slice(0, RECONCILE_COMPLETE_BACKUPS_MAX);
   const byId = new Map(rows.map((r) => [r.id, r]));
 
+  const db = getDb();
   for (const row of slice) {
+    const canonical = canonicalBackupLocalPath(row);
     const probe = await probeBackupArtifactOnDisk({
-      localPath: row.localPath,
+      localPath: canonical,
       checksumSha256: row.checksumSha256,
       sizeBytes: row.sizeBytes,
     });
-    if (probe.ok) continue;
+    if (probe.ok) {
+      const stored = row.localPath?.trim() ?? "";
+      if (!stored || path.normalize(stored) !== path.normalize(canonical)) {
+        const [healed] = await db
+          .update(projectBackups)
+          .set({ localPath: canonical })
+          .where(eq(projectBackups.id, row.id))
+          .returning();
+        if (healed) {
+          byId.set(healed.id, healed);
+        }
+      }
+      continue;
+    }
 
     const updated = await markBackupArtifactInvalidFromReconcile(
       row,
@@ -258,7 +284,7 @@ export async function replicateBackupOffsite(backupId: string): Promise<void> {
     .update(projectBackups)
     .set({ offsiteStatus: "running", offsiteError: null, offsiteKey })
     .where(eq(projectBackups.id, backup.id));
-  await storage.uploadOffsite(backup.localPath, offsiteKey);
+  await storage.uploadOffsite(canonicalBackupLocalPath(backup), offsiteKey);
   await db
     .update(projectBackups)
     .set({
@@ -281,7 +307,8 @@ export async function runBackupArtifactValidation(backupId: string): Promise<voi
     .update(projectBackups)
     .set({ artifactValidationStatus: "pending", artifactValidationError: null })
     .where(eq(projectBackups.id, backup.id));
-  const fs = await stat(backup.localPath);
+  const artifactPath = canonicalBackupLocalPath(backup);
+  const fs = await stat(artifactPath);
   if (!fs.isFile() || fs.size <= 0) {
     throw new Error("Backup artifact is missing or empty.");
   }
@@ -290,6 +317,7 @@ export async function runBackupArtifactValidation(backupId: string): Promise<voi
     .set({
       artifactValidationStatus: "artifact_valid",
       artifactValidationAt: new Date(),
+      localPath: artifactPath,
     })
     .where(eq(projectBackups.id, backup.id));
 }
@@ -405,7 +433,8 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
     if (backup.status !== "complete") {
       throw new Error("Backup must be complete before restore verification.");
     }
-    const fs = await stat(backup.localPath);
+    const artifactPath = canonicalBackupLocalPath(backup);
+    const fs = await stat(artifactPath);
     if (!fs.isFile() || fs.size <= 0) {
       throw new Error("Backup file does not exist or is empty.");
     }
@@ -448,7 +477,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
       await pipeBackupFileToPgRestoreInContainer(
         verifyName,
         verifyPassword,
-        backup.localPath,
+        artifactPath,
       );
       const tableCountRaw = await runDocker([
         "exec",
@@ -534,7 +563,8 @@ export async function streamBackupFile(backupId: string): Promise<{
   if (backup.status !== "complete") {
     throw new Error("Backup is not ready for download.");
   }
-  return { backup, stream: createReadStream(backup.localPath) };
+  const artifactPath = canonicalBackupLocalPath(backup);
+  return { backup, stream: createReadStream(artifactPath) };
 }
 
 export async function latestBackupForProject(projectId: string): Promise<BackupRow | null> {
