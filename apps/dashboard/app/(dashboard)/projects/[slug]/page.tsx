@@ -149,7 +149,7 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
           </>
         }
       />
-      <ProjectMeshReadout project={project} />
+      <ProjectMeshReadout project={project} credentialSurface="embedded" />
     </div>
   );
 }

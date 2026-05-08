@@ -5,13 +5,13 @@ import {
   Check,
   Clipboard,
   Eye,
-  EyeOff,
   Loader2,
   RefreshCw,
   Trash2,
   Wrench,
   X,
 } from "lucide-react";
+import { CopyableConnectField } from "@/src/components/projects/copyable-connect-field";
 import Link from "next/link";
 import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
 import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
@@ -28,10 +28,7 @@ import {
   readResponseJson,
 } from "@/src/lib/fetch-json";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
-import type {
-  ProjectRow,
-  ServerStatus,
-} from "@/src/components/projects/project-types";
+import type { ProjectRow } from "@/src/components/projects/project-types";
 import { createPortal } from "react-dom";
 
 /** Full-screen dialogs: portal to `document.body` so `fixed` is not clipped by card / mesh readout ancestors. Z: settings z-[240], delete+reset z-[250]. */
@@ -43,116 +40,7 @@ export const HOBBY_LIMIT_API_MESSAGE =
 export const PRO_LIMIT_API_MESSAGE =
   "Project limit reached (10 projects on Pro).";
 
-function CopyableField({
-  label,
-  value,
-  isSecret,
-  visuallyTruncate = false,
-  prominent = false,
-  emptyHint,
-}: {
-  label: string;
-  value: string | null;
-  isSecret: boolean;
-  /** Single-line ellipsis for long non-secret values (e.g. anon JWT). */
-  visuallyTruncate?: boolean;
-  /** Larger type and padding for the “How to connect” section. */
-  prominent?: boolean;
-  /** Shown instead of “Unavailable” when the value is empty (e.g. secrets not loaded yet). */
-  emptyHint?: string;
-}) {
-  const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const raw = value ?? "";
-  const unavailable = raw.length === 0;
-  const masked = isSecret && !revealed && !unavailable;
-  const displayText = unavailable
-    ? (emptyHint ?? "Unavailable")
-    : masked
-      ? "••••••••"
-      : raw;
-  const showEmptyHint = unavailable && Boolean(emptyHint);
-
-  async function copy(): Promise<void> {
-    if (unavailable) return;
-    try {
-      await navigator.clipboard.writeText(raw);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard denied */
-    }
-  }
-
-  const labelCls = prominent
-    ? "mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100"
-    : "mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400";
-  const boxCls = prominent
-    ? "px-3 py-3 dark:bg-zinc-900/60"
-    : "px-2 py-1.5 dark:bg-zinc-900/50";
-  const valueCls = prominent
-    ? "text-sm leading-snug"
-    : "text-xs leading-relaxed";
-
-  return (
-    <div className="min-w-0">
-      <p className={labelCls}>{label}</p>
-      <div
-        className={`flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50/90 dark:border-zinc-800 ${boxCls}`}
-      >
-        <span
-          className={`min-w-0 flex-1 ${valueCls} ${
-            showEmptyHint
-              ? "font-sans italic text-zinc-500 dark:text-zinc-400"
-              : `font-mono text-zinc-800 dark:text-zinc-200 ${
-                  visuallyTruncate && !masked
-                    ? "truncate"
-                    : unavailable
-                      ? "text-zinc-400 dark:text-zinc-500"
-                      : "break-all"
-                }`
-          }`}
-          title={unavailable || masked ? undefined : raw}
-        >
-          {displayText}
-        </span>
-        {isSecret && !unavailable ? (
-          <button
-            type="button"
-            onClick={() => setRevealed((v) => !v)}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-200/80 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label={revealed ? "Hide value" : "Reveal value"}
-            title={revealed ? "Hide" : "Reveal"}
-          >
-            {revealed ? (
-              <EyeOff className="h-4 w-4" aria-hidden />
-            ) : (
-              <Eye className="h-4 w-4" aria-hidden />
-            )}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => void copy()}
-          disabled={unavailable}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-200/80 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-          aria-label={`Copy ${label}`}
-          title="Copy"
-        >
-          {copied ? (
-            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
-          ) : (
-            <Clipboard className="h-4 w-4" aria-hidden />
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function CliSnippetBlock({ slug, hash }: { slug: string; hash: string }) {
-  const line = `flux push ./migrations/schema.sql --project ${slug} --hash ${hash}`;
+function CliSnippetRow({ line }: { line: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copyLine(): Promise<void> {
@@ -166,26 +54,53 @@ function CliSnippetBlock({ slug, hash }: { slug: string; hash: string }) {
   }
 
   return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+      <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-zinc-200 bg-white px-3 py-2.5 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+        {line}
+      </pre>
+      <button
+        type="button"
+        onClick={() => void copyLine()}
+        className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+      >
+        {copied ? (
+          <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+        ) : (
+          <Clipboard className="h-4 w-4" aria-hidden />
+        )}
+        Copy
+      </button>
+    </div>
+  );
+}
+
+function CliSnippetBlock({
+  slug,
+  hash,
+  v1Dedicated,
+}: {
+  slug: string;
+  hash: string;
+  v1Dedicated: boolean;
+}) {
+  const pushLine = `flux push ./migrations/schema.sql --project ${slug} --hash ${hash}`;
+  const credLine = `flux project credentials ${slug} --hash ${hash}`;
+
+  return (
     <div className="rounded-md border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/30">
       <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
         CLI
       </h3>
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
-        <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-zinc-200 bg-white px-3 py-2.5 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-          {line}
-        </pre>
-        <button
-          type="button"
-          onClick={() => void copyLine()}
-          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-        >
-          {copied ? (
-            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
-          ) : (
-            <Clipboard className="h-4 w-4" aria-hidden />
-          )}
-          Copy
-        </button>
+      <div className="mt-3 flex flex-col gap-3">
+        <CliSnippetRow line={pushLine} />
+        {v1Dedicated ? (
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Postgres URI and keys (terminal)
+            </p>
+            <CliSnippetRow line={credLine} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -775,7 +690,7 @@ export function ProjectCard({
           }
         />
 
-        {!meshReadoutCompanion ? (
+        {!meshReadoutCompanion || !isV2Shared ? (
           <section className="mt-6" aria-labelledby={`connect-heading-${p.id}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -788,7 +703,7 @@ export function ProjectCard({
                 <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
                   {isV2Shared
                     ? "Pooled project: use the service URL with short-lived JWTs from the Flux gateway. Per-tenant Docker Postgres strings and static anon/service keys are not exposed from this UI."
-                    : "Everything you need to reach Postgres and the REST API. Load secrets once; they are not stored in the project list."}
+                    : "Everything you need to reach Postgres and the REST API. Load secrets once; they are not stored in the project list. Use the eye icon to reveal the Postgres URI or service role key before copying."}
                 </p>
               </div>
               {!credentialsLoaded && canRevealCredentials ? (
@@ -829,7 +744,7 @@ export function ProjectCard({
 
             <div className="mt-6 flex flex-col gap-6">
               {isV2Shared ? (
-                <CopyableField
+                <CopyableConnectField
                     label="API URL"
                   value={p.apiUrl || null}
                   isSecret={false}
@@ -838,7 +753,7 @@ export function ProjectCard({
                 />
               ) : (
                 <>
-                  <CopyableField
+                  <CopyableConnectField
                     label="Postgres connection string"
                     value={
                       credentialsLoaded ? (p.postgresConnectionString ?? null) : null
@@ -847,7 +762,7 @@ export function ProjectCard({
                     prominent
                     emptyHint={connectSecretEmptyHint}
                   />
-                  <CopyableField
+                  <CopyableConnectField
                     label="Anon key"
                     value={credentialsLoaded ? (p.anonKey ?? null) : null}
                     isSecret={false}
@@ -855,16 +770,14 @@ export function ProjectCard({
                     prominent
                     emptyHint={connectSecretEmptyHint}
                   />
-                  {meshReadoutCompanion ? null : (
-                    <CopyableField
-                      label="API URL"
-                      value={p.apiUrl || null}
-                      isSecret={false}
-                      visuallyTruncate
-                      prominent
-                    />
-                  )}
-                  <CopyableField
+                  <CopyableConnectField
+                    label="API URL"
+                    value={p.apiUrl || null}
+                    isSecret={false}
+                    visuallyTruncate
+                    prominent
+                  />
+                  <CopyableConnectField
                     label="Service role key"
                     value={credentialsLoaded ? (p.serviceRoleKey ?? null) : null}
                     isSecret
@@ -903,7 +816,11 @@ export function ProjectCard({
         ) : null}
 
         <div className="mt-8">
-          <CliSnippetBlock slug={p.slug} hash={p.hash} />
+          <CliSnippetBlock
+            slug={p.slug}
+            hash={p.hash}
+            v1Dedicated={!isV2Shared}
+          />
         </div>
 
         <div className="mt-6">
@@ -1043,7 +960,7 @@ export function ProjectCard({
                           Signing key below is only kept until you close this dialog;
                           the server never sends it back.
                         </p>
-                        <CopyableField
+                        <CopyableConnectField
                           key={lastSavedJwtSecret}
                           label="Signing key you saved"
                           value={lastSavedJwtSecret}

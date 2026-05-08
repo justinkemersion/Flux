@@ -3,21 +3,35 @@
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import type { ProjectRow } from "@/src/components/projects/project-types";
+import { V1DedicatedConnectSection } from "@/src/components/projects/v1-dedicated-connect-section";
 import { ProjectExportControl } from "@/src/components/projects/project-export-control";
 import { LogConsole } from "@/src/components/projects/log-console";
 import { ProjectManifest } from "@/src/components/projects/project-manifest";
 import { TelemetrySparkline } from "@/src/components/projects/telemetry-sparkline";
 
-type Props = { project: ProjectRow };
+type Props = {
+  project: ProjectRow;
+  /**
+   * `embedded`: show v1-only Postgres/API key panel (e.g. `/projects/[slug]` without ProjectCard).
+   * Default `none`: fleet project modal renders credentials on ProjectCard below—omit here to avoid duplication.
+   */
+  credentialSurface?: "none" | "embedded";
+};
 
 /**
  * Mesh readout: telemetry blocks, connection manifest, embedded log stream.
  */
-export function ProjectMeshReadout({ project }: Props) {
+export function ProjectMeshReadout({
+  project,
+  credentialSurface = "none",
+}: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   return (
     <div className="mb-4 space-y-5">
+      {credentialSurface === "embedded" && project.mode !== "v2_shared" ? (
+        <V1DedicatedConnectSection project={project} />
+      ) : null}
       <ProjectManifest slug={project.slug} />
 
       <section id={`database-${project.slug}`}>

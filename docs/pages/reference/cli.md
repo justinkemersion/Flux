@@ -25,6 +25,7 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux create` | Provision a project |
 | `flux list` | Show projects and Service URLs |
 | `flux push` | Apply SQL file(s) to a project—pass **`--project <slug>`** and **`--hash <7hex>`** from **`flux list`** (or use **`flux.json`**) |
+| `flux project credentials` | Print connection material: **v1 dedicated** → Postgres URI plus anon/service JWT keys; **v2_shared** → gateway JWT secret and a short note (no per-tenant Postgres URI). Pass **`[slug]`** and **`--hash`** like other project commands (or use **`flux.json`**) |
 | `flux dump` | Export schema/data (see flags locally) |
 | `flux migrate` | Orchestrate **v2_shared** → **v1_dedicated** via the control plane (see [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)) |
 | `flux logs` | Tail project logs when wired |
@@ -48,6 +49,7 @@ Install: [Installation](/docs/getting-started/installation).
 flux --help
 flux push --help
 flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
+flux project credentials percept --hash b915ec8   # v1: copy the Postgres line for psql
 ```
 
 Use your own **slug** and **hash** from **`flux list`** (example values above).
