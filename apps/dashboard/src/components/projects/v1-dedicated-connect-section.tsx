@@ -21,9 +21,11 @@ type Props = {
 export function V1DedicatedConnectSection({ project: p }: Props) {
   const [revealBusy, setRevealBusy] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
-  const [anonKey, setAnonKey] = useState<string | undefined>(p.anonKey);
+  const [anonKey, setAnonKey] = useState<string | undefined>(
+    p.anonKey ?? undefined,
+  );
   const [serviceRoleKey, setServiceRoleKey] = useState<string | undefined>(
-    p.serviceRoleKey,
+    p.serviceRoleKey ?? undefined,
   );
   const [postgresUri, setPostgresUri] = useState<string | undefined>(
     p.postgresConnectionString ?? undefined,
