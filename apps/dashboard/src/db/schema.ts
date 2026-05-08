@@ -217,3 +217,21 @@ export const projectBackups = pgTable(
     index("project_backups_offsite_status_idx").on(t.offsiteStatus, t.createdAt),
   ],
 );
+
+/** Cross-process lock rows for backup create/verify operations. */
+export const backupLocks = pgTable(
+  "backup_locks",
+  {
+    lockKey: text("lock_key").primaryKey(),
+    operation: text("operation").notNull(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    backupId: uuid("backup_id").references(() => projectBackups.id, {
+      onDelete: "cascade",
+    }),
+    claimedAt: timestamp("claimed_at", { mode: "date" }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+  },
+  (t) => [index("backup_locks_expires_idx").on(t.expiresAt)],
+);

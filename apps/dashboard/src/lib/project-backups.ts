@@ -5,19 +5,55 @@ import { mkdir, stat } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
-import { and, desc, eq, gte } from "drizzle-orm";
-import { projectBackups, projects } from "@/src/db/schema";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { backupLocks, projectBackups, projects } from "@/src/db/schema";
 import { getBackupStorage } from "@/src/lib/backup-storage";
 import { getDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
 export type BackupRow = typeof projectBackups.$inferSelect;
 const execFileAsync = promisify(execFile);
-const runningBackupCreates = new Set<string>();
-const runningBackupVerifications = new Set<string>();
+const CREATE_LOCK_TTL_MS = 30 * 60 * 1000;
+const VERIFY_LOCK_TTL_MS = 60 * 60 * 1000;
 
 function startOfUtcDay(d = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function lockExpiryFromNow(ttlMs: number): Date {
+  return new Date(Date.now() + ttlMs);
+}
+
+async function acquireBackupLock(input: {
+  lockKey: string;
+  operation: "create" | "verify";
+  projectId: string;
+  backupId?: string;
+  ttlMs: number;
+}): Promise<void> {
+  const db = getDb();
+  const expiresAt = lockExpiryFromNow(input.ttlMs);
+  const result = await db.execute(sql`
+    INSERT INTO backup_locks (lock_key, operation, project_id, backup_id, claimed_at, expires_at)
+    VALUES (${input.lockKey}, ${input.operation}, ${input.projectId}::uuid, ${input.backupId ?? null}::uuid, NOW(), ${expiresAt})
+    ON CONFLICT (lock_key) DO UPDATE
+      SET operation = EXCLUDED.operation,
+          project_id = EXCLUDED.project_id,
+          backup_id = EXCLUDED.backup_id,
+          claimed_at = NOW(),
+          expires_at = EXCLUDED.expires_at
+    WHERE backup_locks.expires_at < NOW()
+    RETURNING lock_key;
+  `);
+  const rowCount = Array.isArray(result) ? result.length : (result as { rowCount?: number }).rowCount ?? 0;
+  if (rowCount === 0) {
+    throw new Error(`Operation already running for lock ${input.lockKey}.`);
+  }
+}
+
+async function releaseBackupLock(lockKey: string): Promise<void> {
+  const db = getDb();
+  await db.delete(backupLocks).where(eq(backupLocks.lockKey, lockKey));
 }
 
 export async function listBackupsForProject(
@@ -36,10 +72,13 @@ export async function createBackupForProject(input: {
   slug: string;
   hash: string;
 }): Promise<BackupRow> {
-  if (runningBackupCreates.has(input.projectId)) {
-    throw new Error("A backup operation is already running for this project.");
-  }
-  runningBackupCreates.add(input.projectId);
+  const lockKey = `backup:create:${input.projectId}`;
+  await acquireBackupLock({
+    lockKey,
+    operation: "create",
+    projectId: input.projectId,
+    ttlMs: CREATE_LOCK_TTL_MS,
+  });
   const db = getDb();
   const storage = getBackupStorage();
   await storage.ensureRoots();
@@ -55,7 +94,6 @@ export async function createBackupForProject(input: {
     )
     .limit(1);
   if (active) {
-    runningBackupCreates.delete(input.projectId);
     throw new Error("A backup operation is already running for this project.");
   }
 
@@ -117,7 +155,7 @@ export async function createBackupForProject(input: {
       .where(eq(projectBackups.id, queued.id));
     throw err;
   } finally {
-    runningBackupCreates.delete(input.projectId);
+    await releaseBackupLock(lockKey);
   }
 }
 
@@ -201,10 +239,6 @@ async function waitForPgReady(containerName: string, timeoutMs: number): Promise
 }
 
 export async function verifyBackupRestore(backupId: string): Promise<void> {
-  if (runningBackupVerifications.has(backupId)) {
-    throw new Error("Restore verification is already running for this backup.");
-  }
-  runningBackupVerifications.add(backupId);
   const db = getDb();
   const [backup] = await db
     .select()
@@ -212,17 +246,22 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
     .where(eq(projectBackups.id, backupId))
     .limit(1);
   if (!backup) throw new Error("Backup not found.");
+  const lockKey = `backup:verify:${backupId}`;
+  await acquireBackupLock({
+    lockKey,
+    operation: "verify",
+    projectId: backup.projectId,
+    backupId,
+    ttlMs: VERIFY_LOCK_TTL_MS,
+  });
   if (backup.status !== "complete") {
-    runningBackupVerifications.delete(backupId);
     throw new Error("Backup must be complete before restore verification.");
   }
   const fs = await stat(backup.localPath);
   if (!fs.isFile() || fs.size <= 0) {
-    runningBackupVerifications.delete(backupId);
     throw new Error("Backup file does not exist or is empty.");
   }
   if (backup.restoreVerificationStatus === "restore_verified") {
-    runningBackupVerifications.delete(backupId);
     return;
   }
 
@@ -336,7 +375,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         // Container may already be removed; ignore cleanup failures.
       }
     }
-    runningBackupVerifications.delete(backupId);
+    await releaseBackupLock(lockKey);
   }
 }
 

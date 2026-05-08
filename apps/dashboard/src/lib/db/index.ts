@@ -434,6 +434,32 @@ async function _init(): Promise<void> {
     $migrate_backup_semantics$;
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS backup_locks (
+      lock_key TEXT PRIMARY KEY,
+      operation TEXT NOT NULL,
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      backup_id UUID REFERENCES project_backups(id) ON DELETE CASCADE,
+      claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS backup_locks_expires_idx ON backup_locks (expires_at);
+  `);
+
+  await pool.query(`
+    ALTER TABLE backup_locks ADD COLUMN IF NOT EXISTS operation TEXT;
+    ALTER TABLE backup_locks ADD COLUMN IF NOT EXISTS project_id UUID;
+    ALTER TABLE backup_locks ADD COLUMN IF NOT EXISTS backup_id UUID;
+    ALTER TABLE backup_locks ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+    ALTER TABLE backup_locks ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    UPDATE backup_locks SET claimed_at = NOW() WHERE claimed_at IS NULL;
+    ALTER TABLE backup_locks ALTER COLUMN operation SET NOT NULL;
+    ALTER TABLE backup_locks ALTER COLUMN project_id SET NOT NULL;
+    ALTER TABLE backup_locks ALTER COLUMN claimed_at SET DEFAULT NOW();
+    ALTER TABLE backup_locks ALTER COLUMN claimed_at SET NOT NULL;
+    ALTER TABLE backup_locks ALTER COLUMN expires_at SET NOT NULL;
+  `);
+
   db = drizzle(pool, { schema });
 }
 
