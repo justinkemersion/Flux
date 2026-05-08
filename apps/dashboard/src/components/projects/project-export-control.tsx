@@ -52,6 +52,7 @@ export function ProjectExportControl({ hash }: Props) {
   const [backups, setBackups] = useState<BackupItem[]>([]);
   const [backupsLoading, setBackupsLoading] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [verifyBusy, setVerifyBusy] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
 
   const downloadHref = useMemo(() => {
@@ -65,6 +66,19 @@ export function ProjectExportControl({ hash }: Props) {
   }, [clean, dataOnly, hash, schemaOnly]);
 
   const backupTrust = useMemo(() => classifyNewestBackup(backups), [backups]);
+
+  const latestBackup = backups[0];
+  const verifyLatestDisabledReason = useMemo((): string | null => {
+    if (!latestBackup) return "No backups yet.";
+    if (latestBackup.status !== "complete") return "Latest backup is not complete.";
+    if (latestBackup.artifactValidationStatus === "artifact_invalid") {
+      return "Latest artifact is invalid on the server — create a new backup.";
+    }
+    if (latestBackup.restoreVerificationStatus === "restore_verified") {
+      return "Latest backup is already restore-verified.";
+    }
+    return null;
+  }, [latestBackup]);
 
   function onSchemaToggle(): void {
     setSchemaOnly((prev) => {
@@ -128,6 +142,31 @@ export function ProjectExportControl({ hash }: Props) {
     window.location.assign(
       `/api/cli/v1/projects/${encodeURIComponent(hash)}/backups/${encodeURIComponent(latest.id)}/download`,
     );
+  }
+
+  async function verifyLatestBackupRestore(): Promise<void> {
+    const latest = backups[0];
+    if (!latest || verifyLatestDisabledReason) return;
+    setVerifyBusy(true);
+    setBackupError(null);
+    try {
+      const res = await fetch(
+        `/api/cli/v1/projects/${encodeURIComponent(hash)}/backups/${encodeURIComponent(latest.id)}/verify`,
+        { method: "POST" },
+      );
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      if (res.status === 409) {
+        throw new Error(body.error || "Another backup verify or create is already running.");
+      }
+      if (!res.ok) {
+        throw new Error(body.error || `Request failed (${String(res.status)})`);
+      }
+      await loadBackups();
+    } catch (err: unknown) {
+      setBackupError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVerifyBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -225,6 +264,20 @@ export function ProjectExportControl({ hash }: Props) {
                       className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Download latest backup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void verifyLatestBackupRestore()}
+                      disabled={
+                        backupsLoading ||
+                        verifyBusy ||
+                        backupBusy ||
+                        verifyLatestDisabledReason !== null
+                      }
+                      title={verifyLatestDisabledReason ?? undefined}
+                      className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {verifyBusy ? "Verifying restore…" : "Verify restore (latest)"}
                     </button>
                   </div>
                   <div className="mt-3 text-xs text-zinc-400">
