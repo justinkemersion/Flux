@@ -31,8 +31,9 @@ services:
       # Drives Traefik labels on tenants provisioned by the dashboard
       # (websecure + myresolver via fluxTraefikCertResolverName).
       FLUX_DOMAIN: ${FLUX_DOMAIN:-vsl-base.com}
-      # Passed into flux-web-entrypoint.sh so `setpriv` keeps docker.sock access after dropping to nextjs.
-      FLUX_DOCKER_SUPPLEMENTARY_GID: ${DOCKER_GID:-996}
+      # Forward host DOCKER_GID when set in `.env`. When empty, entrypoint uses stat(1) on the socket
+      # (avoids stale default 996 after host `docker` group GID changes).
+      FLUX_DOCKER_SUPPLEMENTARY_GID: ${DOCKER_GID:-}
     volumes:
       # Control plane needs Docker to provision flux-system + tenant projects.
       - /var/run/docker.sock:/var/run/docker.sock
