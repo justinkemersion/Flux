@@ -94,6 +94,12 @@ Very important Flux rule
 
 Do not promise “fully backed up” until restore is tested.
 
+Backup trust model (operator/user mental model):
+
+- Backups are only trustworthy after restore verification.
+- Artifact validation checks that the file exists and is non-empty.
+- Restore verification runs pg_restore in a disposable database.
+
 A backup system is not:
 
 cron + pg_dump

@@ -350,7 +350,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
       "ON_ERROR_STOP=1",
       "-c",
       "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog','information_schema','pg_toast');",
-    );
+    ]);
     await db
       .update(projectBackups)
       .set({
