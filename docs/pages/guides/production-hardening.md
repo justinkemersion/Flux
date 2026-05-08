@@ -26,6 +26,8 @@ Review:
 - `docs/production-security-audit.md` — audit framing
 - `docs/OPERATIONS.md` — operational checklist items relevant to your deployment
 
+Self-hosted **control plane** (`flux-web`): **`flux migrate`** runs **`pg_dump` inside the dashboard container** against the shared cluster. The **`apps/dashboard/Dockerfile`** runner image must include PostgreSQL client tools (see repo Dockerfile); restarting an old image without rebuilding leaves **`pg_dump` missing** at runtime. Operator flow: [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate).
+
 ## Example
 
 For multi-region or multi-cluster, document **which** Postgres cluster holds a tenant before running destructive maintenance.
@@ -34,3 +36,4 @@ For multi-region or multi-cluster, document **which** Postgres cluster holds a t
 
 - [Threat model](/docs/security/threat-model)
 - [Environment variables](/docs/reference/env-vars)
+- [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)
