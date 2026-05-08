@@ -1,5 +1,6 @@
 /**
- * Grants and default privileges on the tenant API schema for PostgREST roles (`anon`, `authenticated`).
+ * Grants and default privileges on the tenant API schema for PostgREST roles
+ * (`anon`, `authenticated`, `service_role`).
  * Reused after {@link movePublicSchemaObjectsToTargetSchema} and in initial bootstrap SQL.
  */
 
@@ -17,25 +18,27 @@ export function buildApiSchemaPrivilegesSql(apiSchemaName: string): string {
   const s = qSchema(apiSchemaName);
   return `
 -- Allow request roles to use the API schema
-GRANT USAGE ON SCHEMA ${s} TO anon, authenticated;
+GRANT USAGE ON SCHEMA ${s} TO anon, authenticated, service_role;
 
 -- PostgREST may list public in PGRST_DB_SCHEMAS (e.g. Supabase); USAGE required for profile switching
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 
 -- Existing tables / sequences
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${s} TO anon, authenticated;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${s} TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${s} TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${s} TO anon, authenticated, service_role;
 
 -- Objects created later in this schema (e.g. migrations) inherit these grants
 ALTER DEFAULT PRIVILEGES IN SCHEMA ${s}
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA ${s}
-  GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;
+  GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated, service_role;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ${s} GRANT ALL ON TABLES TO anon;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ${s} GRANT ALL ON SEQUENCES TO anon;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ${s} GRANT ALL ON TABLES TO authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ${s} GRANT ALL ON SEQUENCES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ${s} GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ${s} GRANT ALL ON SEQUENCES TO service_role;
 `.trim();
 }
 

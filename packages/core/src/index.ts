@@ -226,10 +226,11 @@ const POSTGRES_USER = "postgres";
 /**
  * One-time SQL run against every new Flux project database.
  *
- * Sets up the `api` schema and three roles that PostgREST expects:
+ * Sets up the `api` schema and four roles that PostgREST expects:
  *   authenticator — the login role PostgREST connects as (no direct login for users)
  *   anon          — privileges for unauthenticated requests
  *   authenticated — privileges for JWT-verified requests
+ *   service_role    — privileges for trusted server-side JWTs (CLI / migrate probes; BYPASSRLS)
  *
  * Installs Supabase-compatible **`auth`** schema and **`auth.uid()`** (returns **text**, JWT `sub`
  * from `request.jwt.claims`) for RLS with Clerk / NextAuth string IDs.
@@ -264,9 +265,15 @@ DO $$ BEGIN
   CREATE ROLE authenticated NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+DO $$ BEGIN
+  CREATE ROLE service_role NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+ALTER ROLE service_role BYPASSRLS;
+
 -- Allow authenticator to switch to request roles
 GRANT anon          TO authenticator;
 GRANT authenticated TO authenticator;
+GRANT service_role   TO authenticator;
 
 ${FLUX_AUTH_SCHEMA_AND_UID_SQL}
 
