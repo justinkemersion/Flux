@@ -525,6 +525,32 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
       created = true;
       await waitForPgReady(verifyName, 30_000);
 
+      // v2_shared `pg_dump -Fc --schema=t_<short>_api --no-owner --no-acl` strips OWNER/GRANT but
+      // KEEPS `CREATE POLICY ... TO authenticated` (policy roles are not ACLs). The disposable
+      // Postgres has only `postgres`, so we pre-create the platform request roles. Idempotent and
+      // harmless for v1 dedicated dumps (which don't reference these roles).
+      await runDocker([
+        "exec",
+        "-e",
+        `PGPASSWORD=${verifyPassword}`,
+        verifyName,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        [
+          "DO $$ BEGIN CREATE ROLE anon NOLOGIN NOINHERIT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+          "DO $$ BEGIN CREATE ROLE authenticated NOLOGIN NOINHERIT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+          "DO $$ BEGIN CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+          "DO $$ BEGIN CREATE ROLE authenticator NOLOGIN NOINHERIT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+          "GRANT anon, authenticated, service_role TO authenticator;",
+        ].join(" "),
+      ]);
+
       await pipeBackupFileToPgRestoreInContainer(
         verifyName,
         verifyPassword,
