@@ -180,7 +180,7 @@ export const domains = pgTable(
   (t) => [index("domains_project_id_idx").on(t.projectId)],
 );
 
-/** Backup catalog for v1 dedicated project artifacts (local + offsite lifecycle). */
+/** Backup catalog: full dedicated DB dumps (`project_db`) or v2 portable tenant exports (`tenant_export`). */
 export const projectBackups = pgTable(
   "project_backups",
   {
@@ -188,6 +188,8 @@ export const projectBackups = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    /** `project_db` (v1 dedicated full pg_dump) vs `tenant_export` (v2_shared schema-only logical cluster dump). */
+    kind: text("kind").notNull().default("project_db"),
     format: text("format").notNull().default("pg_custom"),
     localPath: text("local_path").notNull(),
     sizeBytes: integer("size_bytes"),
@@ -213,6 +215,11 @@ export const projectBackups = pgTable(
   },
   (t) => [
     index("project_backups_project_created_idx").on(t.projectId, t.createdAt),
+    index("project_backups_project_kind_created_idx").on(
+      t.projectId,
+      t.kind,
+      t.createdAt,
+    ),
     index("project_backups_status_idx").on(t.status, t.createdAt),
     index("project_backups_offsite_status_idx").on(t.offsiteStatus, t.createdAt),
   ],

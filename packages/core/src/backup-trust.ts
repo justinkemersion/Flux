@@ -6,10 +6,14 @@
  * `restore_verified` match storage truth.
  */
 
+export type BackupKind = "project_db" | "tenant_export";
+
 export type BackupTrustInput = {
   status: string;
   artifactValidationStatus?: string | null | undefined;
   restoreVerificationStatus?: string | null | undefined;
+  /** Catalog discriminator; when omitted, labels match legacy dedicated-project copy. */
+  kind?: BackupKind | null | undefined;
 };
 
 export type BackupTrustTier =
@@ -32,6 +36,37 @@ export type BackupTrustClassification = {
 
 export const BACKUP_TRUST_REMEDIATION_CLI =
   "flux backup create && flux backup verify --latest";
+
+/** Short label for UI badges when backup kind is known (no emoji). */
+export function backupTrustTierLabelForKind(
+  kind: BackupKind | null | undefined,
+  tier: BackupTrustTier,
+): string {
+  const k = kind ?? "project_db";
+  if (k === "project_db") {
+    return backupTrustTierLabel(tier);
+  }
+  switch (tier) {
+    case "restorable":
+      return "Restorable tenant export";
+    case "not_restore_verified":
+      return "Created tenant export, not restore-verified";
+    case "restore_failed":
+      return "Tenant export restore verification failed";
+    case "artifact_pending":
+      return "Validating tenant export artifact";
+    case "pipeline_incomplete":
+      return "Tenant export artifact not valid";
+    case "latest_not_complete":
+      return "Latest tenant export not complete";
+    case "no_backups":
+      return "No tenant exports";
+    default: {
+      const _x: never = tier;
+      return _x;
+    }
+  }
+}
 
 /** Short label for UI badges (no emoji). */
 export function backupTrustTierLabel(tier: BackupTrustTier): string {

@@ -102,6 +102,7 @@ export async function runBackupSchedulerTick(): Promise<void> {
         projectId: project.id,
         slug: project.slug,
         hash: project.hash,
+        mode: "v1_dedicated",
       });
       try {
         await replicateBackupOffsite(backup.id);

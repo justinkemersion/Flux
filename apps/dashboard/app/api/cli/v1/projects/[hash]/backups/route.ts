@@ -16,6 +16,7 @@ import {
 function serializeBackupForCli(row: BackupRow) {
   return {
     id: row.id,
+    kind: row.kind,
     /** Relative to FLUX_BACKUPS_LOCAL_DIR on the control plane (canonical layout). */
     primaryArtifactRelativePath: `${row.projectId}/${row.id}.dump`,
     /** Same artifact as resolved inside flux-web (named Docker volumes often hide this from host ls). */
@@ -89,9 +90,6 @@ async function resolveOwnedProject(
     .where(and(eq(projects.userId, userId), eq(projects.hash, hash)))
     .limit(1);
   if (!project) return { error: jsonError("Project not found", 404) };
-  if (project.mode !== "v1_dedicated") {
-    return { error: jsonError("Backups MVP currently supports v1_dedicated only.", 400) };
-  }
   return { project };
 }
 
@@ -125,6 +123,7 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
       projectId: resolved.project.id,
       slug: resolved.project.slug,
       hash: resolved.project.hash,
+      mode: resolved.project.mode,
     });
     return Response.json(
       {

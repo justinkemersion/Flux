@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
@@ -11,6 +11,9 @@ import { backupLocks, projectBackups, projects } from "@/src/db/schema";
 import { getBackupStorage } from "@/src/lib/backup-storage";
 import { getDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
+import { getV2SharedTenantBackupStream } from "@/src/lib/tenant-backup-stream";
+
+export type BackupEngineMode = "v1_dedicated" | "v2_shared";
 
 export type BackupRow = typeof projectBackups.$inferSelect;
 const execFileAsync = promisify(execFile);
@@ -203,6 +206,7 @@ export async function createBackupForProject(input: {
   projectId: string;
   slug: string;
   hash: string;
+  mode: BackupEngineMode;
 }): Promise<BackupRow> {
   const lockKey = `backup:create:${input.projectId}`;
   await acquireBackupLock({
@@ -231,10 +235,13 @@ export async function createBackupForProject(input: {
       throw new Error("A backup operation is already running for this project.");
     }
 
+    const kind =
+      input.mode === "v2_shared" ? "tenant_export" : "project_db";
     const [queued] = await db
       .insert(projectBackups)
       .values({
         projectId: input.projectId,
+        kind,
         localPath: "",
         status: "queued",
         offsiteStatus: "pending",
@@ -258,7 +265,10 @@ export async function createBackupForProject(input: {
       .where(eq(projectBackups.id, queued.id));
 
     const pm = getProjectManager();
-    const stream = await pm.getProjectCustomBackupStream(input.slug, input.hash);
+    const stream =
+      input.mode === "v2_shared"
+        ? await getV2SharedTenantBackupStream({ projectId: input.projectId })
+        : await pm.getProjectCustomBackupStream(input.slug, input.hash);
     const hash = createHash("sha256");
     const sink = createWriteStream(localPath);
     stream.on("data", (chunk: Buffer | string | Uint8Array) => {
@@ -480,7 +490,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
       return;
     }
 
-    const verifyPassword = crypto.randomUUID().replace(/-/g, "");
+    const verifyPassword = randomUUID().replace(/-/g, "");
     const verifyName = `flux-backup-verify-${backup.id.slice(0, 12)}`;
     const image = process.env.FLUX_BACKUP_VERIFY_POSTGRES_IMAGE?.trim() || "postgres:16-alpine";
 

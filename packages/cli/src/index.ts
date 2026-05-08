@@ -9,7 +9,7 @@ import type {
   FluxProjectSummary,
 } from "@flux/core/standalone";
 import {
-  backupTrustTierLabel,
+  backupTrustTierLabelForKind,
   BACKUP_TRUST_REMEDIATION_CLI,
   classifyNewestBackup,
   destructiveBackupCheckMessage,
@@ -317,8 +317,7 @@ async function ensureRestoreVerifiedLatestBackup(
   skipBackupCheck: boolean,
 ): Promise<void> {
   if (skipBackupCheck) return;
-  const meta = await client.getProjectMetadata(hash);
-  if (meta.mode !== "v1_dedicated") return;
+  await client.getProjectMetadata(hash);
   const { backups } = await client.listProjectBackups(hash);
   const c = classifyNewestBackup(backups);
   if (!c.allowsDestructiveWithoutOverride) {
@@ -326,18 +325,28 @@ async function ensureRestoreVerifiedLatestBackup(
   }
 }
 
-function printBackupTrustSummary(classification: ReturnType<typeof classifyNewestBackup>): void {
-  const label = backupTrustTierLabel(classification.tier);
+function printBackupTrustSummary(
+  classification: ReturnType<typeof classifyNewestBackup>,
+  kind?: "project_db" | "tenant_export" | null,
+): void {
+  const k = kind ?? "project_db";
+  const label = backupTrustTierLabelForKind(k, classification.tier);
   if (classification.tier === "restorable") {
     console.log(
       chalk.green("✓") +
-        chalk.white(" Latest backup is ") +
-        chalk.green.bold("restorable") +
+        chalk.white(" ") +
+        chalk.green.bold(label) +
         chalk.white(" (") +
         chalk.dim("restore_verified") +
         chalk.white(")."),
     );
-    console.log(chalk.dim("  This project has a verified restorable backup."));
+    console.log(
+      chalk.dim(
+        k === "tenant_export"
+          ? "  This project has a verified restorable tenant export."
+          : "  This project has a verified restorable backup.",
+      ),
+    );
     return;
   }
   if (classification.tier === "restore_failed") {
@@ -542,7 +551,7 @@ async function cmdBackupCreate(
   console.log(chalk.green("✓"), chalk.white("Backup complete."));
   console.log(
     chalk.dim(
-      `  id=${backup.id} status=${backup.status} size=${fmtBytes(backup.sizeBytes ?? null)}`,
+      `  id=${backup.id} kind=${backup.kind ?? "project_db"} status=${backup.status} size=${fmtBytes(backup.sizeBytes ?? null)}`,
     ),
   );
 }
@@ -562,7 +571,7 @@ async function cmdBackupList(
     await client.listProjectBackups(hash);
   sectionBanner("Backups");
   const classification = classifyNewestBackup(backups);
-  printBackupTrustSummary(classification);
+  printBackupTrustSummary(classification, backups[0]?.kind);
   if (verbose) {
     if (reconciledAt) {
       console.log(
@@ -598,12 +607,13 @@ async function cmdBackupList(
   if (verbose) {
     console.log(
       chalk.dim(
-        "  ID                                   STATUS     SIZE       CREATED                    VALIDATION        RESTORE_VERIFY   ARTIFACT_REL_PATH",
+        "  ID                                   KIND       STATUS     SIZE       CREATED                    VALIDATION        RESTORE_VERIFY   ARTIFACT_REL_PATH",
       ),
     );
     for (const row of backups) {
+      const kindCell = (row.kind ?? "project_db").padEnd(10);
       console.log(
-        `  ${chalk.cyan(row.id.padEnd(36))} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending").padEnd(16)} ${fmtArtifactRelPath(row.primaryArtifactRelativePath)}`,
+        `  ${chalk.cyan(row.id.padEnd(36))} ${kindCell} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending").padEnd(16)} ${fmtArtifactRelPath(row.primaryArtifactRelativePath)}`,
       );
     }
     return;
@@ -617,7 +627,7 @@ async function cmdBackupList(
   for (let i = 0; i < backups.length; i++) {
     const row = backups[i]!;
     const rowTrust = classifyNewestBackup([row]);
-    const trustShort = backupTrustTierLabel(rowTrust.tier);
+    const trustShort = backupTrustTierLabelForKind(row.kind ?? "project_db", rowTrust.tier);
     const line = `  ${row.id.padEnd(36)} ${(row.createdAt ?? "-").padEnd(25)} ${trustShort}`;
     console.log(i === 0 ? line : chalk.dim(line));
   }
@@ -1099,7 +1109,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--skip-backup-check",
-      "Skip the notice that v2_shared has no flux backup verify loop (v1 dedicated only)",
+      "Skip requiring a restore-verified backup before migrate (dangerous)",
       false,
     )
     .option("--hash <hex>", hashFlagDesc);
@@ -1144,7 +1154,7 @@ async function main(): Promise<void> {
       if (opts.skipBackupCheck !== true) {
         console.error(
           chalk.yellow(
-            "Note: flux backup create / verify applies to v1_dedicated only; migrate uses a live pg_dump from the pooled cluster. Ensure you are comfortable with this path before proceeding.",
+            "Note: run `flux backup create && flux backup verify --latest` first for a portable tenant export (pg_dump -Fc --schema=t_<short>_api). Migrate also performs its own live pg_dump from the pooled cluster.",
           ),
         );
       }
@@ -1184,7 +1194,7 @@ async function main(): Promise<void> {
     .option("-y, --yes", "confirm", false)
     .option(
       "--skip-backup-check",
-      "Allow reset even when the latest v1 backup is not restore-verified (dangerous)",
+      "Allow reset even when the latest backup is not restore-verified (dangerous)",
       false,
     )
     .option("--hash <hex>", hashFlagDesc);
@@ -1427,7 +1437,7 @@ async function main(): Promise<void> {
 
   const backupCmd = program
     .command("backup")
-    .description("Create, list, and download dedicated project backups");
+    .description("Create, list, and download project backups (v1 full DB or v2 tenant export)");
 
   const backupCreateCmd = backupCmd
     .command("create")
@@ -1648,7 +1658,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--skip-backup-check",
-      "Allow nuke even when the latest v1 backup is not restore-verified (dangerous)",
+      "Allow nuke even when the latest backup is not restore-verified (dangerous)",
       false,
     )
     .option("--hash <hex>", hashFlagDesc);

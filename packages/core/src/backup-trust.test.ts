@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  backupTrustTierLabel,
+  backupTrustTierLabelForKind,
   classifyNewestBackup,
   destructiveBackupCheckMessage,
   type BackupTrustInput,
@@ -102,4 +104,18 @@ test("destructive message includes remediation", () => {
   const msg = destructiveBackupCheckMessage(c);
   assert.match(msg, /flux backup create/);
   assert.match(msg, /--skip-backup-check/);
+});
+
+test("backupTrustTierLabelForKind tenant_export restorable", () => {
+  assert.equal(
+    backupTrustTierLabelForKind("tenant_export", "restorable"),
+    "Restorable tenant export",
+  );
+});
+
+test("backupTrustTierLabelForKind defaults project_db to legacy label helper", () => {
+  assert.equal(
+    backupTrustTierLabelForKind("project_db", "restorable"),
+    backupTrustTierLabel("restorable"),
+  );
 });

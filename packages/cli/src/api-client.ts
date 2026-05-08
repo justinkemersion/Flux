@@ -118,6 +118,7 @@ const pushSqlResponseSchema = z.object({
 
 const backupItemSchema = z.object({
   id: z.string(),
+  kind: z.enum(["project_db", "tenant_export"]).optional(),
   /** Relative path under FLUX_BACKUPS_LOCAL_DIR on the control plane. */
   primaryArtifactRelativePath: z.string().optional(),
   /** Resolved path on the API server (inside flux-web / Docker). */

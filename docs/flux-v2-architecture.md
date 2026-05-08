@@ -50,6 +50,20 @@ tenants while preserving logical data isolation at the schema and role level.
 
 ---
 
+## Portable tenant backups (user-facing export)
+
+Users can run **`flux backup create` / `list` / `download` / `verify`** for **v2_shared** projects. The control plane runs **`pg_dump -Fc --schema=t_<shortId>_api --no-owner --no-acl`** against **`FLUX_SHARED_POSTGRES_URL`**, so the artifact contains **only** that tenant schema—not other tenants, not cluster-global objects.
+
+- **Trust boundary:** this is a **portable tenant export**, restorable into any Postgres for migrations or off-platform analysis. It does **not** replace **cluster-level** backup/restore for operators (physical backups, WAL archiving, PITR).
+
+- **Verification:** unchanged from v1 — the same **`pg_restore`** smoke test in a disposable Postgres container validates the custom-format file.
+
+- **Catalog:** backup rows carry **`kind = tenant_export`** (vs **`project_db`** for v1 full-database dumps).
+
+Automatic nightly backups remain **v1-only** in the MVP scheduler; v2 exports are **on-demand** unless extended later.
+
+---
+
 ## 2. Threat model
 
 ### Primary security boundary

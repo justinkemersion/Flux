@@ -1,9 +1,11 @@
 "use client";
 
 import {
-  backupTrustTierLabel,
+  backupTrustTierLabelForKind,
   BACKUP_TRUST_REMEDIATION_CLI,
   classifyNewestBackup,
+  type BackupKind,
+  type BackupTrustInput,
   type BackupTrustTier,
 } from "@flux/core/backup-trust";
 import { ChevronDown, Loader2, X } from "lucide-react";
@@ -12,10 +14,13 @@ import { createPortal } from "react-dom";
 
 type Props = {
   hash: string;
+  /** Used when no backup rows yet (correct pooled vs dedicated copy). */
+  mode: "v1_dedicated" | "v2_shared";
 };
 
 type BackupItem = {
   id: string;
+  kind?: BackupKind;
   status: string;
   sizeBytes?: number | null;
   createdAt?: string | null;
@@ -71,7 +76,7 @@ const primaryModalActionClass =
 /**
  * Project export controls for SQL dump streaming.
  */
-export function ProjectExportControl({ hash }: Props) {
+export function ProjectExportControl({ hash, mode }: Props) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [schemaOnly, setSchemaOnly] = useState(false);
   const [dataOnly, setDataOnly] = useState(false);
@@ -92,7 +97,13 @@ export function ProjectExportControl({ hash }: Props) {
     return q.length > 0 ? `${base}?${q}` : base;
   }, [clean, dataOnly, hash, schemaOnly]);
 
-  const backupTrust = useMemo(() => classifyNewestBackup(backups), [backups]);
+  const backupTrust = useMemo(
+    () => classifyNewestBackup(backups as BackupTrustInput[]),
+    [backups],
+  );
+
+  const newestBackupKind =
+    backups[0]?.kind ?? (mode === "v2_shared" ? "tenant_export" : "project_db");
 
   const latestBackup = backups[0];
   const verifyLatestDisabledReason = useMemo((): string | null => {
@@ -288,9 +299,18 @@ export function ProjectExportControl({ hash }: Props) {
                       <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
                         Create, download, and verify project snapshots.
                       </p>
-                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-                        v1 dedicated stacks only.
-                      </p>
+                      {newestBackupKind === "tenant_export" ? (
+                        <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-500">
+                          Portable tenant export of your PostgREST schema (
+                          <code className="font-mono">t_&lt;shortId&gt;_api</code>
+                          ). Restoring this archive into any Postgres recreates schema and data;
+                          it does not include shared cluster system tables or full-cluster DR.
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                          Full-database snapshot for dedicated (v1) stacks.
+                        </p>
+                      )}
                     </div>
                     <span
                       className={`inline-flex shrink-0 self-start rounded-md border px-2.5 py-1 text-xs font-medium leading-snug ${backupTrustBadgeClass(backupTrust.tier)}`}
@@ -298,7 +318,7 @@ export function ProjectExportControl({ hash }: Props) {
                       <span aria-hidden className="mr-1 select-none">
                         {backupTrustEmoji(backupTrust.tier)}
                       </span>
-                      {backupTrustTierLabel(backupTrust.tier)}
+                      {backupTrustTierLabelForKind(newestBackupKind, backupTrust.tier)}
                     </span>
                   </div>
 
@@ -419,7 +439,7 @@ export function ProjectExportControl({ hash }: Props) {
                                   <div className="mt-1 flex justify-between gap-2">
                                     <span>{b.status}</span>
                                     <span className="shrink-0 text-zinc-500 dark:text-zinc-500">
-                                      {backupTrustTierLabel(rowTrust.tier)}
+                                      {backupTrustTierLabelForKind(b.kind ?? "project_db", rowTrust.tier)}
                                     </span>
                                   </div>
                                 </li>

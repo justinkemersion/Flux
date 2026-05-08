@@ -27,6 +27,11 @@ Marketing tiers map to engines, but docs should use **engine** / **deployment mo
 | PostgREST | Pooled behind gateway | Usually per project |
 | Public edge | Flux gateway validates JWTs | Traefik → tenant API |
 | Isolation | Schema + role + gateway correctness | Physical + network separation |
+| User backups (`flux backup`) | Portable **tenant export** (`pg_dump --schema=t_<short>_api`) | Full project database dump |
+
+## Portable tenant backups (v2)
+
+On **v2_shared**, `flux backup create` produces a custom-format archive containing **only** your tenant API schema (`t_<shortId>_api`). Restoring it into any Postgres recreates your tables and data for portability or migration; it is **not** a guarantee of full shared-cluster disaster recovery (that remains platform operations: WAL/PITR, base backups, etc.). Use the same `flux backup verify --latest` flow as v1 — verification runs `pg_restore` in a disposable database.
 
 ## Example
 

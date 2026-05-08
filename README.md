@@ -502,6 +502,8 @@ Backup trust model:
 - Artifact validation only checks that the backup file exists and is non-empty.
 - Restore verification runs `pg_restore` in a disposable database.
 
+**v2_shared (pooled):** `flux backup create` stores a **portable tenant export** — `pg_dump -Fc` scoped to your `t_<shortId>_api` schema only (not the whole shared cluster). Same CLI commands and restore-verification loop; the catalog row is labeled `tenant_export`. Shared-cluster DR remains an operator concern.
+
 Full Sarah-friendly walkthrough: [`docs/guides/flux-v1-dedicated-sql-workflows.md`](./docs/guides/flux-v1-dedicated-sql-workflows.md). On [flux.vsl-base.com](https://flux.vsl-base.com/docs/guides/v1-dedicated-sql-workflows), the rendered page lives under **Guides → V1 dedicated quick SQL** (source: `docs/pages/guides/v1-dedicated-sql-workflows.md`).
 
 ---

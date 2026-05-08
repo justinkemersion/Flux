@@ -337,6 +337,7 @@ async function _init(): Promise<void> {
     CREATE TABLE IF NOT EXISTS project_backups (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL DEFAULT 'project_db',
       format TEXT NOT NULL DEFAULT 'pg_custom',
       local_path TEXT NOT NULL,
       size_bytes INTEGER,
@@ -358,6 +359,8 @@ async function _init(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS project_backups_project_created_idx
       ON project_backups (project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS project_backups_project_kind_created_idx
+      ON project_backups (project_id, kind, created_at DESC);
     CREATE INDEX IF NOT EXISTS project_backups_status_idx
       ON project_backups (status, created_at DESC);
     CREATE INDEX IF NOT EXISTS project_backups_offsite_status_idx
@@ -399,6 +402,13 @@ async function _init(): Promise<void> {
     UPDATE project_backups SET restore_verification_status = 'pending'
       WHERE restore_verification_status IN ('running');
     UPDATE project_backups SET created_at = NOW() WHERE created_at IS NULL;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'project_db';
+    UPDATE project_backups SET kind = 'project_db' WHERE kind IS NULL;
+    ALTER TABLE project_backups DROP CONSTRAINT IF EXISTS project_backups_kind_check;
+    ALTER TABLE project_backups ADD CONSTRAINT project_backups_kind_check
+      CHECK (kind IN ('project_db', 'tenant_export'));
+    CREATE INDEX IF NOT EXISTS project_backups_project_kind_created_idx
+      ON project_backups (project_id, kind, created_at DESC);
     ALTER TABLE project_backups ALTER COLUMN format SET DEFAULT 'pg_custom';
     ALTER TABLE project_backups ALTER COLUMN format SET NOT NULL;
     ALTER TABLE project_backups ALTER COLUMN status SET DEFAULT 'queued';
