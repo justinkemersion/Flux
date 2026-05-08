@@ -79,50 +79,52 @@ export async function createBackupForProject(input: {
     projectId: input.projectId,
     ttlMs: CREATE_LOCK_TTL_MS,
   });
-  const db = getDb();
-  const storage = getBackupStorage();
-  await storage.ensureRoots();
-
-  const [active] = await db
-    .select({ id: projectBackups.id })
-    .from(projectBackups)
-    .where(
-      and(
-        eq(projectBackups.projectId, input.projectId),
-        eq(projectBackups.status, "running"),
-      ),
-    )
-    .limit(1);
-  if (active) {
-    throw new Error("A backup operation is already running for this project.");
-  }
-
-  const [queued] = await db
-    .insert(projectBackups)
-    .values({
-      projectId: input.projectId,
-      localPath: "",
-      status: "queued",
-      offsiteStatus: "pending",
-      artifactValidationStatus: "pending",
-      restoreVerificationStatus: "pending",
-    })
-    .returning();
-  if (!queued) {
-    throw new Error("Failed to create backup queue row.");
-  }
-
-  const localPath = storage.localPathForBackup(input.projectId, queued.id);
-  await mkdir(path.dirname(localPath), {
-    recursive: true,
-  });
-
-  await db
-    .update(projectBackups)
-    .set({ status: "running", localPath, error: null })
-    .where(eq(projectBackups.id, queued.id));
-
+  let queuedId: string | null = null;
   try {
+    const db = getDb();
+    const storage = getBackupStorage();
+    await storage.ensureRoots();
+
+    const [active] = await db
+      .select({ id: projectBackups.id })
+      .from(projectBackups)
+      .where(
+        and(
+          eq(projectBackups.projectId, input.projectId),
+          eq(projectBackups.status, "running"),
+        ),
+      )
+      .limit(1);
+    if (active) {
+      throw new Error("A backup operation is already running for this project.");
+    }
+
+    const [queued] = await db
+      .insert(projectBackups)
+      .values({
+        projectId: input.projectId,
+        localPath: "",
+        status: "queued",
+        offsiteStatus: "pending",
+        artifactValidationStatus: "pending",
+        restoreVerificationStatus: "pending",
+      })
+      .returning();
+    if (!queued) {
+      throw new Error("Failed to create backup queue row.");
+    }
+    queuedId = queued.id;
+
+    const localPath = storage.localPathForBackup(input.projectId, queued.id);
+    await mkdir(path.dirname(localPath), {
+      recursive: true,
+    });
+
+    await db
+      .update(projectBackups)
+      .set({ status: "running", localPath, error: null })
+      .where(eq(projectBackups.id, queued.id));
+
     const pm = getProjectManager();
     const stream = await pm.getProjectCustomBackupStream(input.slug, input.hash);
     const hash = createHash("sha256");
@@ -149,10 +151,13 @@ export async function createBackupForProject(input: {
     }
     return completed;
   } catch (err: unknown) {
-    await db
-      .update(projectBackups)
-      .set({ status: "failed", error: err instanceof Error ? err.message : String(err) })
-      .where(eq(projectBackups.id, queued.id));
+    const db = getDb();
+    if (queuedId) {
+      await db
+        .update(projectBackups)
+        .set({ status: "failed", error: err instanceof Error ? err.message : String(err) })
+        .where(eq(projectBackups.id, queuedId));
+    }
     throw err;
   } finally {
     await releaseBackupLock(lockKey);
@@ -254,127 +259,130 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
     backupId,
     ttlMs: VERIFY_LOCK_TTL_MS,
   });
-  if (backup.status !== "complete") {
-    throw new Error("Backup must be complete before restore verification.");
-  }
-  const fs = await stat(backup.localPath);
-  if (!fs.isFile() || fs.size <= 0) {
-    throw new Error("Backup file does not exist or is empty.");
-  }
-  if (backup.restoreVerificationStatus === "restore_verified") {
-    return;
-  }
-
-  const verifyPassword = crypto.randomUUID().replace(/-/g, "");
-  const verifyName = `flux-backup-verify-${backup.id.slice(0, 12)}`;
-  const image = process.env.FLUX_BACKUP_VERIFY_POSTGRES_IMAGE?.trim() || "postgres:16-alpine";
-
-  await db
-    .update(projectBackups)
-    .set({
-      restoreVerificationStatus: "pending",
-      restoreVerificationError: null,
-    })
-    .where(eq(projectBackups.id, backup.id));
-
-  let created = false;
   try {
-    try {
-      await runDocker(["rm", "-f", verifyName]);
-    } catch {
-      // best-effort pre-cleanup
+    if (backup.status !== "complete") {
+      throw new Error("Backup must be complete before restore verification.");
     }
-    await runDocker([
-      "run",
-      "--rm",
-      "--name",
-      verifyName,
-      "-d",
-      "-e",
-      `POSTGRES_PASSWORD=${verifyPassword}`,
-      "-v",
-      `${backup.localPath}:/tmp/backup.dump:ro`,
-      image,
-    ]);
-    created = true;
-    await waitForPgReady(verifyName, 30_000);
+    const fs = await stat(backup.localPath);
+    if (!fs.isFile() || fs.size <= 0) {
+      throw new Error("Backup file does not exist or is empty.");
+    }
+    if (backup.restoreVerificationStatus === "restore_verified") {
+      return;
+    }
 
-    await runDocker([
-      "exec",
-      "-e",
-      `PGPASSWORD=${verifyPassword}`,
-      verifyName,
-      "pg_restore",
-      "-U",
-      "postgres",
-      "-d",
-      "postgres",
-      "--no-owner",
-      "--no-acl",
-      "/tmp/backup.dump",
-    ]);
-    const tableCountRaw = await runDocker([
-      "exec",
-      "-e",
-      `PGPASSWORD=${verifyPassword}`,
-      verifyName,
-      "psql",
-      "-U",
-      "postgres",
-      "-d",
-      "postgres",
-      "-v",
-      "ON_ERROR_STOP=1",
-      "-t",
-      "-A",
-      "-c",
-      "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema');",
-    ]);
-    const tableCount = Number.parseInt(tableCountRaw.trim(), 10);
-    if (!Number.isFinite(tableCount) || tableCount <= 0) {
-      throw new Error(
-        "Restore verification failed: no user tables found after pg_restore.",
-      );
-    }
-    await runDocker([
-      "exec",
-      "-e",
-      `PGPASSWORD=${verifyPassword}`,
-      verifyName,
-      "psql",
-      "-U",
-      "postgres",
-      "-d",
-      "postgres",
-      "-v",
-      "ON_ERROR_STOP=1",
-      "-c",
-      "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog','information_schema','pg_toast');",
-    ]);
+    const verifyPassword = crypto.randomUUID().replace(/-/g, "");
+    const verifyName = `flux-backup-verify-${backup.id.slice(0, 12)}`;
+    const image = process.env.FLUX_BACKUP_VERIFY_POSTGRES_IMAGE?.trim() || "postgres:16-alpine";
+
     await db
       .update(projectBackups)
       .set({
-        restoreVerificationStatus: "restore_verified",
-        restoreVerificationAt: new Date(),
+        restoreVerificationStatus: "pending",
+        restoreVerificationError: null,
       })
       .where(eq(projectBackups.id, backup.id));
-  } catch (err: unknown) {
-    await db
-      .update(projectBackups)
-      .set({
-        restoreVerificationStatus: "restore_failed",
-        restoreVerificationError: err instanceof Error ? err.message : String(err),
-      })
-      .where(eq(projectBackups.id, backup.id));
-    throw err;
-  } finally {
-    if (created) {
+
+    let created = false;
+    try {
       try {
         await runDocker(["rm", "-f", verifyName]);
       } catch {
-        // Container may already be removed; ignore cleanup failures.
+        // best-effort pre-cleanup
+      }
+      await runDocker([
+        "run",
+        "--rm",
+        "--name",
+        verifyName,
+        "-d",
+        "-e",
+        `POSTGRES_PASSWORD=${verifyPassword}`,
+        "-v",
+        `${backup.localPath}:/tmp/backup.dump:ro`,
+        image,
+      ]);
+      created = true;
+      await waitForPgReady(verifyName, 30_000);
+
+      await runDocker([
+        "exec",
+        "-e",
+        `PGPASSWORD=${verifyPassword}`,
+        verifyName,
+        "pg_restore",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "--no-owner",
+        "--no-acl",
+        "/tmp/backup.dump",
+      ]);
+      const tableCountRaw = await runDocker([
+        "exec",
+        "-e",
+        `PGPASSWORD=${verifyPassword}`,
+        verifyName,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-t",
+        "-A",
+        "-c",
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema');",
+      ]);
+      const tableCount = Number.parseInt(tableCountRaw.trim(), 10);
+      if (!Number.isFinite(tableCount) || tableCount <= 0) {
+        throw new Error(
+          "Restore verification failed: no user tables found after pg_restore.",
+        );
+      }
+      await runDocker([
+        "exec",
+        "-e",
+        `PGPASSWORD=${verifyPassword}`,
+        verifyName,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog','information_schema','pg_toast');",
+      ]);
+      await db
+        .update(projectBackups)
+        .set({
+          restoreVerificationStatus: "restore_verified",
+          restoreVerificationAt: new Date(),
+        })
+        .where(eq(projectBackups.id, backup.id));
+    } catch (err: unknown) {
+      await db
+        .update(projectBackups)
+        .set({
+          restoreVerificationStatus: "restore_failed",
+          restoreVerificationError: err instanceof Error ? err.message : String(err),
+        })
+        .where(eq(projectBackups.id, backup.id));
+      throw err;
+    } finally {
+      if (created) {
+        try {
+          await runDocker(["rm", "-f", verifyName]);
+        } catch {
+          // Container may already be removed; ignore cleanup failures.
+        }
       }
     }
+  } finally {
     await releaseBackupLock(lockKey);
   }
 }
