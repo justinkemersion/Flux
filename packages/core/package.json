@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./standalone": "./src/standalone.ts",
     "./api-schema-strategy": "./src/api-schema-strategy.ts",
-    "./migration-status": "./src/migration-status.ts"
+    "./migration-status": "./src/migration-status.ts",
+    "./backup-trust": "./src/backup-trust.ts"
   },
   "scripts": {
     "test": "tsx --test src/**/*.test.ts"
