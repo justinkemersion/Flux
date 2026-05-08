@@ -24,6 +24,7 @@ export default defineConfig({
   // Single-file bundle for `curl …/api/install/cli | node` — no adjacent node_modules.
   // Do not bundle `@flux/core` (root): it pulls dockerode / native addons. Use `@flux/core/standalone` only.
   noExternal: [
+    "@flux/core/backup-trust",
     "@flux/core/standalone",
     "@flux/sdk",
     "chalk",

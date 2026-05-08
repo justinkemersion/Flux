@@ -1,6 +1,12 @@
 "use client";
 
-import { X } from "lucide-react";
+import {
+  backupTrustTierLabel,
+  BACKUP_TRUST_REMEDIATION_CLI,
+  classifyNewestBackup,
+  type BackupTrustTier,
+} from "@flux/core/backup-trust";
+import { ChevronDown, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -17,6 +23,23 @@ type BackupItem = {
   artifactValidationStatus?: string | null;
   restoreVerificationStatus?: string | null;
 };
+
+function backupTrustBadgeClass(tier: BackupTrustTier): string {
+  switch (tier) {
+    case "restorable":
+      return "border-emerald-700/70 bg-emerald-950/50 text-emerald-100";
+    case "restore_failed":
+      return "border-rose-700/70 bg-rose-950/40 text-rose-100";
+    default:
+      return "border-amber-700/60 bg-amber-950/30 text-amber-100";
+  }
+}
+
+function backupTrustEmoji(tier: BackupTrustTier): string {
+  if (tier === "restorable") return "✓";
+  if (tier === "restore_failed") return "✗";
+  return "⚠";
+}
 
 /**
  * Project export controls for SQL dump streaming.
@@ -40,6 +63,8 @@ export function ProjectExportControl({ hash }: Props) {
     const base = `/api/cli/v1/projects/${encodeURIComponent(hash)}/dump`;
     return q.length > 0 ? `${base}?${q}` : base;
   }, [clean, dataOnly, hash, schemaOnly]);
+
+  const backupTrust = useMemo(() => classifyNewestBackup(backups), [backups]);
 
   function onSchemaToggle(): void {
     setSchemaOnly((prev) => {
@@ -205,9 +230,61 @@ export function ProjectExportControl({ hash }: Props) {
                   <div className="mt-3 text-xs text-zinc-400">
                     {backupsLoading ? "Loading backups..." : `Backups: ${String(backups.length)}`}
                   </div>
-                  {backups[0] ? (
-                    <div className="mt-1 text-xs text-zinc-400">
-                      Last backup: {backups[0].createdAt ?? "-"} | offsite: {backups[0].offsiteStatus ?? "-"} | artifact validation: {backups[0].artifactValidationStatus ?? "-"} | restore verify: {backups[0].restoreVerificationStatus ?? "-"}
+                  {!backupsLoading ? (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex rounded border px-2 py-0.5 text-[11px] font-medium ${backupTrustBadgeClass(backupTrust.tier)}`}
+                        >
+                          {backupTrustEmoji(backupTrust.tier)}{" "}
+                          {backupTrustTierLabel(backupTrust.tier)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-400">{backupTrust.detail}</p>
+                      {backups[0] ? (
+                        <p className="text-xs text-zinc-500">
+                          Newest: {backups[0].createdAt ?? "-"} · offsite{" "}
+                          {backups[0].offsiteStatus ?? "-"}
+                        </p>
+                      ) : null}
+                      {!backupTrust.allowsDestructiveWithoutOverride ? (
+                        <p className="text-[11px] leading-relaxed text-zinc-500">
+                          <span className="text-zinc-600">CLI:</span>{" "}
+                          <code className="break-all text-zinc-400">
+                            {BACKUP_TRUST_REMEDIATION_CLI}
+                          </code>
+                        </p>
+                      ) : null}
+                      {backups.length > 1 ? (
+                        <details className="group rounded border border-zinc-800 bg-black/40">
+                          <summary className="flex cursor-pointer list-none items-center gap-1 px-2 py-2 text-[11px] text-zinc-400 [&::-webkit-details-marker]:hidden">
+                            <ChevronDown
+                              className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180"
+                              aria-hidden
+                            />
+                            Older backups ({String(backups.length - 1)})
+                          </summary>
+                          <ul className="max-h-40 overflow-y-auto border-t border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
+                            {backups.slice(1).map((b) => {
+                              const rowTrust = classifyNewestBackup([b]);
+                              return (
+                                <li
+                                  key={b.id}
+                                  className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 border-b border-zinc-900 py-1.5 text-[10px] last:border-b-0"
+                                >
+                                  <span className="font-mono text-zinc-500">
+                                    {b.id.slice(0, 8)}…
+                                  </span>
+                                  <span className="text-zinc-600">{b.status}</span>
+                                  <span className="shrink-0 text-zinc-500">
+                                    {backupTrustTierLabel(rowTrust.tier)}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </details>
+                      ) : null}
                     </div>
                   ) : null}
                   {backupError ? (

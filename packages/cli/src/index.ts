@@ -8,6 +8,12 @@ import type {
   FluxProjectEnvEntry,
   FluxProjectSummary,
 } from "@flux/core/standalone";
+import {
+  backupTrustTierLabel,
+  BACKUP_TRUST_REMEDIATION_CLI,
+  classifyNewestBackup,
+  destructiveBackupCheckMessage,
+} from "@flux/core/backup-trust";
 import { fluxTenantDockerResourceNames } from "@flux/core/standalone";
 import chalk from "chalk";
 import { Command } from "commander";
@@ -305,9 +311,61 @@ async function cmdCors(options: {
   }
 }
 
+async function ensureRestoreVerifiedLatestBackup(
+  client: ReturnType<typeof getApiClient>,
+  hash: string,
+  skipBackupCheck: boolean,
+): Promise<void> {
+  if (skipBackupCheck) return;
+  const meta = await client.getProjectMetadata(hash);
+  if (meta.mode !== "v1_dedicated") return;
+  const backups = await client.listProjectBackups(hash);
+  const c = classifyNewestBackup(backups);
+  if (!c.allowsDestructiveWithoutOverride) {
+    throw new Error(destructiveBackupCheckMessage(c));
+  }
+}
+
+function printBackupTrustSummary(classification: ReturnType<typeof classifyNewestBackup>): void {
+  const label = backupTrustTierLabel(classification.tier);
+  if (classification.tier === "restorable") {
+    console.log(
+      chalk.green("✓"),
+      chalk.white("Latest backup is "),
+      chalk.green.bold("restorable"),
+      chalk.white(" ("),
+      chalk.dim("restore_verified"),
+      chalk.white(")."),
+    );
+    console.log(chalk.dim("  This project has a verified restorable backup."));
+    return;
+  }
+  if (classification.tier === "restore_failed") {
+    console.log(
+      chalk.red("✗"),
+      chalk.white.bold(label),
+      chalk.dim(` — ${classification.detail}`),
+    );
+  } else if (classification.tier === "not_restore_verified") {
+    console.log(
+      chalk.yellow("⚠"),
+      chalk.white.bold(label),
+      chalk.dim(` — ${classification.detail}`),
+    );
+  } else {
+    console.log(
+      chalk.yellow("⚠"),
+      chalk.white(label + "."),
+      chalk.dim(` ${classification.detail}`),
+    );
+  }
+  console.log(chalk.dim(`  Next: ${BACKUP_TRUST_REMEDIATION_CLI}`));
+}
+
 async function cmdDbReset(
   project: string,
   yes: boolean,
+  skipBackupCheck: boolean,
   cliHash: string | undefined,
   flux: FluxJson | null,
 ): Promise<void> {
@@ -319,6 +377,7 @@ async function cmdDbReset(
   const slug = resolveProjectSlug(project, flux, "-p, --project");
   const client = getApiClient();
   const hash = resolveHash(cliHash, flux);
+  await ensureRestoreVerifiedLatestBackup(client, hash, skipBackupCheck);
   console.log(
     chalk.blue(
       `Resetting database for ${chalk.bold(slug)} (drop public + auth, reapply Flux bootstrap)…`,
@@ -475,6 +534,7 @@ async function cmdBackupList(
   name: string | undefined,
   projectOpt: string | undefined,
   cliHash: string | undefined,
+  verbose: boolean,
   flux: FluxJson | null,
 ): Promise<void> {
   const fromCli = projectOpt?.trim() || name;
@@ -482,20 +542,36 @@ async function cmdBackupList(
   const hash = resolveHash(cliHash, flux);
   const client = getApiClient();
   const backups = await client.listProjectBackups(hash);
+  sectionBanner("Backups");
+  const classification = classifyNewestBackup(backups);
+  printBackupTrustSummary(classification);
+  console.log();
   if (backups.length === 0) {
-    console.log(chalk.dim("No backups found."));
+    console.log(chalk.dim("  No backup rows yet."));
     return;
   }
-  sectionBanner("Backups");
-  console.log(
-    chalk.dim(
-      "  ID                                   STATUS     SIZE       CREATED                    VALIDATION        RESTORE_VERIFY",
-    ),
-  );
-  for (const row of backups) {
+  if (verbose) {
     console.log(
-      `  ${chalk.cyan(row.id.padEnd(36))} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending")}`,
+      chalk.dim(
+        "  ID                                   STATUS     SIZE       CREATED                    VALIDATION        RESTORE_VERIFY",
+      ),
     );
+    for (const row of backups) {
+      console.log(
+        `  ${chalk.cyan(row.id.padEnd(36))} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending")}`,
+      );
+    }
+    return;
+  }
+  console.log(chalk.dim("  History (newest first) — use --verbose for full columns"));
+  console.log(chalk.dim("  ID          CREATED                  TRUST"));
+  for (let i = 0; i < backups.length; i++) {
+    const row = backups[i]!;
+    const rowTrust = classifyNewestBackup([row]);
+    const trustShort = backupTrustTierLabel(rowTrust.tier);
+    const idShort = row.id.length > 8 ? `${row.id.slice(0, 8)}…` : row.id;
+    const line = `  ${idShort.padEnd(12)} ${(row.createdAt ?? "-").padEnd(24)} ${trustShort}`;
+    console.log(i === 0 ? line : chalk.dim(line));
   }
 }
 
@@ -701,6 +777,7 @@ async function cmdNuke(
   name: string | undefined,
   yes: boolean,
   forceOrphan: boolean,
+  skipBackupCheck: boolean,
   cliHash: string | undefined,
   flux: FluxJson | null,
 ): Promise<void> {
@@ -725,6 +802,10 @@ async function cmdNuke(
     }
   }
   const client = getApiClient();
+  // Orphan purge has no catalog row; backups API is unavailable.
+  if (!forceOrphan) {
+    await ensureRestoreVerifiedLatestBackup(client, hash, skipBackupCheck);
+  }
   const names = fluxTenantDockerResourceNames(slug, hash);
   for (const r of [names.api, names.db, names.volume, names.network] as const) {
     console.log(`PURGING: ${r}`);
@@ -968,6 +1049,11 @@ async function main(): Promise<void> {
       "After success, drop the tenant from the shared cluster (destructive)",
       false,
     )
+    .option(
+      "--skip-backup-check",
+      "Skip the notice that v2_shared has no flux backup verify loop (v1 dedicated only)",
+      false,
+    )
     .option("--hash <hex>", hashFlagDesc);
 
   migrateCmd.action(async () => {
@@ -982,6 +1068,7 @@ async function main(): Promise<void> {
         newJwtSecret: boolean;
         noLockWrites: boolean;
         dropSourceAfter: boolean;
+        skipBackupCheck: boolean;
         hash?: string;
       }>();
       if (opts.to !== "v1_dedicated") {
@@ -1004,6 +1091,13 @@ async function main(): Promise<void> {
       if (meta.mode !== "v2_shared") {
         throw new Error(
           `flux migrate requires v2_shared; this project is ${meta.mode}.`,
+        );
+      }
+      if (opts.skipBackupCheck !== true) {
+        console.error(
+          chalk.yellow(
+            "Note: flux backup create / verify applies to v1_dedicated only; migrate uses a live pg_dump from the pooled cluster. Ensure you are comfortable with this path before proceeding.",
+          ),
         );
       }
       if (opts.staged && opts.newJwtSecret) {
@@ -1040,6 +1134,11 @@ async function main(): Promise<void> {
       "Project slug (default: \"slug\" in flux.json)",
     )
     .option("-y, --yes", "confirm", false)
+    .option(
+      "--skip-backup-check",
+      "Allow reset even when the latest v1 backup is not restore-verified (dangerous)",
+      false,
+    )
     .option("--hash <hex>", hashFlagDesc);
 
   dbReset.action(async () => {
@@ -1047,10 +1146,17 @@ async function main(): Promise<void> {
       const opts = dbReset.opts<{
         project?: string;
         yes: boolean;
+        skipBackupCheck: boolean;
         hash?: string;
       }>();
       const flux = await readFluxJson(process.cwd());
-      await cmdDbReset(opts.project ?? "", opts.yes, opts.hash, flux);
+      await cmdDbReset(
+        opts.project ?? "",
+        opts.yes,
+        opts.skipBackupCheck === true,
+        opts.hash,
+        flux,
+      );
     } catch (err: unknown) {
       printErrorAndExit(err);
     }
@@ -1309,13 +1415,28 @@ async function main(): Promise<void> {
       "-p, --project <name>",
       "Project slug (overrides positional if set)",
     )
-    .option("--hash <hex>", hashFlagDesc);
+    .option("--hash <hex>", hashFlagDesc)
+    .option(
+      "--verbose",
+      "Print full-width columns for every backup (default: compact history)",
+      false,
+    );
 
   backupListCmd.action(async (name: string | undefined) => {
     try {
-      const opts = backupListCmd.opts<{ project?: string; hash?: string }>();
+      const opts = backupListCmd.opts<{
+        project?: string;
+        hash?: string;
+        verbose: boolean;
+      }>();
       const flux = await readFluxJson(process.cwd());
-      await cmdBackupList(name, opts.project, opts.hash, flux);
+      await cmdBackupList(
+        name,
+        opts.project,
+        opts.hash,
+        opts.verbose === true,
+        flux,
+      );
     } catch (err: unknown) {
       printErrorAndExit(err);
     }
@@ -1477,6 +1598,11 @@ async function main(): Promise<void> {
       "No catalog row: still purge orphaned Docker resources for this slug+hash (same flux.json)",
       false,
     )
+    .option(
+      "--skip-backup-check",
+      "Allow nuke even when the latest v1 backup is not restore-verified (dangerous)",
+      false,
+    )
     .option("--hash <hex>", hashFlagDesc);
 
   nukeCmd.action(async (name: string | undefined) => {
@@ -1484,6 +1610,7 @@ async function main(): Promise<void> {
       const opts = nukeCmd.opts<{
         yes: boolean;
         force?: boolean;
+        skipBackupCheck: boolean;
         hash?: string;
       }>();
       const flux = await readFluxJson(process.cwd());
@@ -1491,6 +1618,7 @@ async function main(): Promise<void> {
         name,
         opts.yes,
         opts.force === true,
+        opts.skipBackupCheck === true,
         opts.hash,
         flux,
       );
