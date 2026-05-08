@@ -553,31 +553,33 @@ async function cmdBackupList(
   sectionBanner("Backups");
   const classification = classifyNewestBackup(backups);
   printBackupTrustSummary(classification);
-  if (reconciledAt) {
+  if (verbose) {
+    if (reconciledAt) {
+      console.log(
+        chalk.dim(`  Checked artifacts on server at ${reconciledAt}.`),
+      );
+    }
+    if (backupVolumeAbsoluteRoot) {
+      console.log(
+        chalk.dim(`  Backup volume root on API server: ${backupVolumeAbsoluteRoot}`),
+      );
+    }
+    if (backups[0]?.primaryArtifactAbsolutePath) {
+      console.log(
+        chalk.dim(`  Newest artifact (absolute on API server): ${backups[0].primaryArtifactAbsolutePath}`),
+      );
+    }
+    if (backups[0]?.primaryArtifactRelativePath) {
+      console.log(
+        chalk.dim(`  Relative to volume root: ${backups[0].primaryArtifactRelativePath}`),
+      );
+    }
     console.log(
-      chalk.dim(`  Checked artifacts on server at ${reconciledAt}.`),
+      chalk.dim(
+        "  Host ls at the volume path can be empty when flux-web uses a Docker named volume — dumps live inside the volume; use docker exec against flux-web or bind-mount for host-visible files.",
+      ),
     );
   }
-  if (backupVolumeAbsoluteRoot) {
-    console.log(
-      chalk.dim(`  Backup volume root on API server: ${backupVolumeAbsoluteRoot}`),
-    );
-  }
-  if (backups[0]?.primaryArtifactAbsolutePath) {
-    console.log(
-      chalk.dim(`  Newest artifact (absolute on API server): ${backups[0].primaryArtifactAbsolutePath}`),
-    );
-  }
-  if (backups[0]?.primaryArtifactRelativePath) {
-    console.log(
-      chalk.dim(`  Relative to volume root: ${backups[0].primaryArtifactRelativePath}`),
-    );
-  }
-  console.log(
-    chalk.dim(
-      "  Host ls at the volume path can be empty when flux-web uses a Docker named volume — dumps live inside the volume; use docker exec against flux-web or bind-mount for host-visible files.",
-    ),
-  );
   console.log();
   if (backups.length === 0) {
     console.log(chalk.dim("  No backup rows yet."));
@@ -596,14 +598,17 @@ async function cmdBackupList(
     }
     return;
   }
-  console.log(chalk.dim("  History (newest first) — use --verbose for full columns"));
-  console.log(chalk.dim("  ID          CREATED                  TRUST"));
+  console.log(
+    chalk.dim(
+      "  History (newest first) — use --verbose for reconcile/paths detail + full technical columns",
+    ),
+  );
+  console.log(chalk.dim("  ID                                   CREATED                    TRUST"));
   for (let i = 0; i < backups.length; i++) {
     const row = backups[i]!;
     const rowTrust = classifyNewestBackup([row]);
     const trustShort = backupTrustTierLabel(rowTrust.tier);
-    const idShort = row.id.length > 8 ? `${row.id.slice(0, 8)}…` : row.id;
-    const line = `  ${idShort.padEnd(12)} ${(row.createdAt ?? "-").padEnd(24)} ${trustShort}`;
+    const line = `  ${row.id.padEnd(36)} ${(row.createdAt ?? "-").padEnd(25)} ${trustShort}`;
     console.log(i === 0 ? line : chalk.dim(line));
   }
 }
@@ -1451,7 +1456,7 @@ async function main(): Promise<void> {
     .option("--hash <hex>", hashFlagDesc)
     .option(
       "--verbose",
-      "Print full-width columns for every backup (default: compact history)",
+      "Include reconcile timestamps / artifact paths + full-width columns per backup",
       false,
     );
 
