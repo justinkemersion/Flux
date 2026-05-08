@@ -22,6 +22,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+# docker-cli reads ${HOME}/.docker/config.json; without this, uid 1001 may inherit HOME=/root and warn / fail.
+ENV HOME=/app
+ENV DOCKER_CONFIG=/app/.docker
 
 # `flux migrate` (and related routes) run `pg_dump` against the shared cluster from this process.
 # util-linux provides `setpriv` so the entrypoint can drop to `nextjs` without losing the docker GID (see flux-web-entrypoint.sh).
@@ -37,6 +40,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/public ./apps/dash
 
 COPY docker/web/flux-web-entrypoint.sh /flux-web-entrypoint.sh
 RUN chmod +x /flux-web-entrypoint.sh
+
+RUN mkdir -p /app/.docker && chown -R nextjs:nodejs /app/.docker
 
 USER root
 EXPOSE 3000

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { promisify } from "node:util";
@@ -248,6 +248,63 @@ async function runDocker(args: string[]): Promise<string> {
   }
 }
 
+/**
+ * Stream a pg_dump custom-format file into `pg_restore` inside the container.
+ * Avoids bind-mounting `backup.localPath`: that path lives in flux-web's filesystem, but
+ * `docker run -v` sources are resolved on the Docker **host**, so the mount often becomes an empty directory.
+ */
+async function pipeBackupFileToPgRestoreInContainer(
+  containerName: string,
+  password: string,
+  backupFilePath: string,
+): Promise<void> {
+  const child = spawn(
+    "docker",
+    [
+      "exec",
+      "-i",
+      "-e",
+      `PGPASSWORD=${password}`,
+      containerName,
+      "pg_restore",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "--no-owner",
+      "--no-acl",
+      "-",
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+
+  const stderrChunks: Buffer[] = [];
+  child.stderr?.on("data", (c: Buffer) => {
+    stderrChunks.push(c);
+  });
+
+  const closeCode = new Promise<number>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => resolve(code ?? 1));
+  });
+
+  if (!child.stdin) {
+    throw new Error("pg_restore pipe: missing stdin on docker exec.");
+  }
+
+  const src = createReadStream(backupFilePath);
+  await pipeline(src, child.stdin);
+  const code = await closeCode;
+  const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+  if (code !== 0) {
+    throw new Error(
+      stderr.length > 0
+        ? `pg_restore failed (${String(code)}): ${stderr.slice(0, 1500)}`
+        : `pg_restore failed (exit ${String(code)}).`,
+    );
+  }
+}
+
 async function waitForPgReady(containerName: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -317,27 +374,16 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         "-d",
         "-e",
         `POSTGRES_PASSWORD=${verifyPassword}`,
-        "-v",
-        `${backup.localPath}:/tmp/backup.dump:ro`,
         image,
       ]);
       created = true;
       await waitForPgReady(verifyName, 30_000);
 
-      await runDocker([
-        "exec",
-        "-e",
-        `PGPASSWORD=${verifyPassword}`,
+      await pipeBackupFileToPgRestoreInContainer(
         verifyName,
-        "pg_restore",
-        "-U",
-        "postgres",
-        "-d",
-        "postgres",
-        "--no-owner",
-        "--no-acl",
-        "/tmp/backup.dump",
-      ]);
+        verifyPassword,
+        backup.localPath,
+      );
       const tableCountRaw = await runDocker([
         "exec",
         "-e",
