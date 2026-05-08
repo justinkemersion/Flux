@@ -19,6 +19,8 @@ Flux configuration spans **repo-level** developer ergonomics and **per-project**
 
 Place **`flux.json`** at a repository root with **`slug`** and **`hash`** (both from **`flux list`**) so commands like **`flux push db/migrations/0001_moods.sql`** resolve the project **without** repeating **`--project`** / **`--hash`** on every invocation.
 
+Commands that accept **`--project`** and **`--hash`**—including **`flux migrate`**—do **not** require **`flux.json`** when you pass both flags every time from any working directory.
+
 ### Dashboard
 
 Project screens surface **Service URL**, engine, and rotation controls for secrets—prefer UI + API over ad-hoc container edits.

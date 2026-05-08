@@ -30,7 +30,7 @@ So you need:
 
 1. A working **CLI login** to the same control plane that owns the project.
 2. For **hosted** deployments, the CLI can infer **`FLUX_API_BASE`** from **`FLUX_URL`** (or **`NEXT_PUBLIC_FLUX_URL`**) when those point at a **`*.vsl-base.com`** tenant host—see [Installation](/docs/getting-started/installation) and [Environment variables](/docs/reference/env-vars). **Self-hosted** still needs an explicit **`FLUX_API_BASE`** if your Service URL is on a custom domain.
-3. **`flux.json`** at the repo root (or **`--project`** / **`--hash`** every time) so the CLI resolves slug and hash consistently.
+3. The project **slug** and **seven-character hash** from **`flux list`** (or the dashboard), passed on every command as **`--project <slug>`** and **`--hash <hex>`**. A repo-root **`flux.json`** with the same **`slug`** and **`hash`** is optional—it only saves repeating those flags for other CLI commands like **`flux push`**; **`flux migrate` does not require it**. See [Configuration](/docs/reference/config).
 
 The control plane runs **`pg_dump`** against the **shared cluster** during migration. That binary must exist **on the host that runs the dashboard**, not merely on your laptop.
 
@@ -43,13 +43,13 @@ The control plane runs **`pg_dump`** against the **shared cluster** during migra
 
 ## Step 1 — Plan without changing anything
 
-From your app repo (where **`flux.json`** lives):
+Run from any directory (the examples use **`-p`** / **`--hash`** explicitly):
 
 ```bash
 flux migrate -p bloom-atelier --hash 61d9dff --to v1_dedicated --dry-run
 ```
 
-Use your real **slug** and **hash** from **`flux list`**. Inspect the printed **`plan`** and **`preflight`** (schemas, table counts, etc.). Fix surprises before you add **`--yes`**.
+Use your real **slug** and **hash** from **`flux list`**. If you keep a **`flux.json`** for **`flux push`**, you may omit those flags when your shell **current working directory** is that repo—**`migrate` still validates** that the hash’s slug matches **`-p`** when both are present. Inspect the printed **`plan`** and **`preflight`** (schemas, table counts, etc.). Fix surprises before you add **`--yes`**.
 
 ## Step 2 — Optional: dump-only (still no engine flip)
 
@@ -117,7 +117,7 @@ Re-run your smoke tests (`curl` or app E2E) before you announce cutover.
 - **`invalid command \restrict`** during restore: newer **`pg_dump`** can emit psql meta-commands **`\\restrict`** and **`\\unrestrict`** that older **`psql`** inside the tenant Postgres image rejects. Flux strips those lines when the dedicated server reports a major version **before 17**, and runs **`replaceTenantApiSchemaFromPlainSqlFile`** restores through the same prepared-dump path as **`importSqlFile`**. Deploy an updated **`flux-web`** build, then retry **`--staged`** or full migrate.
 - **`role "service_role" does not exist`** on PostgREST OpenAPI probe: dedicated bootstrap must create **`service_role`** and grant it through **`authenticator`** (same as **`anon`** / **`authenticated`**). Deploy a **`flux-web`** build that includes the updated tenant bootstrap, then **`nuke`** + reprovision or run migrate again so a fresh Postgres volume picks up the new roles. Older dedicated volumes need a one-off **`CREATE ROLE service_role`** + **`GRANT … TO authenticator`** + schema grants if you cannot recreate the DB.
 - **`Request failed` / wrong project**: confirm **`FLUX_API_BASE`** points at **your** dashboard **`/api`** origin, not only at the tenant API host.
-- **Slug/hash mismatch**: align **`flux.json`** with **`flux list`** for the same token.
+- **Slug/hash mismatch**: the **`-p`** slug must match the project that owns the **`--hash`** row in **`flux list`** for your API token. If you use **`flux.json`**, its **`slug`** / **`hash`** must match that same row—otherwise pass explicit **`-p`** / **`--hash`** and ignore or fix the file.
 
 ## Next steps
 
