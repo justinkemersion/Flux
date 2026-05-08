@@ -99,6 +99,18 @@ export function sanitizePlainSqlDumpForPostgresMajor(
       out = out.replace(pattern, "");
     }
   }
+  // pg_dump from PostgreSQL 17.6+ may emit `\restrict` / `\unrestrict` psql meta-commands (CVE
+  // mitigation). Tenant images often ship psql matching an older server major (e.g. 15), which
+  // rejects those lines. Flux-generated migrate dumps are trusted; strip for older targets.
+  if (serverMajor < 17) {
+    out = out
+      .split(/\r?\n/)
+      .filter((line) => {
+        const t = line.trimStart();
+        return !t.startsWith("\\restrict") && !t.startsWith("\\unrestrict");
+      })
+      .join("\n");
+  }
   return out;
 }
 

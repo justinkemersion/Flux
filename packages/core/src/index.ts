@@ -2715,34 +2715,43 @@ export class ProjectManager {
       `DROP SCHEMA IF EXISTS ${q} CASCADE;`,
       POSTGRES_USER,
     );
-    await runPsqlHostFileInsideContainer(
-      this.docker,
-      containerId,
-      password,
+    const materialized = await materializePreparedSqlFile(
       hostFilePath,
-      POSTGRES_USER,
+      { sanitizeForTarget: true },
+      () => queryPostgresMajorVersion(this.docker, containerId, password),
     );
-    await runPsqlSqlInsideContainer(
-      this.docker,
-      containerId,
-      password,
-      buildApiSchemaPrivilegesSql(apiSchemaName),
-      POSTGRES_USER,
-    );
-    await runPsqlSqlInsideContainer(
-      this.docker,
-      containerId,
-      password,
-      `NOTIFY pgrst, 'reload schema';`,
-      POSTGRES_USER,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const apiName = postgrestContainerName(hash, slug);
     try {
-      await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
-    } catch (err: unknown) {
-      const code = getHttpStatus(err);
-      if (code !== 404 && code !== 409) throw err;
+      await runPsqlHostFileInsideContainer(
+        this.docker,
+        containerId,
+        password,
+        materialized.path,
+        POSTGRES_USER,
+      );
+      await runPsqlSqlInsideContainer(
+        this.docker,
+        containerId,
+        password,
+        buildApiSchemaPrivilegesSql(apiSchemaName),
+        POSTGRES_USER,
+      );
+      await runPsqlSqlInsideContainer(
+        this.docker,
+        containerId,
+        password,
+        `NOTIFY pgrst, 'reload schema';`,
+        POSTGRES_USER,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const apiName = postgrestContainerName(hash, slug);
+      try {
+        await this.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
+      } catch (err: unknown) {
+        const code = getHttpStatus(err);
+        if (code !== 404 && code !== 409) throw err;
+      }
+    } finally {
+      await materialized.cleanup();
     }
   }
 

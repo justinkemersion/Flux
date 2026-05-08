@@ -101,6 +101,7 @@ Re-run your smoke tests (`curl` or app E2E) before you announce cutover.
 ## Troubleshooting
 
 - **`pg_dump` not found** on the control plane: the dashboard container must ship **`pg_dump`** (Alpine **`postgresql*-client`** in `apps/dashboard/Dockerfile`). If you still see this after a deploy, confirm you rebuilt **`flux-web`** (`bin/deploy-web.sh`), not only restarted an old image. Your laptop having **`pg_dump`** does not affect migrate—the API handler runs on the server.
+- **`invalid command \restrict`** during restore: newer **`pg_dump`** can emit psql meta-commands **`\\restrict`** and **`\\unrestrict`** that older **`psql`** inside the tenant Postgres image rejects. Flux strips those lines when the dedicated server reports a major version **before 17**, and runs **`replaceTenantApiSchemaFromPlainSqlFile`** restores through the same prepared-dump path as **`importSqlFile`**. Deploy an updated **`flux-web`** build, then retry **`--staged`** or full migrate.
 - **`Request failed` / wrong project**: confirm **`FLUX_API_BASE`** points at **your** dashboard **`/api`** origin, not only at the tenant API host.
 - **Slug/hash mismatch**: align **`flux.json`** with **`flux list`** for the same token.
 
