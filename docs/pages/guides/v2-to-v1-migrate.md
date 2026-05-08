@@ -18,7 +18,11 @@ This page is about **changing execution engine** for an existing project. It is 
 
 ## The idea
 
-**v2 shared** and **v1 dedicated** are both real PostgreSQL-backed stacks; the difference is **where** data lives and **how strong** the isolation boundary is. Teams often start on pooled infrastructure, then move a project to dedicated when policy, risk, or operations call for a container-level boundary. That is a product choice—not a statement that pooled mode is “fake.”
+**v2 shared** and **v1 dedicated** are both real PostgreSQL-backed stacks; the difference is **where** data lives and **how strong** the isolation boundary is. In practice, **v2 shared** is often where people first learn Flux—free tier, shared cluster, and neighbor load can mean higher latency or tighter limits than a dedicated stack. None of that makes pooled mode a toy; it is a different deployment model.
+
+The **v1** / **v2** labels name **execution strategies** (dedicated containers versus pooled cluster), not a universal “newer is better” ranking. Choose dedicated when isolation, compliance posture, or predictable capacity outweigh the operational simplicity of shared infrastructure.
+
+Teams often start on pooled infrastructure, then move a project to dedicated when policy, risk, or operations call for a container-level boundary. That is a product choice—not a statement that pooled mode is “fake.”
 
 **`flux migrate`** talks to the **control plane API** (`…/api/cli/v1/migrate`), not to your tenant **Service URL** (`https://api--<slug>--<hash>.…`). Your browser and server components call the Service URL for rows; the CLI calls the dashboard API to provision, dump, and flip **`projects.mode`**.
 
