@@ -191,7 +191,16 @@ export async function runV2SharedToV1DedicatedMigration(input: {
     };
   }
 
-  const preflight = await withSharedClient((q) => loadPreflight(q, plan));
+  let preflight: Awaited<ReturnType<typeof loadPreflight>>;
+  try {
+    preflight = await withSharedClient((q) => loadPreflight(q, plan));
+  } catch (e: unknown) {
+    return {
+      ok: false,
+      phase: "failed",
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
   try {
     assertSchemaOwnershipComment(plan, preflight);
   } catch (e: unknown) {
@@ -224,18 +233,26 @@ export async function runV2SharedToV1DedicatedMigration(input: {
   }
 
   if (payload.dumpOnly === true) {
-    assertSharedPostgresUrlConfigured();
-    assertPgDumpOnPath();
-    const path = await pgDumpTenantSchemaToFile({
-      databaseUrl: sharedPostgresUrl(),
-      plan,
-    });
-    return {
-      ok: true,
-      plan,
-      preflight,
-      message: `pg_dump wrote ${path} (remove manually when done).`,
-    };
+    try {
+      assertSharedPostgresUrlConfigured();
+      assertPgDumpOnPath();
+      const path = await pgDumpTenantSchemaToFile({
+        databaseUrl: sharedPostgresUrl(),
+        plan,
+      });
+      return {
+        ok: true,
+        plan,
+        preflight,
+        message: `pg_dump wrote ${path} (remove manually when done).`,
+      };
+    } catch (e: unknown) {
+      return {
+        ok: false,
+        phase: "failed",
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
   }
 
   assertSharedPostgresUrlConfigured();

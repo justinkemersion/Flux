@@ -43,12 +43,18 @@ export async function POST(req: Request): Promise<Response> {
 
   const payload = body as MigrateCliPayload;
   const pm = getProjectManager();
-  const result = await runV2SharedToV1DedicatedMigration({
-    db,
-    pm,
-    userId: auth.userId,
-    payload,
-  });
+  let result: Awaited<ReturnType<typeof runV2SharedToV1DedicatedMigration>>;
+  try {
+    result = await runV2SharedToV1DedicatedMigration({
+      db,
+      pm,
+      userId: auth.userId,
+      payload,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return jsonError(`Migration failed: ${message}`, 500);
+  }
 
   if (!result.ok) {
     return Response.json(result, {
