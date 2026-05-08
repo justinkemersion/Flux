@@ -27,7 +27,7 @@ Project screens surface **Service URL**, engine, and rotation controls for secre
 
 ### Codex / assistant rules
 
-Structured CLI + architecture rules for assistants live in `FLUX_CODEX_JSON` (`apps/dashboard/src/lib/flux-codex-static.ts`).
+Structured CLI + architecture rules for assistants ship as JSON: fetch **`GET /api/cli/v1/codex`** on your Flux dashboard, or supply the payload as **`FLUX_CODEX_JSON`** when wiring an assistant.
 
 ## How it works
 

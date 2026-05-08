@@ -40,7 +40,7 @@ Empty arrays usually mean filters or RLS—not “gateway off”. **401** before
 
 ## Example
 
-For internal health checks from `flux-web`, prefer probing via the **gateway** with correct `Host` headers—see `README.md` (`FLUX_TENANT_PROBE_GATEWAY_URL`).
+For internal health checks from the **control plane**, prefer probing via the **gateway** with correct `Host` headers—see [Environment variables](/docs/reference/env-vars) (`FLUX_TENANT_PROBE_GATEWAY_URL`).
 
 ## Next steps
 

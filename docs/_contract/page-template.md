@@ -11,7 +11,7 @@ A page should not exist because a command, component, or legacy route exists.
 Each page should answer:
 
 1. What is this page about?
-2. Who is it for?
+2. Who is it for? — Default: **app builder** on hosted Flux (see [`reader-audiences.md`](reader-audiences.md)). If the page is for **self-hosted operators** or contributors only, say that in the opening paragraph or title context.
 3. What should the reader understand after reading it?
 4. What is the minimum concept needed before details?
 5. What is the practical next step?

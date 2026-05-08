@@ -113,9 +113,31 @@ Re-run your smoke tests (`curl` or app E2E) before you announce cutover.
 
 ## Troubleshooting
 
-- **`pg_dump` not found** on the control plane: the dashboard container must ship **`pg_dump`** (Alpine **`postgresql*-client`** in `apps/dashboard/Dockerfile`). If you still see this after a deploy, confirm you rebuilt **`flux-web`** (`bin/deploy-web.sh`), not only restarted an old image. Your laptop having **`pg_dump`** does not affect migrate—the API handler runs on the server.
-- **`invalid command \restrict`** during restore: newer **`pg_dump`** can emit psql meta-commands **`\\restrict`** and **`\\unrestrict`** that older **`psql`** inside the tenant Postgres image rejects. Flux strips those lines when the dedicated server reports a major version **before 17**, and runs **`replaceTenantApiSchemaFromPlainSqlFile`** restores through the same prepared-dump path as **`importSqlFile`**. Deploy an updated **`flux-web`** build, then retry **`--staged`** or full migrate.
-- **`role "service_role" does not exist`** on PostgREST OpenAPI probe: dedicated bootstrap must create **`service_role`** and grant it through **`authenticator`** (same as **`anon`** / **`authenticated`**). Deploy a **`flux-web`** build that includes the updated tenant bootstrap, then **`nuke`** + reprovision or run migrate again so a fresh Postgres volume picks up the new roles. Older dedicated volumes need a one-off **`CREATE ROLE service_role`** + **`GRANT … TO authenticator`** + schema grants if you cannot recreate the DB.
+Errors below split **hosted Flux** (you use `flux.vsl-base.com` or another vendor-run control plane) from **self-hosted** (you run the dashboard API and Docker host yourself). See [Production hardening](/docs/guides/production-hardening) for operator-focused context.
+
+### **`pg_dump` not found** (control plane)
+
+Migrate runs **`pg_dump` on the server** that serves the control-plane API, not on your laptop.
+
+- **Hosted:** This is a **platform packaging** issue. Confirm **`FLUX_API_BASE`** points at the real dashboard API origin, then **contact Flux support** or watch the vendor status channel—you cannot install tools into the hosted control plane from your app repo.
+- **Self-hosted operators:** Install PostgreSQL **client** binaries (**`pg_dump`**) in the **dashboard/control-plane runtime** (the same environment that executes `/api/cli/v1/migrate`), then **rebuild and redeploy** that service so a fresh container includes them. Restarting an old image without rebuilding will not add **`pg_dump`**.
+
+### **`invalid command \restrict`** during restore
+
+Newer **`pg_dump`** output can include psql meta-commands **`\\restrict`** / **`\\unrestrict`** that older **`psql`** inside the tenant Postgres container rejects.
+
+- **Hosted:** The control plane must ship a release that **sanitizes** those lines when the dedicated Postgres major version is **before 17**. If you see this on hosted Flux after you are already on the latest CLI, **contact support**—it is not something you fix in application SQL.
+- **Self-hosted operators:** Deploy a **dashboard** build that includes that sanitization on the restore path, then retry **`--staged`** or full migrate. Optionally align **`pg_dump`** / **`psql`** client majors with your tenant image if you maintain both images yourself.
+
+### **`role "service_role" does not exist`** (PostgREST probe)
+
+PostgREST maps the JWT **`role`** claim to a **database role**; dedicated tenant DBs must define **`service_role`** like **`anon`** / **`authenticated`**.
+
+- **Hosted:** The **tenant bootstrap** on the control plane must create that role. If the probe fails on hosted Flux, **contact support** or wait for a platform update, then rerun migrate (often after containers are recreated).
+- **Self-hosted operators:** Ship an updated **tenant bootstrap** (or run a one-off **`CREATE ROLE service_role`**, **`GRANT … TO authenticator`**, and schema grants) on existing volumes that predate the role, then rerun migrate.
+
+### Other CLI issues
+
 - **`Request failed` / wrong project**: confirm **`FLUX_API_BASE`** points at **your** dashboard **`/api`** origin, not only at the tenant API host.
 - **Slug/hash mismatch**: the **`-p`** slug must match the project that owns the **`--hash`** row in **`flux list`** for your API token. If you use **`flux.json`**, its **`slug`** / **`hash`** must match that same row—otherwise pass explicit **`-p`** / **`--hash`** and ignore or fix the file.
 

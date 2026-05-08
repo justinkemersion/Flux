@@ -36,7 +36,7 @@ Codex / internal docs describe hashing:
 - Resource pattern: `flux-{hash}-{slug}` (7-char hex hash segment)
 - Slug is user-facing; hash is assigned at provision time
 
-Source: `apps/dashboard/src/lib/flux-codex-static.ts` (also served from `GET /api/cli/v1/codex`).
+The same **Codex** contract JSON is available from the dashboard at **`GET /api/cli/v1/codex`** (useful for assistants and tooling).
 
 ## How it works
 

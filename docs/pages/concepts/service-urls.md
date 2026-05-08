@@ -32,7 +32,7 @@ https://api.<slug>.<hash>.<base-domain>
 ## How it works
 
 - Applications use HTTPS with `Authorization: Bearer …` on v2 pooled.
-- Node or serverless clients must trust the TLS chain (`NODE_EXTRA_CA_CERTS` for private CAs)—see `AGENTS.md`.
+- Node or serverless clients must trust the TLS chain (`NODE_EXTRA_CA_CERTS` for private CAs)—see [Production hardening](/docs/guides/production-hardening).
 
 ## Example
 

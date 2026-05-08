@@ -35,7 +35,7 @@ If you must skip the gateway temporarily, send:
 | GET / HEAD | `Accept-Profile: <tenant_schema>` |
 | Mutations | `Content-Profile: <tenant_schema>` |
 
-See PostgREST schema docs and `AGENTS.md`.
+See PostgREST schema docs and [Service URLs](/docs/concepts/service-urls) (profiles when bypassing the gateway).
 
 ## Example
 

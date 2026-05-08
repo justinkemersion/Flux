@@ -10,7 +10,7 @@ Flux deployments split **control plane** env (dashboard, CLI) from **data plane*
 ## What you will learn
 
 - CLI operator variables
-- Representative gateway / web variables mentioned in `README.md`
+- Representative gateway / web variables (control-plane and data-plane wiring)
 - Safe handling patterns
 
 ## The idea
@@ -24,7 +24,7 @@ Flux deployments split **control plane** env (dashboard, CLI) from **data plane*
 
 From a project directory, the CLI also reads **`./.env`** and **`./.env.local`** (next to **`flux.json`**, walking up from the current working directory) for these keys when they are not already set in the shell—so **`FLUX_API_BASE`**, **`FLUX_URL`**, and **`NEXT_PUBLIC_FLUX_URL`** can live beside your app config. On **hosted** `*.vsl-base.com` tenant URLs, **`FLUX_API_BASE`** may be inferred from **`FLUX_URL`** when unset; **self-hosted** custom domains still need an explicit **`FLUX_API_BASE`**. See [Installation](/docs/getting-started/installation) and [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate).
 
-### Dashboard / web (examples from repo docs)
+### Dashboard / web (examples)
 
 | Variable | Role |
 |---------|------|
@@ -54,4 +54,4 @@ export FLUX_API_TOKEN="flx_live_…"
 ## Next steps
 
 - [Project secrets](/docs/security/project-secrets)
-- `README.md` — deployment-specific lists
+- [Production hardening](/docs/guides/production-hardening) (self-hosted operators)

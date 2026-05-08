@@ -28,7 +28,7 @@ At a high level:
 3. External JWT verified per project configuration.
 4. Bridge JWT minted with Postgres role and claims PostgREST expects.
 
-Internal probes may use `FLUX_TENANT_PROBE_GATEWAY_URL` to avoid relying on public DNS from inside containers—see `README.md`.
+Internal probes may use **`FLUX_TENANT_PROBE_GATEWAY_URL`** to avoid relying on public DNS from inside containers—see [Environment variables](/docs/reference/env-vars).
 
 ## Example
 

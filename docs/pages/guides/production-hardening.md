@@ -16,7 +16,7 @@ Production is where implicit assumptions break: TLS trust, secret rotation, rate
 ## The idea
 
 - Prefer **`NODE_EXTRA_CA_CERTS`** (or system trust) over disabling TLS verification globally.
-- On **v2**, internal probes should often target the **gateway** with correct `Host` headers—see `README.md` (`FLUX_TENANT_PROBE_GATEWAY_URL`).
+- On **v2**, internal probes should often target the **gateway** with correct `Host` headers—see [Gateway](/docs/architecture/gateway) and [Environment variables](/docs/reference/env-vars) (`FLUX_TENANT_PROBE_GATEWAY_URL`).
 - Treat gateway signing keys like database superuser passwords: rotation plans, access logging, least privilege.
 
 ## How it works
@@ -26,7 +26,7 @@ Review:
 - `docs/production-security-audit.md` — audit framing
 - `docs/OPERATIONS.md` — operational checklist items relevant to your deployment
 
-Self-hosted **control plane** (`flux-web`): **`flux migrate`** runs **`pg_dump` inside the dashboard container** against the shared cluster. The **`apps/dashboard/Dockerfile`** runner image must include PostgreSQL client tools (see repo Dockerfile); restarting an old image without rebuilding leaves **`pg_dump` missing** at runtime. Operator flow: [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate).
+**Self-hosted operators — control plane:** **`flux migrate`** runs **`pg_dump` inside the dashboard/control-plane container** against the shared cluster. That image must include PostgreSQL **client** tools on **`PATH`** inside the process that handles **`/api/cli/v1/migrate`**; restarting an old container without rebuilding leaves **`pg_dump` missing** at runtime. App builders on **hosted** Flux cannot fix this in their own repo—see hosted vs self-hosted notes under [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate) troubleshooting.
 
 ## Example
 

@@ -17,7 +17,7 @@ Flux **v2** runs many tenants on a **shared PostgreSQL cluster** and **PostgREST
 
 v2 exists to reduce container sprawl and memory overhead versus **v1 dedicated**. It does **not** remove Postgres or PostgREST from the picture—it changes how they are shared.
 
-Authoritative spec: **[Flux v2 architecture specification](/docs/architecture/flux-v2-architecture)** — the dashboard renders `docs/flux-v2-architecture.md` from this repository (single source, no duplicate).
+Authoritative spec: **[Flux v2 architecture specification](/docs/architecture/flux-v2-architecture)** — single canonical document in **`/docs`** (no duplicate prose path).
 
 ### Invariants (summary)
 

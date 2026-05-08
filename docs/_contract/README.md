@@ -25,9 +25,10 @@ Before creating or modifying user-facing documentation, read:
 
 1. `information-architecture.md`
 2. `voice.md`
-3. `terminology.md`
-4. `page-template.md`
-5. `diagrams.md`
+3. `reader-audiences.md`
+4. `terminology.md`
+5. `page-template.md`
+6. `diagrams.md`
 
 ## User-facing corpus
 
@@ -36,6 +37,8 @@ Rendered documentation for https://flux.vsl-base.com/docs lives as Markdown in [
 ## Core rule
 
 Do not let routing, components, CLI flags, or old docs structure define the knowledge model.
+
+Do not write `docs/pages/` as an internal engineering runbook: default reader is the **app builder** on hosted Flux. See `reader-audiences.md` for hosted vs self-hosted tone and forbidden leakage (monorepo paths, deploy scripts as “your” task).
 
 The docs should first answer:
 

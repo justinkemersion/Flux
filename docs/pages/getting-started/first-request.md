@@ -35,7 +35,7 @@ GET /your_table?select=*&limit=10
 Authorization: Bearer <project-jwt>
 ```
 
-If you bypass the gateway and talk to PostgREST directly in dev, you must send schema negotiation headers (`Accept-Profile` / `Content-Profile`)—see [JWT authentication](/docs/concepts/jwt-auth) and `AGENTS.md` in the repo.
+If you bypass the gateway and talk to PostgREST directly in dev, you must send schema negotiation headers (`Accept-Profile` / `Content-Profile`)—see [JWT authentication](/docs/concepts/jwt-auth) and [Next.js](/docs/guides/nextjs) (server vs client patterns).
 
 ### Query parameters from the dashboard
 

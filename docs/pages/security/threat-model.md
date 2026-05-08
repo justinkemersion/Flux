@@ -5,7 +5,7 @@ description: In-scope attacks, primary controls, and explicit non-promises for F
 
 # Threat model
 
-This page summarizes the **v2 shared** stance in plain language. Authoritative detail: **[Flux v2 architecture specification](/docs/architecture/flux-v2-architecture)** (`docs/flux-v2-architecture.md` in this repository).
+This page summarizes the **v2 shared** stance in plain language. Authoritative detail: **[Flux v2 architecture specification](/docs/architecture/flux-v2-architecture)**.
 
 ## What you will learn
 

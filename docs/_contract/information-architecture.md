@@ -49,6 +49,10 @@ Concepts come before mechanics.
 Architecture comes before optimization.
 Reference comes after understanding.
 
+## Reader audiences
+
+`docs/pages/` is written first for the **app builder** (hosted Flux): product vocabulary, actions they control (CLI, dashboard, app env). Platform packaging, monorepo paths, and deploy runbooks must not read as that reader’s homework. See [`reader-audiences.md`](reader-audiences.md) for hosted vs self-hosted rules and anti-patterns.
+
 ---
 
 # Global Reader Journey

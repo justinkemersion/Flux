@@ -49,4 +49,5 @@ const res = await fetch(`${process.env.FLUX_URL}/items?select=*`, {
 
 - [First request](/docs/getting-started/first-request)
 - [Auth.js guide](/docs/guides/authjs)
-- `AGENTS.md` (repo root) for TLS and profile headers
+- [Production hardening](/docs/guides/production-hardening) (TLS trust from Node)
+- [JWT authentication](/docs/concepts/jwt-auth) (profile headers for direct PostgREST)

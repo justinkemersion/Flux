@@ -15,7 +15,7 @@ Flux treats **SQL** as the source of truth. You apply migrations with the CLI (`
 
 ## The idea
 
-After SQL executes in the tenant database, Flux triggers PostgREST reload (notify + signal—see `README.md` in the repo). Until reload completes, you might see stale shape errors briefly.
+After SQL executes in the tenant database, Flux triggers PostgREST reload (**notify** plus **signal** to the API process). Until reload completes, you might see stale shape errors briefly.
 
 On **v2 shared**, tables for your API must live in the tenant schema (e.g. `t_<shortId>_api`), not an assumed `public` layout—otherwise you will see permission errors when PostgREST evaluates requests.
 
