@@ -23,6 +23,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
+# `flux migrate` (and related routes) run `pg_dump` against the shared cluster from this process.
+RUN apk add --no-cache postgresql17-client
+
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
 

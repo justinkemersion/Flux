@@ -100,7 +100,7 @@ Re-run your smoke tests (`curl` or app E2E) before you announce cutover.
 
 ## Troubleshooting
 
-- **`pg_dump` not found** on the control plane: install PostgreSQL client tools **in the dashboard/runtime image or host**, then redeploy the control plane if needed.
+- **`pg_dump` not found** on the control plane: the dashboard container must ship **`pg_dump`** (Alpine **`postgresql*-client`** in `apps/dashboard/Dockerfile`). If you still see this after a deploy, confirm you rebuilt **`flux-web`** (`bin/deploy-web.sh`), not only restarted an old image. Your laptop having **`pg_dump`** does not affect migrate—the API handler runs on the server.
 - **`Request failed` / wrong project**: confirm **`FLUX_API_BASE`** points at **your** dashboard **`/api`** origin, not only at the tenant API host.
 - **Slug/hash mismatch**: align **`flux.json`** with **`flux list`** for the same token.
 
