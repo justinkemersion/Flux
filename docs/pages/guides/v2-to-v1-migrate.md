@@ -1,6 +1,6 @@
 ---
 title: Move from pooled to dedicated (v2 → v1)
-description: How to migrate a v2_shared project to v1_dedicated using the Flux CLI—plan, verify, cut over, and update your app.
+description: How to migrate a v2_shared project to v1_dedicated using the Flux CLI—plan, verify, cut over, post-cutover checklist, and app env updates.
 ---
 
 # Move from pooled to dedicated (v2 → v1)
@@ -13,7 +13,7 @@ This page is about **changing execution engine** for an existing project. It is 
 
 - How **`flux migrate`** relates to the **control plane** versus your app’s **Service URL**
 - A safe order: **dry run → optional dump-only → staged or full migrate**
-- What to change in your app **after** the catalog says **v1_dedicated**
+- A **success checklist** after a full cutover (CLI, dashboard, Docker, app env)
 - Why errors mention **`pg_dump`** on the server, not on your laptop
 
 ## The idea
@@ -90,10 +90,23 @@ After success, **`flux list`** should show the project as **v1_dedicated** and t
 | **`--new-jwt-secret`** | Rotate **`jwt_secret`** on cutover; update every client that mints JWTs for PostgREST. |
 | **`--drop-source-after`** | After a **non-staged** success, remove the tenant from the **shared** cluster—**destructive**; only when you are sure dedicated is authoritative. |
 
-## After migration — update Bloom’s environment
+## After a successful full migrate
+
+When **`flux migrate … --yes`** (without **`--staged`**) returns **`"message": "Migration complete. Project is now v1_dedicated."`**, walk this checklist before you call the cutover done.
+
+If you **only** ran **`--staged`**, the catalog is still **`v2_shared`** until you run that final full migrate—treat the staged success message as confirmation that the **dedicated** database is populated, not that public traffic or **`flux list`** mode has flipped yet.
+
+### Success checklist
+
+1. **CLI** — Run **`flux list`**: the project row should show **`v1_dedicated`** and the **Service URL** you expect (often the same flattened **`https://api--<slug>--<hash>.…`** pattern when slug and hash are unchanged). This page’s **`flux migrate`** path applies only while the project is **`v2_shared`**; after cutover, use dedicated-day-to-day commands (**`flux push`**, repair, lifecycle) as for any **`v1_dedicated`** project.
+2. **Dashboard** — Open **Projects**: the card should show **Online** / **Healthy** (or your fleet labels), the **API URL** field should match **`flux list`**, and **v1**-style lifecycle actions (for example **Stop**) should appear where your host enables them. Pooled-only affordances disappear because the project is no longer on the shared engine.
+3. **Docker host** — On the machine that runs tenant containers, **`docker ps`** should list this project’s **Postgres** and **PostgREST** pair (names like **`flux-<hash>-<slug>-db`** and **`flux-<hash>-<slug>-api`**). That confirms dedicated provisioning, not only a catalog flip.
+4. **Optional cleanup** — If you intentionally used **`--drop-source-after`** on a **non-staged** run, confirm the tenant schema is gone from the **shared** cluster so you are not paying for two copies of truth. If you did **not** use that flag, the v2 copy may still exist until operators remove it under your own policy.
+
+### Update your app (Bloom or any project)
 
 1. Refresh **`NEXT_PUBLIC_FLUX_URL`** / **`FLUX_URL`** (and any server-only base URL) from **`flux list`** or the dashboard if the Service URL or routing identity changed.
-2. If you rotated secrets, run **`flux project credentials`** (or the dashboard) and paste the new **`FLUX_GATEWAY_JWT_SECRET`** (or equivalent) into your env files.
+2. If you rotated secrets (**`--new-jwt-secret`**), run **`flux project credentials`** (or the dashboard) and paste the new **`FLUX_GATEWAY_JWT_SECRET`** (or equivalent) into your env files. With default **`preserveJwtSecret`** behavior, secrets often stay the same—still verify.
 3. Dedicated stacks expose your tenant API schema as provisioned; if you previously targeted **`t_<shortId>_api`** only on v2, re-read [Service URLs](/docs/concepts/service-urls) and your RLS **`GRANT`**s—**RLS without grants** still yields **`42501`**.
 
 Re-run your smoke tests (`curl` or app E2E) before you announce cutover.
