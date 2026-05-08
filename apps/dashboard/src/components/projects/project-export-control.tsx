@@ -30,22 +30,43 @@ function backupTrustBadgeClass(tier: BackupTrustTier): string {
       return "border-emerald-700/70 bg-emerald-950/50 text-emerald-100";
     case "restore_failed":
       return "border-rose-700/70 bg-rose-950/40 text-rose-100";
-    default:
+    case "artifact_pending":
+      return "border-zinc-400/50 bg-zinc-100/90 text-zinc-700 dark:border-zinc-600/60 dark:bg-zinc-800/60 dark:text-zinc-200";
+    case "pipeline_incomplete":
+    case "latest_not_complete":
       return "border-amber-700/60 bg-amber-950/30 text-amber-100";
+    default:
+      return "border-zinc-400/45 bg-zinc-100/80 text-zinc-700 dark:border-zinc-600/50 dark:bg-zinc-800/50 dark:text-zinc-200";
   }
 }
 
 function backupTrustEmoji(tier: BackupTrustTier): string {
   if (tier === "restorable") return "✓";
   if (tier === "restore_failed") return "✗";
-  return "⚠";
+  if (tier === "artifact_pending") return "⋯";
+  if (tier === "pipeline_incomplete" || tier === "latest_not_complete") return "⚠";
+  return "○";
+}
+
+/** CLI line is only helpful when the backup needs action—not while validation is still catching up. */
+function backupTierShowsFluxRemediationCli(tier: BackupTrustTier): boolean {
+  switch (tier) {
+    case "not_restore_verified":
+    case "restore_failed":
+    case "pipeline_incomplete":
+    case "latest_not_complete":
+    case "no_backups":
+      return true;
+    default:
+      return false;
+  }
 }
 
 const sqlDumpCheckboxClass =
   "h-4 w-4 shrink-0 rounded border border-zinc-300 bg-white text-zinc-900 focus:ring-2 focus:ring-zinc-400/30 focus:ring-offset-0 dark:border-zinc-600 dark:bg-zinc-900 dark:focus:ring-zinc-500/25";
 
 const primaryModalActionClass =
-  "inline-flex items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200";
+  "inline-flex min-h-[2.75rem] w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200";
 
 /**
  * Project export controls for SQL dump streaming.
@@ -272,20 +293,22 @@ export function ProjectExportControl({ hash }: Props) {
                       </p>
                     </div>
                     <span
-                      className={`inline-flex shrink-0 self-start rounded-md border px-2 py-1 text-xs font-medium ${backupTrustBadgeClass(backupTrust.tier)}`}
+                      className={`inline-flex shrink-0 self-start rounded-md border px-2.5 py-1 text-xs font-medium leading-snug ${backupTrustBadgeClass(backupTrust.tier)}`}
                     >
-                      {backupTrustEmoji(backupTrust.tier)}{" "}
+                      <span aria-hidden className="mr-1 select-none">
+                        {backupTrustEmoji(backupTrust.tier)}
+                      </span>
                       {backupTrustTierLabel(backupTrust.tier)}
                     </span>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <button
                       type="button"
                       onClick={() => void createBackupNow()}
                       disabled={backupBusy}
                       aria-busy={backupBusy}
-                      className={`${primaryModalActionClass} min-w-[14rem]`}
+                      className={primaryModalActionClass}
                     >
                       {backupBusy ? (
                         <Loader2
@@ -299,7 +322,7 @@ export function ProjectExportControl({ hash }: Props) {
                       type="button"
                       onClick={downloadLatestBackup}
                       disabled={backups.length === 0}
-                      className={`${primaryModalActionClass} min-w-[14rem]`}
+                      className={primaryModalActionClass}
                     >
                       Download latest backup
                     </button>
@@ -314,7 +337,7 @@ export function ProjectExportControl({ hash }: Props) {
                       }
                       title={verifyLatestDisabledReason ?? undefined}
                       aria-busy={verifyBusy}
-                      className={`${primaryModalActionClass} min-w-[17.5rem]`}
+                      className={primaryModalActionClass}
                     >
                       {verifyBusy ? (
                         <Loader2
@@ -328,24 +351,42 @@ export function ProjectExportControl({ hash }: Props) {
                     </button>
                   </div>
 
-                  <div className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-                    {backupsLoading
-                      ? "Loading backups…"
-                      : `Stored backups: ${String(backups.length)}`}
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+                    <span>
+                      {backupsLoading
+                        ? "Loading backups…"
+                        : `Stored backups: ${String(backups.length)}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void loadBackups()}
+                      disabled={backupsLoading || backupBusy || verifyBusy}
+                      className="text-sm font-medium text-zinc-700 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-300 dark:hover:text-zinc-100"
+                    >
+                      Refresh status
+                    </button>
                   </div>
 
                   {!backupsLoading ? (
-                    <div className="mt-4 space-y-3">
-                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    <div className="mt-4 space-y-4">
+                      <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
                         {backupTrust.detail}
                       </p>
                       {backups[0] ? (
-                        <p className="text-sm text-zinc-500 dark:text-zinc-500">
-                          Newest: {backups[0].createdAt ?? "—"} · offsite{" "}
-                          {backups[0].offsiteStatus ?? "—"}
-                        </p>
+                        <dl className="grid gap-1 text-xs text-zinc-500 dark:text-zinc-400 sm:grid-cols-[8rem_1fr] sm:gap-x-3">
+                          <dt className="font-medium text-zinc-600 dark:text-zinc-500">
+                            Newest backup
+                          </dt>
+                          <dd className="font-mono text-zinc-600 dark:text-zinc-400">
+                            {backups[0].createdAt ?? "—"}
+                          </dd>
+                          <dt className="font-medium text-zinc-600 dark:text-zinc-500">
+                            Offsite copy
+                          </dt>
+                          <dd>{backups[0].offsiteStatus ?? "—"}</dd>
+                        </dl>
                       ) : null}
-                      {!backupTrust.allowsDestructiveWithoutOverride ? (
+                      {backupTierShowsFluxRemediationCli(backupTrust.tier) ? (
                         <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
                           <span className="font-medium text-zinc-700 dark:text-zinc-300">
                             CLI:
@@ -461,11 +502,11 @@ export function ProjectExportControl({ hash }: Props) {
                     </label>
                   </div>
 
-                  <div className="mt-4">
+                  <div className="mt-4 max-w-md">
                     <button
                       type="button"
                       onClick={downloadDump}
-                      className={`${primaryModalActionClass} min-w-[14rem]`}
+                      className={primaryModalActionClass}
                     >
                       Download SQL dump
                     </button>

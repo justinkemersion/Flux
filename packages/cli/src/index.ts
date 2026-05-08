@@ -352,6 +352,16 @@ function printBackupTrustSummary(classification: ReturnType<typeof classifyNewes
       chalk.white.bold(label),
       chalk.dim(` — ${classification.detail}`),
     );
+  } else if (classification.tier === "artifact_pending") {
+    console.log(
+      chalk.blue("⋯"),
+      chalk.white.bold(label),
+      chalk.dim(` — ${classification.detail}`),
+    );
+    console.log(
+      chalk.dim("  Try listing backups again shortly if catalog validation has not caught up."),
+    );
+    return;
   } else {
     console.log(
       chalk.yellow("⚠"),

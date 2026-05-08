@@ -467,6 +467,16 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
       throw new Error("Backup file does not exist or is empty.");
     }
     if (backup.restoreVerificationStatus === "restore_verified") {
+      if (backup.artifactValidationStatus !== "artifact_valid") {
+        await db
+          .update(projectBackups)
+          .set({
+            artifactValidationStatus: "artifact_valid",
+            artifactValidationAt: new Date(),
+            artifactValidationError: null,
+          })
+          .where(eq(projectBackups.id, backup.id));
+      }
       return;
     }
 
@@ -550,6 +560,9 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         .set({
           restoreVerificationStatus: "restore_verified",
           restoreVerificationAt: new Date(),
+          artifactValidationStatus: "artifact_valid",
+          artifactValidationAt: new Date(),
+          artifactValidationError: null,
         })
         .where(eq(projectBackups.id, backup.id));
     } catch (err: unknown) {

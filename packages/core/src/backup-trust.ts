@@ -16,6 +16,8 @@ export type BackupTrustTier =
   | "restorable"
   | "not_restore_verified"
   | "restore_failed"
+  /** Artifact row still pending — distinct from a broken or invalid artifact */
+  | "artifact_pending"
   | "pipeline_incomplete"
   | "latest_not_complete"
   | "no_backups";
@@ -40,8 +42,10 @@ export function backupTrustTierLabel(tier: BackupTrustTier): string {
       return "Created, not restore-verified";
     case "restore_failed":
       return "Restore verification failed";
+    case "artifact_pending":
+      return "Validating backup artifact";
     case "pipeline_incomplete":
-      return "Backup pipeline in progress or artifact not valid";
+      return "Backup artifact not valid";
     case "latest_not_complete":
       return "Latest backup not complete";
     case "no_backups":
@@ -79,18 +83,7 @@ export function classifyNewestBackup(
     };
   }
 
-  if (art !== "artifact_valid") {
-    const detail =
-      art === "pending"
-        ? "Latest backup is still being validated (artifact pending)."
-        : `Latest backup artifact is not valid (status: ${art}).`;
-    return {
-      tier: "pipeline_incomplete",
-      allowsDestructiveWithoutOverride: false,
-      detail,
-    };
-  }
-
+  /** Successful restore verify proves the artifact is usable even if catalog flags lag. */
   if (restore === "restore_verified") {
     return {
       tier: "restorable",
@@ -107,6 +100,23 @@ export function classifyNewestBackup(
         restore === "skipped"
           ? "Restore verification was skipped (e.g. invalid artifact)."
           : "Latest backup failed restore verification.",
+    };
+  }
+
+  if (art === "pending") {
+    return {
+      tier: "artifact_pending",
+      allowsDestructiveWithoutOverride: false,
+      detail:
+        "The newest backup finished uploading; artifact validation is still updating. This is normal—wait briefly or refresh status.",
+    };
+  }
+
+  if (art !== "artifact_valid") {
+    return {
+      tier: "pipeline_incomplete",
+      allowsDestructiveWithoutOverride: false,
+      detail: `Latest backup artifact is not valid (status: ${art}).`,
     };
   }
 

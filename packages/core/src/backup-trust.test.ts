@@ -81,7 +81,20 @@ test("artifact pending on complete row", () => {
     },
   ];
   const c = classifyNewestBackup(rows);
-  assert.equal(c.tier, "pipeline_incomplete");
+  assert.equal(c.tier, "artifact_pending");
+});
+
+test("restore-verified counts as restorable even if artifact flag still pending", () => {
+  const rows: BackupTrustInput[] = [
+    {
+      status: "complete",
+      artifactValidationStatus: "pending",
+      restoreVerificationStatus: "restore_verified",
+    },
+  ];
+  const c = classifyNewestBackup(rows);
+  assert.equal(c.tier, "restorable");
+  assert.equal(c.allowsDestructiveWithoutOverride, true);
 });
 
 test("destructive message includes remediation", () => {
