@@ -25,7 +25,8 @@ ENV PORT=3000
 
 # `flux migrate` (and related routes) run `pg_dump` against the shared cluster from this process.
 # util-linux provides `setpriv` so the entrypoint can drop to `nextjs` without losing the docker GID (see flux-web-entrypoint.sh).
-RUN apk add --no-cache postgresql17-client util-linux
+# docker-cli: backup restore verification shells out to `docker run` / `exec` (see project-backups.ts); dockerode alone is not enough.
+RUN apk add --no-cache postgresql17-client util-linux docker-cli
 
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs

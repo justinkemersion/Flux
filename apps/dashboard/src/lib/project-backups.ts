@@ -235,9 +235,16 @@ async function runDocker(args: string[]): Promise<string> {
     });
     return stdout.toString().trim();
   } catch (err: unknown) {
-    const e = err as { code?: number | string };
+    const e = err as NodeJS.ErrnoException & { stderr?: Buffer };
     const code = e?.code != null ? String(e.code) : "unknown";
-    throw new Error(`docker command failed (exit ${code})`);
+    const stderr = e.stderr?.toString?.().trim() ?? "";
+    const stderrTail = stderr ? `: ${stderr.slice(0, 800)}` : "";
+    if (code === "ENOENT") {
+      throw new Error(
+        "docker CLI not found on the control plane (ENOENT). Install `docker-cli` in the flux-web image; restore verification runs `docker run` / `pg_restore`.",
+      );
+    }
+    throw new Error(`docker command failed (exit ${code})${stderrTail}`);
   }
 }
 

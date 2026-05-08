@@ -29,6 +29,9 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux dump` | Export schema/data (see flags locally) |
 | `flux migrate` | Orchestrate **v2_shared** → **v1_dedicated** via the control plane (see [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)) |
 | `flux logs` | Tail project logs when wired |
+| `flux backup create` / `list` | **v1 dedicated** — control plane streams `pg_dump -Fc` (see `flux backup --help`) |
+| `flux backup download` | Saves the custom-format archive — use **`-o ./file.dump`** (or redirect); binary output is refused on a TTY without **`-o`** |
+| `flux backup verify` | Runs **`pg_restore`** in a disposable Postgres on the **control plane**; requires **`docker-cli`** in the `flux-web` image |
 
 ### Identifiers
 
@@ -50,6 +53,7 @@ flux --help
 flux push --help
 flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
 flux project credentials percept --hash b915ec8   # v1: copy the Postgres line for psql
+flux backup download -p percept --hash b915ec8 --latest -o ./percept.dump
 ```
 
 Use your own **slug** and **hash** from **`flux list`** (example values above).

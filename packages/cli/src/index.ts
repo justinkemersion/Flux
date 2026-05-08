@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { createWriteStream } from "node:fs";
 import { once } from "node:events";
 import { createInterface } from "node:readline/promises";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type {
   FluxProjectEnvEntry,
   FluxProjectSummary,
@@ -503,6 +505,7 @@ async function cmdBackupDownload(
   cliHash: string | undefined,
   backupId: string | undefined,
   latest: boolean,
+  outputPath: string | undefined,
   flux: FluxJson | null,
 ): Promise<void> {
   const fromCli = projectOpt?.trim() || name;
@@ -520,14 +523,26 @@ async function cmdBackupDownload(
   if (!targetId) {
     throw new Error("Provide --id <backupId> or --latest.");
   }
+  const out = outputPath?.trim();
+  if (!out && process.stdout.isTTY) {
+    throw new Error(
+      "Refusing to write a binary pg_dump archive to a terminal. Use:\n" +
+        `  flux backup download -p ${slug} --hash ${hash} --id ${targetId} -o ./backup.dump\n` +
+        "or redirect: flux backup download ... > backup.dump",
+    );
+  }
   process.stderr.write(`Downloading backup ${targetId} for ${slug} (${hash})...\n`);
   const webStream = await client.getProjectBackupStream({ hash, backupId: targetId });
   const nodeStream = Readable.fromWeb(
     webStream as import("node:stream/web").ReadableStream,
   );
-  for await (const chunk of nodeStream) {
-    if (!process.stdout.write(chunk)) {
-      await once(process.stdout, "drain");
+  if (out) {
+    await pipeline(nodeStream, createWriteStream(out));
+  } else {
+    for await (const chunk of nodeStream) {
+      if (!process.stdout.write(chunk)) {
+        await once(process.stdout, "drain");
+      }
     }
   }
   process.stderr.write("Download complete.\n");
@@ -1308,7 +1323,7 @@ async function main(): Promise<void> {
 
   const backupDownloadCmd = backupCmd
     .command("download")
-    .description("Stream a backup to stdout (redirect to file)")
+    .description("Download backup artifact (pg_dump -Fc); use -o or shell redirect — not a terminal")
     .argument(
       "[name]",
       "Project slug (default: \"slug\" in flux.json)",
@@ -1319,6 +1334,10 @@ async function main(): Promise<void> {
     )
     .option("--id <backupId>", "Backup ID to download")
     .option("--latest", "Download newest backup", false)
+    .option(
+      "-o, --output <path>",
+      "Write to file (recommended). Refuses to write binary to a TTY without this.",
+    )
     .option("--hash <hex>", hashFlagDesc);
 
   backupDownloadCmd.action(async (name: string | undefined) => {
@@ -1327,6 +1346,7 @@ async function main(): Promise<void> {
         project?: string;
         id?: string;
         latest?: boolean;
+        output?: string;
         hash?: string;
       }>();
       const flux = await readFluxJson(process.cwd());
@@ -1336,6 +1356,7 @@ async function main(): Promise<void> {
         opts.hash,
         opts.id,
         opts.latest === true,
+        opts.output,
         flux,
       );
     } catch (err: unknown) {
