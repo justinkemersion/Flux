@@ -330,7 +330,7 @@ export async function queryPsqlJsonRows(
   pgUser: string,
 ): Promise<unknown[]> {
   const inner = stripTrailingSemicolon(selectSql);
-  const wrapped = `SELECT coalesce(json_agg(row_to_json(r)), '[]'::text)::text FROM (${inner}) AS r`;
+  const wrapped = `SELECT coalesce(json_agg(row_to_json(r)), '[]'::json)::text FROM (${inner}) AS r`;
   const r = await dockerContainerExec(docker, containerId, {
     Env: [`PGPASSWORD=${password}`],
     Cmd: ["psql", "-U", pgUser, "-d", "postgres", "-tAc", wrapped],
