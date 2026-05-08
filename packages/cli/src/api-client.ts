@@ -86,6 +86,36 @@ const pushSqlResponseSchema = z.object({
   viewsMoved: z.number(),
 });
 
+const backupItemSchema = z.object({
+  id: z.string(),
+  format: z.string(),
+  status: z.string(),
+  sizeBytes: z.number().nullable().optional(),
+  checksumSha256: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+  offsiteStatus: z.string().nullable().optional(),
+  offsiteCompletedAt: z.string().nullable().optional(),
+  artifactValidationStatus: z.string().nullable().optional(),
+  artifactValidationAt: z.string().nullable().optional(),
+  restoreVerificationStatus: z.string().nullable().optional(),
+  restoreVerificationAt: z.string().nullable().optional(),
+});
+
+const listBackupsResponseSchema = z.object({
+  backups: z.array(backupItemSchema),
+});
+
+const createBackupResponseSchema = z.object({
+  backup: backupItemSchema,
+});
+
+const verifyBackupResponseSchema = z.object({
+  ok: z.literal(true),
+  backupId: z.string(),
+  restoreVerificationStatus: z.string(),
+});
+
 export type CreateProjectSecrets = z.infer<typeof createProjectSecretsSchema>;
 export type CreateProjectResult = z.infer<typeof createProjectResponseSchema>;
 export type ProjectCredentialsByHash = z.infer<
@@ -94,6 +124,7 @@ export type ProjectCredentialsByHash = z.infer<
 export type CreateProjectMode = "v1_dedicated" | "v2_shared";
 export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
+export type ProjectBackup = z.infer<typeof backupItemSchema>;
 
 /**
  * Base URL: hosted default (`HOSTED_FLUX_PUBLIC_API_BASE`), `process.env.FLUX_API_BASE`, inferred from `FLUX_URL` when it is a `*.vsl-base.com` tenant Service URL, or project `.env` / `.env.local` (shell wins).
@@ -751,6 +782,171 @@ export class ApiClient {
       throw new Error("CLI dump: empty response body.");
     }
     return res.body;
+  }
+
+  async listProjectBackups(hash: string): Promise<ProjectBackup[]> {
+    const token = this.tokenOrThrow();
+    const h = hash.trim().toLowerCase();
+    const url = `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}/backups`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI backups list: response was not JSON (${String(res.status)}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = listBackupsResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new Error("CLI backups list: response had unexpected shape.");
+    }
+    return parsed.data.backups;
+  }
+
+  async createProjectBackup(hash: string): Promise<ProjectBackup> {
+    const token = this.tokenOrThrow();
+    const h = hash.trim().toLowerCase();
+    const url = `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}/backups`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI backup create: response was not JSON (${String(res.status)}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = createBackupResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new Error("CLI backup create: response had unexpected shape.");
+    }
+    return parsed.data.backup;
+  }
+
+  async getProjectBackupStream(input: {
+    hash: string;
+    backupId: string;
+  }): Promise<ReadableStream<Uint8Array>> {
+    const token = this.tokenOrThrow();
+    const h = input.hash.trim().toLowerCase();
+    const id = input.backupId.trim();
+    const url =
+      `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}` +
+      `/backups/${encodeURIComponent(id)}/download`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = `Request failed (${String(res.status)})`;
+      try {
+        const body = JSON.parse(text) as { error?: unknown };
+        if (typeof body.error === "string" && body.error.trim()) msg = body.error;
+      } catch {
+        if (text.trim()) msg = text.trim().slice(0, 500);
+      }
+      throw new Error(msg);
+    }
+    if (!res.body) {
+      throw new Error("CLI backup download: empty response body.");
+    }
+    return res.body;
+  }
+
+  async verifyProjectBackup(input: {
+    hash: string;
+    backupId: string;
+  }): Promise<z.infer<typeof verifyBackupResponseSchema>> {
+    const token = this.tokenOrThrow();
+    const h = input.hash.trim().toLowerCase();
+    const id = input.backupId.trim();
+    const url =
+      `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}` +
+      `/backups/${encodeURIComponent(id)}/verify`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text.trim() ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      throw new Error(
+        `CLI backup verify: response was not JSON (${String(res.status)}). Check FLUX_API_BASE.`,
+      );
+    }
+    if (res.status === 401) {
+      throw new Error("Invalid or expired API token. Run `flux login`.");
+    }
+    if (!res.ok) {
+      const msg =
+        body &&
+        typeof body === "object" &&
+        body !== null &&
+        "error" in body &&
+        typeof (body as { error: unknown }).error === "string"
+          ? (body as { error: string }).error
+          : `Request failed (${String(res.status)})`;
+      throw new Error(msg);
+    }
+    const parsed = verifyBackupResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new Error("CLI backup verify: response had unexpected shape.");
+    }
+    return parsed.data;
   }
 
   // ---------------------------------------------------------------------------

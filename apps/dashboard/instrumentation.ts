@@ -12,6 +12,9 @@ export async function register(): Promise<void> {
       const { startFleetMonitor } = await import("./src/lib/fleet-monitor");
       startFleetMonitor();
       console.log("[flux] Fleet monitor started (2m interval).");
+      const { startBackupScheduler } = await import("./src/lib/backup-scheduler");
+      startBackupScheduler();
+      console.log("[flux] Backup scheduler started (60m interval).");
       console.log("FLUX_CONTROL_PLANE: V1.0_STABLE_ONLINE");
     } catch (err) {
       console.error(

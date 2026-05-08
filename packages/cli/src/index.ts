@@ -440,6 +440,125 @@ async function cmdDump(
   process.stderr.write("Dump complete.\n");
 }
 
+function fmtBytes(n: number | null | undefined): string {
+  if (!Number.isFinite(n ?? NaN) || (n ?? 0) < 0) return "-";
+  const v = Number(n);
+  if (v < 1024) return `${String(v)} B`;
+  if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KiB`;
+  if (v < 1024 * 1024 * 1024) return `${(v / (1024 * 1024)).toFixed(1)} MiB`;
+  return `${(v / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+}
+
+async function cmdBackupCreate(
+  name: string | undefined,
+  projectOpt: string | undefined,
+  cliHash: string | undefined,
+  flux: FluxJson | null,
+): Promise<void> {
+  const fromCli = projectOpt?.trim() || name;
+  const slug = resolveOptionalName(fromCli, flux, "positional [name] or -p, --project");
+  const hash = resolveHash(cliHash, flux);
+  const client = getApiClient();
+  console.log(chalk.blue(`Creating backup for ${chalk.bold(slug)}...`));
+  const backup = await client.createProjectBackup(hash);
+  console.log(chalk.green("✓"), chalk.white("Backup complete."));
+  console.log(
+    chalk.dim(
+      `  id=${backup.id} status=${backup.status} size=${fmtBytes(backup.sizeBytes ?? null)}`,
+    ),
+  );
+}
+
+async function cmdBackupList(
+  name: string | undefined,
+  projectOpt: string | undefined,
+  cliHash: string | undefined,
+  flux: FluxJson | null,
+): Promise<void> {
+  const fromCli = projectOpt?.trim() || name;
+  resolveOptionalName(fromCli, flux, "positional [name] or -p, --project");
+  const hash = resolveHash(cliHash, flux);
+  const client = getApiClient();
+  const backups = await client.listProjectBackups(hash);
+  if (backups.length === 0) {
+    console.log(chalk.dim("No backups found."));
+    return;
+  }
+  sectionBanner("Backups");
+  console.log(
+    chalk.dim(
+      "  ID                                   STATUS     SIZE       CREATED                    VALIDATION        RESTORE_VERIFY",
+    ),
+  );
+  for (const row of backups) {
+    console.log(
+      `  ${chalk.cyan(row.id.padEnd(36))} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending")}`,
+    );
+  }
+}
+
+async function cmdBackupDownload(
+  name: string | undefined,
+  projectOpt: string | undefined,
+  cliHash: string | undefined,
+  backupId: string | undefined,
+  latest: boolean,
+  flux: FluxJson | null,
+): Promise<void> {
+  const fromCli = projectOpt?.trim() || name;
+  const slug = resolveOptionalName(fromCli, flux, "positional [name] or -p, --project");
+  const hash = resolveHash(cliHash, flux);
+  const client = getApiClient();
+  let targetId = (backupId ?? "").trim();
+  if (latest) {
+    const rows = await client.listProjectBackups(hash);
+    if (rows.length === 0) {
+      throw new Error("No backups available to download.");
+    }
+    targetId = rows[0]!.id;
+  }
+  if (!targetId) {
+    throw new Error("Provide --id <backupId> or --latest.");
+  }
+  process.stderr.write(`Downloading backup ${targetId} for ${slug} (${hash})...\n`);
+  const webStream = await client.getProjectBackupStream({ hash, backupId: targetId });
+  const nodeStream = Readable.fromWeb(
+    webStream as import("node:stream/web").ReadableStream,
+  );
+  for await (const chunk of nodeStream) {
+    if (!process.stdout.write(chunk)) {
+      await once(process.stdout, "drain");
+    }
+  }
+  process.stderr.write("Download complete.\n");
+}
+
+async function cmdBackupVerify(
+  name: string | undefined,
+  projectOpt: string | undefined,
+  cliHash: string | undefined,
+  backupId: string | undefined,
+  latest: boolean,
+  flux: FluxJson | null,
+): Promise<void> {
+  const fromCli = projectOpt?.trim() || name;
+  const slug = resolveOptionalName(fromCli, flux, "positional [name] or -p, --project");
+  const hash = resolveHash(cliHash, flux);
+  const client = getApiClient();
+  let id = (backupId ?? "").trim();
+  if (latest) {
+    const rows = await client.listProjectBackups(hash);
+    if (rows.length === 0) {
+      throw new Error("No backups available to verify.");
+    }
+    id = rows[0]!.id;
+  }
+  if (!id) throw new Error("Provide --id <backupId> or --latest.");
+  console.log(chalk.blue(`Verifying restore for backup ${chalk.bold(id)} on ${chalk.bold(slug)}...`));
+  const result = await client.verifyProjectBackup({ hash, backupId: id });
+  console.log(chalk.green("✓"), chalk.white(`Restore verification: ${result.restoreVerificationStatus}`));
+}
+
 async function cmdList(): Promise<void> {
   const client = getApiClient();
   const rows = await client.listProjects();
@@ -1130,6 +1249,130 @@ async function main(): Promise<void> {
           clean: opts.clean === true,
           publicOnly: opts.publicOnly === true,
         },
+        flux,
+      );
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
+  const backupCmd = program
+    .command("backup")
+    .description("Create, list, and download dedicated project backups");
+
+  const backupCreateCmd = backupCmd
+    .command("create")
+    .description("Create a new backup and store it in Flux backup storage")
+    .argument(
+      "[name]",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option(
+      "-p, --project <name>",
+      "Project slug (overrides positional if set)",
+    )
+    .option("--hash <hex>", hashFlagDesc);
+
+  backupCreateCmd.action(async (name: string | undefined) => {
+    try {
+      const opts = backupCreateCmd.opts<{ project?: string; hash?: string }>();
+      const flux = await readFluxJson(process.cwd());
+      await cmdBackupCreate(name, opts.project, opts.hash, flux);
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
+  const backupListCmd = backupCmd
+    .command("list")
+    .description("List project backups")
+    .argument(
+      "[name]",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option(
+      "-p, --project <name>",
+      "Project slug (overrides positional if set)",
+    )
+    .option("--hash <hex>", hashFlagDesc);
+
+  backupListCmd.action(async (name: string | undefined) => {
+    try {
+      const opts = backupListCmd.opts<{ project?: string; hash?: string }>();
+      const flux = await readFluxJson(process.cwd());
+      await cmdBackupList(name, opts.project, opts.hash, flux);
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
+  const backupDownloadCmd = backupCmd
+    .command("download")
+    .description("Stream a backup to stdout (redirect to file)")
+    .argument(
+      "[name]",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option(
+      "-p, --project <name>",
+      "Project slug (overrides positional if set)",
+    )
+    .option("--id <backupId>", "Backup ID to download")
+    .option("--latest", "Download newest backup", false)
+    .option("--hash <hex>", hashFlagDesc);
+
+  backupDownloadCmd.action(async (name: string | undefined) => {
+    try {
+      const opts = backupDownloadCmd.opts<{
+        project?: string;
+        id?: string;
+        latest?: boolean;
+        hash?: string;
+      }>();
+      const flux = await readFluxJson(process.cwd());
+      await cmdBackupDownload(
+        name,
+        opts.project,
+        opts.hash,
+        opts.id,
+        opts.latest === true,
+        flux,
+      );
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
+  const backupVerifyCmd = backupCmd
+    .command("verify")
+    .description("Run real restore verification for a backup using pg_restore")
+    .argument(
+      "[name]",
+      "Project slug (default: \"slug\" in flux.json)",
+    )
+    .option(
+      "-p, --project <name>",
+      "Project slug (overrides positional if set)",
+    )
+    .option("--id <backupId>", "Backup ID to verify")
+    .option("--latest", "Verify newest backup", false)
+    .option("--hash <hex>", hashFlagDesc);
+
+  backupVerifyCmd.action(async (name: string | undefined) => {
+    try {
+      const opts = backupVerifyCmd.opts<{
+        project?: string;
+        id?: string;
+        latest?: boolean;
+        hash?: string;
+      }>();
+      const flux = await readFluxJson(process.cwd());
+      await cmdBackupVerify(
+        name,
+        opts.project,
+        opts.hash,
+        opts.id,
+        opts.latest === true,
         flux,
       );
     } catch (err: unknown) {

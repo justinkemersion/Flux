@@ -179,3 +179,41 @@ export const domains = pgTable(
   },
   (t) => [index("domains_project_id_idx").on(t.projectId)],
 );
+
+/** Backup catalog for v1 dedicated project artifacts (local + offsite lifecycle). */
+export const projectBackups = pgTable(
+  "project_backups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    format: text("format").notNull().default("pg_custom"),
+    localPath: text("local_path").notNull(),
+    sizeBytes: integer("size_bytes"),
+    checksumSha256: text("checksum_sha256"),
+    status: text("status").notNull().default("queued"),
+    completedAt: timestamp("completed_at", { mode: "date" }),
+    error: text("error"),
+    offsiteStatus: text("offsite_status").notNull().default("pending"),
+    offsiteKey: text("offsite_key"),
+    offsiteCompletedAt: timestamp("offsite_completed_at", { mode: "date" }),
+    offsiteError: text("offsite_error"),
+    artifactValidationStatus: text("artifact_validation_status")
+      .notNull()
+      .default("pending"),
+    artifactValidationAt: timestamp("artifact_validation_at", { mode: "date" }),
+    artifactValidationError: text("artifact_validation_error"),
+    restoreVerificationStatus: text("restore_verification_status")
+      .notNull()
+      .default("pending"),
+    restoreVerificationAt: timestamp("restore_verification_at", { mode: "date" }),
+    restoreVerificationError: text("restore_verification_error"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("project_backups_project_created_idx").on(t.projectId, t.createdAt),
+    index("project_backups_status_idx").on(t.status, t.createdAt),
+    index("project_backups_offsite_status_idx").on(t.offsiteStatus, t.createdAt),
+  ],
+);

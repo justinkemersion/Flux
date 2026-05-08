@@ -333,6 +333,97 @@ async function _init(): Promise<void> {
     CREATE INDEX IF NOT EXISTS domains_project_id_idx ON domains (project_id);
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_backups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      format TEXT NOT NULL DEFAULT 'pg_custom',
+      local_path TEXT NOT NULL,
+      size_bytes INTEGER,
+      checksum_sha256 TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      completed_at TIMESTAMPTZ,
+      error TEXT,
+      offsite_status TEXT NOT NULL DEFAULT 'pending',
+      offsite_key TEXT,
+      offsite_completed_at TIMESTAMPTZ,
+      offsite_error TEXT,
+      artifact_validation_status TEXT NOT NULL DEFAULT 'pending',
+      artifact_validation_at TIMESTAMPTZ,
+      artifact_validation_error TEXT,
+      restore_verification_status TEXT NOT NULL DEFAULT 'pending',
+      restore_verification_at TIMESTAMPTZ,
+      restore_verification_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS project_backups_project_created_idx
+      ON project_backups (project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS project_backups_status_idx
+      ON project_backups (status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS project_backups_offsite_status_idx
+      ON project_backups (offsite_status, created_at DESC);
+  `);
+
+  await pool.query(`
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS format TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS local_path TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS size_bytes INTEGER;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS checksum_sha256 TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS status TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS error TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_status TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_key TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_completed_at TIMESTAMPTZ;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_error TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS artifact_validation_status TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS artifact_validation_at TIMESTAMPTZ;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS artifact_validation_error TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS restore_verification_status TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS restore_verification_at TIMESTAMPTZ;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS restore_verification_error TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+    UPDATE project_backups SET format = 'pg_custom' WHERE format IS NULL;
+    UPDATE project_backups SET status = 'queued' WHERE status IS NULL;
+    UPDATE project_backups SET offsite_status = 'pending' WHERE offsite_status IS NULL;
+    UPDATE project_backups SET artifact_validation_status = 'pending' WHERE artifact_validation_status IS NULL;
+    UPDATE project_backups SET restore_verification_status = 'pending' WHERE restore_verification_status IS NULL;
+    UPDATE project_backups SET created_at = NOW() WHERE created_at IS NULL;
+    ALTER TABLE project_backups ALTER COLUMN format SET DEFAULT 'pg_custom';
+    ALTER TABLE project_backups ALTER COLUMN format SET NOT NULL;
+    ALTER TABLE project_backups ALTER COLUMN status SET DEFAULT 'queued';
+    ALTER TABLE project_backups ALTER COLUMN status SET NOT NULL;
+    ALTER TABLE project_backups ALTER COLUMN offsite_status SET DEFAULT 'pending';
+    ALTER TABLE project_backups ALTER COLUMN offsite_status SET NOT NULL;
+    ALTER TABLE project_backups ALTER COLUMN artifact_validation_status SET DEFAULT 'pending';
+    ALTER TABLE project_backups ALTER COLUMN artifact_validation_status SET NOT NULL;
+    ALTER TABLE project_backups ALTER COLUMN restore_verification_status SET DEFAULT 'pending';
+    ALTER TABLE project_backups ALTER COLUMN restore_verification_status SET NOT NULL;
+    ALTER TABLE project_backups ALTER COLUMN created_at SET DEFAULT NOW();
+    ALTER TABLE project_backups ALTER COLUMN created_at SET NOT NULL;
+  `);
+
+  await pool.query(`
+    DO $migrate_backup_semantics$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'project_backups'
+          AND column_name = 'restore_test_status'
+      ) THEN
+        UPDATE project_backups
+        SET
+          artifact_validation_status = COALESCE(artifact_validation_status, restore_test_status),
+          artifact_validation_at = COALESCE(artifact_validation_at, restore_test_at),
+          artifact_validation_error = COALESCE(artifact_validation_error, restore_test_error)
+        WHERE artifact_validation_status IS NULL
+           OR artifact_validation_at IS NULL
+           OR artifact_validation_error IS NULL;
+      END IF;
+    END
+    $migrate_backup_semantics$;
+  `);
+
   db = drizzle(pool, { schema });
 }
 

@@ -8,6 +8,16 @@ type Props = {
   hash: string;
 };
 
+type BackupItem = {
+  id: string;
+  status: string;
+  sizeBytes?: number | null;
+  createdAt?: string | null;
+  offsiteStatus?: string | null;
+  artifactValidationStatus?: string | null;
+  restoreVerificationStatus?: string | null;
+};
+
 /**
  * Project export controls for SQL dump streaming.
  */
@@ -16,6 +26,10 @@ export function ProjectExportControl({ hash }: Props) {
   const [schemaOnly, setSchemaOnly] = useState(false);
   const [dataOnly, setDataOnly] = useState(false);
   const [clean, setClean] = useState(false);
+  const [backups, setBackups] = useState<BackupItem[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
 
   const downloadHref = useMemo(() => {
     const params = new URLSearchParams();
@@ -47,6 +61,50 @@ export function ProjectExportControl({ hash }: Props) {
     window.location.assign(downloadHref);
   }
 
+  async function loadBackups(): Promise<void> {
+    setBackupsLoading(true);
+    setBackupError(null);
+    try {
+      const res = await fetch(`/api/cli/v1/projects/${encodeURIComponent(hash)}/backups`);
+      const body = (await res.json()) as { backups?: BackupItem[]; error?: string };
+      if (!res.ok) {
+        throw new Error(body.error || `Request failed (${String(res.status)})`);
+      }
+      setBackups(Array.isArray(body.backups) ? body.backups : []);
+    } catch (err: unknown) {
+      setBackupError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBackupsLoading(false);
+    }
+  }
+
+  async function createBackupNow(): Promise<void> {
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      const res = await fetch(`/api/cli/v1/projects/${encodeURIComponent(hash)}/backups`, {
+        method: "POST",
+      });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(body.error || `Request failed (${String(res.status)})`);
+      }
+      await loadBackups();
+    } catch (err: unknown) {
+      setBackupError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  function downloadLatestBackup(): void {
+    const latest = backups[0];
+    if (!latest) return;
+    window.location.assign(
+      `/api/cli/v1/projects/${encodeURIComponent(hash)}/backups/${encodeURIComponent(latest.id)}/download`,
+    );
+  }
+
   useEffect(() => {
     if (!toolsOpen) return;
     function onKey(e: KeyboardEvent): void {
@@ -64,6 +122,11 @@ export function ProjectExportControl({ hash }: Props) {
       document.body.style.overflow = prev;
     };
   }, [toolsOpen]);
+
+  useEffect(() => {
+    if (!toolsOpen) return;
+    void loadBackups();
+  }, [hash, toolsOpen]);
 
   return (
     <>
@@ -116,6 +179,41 @@ export function ProjectExportControl({ hash }: Props) {
                   Export is available now. Additional DB tools can live here as they
                   ship.
                 </p>
+
+                <section className="mt-4 border border-zinc-800 bg-zinc-950 p-3">
+                  <p className="mb-3 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                    Backups (v1 dedicated)
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void createBackupNow()}
+                      disabled={backupBusy}
+                      className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {backupBusy ? "Creating backup..." : "Create backup now"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={downloadLatestBackup}
+                      disabled={backups.length === 0}
+                      className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Download latest backup
+                    </button>
+                  </div>
+                  <div className="mt-3 text-xs text-zinc-400">
+                    {backupsLoading ? "Loading backups..." : `Backups: ${String(backups.length)}`}
+                  </div>
+                  {backups[0] ? (
+                    <div className="mt-1 text-xs text-zinc-400">
+                      Last backup: {backups[0].createdAt ?? "-"} | offsite: {backups[0].offsiteStatus ?? "-"} | artifact validation: {backups[0].artifactValidationStatus ?? "-"} | restore verify: {backups[0].restoreVerificationStatus ?? "-"}
+                    </div>
+                  ) : null}
+                  {backupError ? (
+                    <p className="mt-2 text-xs text-rose-400">{backupError}</p>
+                  ) : null}
+                </section>
 
                 <section className="mt-4 border border-zinc-800 bg-zinc-950 p-3">
                   <p className="mb-3 text-[10px] uppercase tracking-[0.16em] text-zinc-500">

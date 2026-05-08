@@ -2514,6 +2514,76 @@ export class ProjectManager {
   }
 
   /**
+   * Streams a PostgreSQL custom-format backup (`pg_dump -Fc`) from a running tenant Postgres.
+   * Intended for restoreable backup artifacts (compressed/custom format for `pg_restore`).
+   */
+  async getProjectCustomBackupStream(
+    slug: string,
+    hash: string,
+  ): Promise<Readable> {
+    const creds = await this.resolveRunningPostgresCredentials(slug, hash);
+    const exec = await this.docker.getContainer(creds.containerId).exec({
+      AttachStdout: true,
+      AttachStderr: true,
+      Cmd: [
+        "pg_dump",
+        "-U",
+        POSTGRES_USER,
+        "-d",
+        "postgres",
+        "-Fc",
+        "--no-owner",
+        "--no-acl",
+      ],
+      Env: [`PGPASSWORD=${creds.password}`],
+    });
+    const io = await exec.start({
+      hijack: true,
+      stdin: false,
+    });
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const stderrChunks: Buffer[] = [];
+    stderr.on("data", (chunk: Buffer | string | Uint8Array) => {
+      stderrChunks.push(
+        Buffer.isBuffer(chunk)
+          ? chunk
+          : typeof chunk === "string"
+            ? Buffer.from(chunk, "utf8")
+            : Buffer.from(chunk),
+      );
+    });
+    this.docker.modem.demuxStream(
+      io as unknown as NodeJS.ReadWriteStream,
+      stdout,
+      stderr,
+    );
+    const finalize = async (): Promise<void> => {
+      const state = await exec.inspect();
+      const code = state.ExitCode ?? 1;
+      if (code !== 0) {
+        const stderrText = Buffer.concat(stderrChunks).toString("utf8").trim();
+        stdout.destroy(
+          new Error(
+            stderrText.length > 0
+              ? `pg_dump -Fc failed (${String(code)}): ${stderrText}`
+              : `pg_dump -Fc failed (${String(code)}).`,
+          ),
+        );
+        return;
+      }
+      stdout.end();
+    };
+    io.on("end", () => {
+      void finalize();
+    });
+    io.on("error", (err: Error) => {
+      stdout.destroy(err);
+    });
+    return stdout;
+  }
+
+  /**
    * Runs arbitrary SQL against an existing Flux project's Postgres instance.
    *
    * Resolves the running DB container and `POSTGRES_PASSWORD` from Docker inspect, then runs
