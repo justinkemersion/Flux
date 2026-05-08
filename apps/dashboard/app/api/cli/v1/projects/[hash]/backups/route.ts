@@ -7,6 +7,7 @@ import { getDb, initSystemDb } from "@/src/lib/db";
 import {
   createBackupForProject,
   listBackupsForProject,
+  reconcileListedBackupArtifacts,
   type BackupRow,
 } from "@/src/lib/project-backups";
 
@@ -23,8 +24,10 @@ function serializeBackupForCli(row: BackupRow) {
     offsiteCompletedAt: row.offsiteCompletedAt?.toISOString() ?? null,
     artifactValidationStatus: row.artifactValidationStatus,
     artifactValidationAt: row.artifactValidationAt?.toISOString() ?? null,
+    artifactValidationError: row.artifactValidationError,
     restoreVerificationStatus: row.restoreVerificationStatus,
     restoreVerificationAt: row.restoreVerificationAt?.toISOString() ?? null,
+    restoreVerificationError: row.restoreVerificationError,
   };
 }
 
@@ -89,8 +92,9 @@ export async function GET(req: Request, context: Ctx): Promise<Response> {
   if ("error" in resolved) return resolved.error;
 
   const rows = await listBackupsForProject(resolved.project.id);
+  const reconciled = await reconcileListedBackupArtifacts(rows);
   return Response.json({
-    backups: rows.map(serializeBackupForCli),
+    backups: reconciled.map(serializeBackupForCli),
   });
 }
 

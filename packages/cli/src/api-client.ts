@@ -128,8 +128,10 @@ const backupItemSchema = z.object({
   offsiteCompletedAt: z.string().nullable().optional(),
   artifactValidationStatus: z.string().nullable().optional(),
   artifactValidationAt: z.string().nullable().optional(),
+  artifactValidationError: z.string().nullable().optional(),
   restoreVerificationStatus: z.string().nullable().optional(),
   restoreVerificationAt: z.string().nullable().optional(),
+  restoreVerificationError: z.string().nullable().optional(),
 });
 
 const listBackupsResponseSchema = z.object({

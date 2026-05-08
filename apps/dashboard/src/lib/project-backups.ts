@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { probeBackupArtifactOnDisk } from "@/src/lib/backup-artifact-probe";
 import { backupLocks, projectBackups, projects } from "@/src/db/schema";
 import { getBackupStorage } from "@/src/lib/backup-storage";
 import { getDb } from "@/src/lib/db";
@@ -15,6 +16,11 @@ export type BackupRow = typeof projectBackups.$inferSelect;
 const execFileAsync = promisify(execFile);
 const CREATE_LOCK_TTL_MS = 30 * 60 * 1000;
 const VERIFY_LOCK_TTL_MS = 60 * 60 * 1000;
+/** Cap disk checks on GET /backups (newest-first complete rows). */
+const RECONCILE_COMPLETE_BACKUPS_MAX = 20;
+
+const RESTORE_SKIP_AFTER_ARTIFACT_FAIL =
+  "Skipped because artifact validation failed.";
 
 /** Drizzle `db.execute` may resolve to a row array or a node-pg {@link QueryResult}. */
 function rawSqlReturningRowCount(raw: unknown): number {
@@ -77,6 +83,66 @@ export async function listBackupsForProject(
     .from(projectBackups)
     .where(eq(projectBackups.projectId, projectId))
     .orderBy(desc(projectBackups.createdAt));
+}
+
+async function markBackupArtifactInvalidFromReconcile(
+  row: BackupRow,
+  artifactError: string,
+): Promise<BackupRow | null> {
+  if (
+    row.artifactValidationStatus === "artifact_invalid" &&
+    row.artifactValidationError === artifactError &&
+    row.restoreVerificationStatus === "skipped" &&
+    row.restoreVerificationError === RESTORE_SKIP_AFTER_ARTIFACT_FAIL
+  ) {
+    return null;
+  }
+
+  const db = getDb();
+  const [updated] = await db
+    .update(projectBackups)
+    .set({
+      artifactValidationStatus: "artifact_invalid",
+      artifactValidationError: artifactError,
+      artifactValidationAt: new Date(),
+      restoreVerificationStatus: "skipped",
+      restoreVerificationError: RESTORE_SKIP_AFTER_ARTIFACT_FAIL,
+      restoreVerificationAt: null,
+    })
+    .where(eq(projectBackups.id, row.id))
+    .returning();
+  return updated ?? null;
+}
+
+/**
+ * Reconcile DB artifact / restore-verify flags with on-disk truth for recent complete backups.
+ * Call from GET backups so CLI/UI trust classification matches storage.
+ */
+export async function reconcileListedBackupArtifacts(
+  rows: BackupRow[],
+): Promise<BackupRow[]> {
+  const completeOrdered = rows.filter((r) => r.status === "complete");
+  const slice = completeOrdered.slice(0, RECONCILE_COMPLETE_BACKUPS_MAX);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  for (const row of slice) {
+    const probe = await probeBackupArtifactOnDisk({
+      localPath: row.localPath,
+      checksumSha256: row.checksumSha256,
+      sizeBytes: row.sizeBytes,
+    });
+    if (probe.ok) continue;
+
+    const updated = await markBackupArtifactInvalidFromReconcile(
+      row,
+      probe.artifactError,
+    );
+    if (updated) {
+      byId.set(updated.id, updated);
+    }
+  }
+
+  return rows.map((r) => byId.get(r.id) ?? r);
 }
 
 export async function createBackupForProject(input: {
