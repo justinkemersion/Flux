@@ -26,6 +26,7 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux list` | Show projects and Service URLs |
 | `flux push` | Apply SQL file(s) to a project—pass **`--project <slug>`** and **`--hash <7hex>`** from **`flux list`** (or use **`flux.json`**) |
 | `flux dump` | Export schema/data (see flags locally) |
+| `flux migrate` | Orchestrate **v2_shared** → **v1_dedicated** via the control plane (see [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)) |
 | `flux logs` | Tail project logs when wired |
 
 ### Identifiers
@@ -55,3 +56,4 @@ Use your own **slug** and **hash** from **`flux list`** (example values above).
 
 - [Configuration](/docs/reference/config)
 - [Migrations workflow](/docs/guides/migrations)
+- [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)

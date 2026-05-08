@@ -35,4 +35,5 @@ Choose **dedicated** when policy or risk requires no shared database cluster. Ch
 ## Next steps
 
 - [Flux v2](/docs/architecture/flux-v2)
+- [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)
 - [Tenant isolation (security)](/docs/security/tenant-isolation)

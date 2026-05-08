@@ -17,6 +17,8 @@ Treat SQL files in Git as **canonical**. `flux push` applies them to the tenant 
 
 On **v2 shared**, create objects in your **`t_<shortId>_api`** schema (name from the platform—not the marketing slug). Creating only in `public` often yields permission errors at request time.
 
+To move an entire project from **v2 shared** to **v1 dedicated** (engine change, not a SQL file), use **`flux migrate`**—see [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate).
+
 After push, wait briefly for reload before assuming new tables exist in PostgREST’s cache.
 
 ## How it works
@@ -37,4 +39,5 @@ Wrap breaking changes in transactions where appropriate; test dumps on a scratch
 ## Next steps
 
 - [Migrations (concepts)](/docs/concepts/migrations)
+- [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)
 - [CLI reference](/docs/reference/cli)

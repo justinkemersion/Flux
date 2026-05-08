@@ -34,4 +34,5 @@ When writing client URL helpers, test both flattened and any legacy dotted forms
 ## Next steps
 
 - [Service URLs](/docs/concepts/service-urls)
+- [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)
 - [Simple CRUD](/docs/examples/simple-crud)

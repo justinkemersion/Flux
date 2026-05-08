@@ -854,6 +854,18 @@ Explain:
 
 ---
 
+# /guides/v2-to-v1-migrate
+
+Explain:
+
+* difference between SQL migrations (`flux push`) and engine migration (`flux migrate`)
+* control plane API vs tenant Service URL
+* phased flow: dry-run, dump-only, staged, full cutover
+* prerequisites: CLI auth, `flux.json`, `pg_dump` on control plane host
+* post-migrate app env and JWT rotation
+
+---
+
 # /guides/production-hardening
 
 Explain:
