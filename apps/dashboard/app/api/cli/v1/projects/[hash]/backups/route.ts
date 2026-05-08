@@ -107,6 +107,7 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error("[cli v1 backups POST]", err);
     if (/already running/i.test(msg)) {
       return jsonError(msg, 409);
     }

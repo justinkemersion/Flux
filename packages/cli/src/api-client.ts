@@ -12,6 +12,36 @@ import { HOSTED_FLUX_PUBLIC_API_BASE } from "./utils/env-file";
 
 const DEFAULT_BASE = HOSTED_FLUX_PUBLIC_API_BASE;
 
+function messageFromApiErrorBody(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const o = body as Record<string, unknown>;
+  for (const key of ["error", "message", "detail"] as const) {
+    const v = o[key];
+    if (typeof v === "string" && v.trim().length > 0) return v.trim();
+  }
+  return null;
+}
+
+/** When `!res.ok`, build a useful CLI message from JSON or a short raw body snippet. */
+function describeFailedApiResponse(
+  status: number,
+  body: unknown,
+  rawText: string,
+): string {
+  const fromJson = messageFromApiErrorBody(body);
+  if (fromJson) return fromJson;
+  const t = rawText.trim();
+  if (
+    t.length > 0 &&
+    !t.startsWith("<!DOCTYPE") &&
+    !t.toLowerCase().startsWith("<html")
+  ) {
+    const max = 500;
+    return `Request failed (${String(status)}): ${t.length > max ? `${t.slice(0, max)}…` : t}`;
+  }
+  return `Request failed (${String(status)})`;
+}
+
 const fluxProjectSummarySchema = z.object({
   slug: z.string(),
   hash: z.string(),
@@ -808,15 +838,7 @@ export class ApiClient {
       throw new Error("Invalid or expired API token. Run `flux login`.");
     }
     if (!res.ok) {
-      const msg =
-        body &&
-        typeof body === "object" &&
-        body !== null &&
-        "error" in body &&
-        typeof (body as { error: unknown }).error === "string"
-          ? (body as { error: string }).error
-          : `Request failed (${String(res.status)})`;
-      throw new Error(msg);
+      throw new Error(describeFailedApiResponse(res.status, body, text));
     }
     const parsed = listBackupsResponseSchema.safeParse(body);
     if (!parsed.success) {
@@ -849,15 +871,7 @@ export class ApiClient {
       throw new Error("Invalid or expired API token. Run `flux login`.");
     }
     if (!res.ok) {
-      const msg =
-        body &&
-        typeof body === "object" &&
-        body !== null &&
-        "error" in body &&
-        typeof (body as { error: unknown }).error === "string"
-          ? (body as { error: string }).error
-          : `Request failed (${String(res.status)})`;
-      throw new Error(msg);
+      throw new Error(describeFailedApiResponse(res.status, body, text));
     }
     const parsed = createBackupResponseSchema.safeParse(body);
     if (!parsed.success) {
@@ -932,15 +946,7 @@ export class ApiClient {
       throw new Error("Invalid or expired API token. Run `flux login`.");
     }
     if (!res.ok) {
-      const msg =
-        body &&
-        typeof body === "object" &&
-        body !== null &&
-        "error" in body &&
-        typeof (body as { error: unknown }).error === "string"
-          ? (body as { error: string }).error
-          : `Request failed (${String(res.status)})`;
-      throw new Error(msg);
+      throw new Error(describeFailedApiResponse(res.status, body, text));
     }
     const parsed = verifyBackupResponseSchema.safeParse(body);
     if (!parsed.success) {

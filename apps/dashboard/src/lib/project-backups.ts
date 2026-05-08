@@ -16,6 +16,19 @@ const execFileAsync = promisify(execFile);
 const CREATE_LOCK_TTL_MS = 30 * 60 * 1000;
 const VERIFY_LOCK_TTL_MS = 60 * 60 * 1000;
 
+/** Drizzle `db.execute` may resolve to a row array or a node-pg {@link QueryResult}. */
+function rawSqlReturningRowCount(raw: unknown): number {
+  if (Array.isArray(raw)) return raw.length;
+  if (raw && typeof raw === "object") {
+    const r = raw as { rows?: unknown[]; rowCount?: number };
+    if (Array.isArray(r.rows)) return r.rows.length;
+    if (typeof r.rowCount === "number" && Number.isFinite(r.rowCount)) {
+      return r.rowCount;
+    }
+  }
+  return 0;
+}
+
 function startOfUtcDay(d = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
@@ -45,8 +58,7 @@ async function acquireBackupLock(input: {
     WHERE backup_locks.expires_at < NOW()
     RETURNING lock_key;
   `);
-  const rowCount = Array.isArray(result) ? result.length : (result as { rowCount?: number }).rowCount ?? 0;
-  if (rowCount === 0) {
+  if (rawSqlReturningRowCount(result) === 0) {
     throw new Error(`Operation already running for lock ${input.lockKey}.`);
   }
 }
