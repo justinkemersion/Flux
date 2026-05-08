@@ -27,6 +27,19 @@ const RECONCILE_COMPLETE_BACKUPS_MAX = 20;
 const RESTORE_SKIP_AFTER_ARTIFACT_FAIL =
   "Skipped because artifact validation failed.";
 
+function catalogSha256LooksValid(checksumSha256: string | null | undefined): boolean {
+  const h = checksumSha256?.trim().toLowerCase() ?? "";
+  return /^[a-f0-9]{64}$/u.test(h);
+}
+
+/** Rows marked artifact-valid / restore-verified must carry a SHA256 we can re-check on disk. */
+function backupClaimsTrustedArtifact(row: BackupRow): boolean {
+  return (
+    row.restoreVerificationStatus === "restore_verified" ||
+    row.artifactValidationStatus === "artifact_valid"
+  );
+}
+
 /** Drizzle `db.execute` may resolve to a row array or a node-pg {@link QueryResult}. */
 function rawSqlReturningRowCount(raw: unknown): number {
   if (Array.isArray(raw)) return raw.length;
@@ -139,6 +152,21 @@ export async function reconcileListedBackupArtifacts(
   const db = getDb();
   for (const row of slice) {
     const canonical = canonicalBackupLocalPath(row);
+
+    if (
+      backupClaimsTrustedArtifact(row) &&
+      !catalogSha256LooksValid(row.checksumSha256)
+    ) {
+      const updated = await markBackupArtifactInvalidFromReconcile(
+        row,
+        "Catalog missing or invalid SHA256 for a trusted backup; cannot verify artifact integrity.",
+      );
+      if (updated) {
+        byId.set(updated.id, updated);
+      }
+      continue;
+    }
+
     const probe = await probeBackupArtifactOnDisk({
       localPath: canonical,
       checksumSha256: row.checksumSha256,

@@ -14,6 +14,8 @@ import {
 function serializeBackupForCli(row: BackupRow) {
   return {
     id: row.id,
+    /** Relative to FLUX_BACKUPS_LOCAL_DIR on the control plane (canonical layout). */
+    primaryArtifactRelativePath: `${row.projectId}/${row.id}.dump`,
     format: row.format,
     status: row.status,
     sizeBytes: row.sizeBytes,
@@ -95,9 +97,17 @@ export async function GET(req: Request, context: Ctx): Promise<Response> {
 
   const rows = await listBackupsForProject(resolved.project.id);
   const reconciled = await reconcileListedBackupArtifacts(rows);
-  return Response.json({
-    backups: reconciled.map(serializeBackupForCli),
-  });
+  return Response.json(
+    {
+      backups: reconciled.map(serializeBackupForCli),
+      reconciledAt: new Date().toISOString(),
+    },
+    {
+      headers: {
+        "Cache-Control": "private, no-store, max-age=0, must-revalidate",
+      },
+    },
+  );
 }
 
 export async function POST(req: Request, context: Ctx): Promise<Response> {
@@ -110,9 +120,16 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
       slug: resolved.project.slug,
       hash: resolved.project.hash,
     });
-    return Response.json({
-      backup: serializeBackupForCli(backup),
-    });
+    return Response.json(
+      {
+        backup: serializeBackupForCli(backup),
+      },
+      {
+        headers: {
+          "Cache-Control": "private, no-store, max-age=0, must-revalidate",
+        },
+      },
+    );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[cli v1 backups POST]", err);

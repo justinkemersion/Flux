@@ -319,7 +319,7 @@ async function ensureRestoreVerifiedLatestBackup(
   if (skipBackupCheck) return;
   const meta = await client.getProjectMetadata(hash);
   if (meta.mode !== "v1_dedicated") return;
-  const backups = await client.listProjectBackups(hash);
+  const { backups } = await client.listProjectBackups(hash);
   const c = classifyNewestBackup(backups);
   if (!c.allowsDestructiveWithoutOverride) {
     throw new Error(destructiveBackupCheckMessage(c));
@@ -510,6 +510,13 @@ function fmtBytes(n: number | null | undefined): string {
   return `${(v / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
 }
 
+/** Trim long `<projectId>/<backupId>.dump` for verbose table cells. */
+function fmtArtifactRelPath(p: string | undefined): string {
+  const s = (p ?? "").trim() || "-";
+  if (s.length <= 44) return s.padEnd(44);
+  return `${s.slice(0, 18)}…${s.slice(-23)}`;
+}
+
 async function cmdBackupCreate(
   name: string | undefined,
   projectOpt: string | undefined,
@@ -541,10 +548,22 @@ async function cmdBackupList(
   resolveOptionalName(fromCli, flux, "positional [name] or -p, --project");
   const hash = resolveHash(cliHash, flux);
   const client = getApiClient();
-  const backups = await client.listProjectBackups(hash);
+  const { backups, reconciledAt } = await client.listProjectBackups(hash);
   sectionBanner("Backups");
   const classification = classifyNewestBackup(backups);
   printBackupTrustSummary(classification);
+  if (reconciledAt) {
+    console.log(
+      chalk.dim(`  Checked artifacts on server at ${reconciledAt}.`),
+    );
+  }
+  if (backups[0]?.primaryArtifactRelativePath) {
+    console.log(
+      chalk.dim(
+        `  Newest dump file (relative to FLUX_BACKUPS_LOCAL_DIR): ${backups[0].primaryArtifactRelativePath}`,
+      ),
+    );
+  }
   console.log();
   if (backups.length === 0) {
     console.log(chalk.dim("  No backup rows yet."));
@@ -553,12 +572,12 @@ async function cmdBackupList(
   if (verbose) {
     console.log(
       chalk.dim(
-        "  ID                                   STATUS     SIZE       CREATED                    VALIDATION        RESTORE_VERIFY",
+        "  ID                                   STATUS     SIZE       CREATED                    VALIDATION        RESTORE_VERIFY   ARTIFACT_REL_PATH",
       ),
     );
     for (const row of backups) {
       console.log(
-        `  ${chalk.cyan(row.id.padEnd(36))} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending")}`,
+        `  ${chalk.cyan(row.id.padEnd(36))} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending").padEnd(16)} ${fmtArtifactRelPath(row.primaryArtifactRelativePath)}`,
       );
     }
     return;
@@ -590,7 +609,7 @@ async function cmdBackupDownload(
   const client = getApiClient();
   let targetId = (backupId ?? "").trim();
   if (latest) {
-    const rows = await client.listProjectBackups(hash);
+    const { backups: rows } = await client.listProjectBackups(hash);
     if (rows.length === 0) {
       throw new Error("No backups available to download.");
     }
@@ -638,7 +657,7 @@ async function cmdBackupVerify(
   const client = getApiClient();
   let id = (backupId ?? "").trim();
   if (latest) {
-    const rows = await client.listProjectBackups(hash);
+    const { backups: rows } = await client.listProjectBackups(hash);
     if (rows.length === 0) {
       throw new Error("No backups available to verify.");
     }

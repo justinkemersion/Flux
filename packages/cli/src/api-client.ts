@@ -118,6 +118,8 @@ const pushSqlResponseSchema = z.object({
 
 const backupItemSchema = z.object({
   id: z.string(),
+  /** Relative path under FLUX_BACKUPS_LOCAL_DIR on the control plane. */
+  primaryArtifactRelativePath: z.string().optional(),
   format: z.string(),
   status: z.string(),
   sizeBytes: z.number().nullable().optional(),
@@ -136,6 +138,7 @@ const backupItemSchema = z.object({
 
 const listBackupsResponseSchema = z.object({
   backups: z.array(backupItemSchema),
+  reconciledAt: z.string().optional(),
 });
 
 const createBackupResponseSchema = z.object({
@@ -157,6 +160,10 @@ export type CreateProjectMode = "v1_dedicated" | "v2_shared";
 export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
 export type ProjectBackup = z.infer<typeof backupItemSchema>;
+export type ListProjectBackupsResult = {
+  backups: ProjectBackup[];
+  reconciledAt?: string;
+};
 
 /**
  * Base URL: hosted default (`HOSTED_FLUX_PUBLIC_API_BASE`), `process.env.FLUX_API_BASE`, inferred from `FLUX_URL` when it is a `*.vsl-base.com` tenant Service URL, or project `.env` / `.env.local` (shell wins).
@@ -816,12 +823,13 @@ export class ApiClient {
     return res.body;
   }
 
-  async listProjectBackups(hash: string): Promise<ProjectBackup[]> {
+  async listProjectBackups(hash: string): Promise<ListProjectBackupsResult> {
     const token = this.tokenOrThrow();
     const h = hash.trim().toLowerCase();
     const url = `${this.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}/backups`;
     const res = await fetch(url, {
       method: "GET",
+      cache: "no-store",
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
@@ -846,7 +854,10 @@ export class ApiClient {
     if (!parsed.success) {
       throw new Error("CLI backups list: response had unexpected shape.");
     }
-    return parsed.data.backups;
+    return {
+      backups: parsed.data.backups,
+      reconciledAt: parsed.data.reconciledAt,
+    };
   }
 
   async createProjectBackup(hash: string): Promise<ProjectBackup> {
