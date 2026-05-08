@@ -8,8 +8,9 @@ import {
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 import { resolveFluxApiToken } from "./config";
+import { HOSTED_FLUX_PUBLIC_API_BASE } from "./utils/env-file";
 
-const DEFAULT_BASE = "https://flux.vsl-base.com/api";
+const DEFAULT_BASE = HOSTED_FLUX_PUBLIC_API_BASE;
 
 const fluxProjectSummarySchema = z.object({
   slug: z.string(),
@@ -95,7 +96,7 @@ export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
 
 /**
- * Base URL: `https://flux.vsl-base.com/api` (Flux control plane) or `process.env.FLUX_API_BASE` (no trailing slash).
+ * Base URL: hosted default (`HOSTED_FLUX_PUBLIC_API_BASE`), `process.env.FLUX_API_BASE`, inferred from `FLUX_URL` when it is a `*.vsl-base.com` tenant Service URL, or project `.env` / `.env.local` (shell wins).
  * Auth: `Authorization: Bearer` from `FLUX_API_TOKEN` or `~/.flux/config.json` (from `flux login`).
  */
 export class ApiClient {

@@ -24,6 +24,7 @@ import {
   resolveOptionalName,
   resolveProjectSlug,
 } from "./project-resolve";
+import { hydrateProcessEnvFromProjectFiles } from "./utils/env-file";
 
 /** Pinned in source; must match `packages/cli/package.json` and server `/api/install/cli/version` when published. */
 const CLI_VERSION = "1.0.0";
@@ -617,6 +618,8 @@ async function main(): Promise<void> {
     process.stderr.write(`\nFatal: ${fatalString(reason)}\n`);
     process.exit(1);
   });
+
+  await hydrateProcessEnvFromProjectFiles(process.cwd());
 
   const argv = process.argv.slice(2);
   if (
