@@ -34,7 +34,12 @@ async function markFailed(
   }
   await db
     .update(projectBackups)
-    .set({ artifactValidationStatus: "failed", artifactValidationError: error })
+    .set({
+      artifactValidationStatus: "artifact_invalid",
+      artifactValidationError: error,
+      restoreVerificationStatus: "skipped",
+      restoreVerificationError: "Skipped because artifact validation failed.",
+    })
     .where(eq(projectBackups.id, backupId));
 }
 
@@ -69,7 +74,10 @@ async function processPendingReplicationAndRestore(): Promise<void> {
     .where(
       and(
         eq(projectBackups.status, "complete"),
-        inArray(projectBackups.artifactValidationStatus, ["pending", "failed"]),
+        inArray(projectBackups.artifactValidationStatus, [
+          "pending",
+          "artifact_invalid",
+        ]),
       ),
     )
     .orderBy(asc(projectBackups.createdAt))

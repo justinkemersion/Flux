@@ -13,6 +13,8 @@ import { getProjectManager } from "@/src/lib/flux";
 
 export type BackupRow = typeof projectBackups.$inferSelect;
 const execFileAsync = promisify(execFile);
+const runningBackupCreates = new Set<string>();
+const runningBackupVerifications = new Set<string>();
 
 function startOfUtcDay(d = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -34,9 +36,28 @@ export async function createBackupForProject(input: {
   slug: string;
   hash: string;
 }): Promise<BackupRow> {
+  if (runningBackupCreates.has(input.projectId)) {
+    throw new Error("A backup operation is already running for this project.");
+  }
+  runningBackupCreates.add(input.projectId);
   const db = getDb();
   const storage = getBackupStorage();
   await storage.ensureRoots();
+
+  const [active] = await db
+    .select({ id: projectBackups.id })
+    .from(projectBackups)
+    .where(
+      and(
+        eq(projectBackups.projectId, input.projectId),
+        eq(projectBackups.status, "running"),
+      ),
+    )
+    .limit(1);
+  if (active) {
+    runningBackupCreates.delete(input.projectId);
+    throw new Error("A backup operation is already running for this project.");
+  }
 
   const [queued] = await db
     .insert(projectBackups)
@@ -95,6 +116,8 @@ export async function createBackupForProject(input: {
       .set({ status: "failed", error: err instanceof Error ? err.message : String(err) })
       .where(eq(projectBackups.id, queued.id));
     throw err;
+  } finally {
+    runningBackupCreates.delete(input.projectId);
   }
 }
 
@@ -135,7 +158,7 @@ export async function runBackupArtifactValidation(backupId: string): Promise<voi
   if (backup.status !== "complete") return;
   await db
     .update(projectBackups)
-    .set({ artifactValidationStatus: "running", artifactValidationError: null })
+    .set({ artifactValidationStatus: "pending", artifactValidationError: null })
     .where(eq(projectBackups.id, backup.id));
   const fs = await stat(backup.localPath);
   if (!fs.isFile() || fs.size <= 0) {
@@ -144,15 +167,23 @@ export async function runBackupArtifactValidation(backupId: string): Promise<voi
   await db
     .update(projectBackups)
     .set({
-      artifactValidationStatus: "artifact_verified",
+      artifactValidationStatus: "artifact_valid",
       artifactValidationAt: new Date(),
     })
     .where(eq(projectBackups.id, backup.id));
 }
 
 async function runDocker(args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("docker", args, { maxBuffer: 10 * 1024 * 1024 });
-  return stdout.toString().trim();
+  try {
+    const { stdout } = await execFileAsync("docker", args, {
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return stdout.toString().trim();
+  } catch (err: unknown) {
+    const e = err as { code?: number | string };
+    const code = e?.code != null ? String(e.code) : "unknown";
+    throw new Error(`docker command failed (exit ${code})`);
+  }
 }
 
 async function waitForPgReady(containerName: string, timeoutMs: number): Promise<void> {
@@ -170,6 +201,10 @@ async function waitForPgReady(containerName: string, timeoutMs: number): Promise
 }
 
 export async function verifyBackupRestore(backupId: string): Promise<void> {
+  if (runningBackupVerifications.has(backupId)) {
+    throw new Error("Restore verification is already running for this backup.");
+  }
+  runningBackupVerifications.add(backupId);
   const db = getDb();
   const [backup] = await db
     .select()
@@ -178,11 +213,17 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
     .limit(1);
   if (!backup) throw new Error("Backup not found.");
   if (backup.status !== "complete") {
+    runningBackupVerifications.delete(backupId);
     throw new Error("Backup must be complete before restore verification.");
   }
   const fs = await stat(backup.localPath);
   if (!fs.isFile() || fs.size <= 0) {
+    runningBackupVerifications.delete(backupId);
     throw new Error("Backup file does not exist or is empty.");
+  }
+  if (backup.restoreVerificationStatus === "restore_verified") {
+    runningBackupVerifications.delete(backupId);
+    return;
   }
 
   const verifyPassword = crypto.randomUUID().replace(/-/g, "");
@@ -192,13 +233,18 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
   await db
     .update(projectBackups)
     .set({
-      restoreVerificationStatus: "running",
+      restoreVerificationStatus: "pending",
       restoreVerificationError: null,
     })
     .where(eq(projectBackups.id, backup.id));
 
   let created = false;
   try {
+    try {
+      await runDocker(["rm", "-f", verifyName]);
+    } catch {
+      // best-effort pre-cleanup
+    }
     await runDocker([
       "run",
       "--rm",
@@ -277,7 +323,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
     await db
       .update(projectBackups)
       .set({
-        restoreVerificationStatus: "failed",
+        restoreVerificationStatus: "restore_failed",
         restoreVerificationError: err instanceof Error ? err.message : String(err),
       })
       .where(eq(projectBackups.id, backup.id));
@@ -290,6 +336,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         // Container may already be removed; ignore cleanup failures.
       }
     }
+    runningBackupVerifications.delete(backupId);
   }
 }
 

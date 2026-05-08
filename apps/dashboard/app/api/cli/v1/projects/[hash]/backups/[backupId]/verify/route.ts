@@ -54,6 +54,10 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
     await verifyBackupRestore(backupId);
     return Response.json({ ok: true, backupId, restoreVerificationStatus: "restore_verified" });
   } catch (err: unknown) {
-    return jsonError(err instanceof Error ? err.message : String(err), 500);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/already running/i.test(msg)) {
+      return jsonError(msg, 409);
+    }
+    return jsonError(msg, 500);
   }
 }

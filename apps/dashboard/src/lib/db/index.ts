@@ -388,6 +388,16 @@ async function _init(): Promise<void> {
     UPDATE project_backups SET offsite_status = 'pending' WHERE offsite_status IS NULL;
     UPDATE project_backups SET artifact_validation_status = 'pending' WHERE artifact_validation_status IS NULL;
     UPDATE project_backups SET restore_verification_status = 'pending' WHERE restore_verification_status IS NULL;
+    UPDATE project_backups SET artifact_validation_status = 'artifact_valid'
+      WHERE artifact_validation_status IN ('artifact_verified');
+    UPDATE project_backups SET artifact_validation_status = 'artifact_invalid'
+      WHERE artifact_validation_status IN ('failed');
+    UPDATE project_backups SET artifact_validation_status = 'pending'
+      WHERE artifact_validation_status IN ('running');
+    UPDATE project_backups SET restore_verification_status = 'restore_failed'
+      WHERE restore_verification_status IN ('failed');
+    UPDATE project_backups SET restore_verification_status = 'pending'
+      WHERE restore_verification_status IN ('running');
     UPDATE project_backups SET created_at = NOW() WHERE created_at IS NULL;
     ALTER TABLE project_backups ALTER COLUMN format SET DEFAULT 'pg_custom';
     ALTER TABLE project_backups ALTER COLUMN format SET NOT NULL;
