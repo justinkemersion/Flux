@@ -270,15 +270,17 @@ export function ProjectExportControl({ hash }: Props) {
                               return (
                                 <li
                                   key={b.id}
-                                  className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 border-b border-zinc-900 py-1.5 text-[10px] last:border-b-0"
+                                  className="border-b border-zinc-900 py-2 text-[10px] last:border-b-0"
                                 >
-                                  <span className="font-mono text-zinc-500">
-                                    {b.id.slice(0, 8)}…
-                                  </span>
-                                  <span className="text-zinc-600">{b.status}</span>
-                                  <span className="shrink-0 text-zinc-500">
-                                    {backupTrustTierLabel(rowTrust.tier)}
-                                  </span>
+                                  <div className="break-all font-mono text-zinc-500">
+                                    {b.id}
+                                  </div>
+                                  <div className="mt-0.5 flex justify-between gap-2 text-zinc-600">
+                                    <span>{b.status}</span>
+                                    <span className="shrink-0 text-zinc-500">
+                                      {backupTrustTierLabel(rowTrust.tier)}
+                                    </span>
+                                  </div>
                                 </li>
                               );
                             })}
