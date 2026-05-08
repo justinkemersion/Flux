@@ -273,7 +273,7 @@ async function pipeBackupFileToPgRestoreInContainer(
       "postgres",
       "--no-owner",
       "--no-acl",
-      "-",
+      // PG16+: stdin is used when no FILE is given. A literal "-" is a path, not stdin (see pg_restore --help).
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
