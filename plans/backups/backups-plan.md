@@ -119,6 +119,19 @@ Add nightly cron/systemd timer.
 Add restore test script against a disposable Postgres container.
 Add dashboard “Download latest backup.”
 Later add Hetzner Storage Box / Backblaze B2 / Cloudflare R2 offsite copy.
+
+### Future: offsite trust copy (when true remote replica ships)
+
+Today’s v1 MVP reconciles **primary local artifact** truth (`FLUX_BACKUPS_LOCAL_DIR` / Docker volume) into catalog flags and `@flux/core/backup-trust` tiers (“Restorable” = restore-verified against **that** file).
+
+Once Flux persists backups to **real offsite object/storage**, extend UX copy (CLI summary + dashboard badges) so operators never confuse volume-local durability with remote durability:
+
+- **Restorable from local volume** — primary file on control-plane storage passes reconcile + restore verification (today’s meaning).
+- **Restorable from offsite replica** — local missing or unhealthy but remote object exists, checksum matches, and **restore verification has been run against the remote bytes** (or an equivalent trusted pipeline), not “upload queued.”
+- **Restorable from both** — local and offsite replicas each satisfy integrity + verification rules independently.
+
+Destructive-action gates should prefer **both** when the tier promises offsite; gate copy must state which replica failed (local vs remote). Until then, MVP remains coherent if “Restorable” refers only to local primary.
+
 My strong opinion
 
 For Flux, backups should become part of the brand:
