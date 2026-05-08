@@ -251,6 +251,7 @@ pnpm --filter dashboard test
 | gateway `health` fails with reset | process crashed before listener stabilized | same logs + `docker inspect ... State` |
 | v2 provision fails in dashboard | `FLUX_SHARED_POSTGRES_URL` DNS/network mismatch | verify `flux-web` attached to `flux-v2-shared` and URL host |
 | v2 mesh shows **Partial** / **Offline** but curl to tenant works | public `https://` probe from `flux-web` fails (TLS / DNS) | set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` and recreate `flux-web` |
+| `flux backup create` → `EACCES` on `/srv/flux` | control plane runs as non-root `nextjs`; default backup dirs were not writable | redeploy `flux-web` with `docker/web/flux-web-entrypoint.sh` + compose volumes (see `docker/web/docker-compose.yml`), or set `FLUX_BACKUPS_LOCAL_DIR` / `FLUX_BACKUPS_OFFSITE_DIR` to writable paths |
 | PostgREST returns wrong schema data | missing profile headers / hook misconfig | gateway proxy headers + `PGRST_DB_PRE_REQUEST` |
 | stale custom-domain routing | Redis cache not evicted | domain CRUD/delete path calls `evictHostname(s)` |
 

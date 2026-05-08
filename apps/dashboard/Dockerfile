@@ -24,7 +24,7 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
 # `flux migrate` (and related routes) run `pg_dump` against the shared cluster from this process.
-RUN apk add --no-cache postgresql17-client
+RUN apk add --no-cache postgresql17-client su-exec
 
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
@@ -33,6 +33,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/standalone .
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/public ./apps/dashboard/public
 
-USER nextjs
+COPY docker/web/flux-web-entrypoint.sh /flux-web-entrypoint.sh
+RUN chmod +x /flux-web-entrypoint.sh
+
+USER root
 EXPOSE 3000
+ENTRYPOINT ["/flux-web-entrypoint.sh"]
 CMD ["node", "apps/dashboard/server.js"]

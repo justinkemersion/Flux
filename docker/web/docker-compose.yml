@@ -34,6 +34,9 @@ services:
     volumes:
       # Control plane needs Docker to provision flux-system + tenant projects.
       - /var/run/docker.sock:/var/run/docker.sock
+      # v1_dedicated backup artifacts (defaults: /srv/flux/backups* in container). Entrypoint chowns for user nextjs.
+      - flux-web-backups:/srv/flux/backups
+      - flux-web-backups-offsite:/srv/flux/backups-offsite
     # The image runs as `nextjs` (non-root). The host socket is root:docker mode 660 — add that
     # group so dockerode can connect. Set DOCKER_GID in `.env` if yours differs (see `.env.example`).
     group_add:
@@ -74,3 +77,7 @@ networks:
   # for engine-v2 tenant bootstrap (FLUX_SHARED_POSTGRES_URL → flux-postgres-v2:5432).
   flux-v2-shared:
     external: true
+
+volumes:
+  flux-web-backups:
+  flux-web-backups-offsite:
