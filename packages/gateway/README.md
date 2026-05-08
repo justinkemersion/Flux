@@ -12,6 +12,13 @@ Implemented Node gateway request path with:
 - runtime JWT minting with local reuse cache
 - streamed proxying to pooled PostgREST with upstream timeout handling
 - best-effort activity tracking and structured request logging
+- pre-tenant **static-asset / scanner absorber** so `/robots.txt`,
+  `/favicon.ico`, `/.well-known/*`, `/wp-admin`, `/bot-connect.js`, and
+  similar browser-default and security-probe traffic never reach the DB
+  (see [`src/static-asset-filter.ts`](src/static-asset-filter.ts))
+- optional pre-tenant **bot User-Agent denylist** (off by default,
+  controlled by `FLUX_GATEWAY_BLOCK_BOT_USER_AGENTS`; see
+  [`src/bot-filter.ts`](src/bot-filter.ts))
 
 ## Contracts
 
@@ -34,3 +41,27 @@ See [`docs/flux-v2-architecture.md`](../../docs/flux-v2-architecture.md):
 - §7 — JWT contract
 - §11 — Redis and rate limiting
 - §12 — Custom domain resolution and cache eviction
+
+### Schema-routing handshake (informational)
+
+When tenant logs show a query plan with `WITH pgrst_source AS (SELECT
+"t_<shortid>_api"."…" …)`, that is **proof the schema isolation handshake is
+working**, not a bug. The gateway injects `Accept-Profile` (GET/HEAD) and
+`Content-Profile` (POST/PATCH/PUT/DELETE) headers in
+[`src/proxy.ts`](src/proxy.ts) using
+`defaultTenantApiSchemaFromProjectId(tenantId)`; PostgREST v12 then resolves
+all references through the tenant's `t_<shortid>_api` schema. The catalogue's
+`pgrst_source` CTE is the visible side-effect of that resolution.
+
+### Request flow
+
+```
+incoming request
+  ├─ /health, /health/deep                        → liveness/readiness response
+  ├─ /robots.txt, /favicon.ico, /apple-touch-icon → static-asset absorber
+  │  /.well-known/*, /wp-admin, /.env, …             (no DB, no PostgREST)
+  ├─ User-Agent matches bot denylist (opt-in)     → 403 forbidden
+  │                                                  (no DB, no PostgREST)
+  └─ everything else                              → resolveTenant → mint JWT
+                                                       → proxy to pool
+```

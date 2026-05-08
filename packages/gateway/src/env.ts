@@ -40,6 +40,17 @@ const envSchema = z.object({
   FLUX_GATEWAY_ADAPTIVE_DOWN_FACTOR: z.coerce.number().positive().max(0.99).default(0.9),
   FLUX_GATEWAY_ADAPTIVE_SAMPLE_SIZE: z.coerce.number().int().positive().default(200),
   FLUX_GATEWAY_ADAPTIVE_TICK_MS: z.coerce.number().int().positive().default(1000),
+
+  // Optional bot User-Agent denylist.  Off by default — see bot-filter.ts.
+  // When enabled, blocks requests whose UA matches DEFAULT_BOT_UA_PATTERN
+  // (or FLUX_GATEWAY_BOT_UA_PATTERN if set) with 403 before tenant resolution.
+  FLUX_GATEWAY_BLOCK_BOT_USER_AGENTS: z
+    .union([z.literal("0"), z.literal("1")])
+    .default("0")
+    .transform((v) => v === "1"),
+  // Optional override pattern (case-insensitive regex).  REPLACES the default
+  // list when set; invalid regex fails open (filter disabled, error logged).
+  FLUX_GATEWAY_BOT_UA_PATTERN: z.string().optional(),
 });
 
 function parseEnv() {

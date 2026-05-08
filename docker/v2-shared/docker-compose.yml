@@ -12,7 +12,15 @@
 
 services:
   postgres-v2:
-    image: postgres:16-alpine
+    # Debian-based official image (not -alpine) so glibc + ICU locales are
+    # present.  The Alpine image emits "WARNING: no usable system locales were
+    # found" on startup and only supports the baked-in C / POSIX / en_US.utf8
+    # collations, which silently breaks correct alphabetical sorting for
+    # non-English text.  Same major version means the on-disk data dir is
+    # binary-compatible with prior alpine deployments — no dump/restore
+    # required when redeploying onto an existing volume.  See
+    # bin/deploy-v2-shared.sh for the operator note on initdb-time locales.
+    image: postgres:16
     container_name: flux-postgres-v2
     restart: unless-stopped
     command: ["postgres", "-c", "max_connections=200"]
@@ -20,6 +28,16 @@ services:
       POSTGRES_USER: ${SHARED_POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${SHARED_POSTGRES_PASSWORD:?set SHARED_POSTGRES_PASSWORD}
       POSTGRES_DB: ${SHARED_POSTGRES_DB:-postgres}
+      # Locale env: applied to the postgres process every start; silences the
+      # "locale: not found" sh warning even on existing alpine-initialised
+      # volumes.  C.UTF-8 is universally available on Debian glibc.
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      # Honoured ONLY on first initdb (i.e. when the volume is empty).  On
+      # existing data dirs Postgres ignores this and keeps the original
+      # locale + provider chosen at first init.  ICU gives correct collation
+      # for non-English text in new clusters.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8 --locale=C.UTF-8"
     volumes:
       - postgres-v2-data:/var/lib/postgresql/data
     # Host-run dashboard dev cannot resolve Docker DNS names like flux-postgres-v2.

@@ -11,6 +11,8 @@ import { trackActivity } from "./activity-tracker.ts";
 import { proxyRequest } from "./proxy.ts";
 import { pingDb } from "./db.ts";
 import { getRedis } from "./redis.ts";
+import { absorbStaticAssets } from "./static-asset-filter.ts";
+import { botFilterMiddleware } from "./bot-filter.ts";
 import logger from "./logger.ts";
 import {
   AdaptiveInflightLimiter,
@@ -83,6 +85,30 @@ export function createApp(): Hono {
       ok ? 200 : 503,
     );
   });
+
+  // ---------------------------------------------- Static-asset / scanner absorber
+  // Browser-default and scanner traffic (`/robots.txt`, `/favicon.ico`,
+  // `/.well-known/*`, `/wp-admin`, `/bot-connect.js`, …) is short-circuited
+  // here so it never reaches tenant resolution, the JWT issuer, or PostgREST.
+  // Without this, every probe hits the DB as `relation "t_…_api.foo" does not exist`.
+  // Mounted between the `/health*` routes (above) and the `app.all("*", …)`
+  // proxy catchall (below) so health checks still bypass it.
+  app.use("*", absorbStaticAssets);
+
+  // ---------------------------------------------- Optional bot UA denylist
+  // Off by default (FLUX_GATEWAY_BLOCK_BOT_USER_AGENTS=0).  When enabled,
+  // matches a conservative regex of known scanner/SEO bots and returns 403
+  // before tenant resolution.  Real client UAs (curl, axios, Go-http-client,
+  // python-requests, node-fetch) are explicitly NOT in the default list.
+  app.use(
+    "*",
+    botFilterMiddleware({
+      enabled: env.FLUX_GATEWAY_BLOCK_BOT_USER_AGENTS,
+      ...(env.FLUX_GATEWAY_BOT_UA_PATTERN !== undefined
+        ? { pattern: env.FLUX_GATEWAY_BOT_UA_PATTERN }
+        : {}),
+    }),
+  );
 
   // ---------------------------------------------------------------- Proxy all
   app.all("*", async (c) => {

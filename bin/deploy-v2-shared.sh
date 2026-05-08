@@ -21,6 +21,22 @@
 #   PGB_BACKEND_PASSWORD
 #   PGRST_DB_PASSWORD
 #   FLUX_GATEWAY_JWT_SECRET  (pool secret; must match PGRST_JWT_SECRET — not per-tenant keys)
+#
+# Postgres image / locale:
+#   docker/v2-shared/docker-compose.yml pins the Debian-based `postgres:16`
+#   image (NOT `-alpine`).  Debian carries glibc + ICU, which silences the
+#   "WARNING: no usable system locales were found" log line and gives correct
+#   collation for non-English text.  Same major version means the on-disk
+#   data dir is binary-compatible with prior alpine deployments — redeploys
+#   onto an existing `postgres-v2-data` volume need NO dump/restore.
+#
+#   POSTGRES_INITDB_ARGS (set in the compose file) is honoured ONLY on the
+#   very first `initdb`, i.e. when the data volume is empty.  Existing
+#   clusters keep the locale + provider chosen at first init; only NEW
+#   clusters get full ICU.  This is intentional: silencing the warning for
+#   new deploys is the goal here, not a forced collation migration of live
+#   tenants.  If a customer needs ICU on an already-initialised volume,
+#   migrate via `pg_dump | pg_restore` into a fresh volume.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

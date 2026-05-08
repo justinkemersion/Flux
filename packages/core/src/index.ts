@@ -210,9 +210,19 @@ function tenantStackHostMemoryConfig(): {
  */
 export const FLUX_GATEWAY_CONTAINER_NAME = "flux-gateway";
 
-/** Pinned images for Flux project stacks (Postgres + PostgREST + Traefik). */
+/**
+ * Pinned images for Flux project stacks (Postgres + PostgREST + Traefik).
+ *
+ * Postgres is the Debian-based official image (NOT `-alpine`).  The Alpine
+ * variant uses musl, ships no `locale` binary, and only the baked-in C /
+ * POSIX / `en_US.utf8` collations work — Postgres logs `WARNING: no usable
+ * system locales were found` on every start and silently fails to sort
+ * non-English text correctly.  Debian carries glibc + ICU, costs ~200 MB
+ * extra image size, and is data-dir-compatible with prior Alpine deployments
+ * at the same major version (no dump/restore required when redeploying).
+ */
 export const FLUX_DOCKER_IMAGES = {
-  postgres: "postgres:16.2-alpine",
+  postgres: "postgres:16.2",
   postgrest: "postgrest/postgrest:v12.0.2",
   traefik: "traefik:v3.6.7",
 } as const;
