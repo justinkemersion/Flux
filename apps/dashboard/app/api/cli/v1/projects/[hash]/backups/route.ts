@@ -4,7 +4,29 @@ import { projects } from "@/src/db/schema";
 import { auth } from "@/src/lib/auth";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
-import { createBackupForProject, listBackupsForProject } from "@/src/lib/project-backups";
+import {
+  createBackupForProject,
+  listBackupsForProject,
+  type BackupRow,
+} from "@/src/lib/project-backups";
+
+function serializeBackupForCli(row: BackupRow) {
+  return {
+    id: row.id,
+    format: row.format,
+    status: row.status,
+    sizeBytes: row.sizeBytes,
+    checksumSha256: row.checksumSha256,
+    createdAt: row.createdAt?.toISOString() ?? null,
+    completedAt: row.completedAt?.toISOString() ?? null,
+    offsiteStatus: row.offsiteStatus,
+    offsiteCompletedAt: row.offsiteCompletedAt?.toISOString() ?? null,
+    artifactValidationStatus: row.artifactValidationStatus,
+    artifactValidationAt: row.artifactValidationAt?.toISOString() ?? null,
+    restoreVerificationStatus: row.restoreVerificationStatus,
+    restoreVerificationAt: row.restoreVerificationAt?.toISOString() ?? null,
+  };
+}
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -68,21 +90,7 @@ export async function GET(req: Request, context: Ctx): Promise<Response> {
 
   const rows = await listBackupsForProject(resolved.project.id);
   return Response.json({
-    backups: rows.map((row) => ({
-      id: row.id,
-      format: row.format,
-      status: row.status,
-      sizeBytes: row.sizeBytes,
-      checksumSha256: row.checksumSha256,
-      createdAt: row.createdAt?.toISOString() ?? null,
-      completedAt: row.completedAt?.toISOString() ?? null,
-      offsiteStatus: row.offsiteStatus,
-      offsiteCompletedAt: row.offsiteCompletedAt?.toISOString() ?? null,
-      artifactValidationStatus: row.artifactValidationStatus,
-      artifactValidationAt: row.artifactValidationAt?.toISOString() ?? null,
-      restoreVerificationStatus: row.restoreVerificationStatus,
-      restoreVerificationAt: row.restoreVerificationAt?.toISOString() ?? null,
-    })),
+    backups: rows.map(serializeBackupForCli),
   });
 }
 
@@ -97,13 +105,7 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
       hash: resolved.project.hash,
     });
     return Response.json({
-      backup: {
-        id: backup.id,
-        status: backup.status,
-        sizeBytes: backup.sizeBytes,
-        checksumSha256: backup.checksumSha256,
-        createdAt: backup.createdAt?.toISOString() ?? null,
-      },
+      backup: serializeBackupForCli(backup),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
