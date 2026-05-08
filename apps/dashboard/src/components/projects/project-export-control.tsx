@@ -6,7 +6,7 @@ import {
   classifyNewestBackup,
   type BackupTrustTier,
 } from "@flux/core/backup-trust";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -40,6 +40,12 @@ function backupTrustEmoji(tier: BackupTrustTier): string {
   if (tier === "restore_failed") return "✗";
   return "⚠";
 }
+
+const sqlDumpCheckboxClass =
+  "h-4 w-4 shrink-0 rounded border border-zinc-300 bg-white text-zinc-900 focus:ring-2 focus:ring-zinc-400/30 focus:ring-offset-0 dark:border-zinc-600 dark:bg-zinc-900 dark:focus:ring-zinc-500/25";
+
+const primaryModalActionClass =
+  "inline-flex items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200";
 
 /**
  * Project export controls for SQL dump streaming.
@@ -213,12 +219,12 @@ export function ProjectExportControl({ hash }: Props) {
       {toolsOpen && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="fixed inset-0 z-[240] flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-3 backdrop-blur-sm sm:pt-4"
+              className="fixed inset-0 z-[240] flex items-start justify-center overflow-y-auto bg-zinc-950/70 p-4 pt-3 backdrop-blur-md sm:pt-4"
               role="presentation"
               onClick={() => setToolsOpen(false)}
             >
               <div
-                className="relative w-full max-w-2xl rounded-md border border-zinc-800 bg-zinc-950 p-4 font-mono sm:p-5"
+                className="relative w-full max-w-2xl rounded-md border border-zinc-200/70 bg-white p-6 shadow-2xl dark:border-zinc-800/80 dark:bg-zinc-900"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="database-tools-title"
@@ -227,41 +233,73 @@ export function ProjectExportControl({ hash }: Props) {
                 <button
                   type="button"
                   onClick={() => setToolsOpen(false)}
-                  className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-100"
+                  className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
                   aria-label="Close"
                 >
                   <X className="h-5 w-5" aria-hidden />
                 </button>
 
-                <h3
-                  id="database-tools-title"
-                  className="pr-8 text-sm font-semibold text-zinc-200"
-                >
-                  Database Tools
-                </h3>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Export is available now. Additional DB tools can live here as they
-                  ship.
-                </p>
-
-                <section className="mt-4 border border-zinc-800 bg-zinc-950 p-3">
-                  <p className="mb-3 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-                    Backups (v1 dedicated)
+                <div className="pr-10">
+                  <h2
+                    id="database-tools-title"
+                    className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+                  >
+                    Database Tools
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                    Manage project backups, verify restore health, and export SQL
+                    snapshots.
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                </div>
+
+                <section
+                  className="mt-6 rounded-xl border border-zinc-200/70 bg-zinc-50/80 p-4 dark:border-zinc-800/60 dark:bg-zinc-950/40"
+                  aria-labelledby="database-tools-backups-heading"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <h3
+                        id="database-tools-backups-heading"
+                        className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
+                      >
+                        Backups
+                      </h3>
+                      <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
+                        Create, download, and verify project snapshots.
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                        v1 dedicated stacks only.
+                      </p>
+                    </div>
+                    <span
+                      className={`inline-flex shrink-0 self-start rounded-md border px-2 py-1 text-xs font-medium ${backupTrustBadgeClass(backupTrust.tier)}`}
+                    >
+                      {backupTrustEmoji(backupTrust.tier)}{" "}
+                      {backupTrustTierLabel(backupTrust.tier)}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => void createBackupNow()}
                       disabled={backupBusy}
-                      className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-busy={backupBusy}
+                      className={`${primaryModalActionClass} min-w-[14rem]`}
                     >
-                      {backupBusy ? "Creating backup..." : "Create backup now"}
+                      {backupBusy ? (
+                        <Loader2
+                          className="h-4 w-4 shrink-0 animate-spin"
+                          aria-hidden
+                        />
+                      ) : null}
+                      {backupBusy ? "Creating backup…" : "Create backup now"}
                     </button>
                     <button
                       type="button"
                       onClick={downloadLatestBackup}
                       disabled={backups.length === 0}
-                      className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      className={`${primaryModalActionClass} min-w-[14rem]`}
                     >
                       Download latest backup
                     </button>
@@ -275,62 +313,71 @@ export function ProjectExportControl({ hash }: Props) {
                         verifyLatestDisabledReason !== null
                       }
                       title={verifyLatestDisabledReason ?? undefined}
-                      className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-busy={verifyBusy}
+                      className={`${primaryModalActionClass} min-w-[17.5rem]`}
                     >
-                      {verifyBusy ? "Verifying restore…" : "Verify restore (latest)"}
+                      {verifyBusy ? (
+                        <Loader2
+                          className="h-4 w-4 shrink-0 animate-spin"
+                          aria-hidden
+                        />
+                      ) : null}
+                      {verifyBusy
+                        ? "Verifying latest backup"
+                        : "Verify latest backup"}
                     </button>
                   </div>
-                  <div className="mt-3 text-xs text-zinc-400">
-                    {backupsLoading ? "Loading backups..." : `Backups: ${String(backups.length)}`}
+
+                  <div className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+                    {backupsLoading
+                      ? "Loading backups…"
+                      : `Stored backups: ${String(backups.length)}`}
                   </div>
+
                   {!backupsLoading ? (
-                    <div className="mt-2 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`inline-flex rounded border px-2 py-0.5 text-[11px] font-medium ${backupTrustBadgeClass(backupTrust.tier)}`}
-                        >
-                          {backupTrustEmoji(backupTrust.tier)}{" "}
-                          {backupTrustTierLabel(backupTrust.tier)}
-                        </span>
-                      </div>
-                      <p className="text-xs text-zinc-400">{backupTrust.detail}</p>
+                    <div className="mt-4 space-y-3">
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                        {backupTrust.detail}
+                      </p>
                       {backups[0] ? (
-                        <p className="text-xs text-zinc-500">
-                          Newest: {backups[0].createdAt ?? "-"} · offsite{" "}
-                          {backups[0].offsiteStatus ?? "-"}
+                        <p className="text-sm text-zinc-500 dark:text-zinc-500">
+                          Newest: {backups[0].createdAt ?? "—"} · offsite{" "}
+                          {backups[0].offsiteStatus ?? "—"}
                         </p>
                       ) : null}
                       {!backupTrust.allowsDestructiveWithoutOverride ? (
-                        <p className="text-[11px] leading-relaxed text-zinc-500">
-                          <span className="text-zinc-600">CLI:</span>{" "}
-                          <code className="break-all text-zinc-400">
+                        <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                          <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                            CLI:
+                          </span>{" "}
+                          <code className="break-all font-mono text-zinc-600 dark:text-zinc-400">
                             {BACKUP_TRUST_REMEDIATION_CLI}
                           </code>
                         </p>
                       ) : null}
                       {backups.length > 1 ? (
-                        <details className="group rounded border border-zinc-800 bg-black/40">
-                          <summary className="flex cursor-pointer list-none items-center gap-1 px-2 py-2 text-[11px] text-zinc-400 [&::-webkit-details-marker]:hidden">
+                        <details className="group rounded-lg border border-zinc-200/60 bg-white/60 dark:border-zinc-800/60 dark:bg-zinc-950/30">
+                          <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 [&::-webkit-details-marker]:hidden">
                             <ChevronDown
-                              className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180"
+                              className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180"
                               aria-hidden
                             />
                             Older backups ({String(backups.length - 1)})
                           </summary>
-                          <ul className="max-h-40 overflow-y-auto border-t border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
+                          <ul className="max-h-40 overflow-y-auto border-t border-zinc-200/60 px-3 py-2 text-xs dark:border-zinc-800/60">
                             {backups.slice(1).map((b) => {
                               const rowTrust = classifyNewestBackup([b]);
                               return (
                                 <li
                                   key={b.id}
-                                  className="border-b border-zinc-900 py-2 text-[10px] last:border-b-0"
+                                  className="border-b border-zinc-200/80 py-2.5 text-zinc-600 last:border-b-0 dark:border-zinc-800/80 dark:text-zinc-400"
                                 >
-                                  <div className="break-all font-mono text-zinc-500">
+                                  <div className="break-all font-mono text-zinc-700 dark:text-zinc-400">
                                     {b.id}
                                   </div>
-                                  <div className="mt-0.5 flex justify-between gap-2 text-zinc-600">
+                                  <div className="mt-1 flex justify-between gap-2">
                                     <span>{b.status}</span>
-                                    <span className="shrink-0 text-zinc-500">
+                                    <span className="shrink-0 text-zinc-500 dark:text-zinc-500">
                                       {backupTrustTierLabel(rowTrust.tier)}
                                     </span>
                                   </div>
@@ -343,76 +390,98 @@ export function ProjectExportControl({ hash }: Props) {
                     </div>
                   ) : null}
                   {backupError ? (
-                    <p className="mt-2 text-xs text-rose-400">{backupError}</p>
+                    <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+                      {backupError}
+                    </p>
                   ) : null}
                 </section>
 
-                <section className="mt-4 border border-zinc-800 bg-zinc-950 p-3">
-                  <p className="mb-3 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-                    Export SQL Dump
+                <section className="mt-6" aria-labelledby="database-tools-export-heading">
+                  <h3
+                    id="database-tools-export-heading"
+                    className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
+                  >
+                    Export SQL
+                  </h3>
+                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                    Configure dump options, then download a snapshot.
                   </p>
-                  <div className="grid grid-cols-1 border border-zinc-800 text-[11px] text-zinc-300 sm:grid-cols-[1fr_auto]">
-                    <label className="contents cursor-pointer">
-                      <span className="border-b border-zinc-800 bg-black px-3 py-2 sm:border-r">
-                        Schema only
+
+                  <div className="mt-4 space-y-2">
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-zinc-200/70 px-3 py-2.5 transition-colors hover:bg-zinc-50 dark:border-zinc-800/60 dark:hover:bg-zinc-800/40">
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          Schema only
+                        </span>
+                        <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-500">
+                          DDL without row data (mutually exclusive with data only).
+                        </span>
                       </span>
-                      <span className="border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-right">
-                        <input
-                          type="checkbox"
-                          checked={schemaOnly}
-                          onChange={onSchemaToggle}
-                          className="h-3.5 w-3.5 rounded-none border-zinc-600 bg-black text-zinc-300 focus:ring-0 focus:ring-offset-0"
-                        />
-                      </span>
+                      <input
+                        type="checkbox"
+                        checked={schemaOnly}
+                        onChange={onSchemaToggle}
+                        className={sqlDumpCheckboxClass}
+                        aria-label="Schema only"
+                      />
                     </label>
-                    <label className="contents cursor-pointer">
-                      <span className="border-b border-zinc-800 bg-black px-3 py-2 sm:border-r">
-                        Data only
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-zinc-200/70 px-3 py-2.5 transition-colors hover:bg-zinc-50 dark:border-zinc-800/60 dark:hover:bg-zinc-800/40">
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          Data only
+                        </span>
+                        <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-500">
+                          Row data without schema (mutually exclusive with schema only).
+                        </span>
                       </span>
-                      <span className="border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-right">
-                        <input
-                          type="checkbox"
-                          checked={dataOnly}
-                          onChange={onDataToggle}
-                          className="h-3.5 w-3.5 rounded-none border-zinc-600 bg-black text-zinc-300 focus:ring-0 focus:ring-offset-0"
-                        />
-                      </span>
+                      <input
+                        type="checkbox"
+                        checked={dataOnly}
+                        onChange={onDataToggle}
+                        className={sqlDumpCheckboxClass}
+                        aria-label="Data only"
+                      />
                     </label>
-                    <label className="contents cursor-pointer">
-                      <span className="bg-black px-3 py-2 sm:border-r">
-                        Include DROP commands
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-zinc-200/70 px-3 py-2.5 transition-colors hover:bg-zinc-50 dark:border-zinc-800/60 dark:hover:bg-zinc-800/40">
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          Include DROP commands
+                        </span>
+                        <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-500">
+                          Emit DROP statements before CREATE for a clean replay.
+                        </span>
                       </span>
-                      <span className="bg-zinc-950 px-3 py-2 text-right">
-                        <input
-                          type="checkbox"
-                          checked={clean}
-                          onChange={(e) => setClean(e.target.checked)}
-                          className="h-3.5 w-3.5 rounded-none border-zinc-600 bg-black text-zinc-300 focus:ring-0 focus:ring-offset-0"
-                        />
-                      </span>
+                      <input
+                        type="checkbox"
+                        checked={clean}
+                        onChange={(e) => setClean(e.target.checked)}
+                        className={sqlDumpCheckboxClass}
+                        aria-label="Include DROP commands"
+                      />
                     </label>
                   </div>
-                  <div className="mt-3">
+
+                  <div className="mt-4">
                     <button
                       type="button"
                       onClick={downloadDump}
-                      className="rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white"
+                      className={`${primaryModalActionClass} min-w-[14rem]`}
                     >
                       Download SQL dump
                     </button>
                   </div>
                 </section>
 
-                <section className="mt-4 border border-zinc-800 bg-zinc-950 p-3">
-                  <p className="mb-2 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-                    Coming Soon
+                <div className="mt-6 border-t border-zinc-200/70 pt-5 dark:border-zinc-800/80">
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-500">
+                    Coming soon
                   </p>
-                  <ul className="space-y-1 text-[11px] text-zinc-400">
-                    <li>- Import SQL dump</li>
-                    <li>- Seed runner</li>
-                    <li>- Table browser</li>
+                  <ul className="mt-2 space-y-1.5 text-xs text-zinc-500 dark:text-zinc-500">
+                    <li>Import SQL dump</li>
+                    <li>Seed runner</li>
+                    <li>Table browser</li>
                   </ul>
-                </section>
+                </div>
               </div>
             </div>,
             document.body,
