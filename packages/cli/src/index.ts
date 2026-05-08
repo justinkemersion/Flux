@@ -330,12 +330,12 @@ function printBackupTrustSummary(classification: ReturnType<typeof classifyNewes
   const label = backupTrustTierLabel(classification.tier);
   if (classification.tier === "restorable") {
     console.log(
-      chalk.green("✓"),
-      chalk.white("Latest backup is "),
-      chalk.green.bold("restorable"),
-      chalk.white(" ("),
-      chalk.dim("restore_verified"),
-      chalk.white(")."),
+      chalk.green("✓") +
+        chalk.white(" Latest backup is ") +
+        chalk.green.bold("restorable") +
+        chalk.white(" (") +
+        chalk.dim("restore_verified") +
+        chalk.white(")."),
     );
     console.log(chalk.dim("  This project has a verified restorable backup."));
     return;
