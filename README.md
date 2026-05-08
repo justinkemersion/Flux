@@ -478,6 +478,30 @@ pnpm run flux -- nuke "ACME Corp" --yes
 pnpm run flux -- reap --hours 72
 ```
 
+### Run SQL quickly on v1 dedicated
+
+When you just need a quick update, you have two safe paths:
+
+- **Tracked file path (recommended for repeatability):**
+  - write SQL in a file, then run `flux push ./change.sql -p <slug> --hash <hash>`
+- **One-off terminal path (fast ad-hoc):**
+  - use `psql -c "<sql>"` with the connection string from `flux project credentials`
+
+Before destructive SQL (`DROP`, irreversible `ALTER`, broad deletes), create and verify a backup first:
+
+```bash
+flux backup create -p <slug> --hash <hash>
+flux backup verify -p <slug> --hash <hash> --latest
+```
+
+Backup trust model:
+
+- Backups are only trustworthy after restore verification.
+- Artifact validation only checks that the backup file exists and is non-empty.
+- Restore verification runs `pg_restore` in a disposable database.
+
+Full Sarah-friendly walkthrough: [`docs/guides/flux-v1-dedicated-sql-workflows.md`](./docs/guides/flux-v1-dedicated-sql-workflows.md).
+
 ---
 
 ## Security and operations
@@ -502,6 +526,7 @@ Root **[`AGENTS.md`](./AGENTS.md)** is the short operator/agent checklist for **
 - **`AGENTS.md`** (repo root) — v2_shared **client-app** pitfalls; keep in sync with [`docs/guides/flux-nextjs-v2-shared-quickstart.md`](./docs/guides/flux-nextjs-v2-shared-quickstart.md).
 - **`docs/production-security-audit.md`** — Production security posture, pinned images, and credential API behavior.
 - **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
+- **`docs/guides/flux-v1-dedicated-sql-workflows.md`** — Sarah-friendly quick SQL updates on v1 dedicated projects (`flux push` + direct `psql`).
 - **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
 - **`docs/guides/flux-nextjs-v2-shared-quickstart.md`** — Copy/paste bootstrap for a brand-new Next.js app backed by a Flux pooled (`v2_shared`) project.
 - **`docs/guides/flux-nextjs-authjs-rls.md`** — Follow-on guide for Auth.js integration and user-scoped RLS (`auth.uid()` + `text` user ids).
