@@ -500,7 +500,7 @@ Backup trust model:
 - Artifact validation only checks that the backup file exists and is non-empty.
 - Restore verification runs `pg_restore` in a disposable database.
 
-Full Sarah-friendly walkthrough: [`docs/guides/flux-v1-dedicated-sql-workflows.md`](./docs/guides/flux-v1-dedicated-sql-workflows.md).
+Full Sarah-friendly walkthrough: [`docs/guides/flux-v1-dedicated-sql-workflows.md`](./docs/guides/flux-v1-dedicated-sql-workflows.md). On [flux.vsl-base.com](https://flux.vsl-base.com/docs/guides/v1-dedicated-sql-workflows), the rendered page lives under **Guides → V1 dedicated quick SQL** (source: `docs/pages/guides/v1-dedicated-sql-workflows.md`).
 
 ---
 

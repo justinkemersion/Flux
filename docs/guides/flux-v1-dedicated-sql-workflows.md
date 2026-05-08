@@ -4,6 +4,8 @@ Purpose: run quick SQL updates on a v1 dedicated Flux project from terminal, wit
 
 This guide is intentionally copy/paste friendly and beginner-safe.
 
+**Hosted docs:** the same material is published at [flux.vsl-base.com/docs/guides/v1-dedicated-sql-workflows](https://flux.vsl-base.com/docs/guides/v1-dedicated-sql-workflows) after you deploy the dashboard that ships `docs/pages/`.
+
 ---
 
 ## 0) Prerequisites
@@ -71,21 +73,21 @@ Use this for truly quick, low-risk updates.
 ### Step 1: get your dedicated Postgres connection string
 
 ```bash
-flux project credentials -p bloom-atelier --hash 61d9dff
+flux project credentials bloom-atelier --hash 61d9dff
 ```
 
-Copy the printed `postgresConnectionString` value.
+Under **Postgres** in the CLI output, copy the full connection URI (`postgresql://…`).
 
 ### Step 2: run one SQL statement
 
 ```bash
-psql "<postgresConnectionString>" -c "select now();"
+psql "<pastePostgresUriHere>" -c "select now();"
 ```
 
 Quick update example:
 
 ```bash
-psql "<postgresConnectionString>" -c "update notes set body = 'updated' where id = 1;"
+psql "<pastePostgresUriHere>" -c "update notes set body = 'updated' where id = 1;"
 ```
 
 ---
@@ -95,7 +97,7 @@ psql "<postgresConnectionString>" -c "update notes set body = 'updated' where id
 This gives quick multi-statement updates without saving a file.
 
 ```bash
-psql "<postgresConnectionString>" <<'SQL'
+psql "<pastePostgresUriHere>" <<'SQL'
 begin;
 insert into notes (body) values ('heredoc insert');
 update notes set body = 'edited by heredoc' where id = 1;
@@ -150,9 +152,10 @@ flux list
 
 ```bash
 flux start bloom-atelier --hash 61d9dff
+flux project credentials bloom-atelier --hash 61d9dff
 ```
 
-- retry with a fresh credentials value from `flux project credentials`
+- retry with a fresh Postgres URI from the latest `flux project credentials` output
 
 ### Permission errors in SQL
 

@@ -72,6 +72,10 @@ export const DOCS_NAV: DocsNavSection[] = [
       { title: "Clerk", slug: ["guides", "clerk"] },
       { title: "Migrations", slug: ["guides", "migrations"] },
       {
+        title: "V1 dedicated quick SQL",
+        slug: ["guides", "v1-dedicated-sql-workflows"],
+      },
+      {
         title: "Pooled → dedicated migrate",
         slug: ["guides", "v2-to-v1-migrate"],
       },

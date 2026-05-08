@@ -858,6 +858,17 @@ Explain:
 
 ---
 
+# /guides/v1-dedicated-sql-workflows
+
+Explain:
+
+* v1 dedicated only: `flux push` vs ad-hoc `psql` from `flux project credentials`
+* slug/hash confirmation via `flux list`
+* when to prefer tracked SQL files
+* backup + `flux backup verify` before destructive SQL; artifact vs restore verification (short)
+
+---
+
 # /guides/v2-to-v1-migrate
 
 Explain:
