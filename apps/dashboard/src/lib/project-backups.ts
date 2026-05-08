@@ -492,7 +492,10 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
 
     const verifyPassword = randomUUID().replace(/-/g, "");
     const verifyName = `flux-backup-verify-${backup.id.slice(0, 12)}`;
-    const image = process.env.FLUX_BACKUP_VERIFY_POSTGRES_IMAGE?.trim() || "postgres:16-alpine";
+    // pg_restore must be >= pg_dump major. flux-web bundles postgresql17-client (writes
+    // custom-format 1.16 for v2_shared dumps), and v1 in-container pg_dump from postgres:16.2
+    // writes 1.15. PG 17 reads both; 16 cannot read 1.16 ("unsupported version (1.16)").
+    const image = process.env.FLUX_BACKUP_VERIFY_POSTGRES_IMAGE?.trim() || "postgres:17-alpine";
 
     await db
       .update(projectBackups)
