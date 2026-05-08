@@ -45,6 +45,8 @@ Canonical engines:
 Use “engine” for the internal model.
 Use “deployment model” when writing for users in conceptual pages.
 
+The Flux **dashboard** surfaces deployment as **Pooled** (`v2_shared`) and **Dedicated** (`v1_dedicated`) so the UI does not read like a simple “v2 is newer” version ladder. APIs, CLI metadata, and the catalog still use the canonical enum strings.
+
 ## v1 Dedicated
 
 `v1_dedicated` means a project runs on its own PostgreSQL and PostgREST stack.

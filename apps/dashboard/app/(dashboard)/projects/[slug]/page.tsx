@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
+import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import { ProjectHeader } from "@/src/components/projects/project-header";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
@@ -120,6 +121,7 @@ export default function ProjectMeshReadoutPage(): React.ReactElement {
         subtitle={project.slug}
         statusRow={
           <>
+            <EngineModeBadge mode={project.mode} surface="lightHeader" />
             <StatusBadge status={project.status} />
             <MeshTelemetryPill
               healthStatus={project.healthStatus}

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
+import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
 import { ProjectHeader } from "@/src/components/projects/project-header";
 import { type DisplayStatus } from "@/src/components/projects/project-status-badge";
 import {
@@ -667,6 +668,7 @@ export function ProjectCard({
           subtitle={p.slug}
           statusRow={
             <>
+              <EngineModeBadge mode={p.mode} surface="lightHeader" />
               <MeshTelemetryPill
                 healthStatus={p.healthStatus}
                 lastHeartbeatAt={p.lastHeartbeatAt}

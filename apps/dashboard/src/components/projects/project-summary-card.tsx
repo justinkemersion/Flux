@@ -3,6 +3,7 @@
 import { Check, Clipboard, Loader2, Wrench } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import {
   deriveTelemetryDisplay,
@@ -274,7 +275,10 @@ export function ProjectSummaryCard({
             </h2>
             <p className="mt-1 text-sm text-zinc-500">{p.slug}</p>
           </div>
-          <StatusTag displayStatus={displayStatus} project={p} />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <EngineModeBadge mode={p.mode} surface="darkCard" />
+            <StatusTag displayStatus={displayStatus} project={p} />
+          </div>
         </div>
 
         <div className="flex min-w-0 items-stretch gap-2 rounded-md border border-zinc-800/80 bg-zinc-900 px-3 py-2.5">
