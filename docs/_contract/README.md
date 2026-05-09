@@ -34,6 +34,17 @@ Before creating or modifying user-facing documentation, read:
 
 Rendered documentation for https://flux.vsl-base.com/docs lives as Markdown in [`docs/pages/`](../pages/). The Next.js dashboard loads those files at runtime; [`docs/_contract/`](../_contract/) remains the authoring constitution.
 
+## Review system
+
+After editing user-facing docs, run the relevant passes from [`docs/_review/`](../_review/):
+
+1. [IA pass](../_review/ia-review.md) — does the page belong here?
+2. [Cognitive load pass](../_review/cognitive-load.md) — can the reader follow it on first read?
+3. [Technical truth pass](../_review/technical-truth.md) — do the claims match the code?
+4. [Voice pass](../_review/voice-review.md) — does it sound like a calm infrastructure manual?
+
+Scoped passes for [examples](../_review/examples-review.md) and [troubleshooting / error paths](../_review/troubleshooting-review.md) run when those areas change. See [`docs/_review/README.md`](../_review/README.md) for when to run each, the report skeleton, and the suggested order.
+
 ## Core rule
 
 Do not let routing, components, CLI flags, or old docs structure define the knowledge model.
