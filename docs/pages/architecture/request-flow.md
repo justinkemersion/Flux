@@ -37,7 +37,7 @@ HTTPS client
 
 ## How it works
 
-Empty arrays usually mean filters or RLS—not “gateway off”. **401** before Postgres indicates auth at edge. **`42501`** indicates database authorization.
+Each layer refuses with a recognizable signal: **401** before Postgres indicates auth at the edge; **`42501`** indicates database authorization; an **empty array** indicates RLS filtering after the role was already allowed in. The full layer-by-layer map and verification steps live in [Troubleshooting](/docs/reference/troubleshooting).
 
 ## Example
 
@@ -47,3 +47,4 @@ For internal health checks from the **control plane**, prefer probing via the **
 
 - [Mental model](/docs/introduction/mental-model)
 - [First request](/docs/getting-started/first-request)
+- [Troubleshooting](/docs/reference/troubleshooting)

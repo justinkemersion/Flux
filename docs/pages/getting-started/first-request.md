@@ -64,13 +64,14 @@ curl "https://api--<slug>--<hash>.example.com/notes?select=*&limit=5" \
 
 ## Common errors
 
-| Symptom | Likely cause |
-|---------|----------------|
-| 401 | Missing/expired token, wrong template/audience |
-| 403 / `42501` | Missing **GRANT** or RLS policy blocking role |
-| Empty array | No rows, or filters exclude data |
+| Symptom | Likely cause | Canonical entry |
+|---------|--------------|-----------------|
+| `401` | Missing/expired token, wrong template/audience | [401 Unauthorized](/docs/reference/troubleshooting#401-unauthorized) |
+| `403` / `42501` | Missing `GRANT` (`42501`) or RLS policy blocking role | [403 Forbidden](/docs/reference/troubleshooting#403-forbidden) · [42501](/docs/reference/troubleshooting#42501-permission-denied) |
+| Empty array | RLS filtered, type mismatch in policy, or simply no rows | [Empty array](/docs/reference/troubleshooting#empty-array-instead-of-an-error) |
 
 ## Next steps
 
 - [Authentication](/docs/getting-started/auth)
 - [Clerk guide](/docs/guides/clerk) or [Auth.js guide](/docs/guides/authjs)
+- [Troubleshooting](/docs/reference/troubleshooting)

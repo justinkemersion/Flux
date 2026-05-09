@@ -44,13 +44,19 @@ For **v1**, the edge is often Traefik straight to tenant PostgREST with keys con
 
 ## Example
 
-When debugging “empty result” vs “403”, the mental model helps:
+The mental model maps directly onto common failure shapes:
 
-- **403 / permission denied** — Often **GRANT** or **RLS** policy mismatch *after* the role is already connected (see [RLS](/docs/concepts/rls) and [RLS boundaries](/docs/security/rls-boundaries)).
-- **401** — Token missing, wrong audience, or gateway could not validate the project JWT.
+| Symptom | Layer that refused |
+|---------|--------------------|
+| `401` | Gateway — token missing, wrong secret, or invalid (SQL never ran) |
+| `403` / `42501` | Postgres role — `GRANT` missing for the table or schema |
+| Empty array | RLS — role allowed, no rows matched the policy |
+
+Each row is documented in [Troubleshooting](/docs/reference/troubleshooting) with verification steps and the usual fix.
 
 ## Next steps
 
 - [Request flow](/docs/architecture/request-flow)
 - [Gateway](/docs/architecture/gateway)
 - [Getting started: first request](/docs/getting-started/first-request)
+- [Troubleshooting](/docs/reference/troubleshooting)

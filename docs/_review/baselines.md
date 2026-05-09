@@ -87,4 +87,19 @@ After the inaugural report was published, work on the IA-1 fix surfaced that the
 
 The three named guides — `pages/guides/{authjs,clerk,nextjs}.md` — were rewritten as full standalone guides using the substantive content from the now-retired repo-internal originals (`docs/guides/flux-nextjs-{v2-shared-quickstart,authjs-rls}.md`, `docs/guides/clerk-integration.md`). The originals were deleted; AGENTS.md, root README, OPERATIONS, and the surviving sibling guide were updated to point at the public docs paths. The dashboard sidebar was reordered so Next.js (the prerequisite) precedes Auth.js and Clerk. Single source of truth restored under `docs/pages/guides/`.
 
+### IA-3 / TROUBLE-1 closeout
+
+A canonical troubleshooting home was added at `pages/reference/troubleshooting.md`. The page is organized **by reader-observable symptom** (401, 403, empty array, 42501, migration succeeded but queries fail, JWT looks valid but rejected, pooled-specific misunderstandings) rather than by subsystem, and each entry follows a consistent shape: layer / what it means / how to verify / common fixes / engine scope / related pages. A "How to think about Flux failures" section at the top teaches the layer-stack debugging discipline before any individual entry, and a "When the issue is probably not Flux" section at the bottom prevents infrastructure blame inflation.
+
+The IA contract (`information-architecture.md`) gained a `/reference/troubleshooting` slot. The dashboard sidebar gained the same. Six pages that previously spread error material were updated to defer to the canonical entries with brief in-context callouts (per the troubleshooting-review rubric: three rows or fewer, each linking into the canonical entry):
+
+- `pages/getting-started/first-request.md` — error table now links to the three relevant anchors
+- `pages/introduction/mental-model.md` — replaced prose 401/403 paragraph with a 3-row symptom table
+- `pages/architecture/request-flow.md` — kept the layered framing, added canonical link
+- `pages/architecture/bridge-jwts.md` — kept the trust-boundary explanation, added canonical link
+- `pages/security/rls-boundaries.md` — added anchored links to the empty-array and 42501 entries
+- `pages/guides/v2-to-v1-migrate.md` — kept the migration-specific entries (pg_dump / `\restrict` / service_role) and added a pointer noting that everyday request-time symptoms live in the canonical reference
+
+This collapses the previous duplication: from six pages each carrying a partial cause/resolution, to one canonical page with cross-links from the six contextual sites.
+
 ---

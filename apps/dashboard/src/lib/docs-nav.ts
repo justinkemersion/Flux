@@ -96,6 +96,7 @@ export const DOCS_NAV: DocsNavSection[] = [
       { title: "CLI", slug: ["reference", "cli"] },
       { title: "Environment variables", slug: ["reference", "env-vars"] },
       { title: "Configuration", slug: ["reference", "config"] },
+      { title: "Troubleshooting", slug: ["reference", "troubleshooting"] },
     ],
   },
 ];

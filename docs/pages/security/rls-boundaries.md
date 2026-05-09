@@ -31,9 +31,10 @@ Typical checklist:
 
 ## Example
 
-A policy that compares UUID to `text` claim incorrectly can silently return no rows—type discipline matters.
+A policy that compares `uuid` to a `text` claim silently returns no rows—type discipline matters. The full diagnostic flow for "empty array instead of error" lives in [Troubleshooting](/docs/reference/troubleshooting#empty-array-instead-of-an-error); the diagnostic for `42501` (when the role cannot reach the table at all, before RLS is even consulted) is at [Troubleshooting → 42501](/docs/reference/troubleshooting#42501-permission-denied).
 
 ## Next steps
 
 - [Row-level security (concepts)](/docs/concepts/rls)
 - [Auth.js guide](/docs/guides/authjs)
+- [Troubleshooting](/docs/reference/troubleshooting)

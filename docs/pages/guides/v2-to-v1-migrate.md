@@ -108,13 +108,15 @@ If you **only** ran **`--staged`**, the catalog is still **`v2_shared`** until y
 
 1. Refresh **`NEXT_PUBLIC_FLUX_URL`** / **`FLUX_URL`** (and any server-only base URL) from **`flux list`** or the dashboard if the Service URL or routing identity changed.
 2. If you rotated secrets (**`--new-jwt-secret`**), run **`flux project credentials`** (or the dashboard) and paste the new **`FLUX_GATEWAY_JWT_SECRET`** (or equivalent) into your env files. With default **`preserveJwtSecret`** behavior, secrets often stay the same—still verify.
-3. Dedicated stacks expose your tenant API schema as provisioned; if you previously targeted **`t_<shortId>_api`** only on v2, re-read [Service URLs](/docs/concepts/service-urls) and your RLS **`GRANT`**s—**RLS without grants** still yields **`42501`**.
+3. Dedicated stacks expose your tenant API schema as provisioned; if you previously targeted **`t_<shortId>_api`** only on v2, re-read [Service URLs](/docs/concepts/service-urls) and your RLS **`GRANT`**s—**RLS without grants** still yields **`42501`** ([Troubleshooting → 42501](/docs/reference/troubleshooting#42501-permission-denied)).
 
 Re-run your smoke tests (`curl` or app E2E) before you announce cutover.
 
 ## Troubleshooting
 
 Errors below split **hosted Flux** (you use `flux.vsl-base.com` or another vendor-run control plane) from **self-hosted** (you run the dashboard API and Docker host yourself). See [Production hardening](/docs/guides/production-hardening) for operator-focused context.
+
+These are **engine-migration-specific** failures — they happen during `flux migrate` and not in normal application traffic. For everyday request-time symptoms (`401`, `403`, `42501`, empty arrays), the canonical home is [Troubleshooting](/docs/reference/troubleshooting).
 
 ### **`pg_dump` not found** (control plane)
 

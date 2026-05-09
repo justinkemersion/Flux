@@ -246,6 +246,7 @@ The user should rarely encounter exhaustive mechanics before understanding the s
     cli
     env-vars
     config
+    troubleshooting
 ```
 
 ---
@@ -983,6 +984,24 @@ Environment variable lookup.
 # /reference/config
 
 Configuration structure reference.
+
+---
+
+# /reference/troubleshooting
+
+Canonical home for reader-observable error symptoms across both engines.
+
+Organize **by symptom**, not by subsystem:
+
+* what the reader sees
+* which layer of Flux usually caused it
+* how to verify
+* the common fix
+* related pages
+
+A reader looking up `42501` is already stuck. The page must answer "what does it mean, who owns the fix, what is the next click" without scrolling. Each entry should also state engine scope (`v2_shared`, `v1_dedicated`, both) so silently mismatched advice does not mislead.
+
+Other pages may carry **brief** "Common errors" callouts (three rows or fewer) that link into the canonical entry here. They must not duplicate the cause/resolution prose.
 
 ---
 

@@ -30,9 +30,10 @@ Postgres then applies **GRANT**s and optional **RLS** under that role.
 
 ## Example
 
-If PostgREST returns **401** with gateway in path, verify external JWT first; if **403**, suspect grants/RLS before blaming gateway routing.
+The bridge boundary explains the `401` vs `403` split: `401` means the gateway refused the project JWT before any bridge token was minted; `403` means the bridge JWT was minted and the request reached PostgreSQL, where the role lacked `GRANT` (RLS would have returned an empty array, not an error). [Troubleshooting](/docs/reference/troubleshooting) walks both cases with verification steps.
 
 ## Next steps
 
 - [JWT authentication](/docs/concepts/jwt-auth)
 - [Project secrets](/docs/security/project-secrets)
+- [Troubleshooting](/docs/reference/troubleshooting)
