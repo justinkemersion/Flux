@@ -30,9 +30,10 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux dump` | Export schema/data (see flags locally) |
 | `flux migrate` | Orchestrate **v2_shared** → **v1_dedicated** via the control plane (see [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)) |
 | `flux logs` | Tail project logs when wired |
-| `flux backup create` / `list` | **v1 dedicated** — control plane streams `pg_dump -Fc` (see `flux backup --help`) |
-| `flux backup download` | Saves the custom-format archive — use **`-o ./file.dump`** (or redirect); binary output is refused on a TTY without **`-o`** |
-| `flux backup verify` | Runs **`pg_restore`** in a disposable Postgres on the **control plane**; requires **`docker-cli`** in the `flux-web` image |
+| `flux backup create` | Both engines — control plane streams `pg_dump -Fc`. v1: full project DB. v2: tenant API schema (`--schema=t_<short>_api --no-owner --no-acl`). See [Backups workflow](/docs/guides/backups) |
+| `flux backup list` | Recent backups newest-first with trust labels (Restorable / Created, not restore-verified / Restore verification failed / etc.). Pass `--verbose` for catalog timestamps, artifact paths, and underlying tier names |
+| `flux backup verify` | Runs **`pg_restore`** in a disposable Postgres container on the control plane. The only step that promotes a backup to **Restorable**. Requires `docker-cli` in the `flux-web` image (self-hosted operators) |
+| `flux backup download` | Writes the custom-format archive to `-o <path>` (or shell redirect). Refuses binary output to a TTY |
 
 ### Identifiers
 
@@ -63,4 +64,5 @@ Use your own **slug** and **hash** from **`flux list`** (example values above).
 
 - [Configuration](/docs/reference/config)
 - [Migrations workflow](/docs/guides/migrations)
+- [Backups workflow](/docs/guides/backups)
 - [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)

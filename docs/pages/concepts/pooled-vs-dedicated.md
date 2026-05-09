@@ -34,6 +34,8 @@ Marketing tiers map to engines, but docs should use **engine** / **deployment mo
 
 On **v2_shared**, `flux backup create` produces a custom-format archive containing **only** your tenant API schema (`t_<shortId>_api`). Restoring it into any Postgres recreates your tables and data for portability or migration; it is **not** a guarantee of full shared-cluster disaster recovery (that remains platform operations: WAL/PITR, base backups, etc.). Use the same `flux backup verify --latest` flow as v1 — verification runs `pg_restore` in a disposable database.
 
+The full mental model for what backups guarantee per engine, and the trust states the CLI reports, lives in [Backups](/docs/concepts/backups).
+
 ## Example
 
 Choose **dedicated** when policy or risk requires no shared database cluster. Choose **shared** when efficiency and operational simplicity outweigh that requirement.
@@ -41,5 +43,6 @@ Choose **dedicated** when policy or risk requires no shared database cluster. Ch
 ## Next steps
 
 - [Flux v2](/docs/architecture/flux-v2)
+- [Backups](/docs/concepts/backups)
 - [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)
 - [Tenant isolation (security)](/docs/security/tenant-isolation)

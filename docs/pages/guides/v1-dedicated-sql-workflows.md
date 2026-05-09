@@ -125,6 +125,8 @@ flux backup verify --project "$SLUG" --hash "$HASH" --latest
 - Treat a backup as production-trustworthy only after **`flux backup verify`** has succeeded (real restore check).
 - Lighter checks may only confirm the backup **file** looks present; they are not a substitute for verify.
 
+The full backup workflow (list, download, restore, the trust labels and tier names) lives in [Backups workflow](/docs/guides/backups); the conceptual model of what a backup contains and guarantees lives in [Backups (concept)](/docs/concepts/backups).
+
 ## 6) Troubleshooting
 
 **CLI says unauthorized** — Run **`flux login`** again and confirm **`FLUX_API_BASE`** matches your host (see [Installation](/docs/getting-started/installation)).

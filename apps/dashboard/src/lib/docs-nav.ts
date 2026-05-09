@@ -34,6 +34,7 @@ export const DOCS_NAV: DocsNavSection[] = [
     items: [
       { title: "Projects", slug: ["concepts", "projects"] },
       { title: "Migrations", slug: ["concepts", "migrations"] },
+      { title: "Backups", slug: ["concepts", "backups"] },
       { title: "JWT authentication", slug: ["concepts", "jwt-auth"] },
       { title: "Row-level security", slug: ["concepts", "rls"] },
       { title: "Pooled vs dedicated", slug: ["concepts", "pooled-vs-dedicated"] },
@@ -71,6 +72,7 @@ export const DOCS_NAV: DocsNavSection[] = [
       { title: "Auth.js", slug: ["guides", "authjs"] },
       { title: "Clerk", slug: ["guides", "clerk"] },
       { title: "Migrations", slug: ["guides", "migrations"] },
+      { title: "Backups", slug: ["guides", "backups"] },
       {
         title: "V1 dedicated quick SQL",
         slug: ["guides", "v1-dedicated-sql-workflows"],

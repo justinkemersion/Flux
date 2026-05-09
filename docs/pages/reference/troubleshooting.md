@@ -8,12 +8,13 @@ section: reference
 
 This page maps common Flux symptoms to the layer that usually caused them. It is organized by what the reader **sees**, not by what the platform internally **does**, because the reader's only entry point is the symptom.
 
-Most issues fall into one of four categories:
+Most issues fall into one of five categories:
 
 - **Authentication** — the gateway rejected the request before it reached PostgreSQL.
 - **Authorization** — the request reached PostgreSQL, and the role or RLS policy refused.
 - **Request routing** — the request never reached the right host, schema, or table.
 - **Schema or migration state** — what the database holds does not match what the application asked for.
+- **Backups and destructive-action gates** — a backup is not in the trust state a destructive flow requires.
 
 Read the layer-stack framing first; it cuts the search space dramatically before any individual entry.
 
@@ -294,6 +295,70 @@ Then check the project's expectations:
 **Engine.** `v2_shared` only.
 
 **Related pages.** [Flux v2 architecture](/docs/architecture/flux-v2-architecture), [Pooled vs dedicated](/docs/concepts/pooled-vs-dedicated), [Gateway](/docs/architecture/gateway).
+
+---
+
+## Backup is not restore-verified
+
+**Layer.** Backup trust classifier (the contract behind `flux backup verify`).
+
+**What it usually means.** A backup was created and the file is on disk, but no `pg_restore` has succeeded against it yet — so it sits in the **Created, not restore-verified** state. The destructive-action gate on `flux nuke` (and a few other flows) refuses to act until a real restore-verification succeeds.
+
+**How to verify.**
+
+```bash
+flux backup list --project bloom-atelier --hash 0a1b2c3 --verbose
+# Look at the trust label and the underlying tier name on the latest row.
+```
+
+Tier-name decoder:
+
+| Tier | Meaning |
+|------|---------|
+| `restorable` | Restore-verified. Trustworthy. |
+| `not_restore_verified` | File exists, never restored. Run `flux backup verify --latest`. |
+| `restore_failed` | A `pg_restore` was attempted and failed. The artifact is broken; create a new backup. |
+| `artifact_pending` | Upload completed; validator still running. Wait briefly. |
+| `pipeline_incomplete` | The artifact validator marked the file invalid (size mismatch, checksum off). Re-create. |
+| `latest_not_complete` | The newest row never finished writing. Re-create. |
+
+**Common fixes.**
+
+- If the latest is `not_restore_verified`, run `flux backup verify --project <slug> --hash <hash> --latest`. That is the only step that promotes the trust state.
+- If verify keeps failing with `restore_failed`, create a new backup and verify it. The old artifact may be truncated or corrupt; the catalog row remains as evidence.
+- If you genuinely need to run a destructive command without a verified backup, pass `--skip-backup-check`. The CLI prints a clear warning and proceeds.
+
+**Engine.** Both engines.
+
+**Related pages.** [Backups (concept)](/docs/concepts/backups), [Backups workflow](/docs/guides/backups).
+
+---
+
+## Backup download fails or refuses to write
+
+**Layer.** CLI download path.
+
+**What it usually means.** Either the artifact is missing on the control plane (retention swept it, or the row never completed), or the CLI is being asked to write a binary `pg_dump -Fc` archive directly to a terminal and refused.
+
+**How to verify.**
+
+```bash
+# Confirm the row still has an artifact on disk
+flux backup list --project bloom-atelier --hash 0a1b2c3 --verbose
+# Verbose output shows the artifact path and reconcile timestamp.
+```
+
+If the artifact path is empty or the reconcile flag indicates "missing on disk," retention or an operator action removed the file. The metadata row remains, but the bytes are gone.
+
+**Common fixes.**
+
+- Forgot `-o`: re-run with `flux backup download ... --latest -o ./bloom.dump`, or redirect with `> ./bloom.dump`.
+- Artifact missing: pick an earlier row that still has its file (`flux backup list --verbose`), or `flux backup create` a fresh one.
+- On hosted Flux, if multiple recent rows are reconciled-missing, the platform may have an issue with the backup volume — contact support with the project slug and one example backup id.
+
+**Engine.** Both engines.
+
+**Related pages.** [Backups workflow → Download](/docs/guides/backups#4-download-a-backup).
 
 ---
 

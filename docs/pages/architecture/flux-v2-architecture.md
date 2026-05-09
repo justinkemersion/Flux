@@ -282,7 +282,7 @@ Adjusted by tier. These are cheap controls that prevent one tenant from monopoli
 
 This is a **portable tenant export**, restorable into any Postgres for migrations or off-platform analysis. It is not a substitute for cluster-level disaster recovery (physical backups, WAL archiving, PITR), which is a platform operations concern. Verification (`flux backup verify`) runs the same `pg_restore` smoke test in a disposable Postgres container that v1 uses.
 
-Catalog rows for these backups carry `kind = tenant_export`, distinct from the `project_db` rows v1 produces.
+Catalog rows for these backups carry `kind = tenant_export`, distinct from the `project_db` rows v1 produces. The full backup contract — trust states, what backups guarantee, how the destructive-action gate works — lives in [Backups](/docs/concepts/backups).
 
 ### Scaling
 

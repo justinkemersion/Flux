@@ -211,6 +211,7 @@ The user should rarely encounter exhaustive mechanics before understanding the s
   /concepts
     projects
     migrations
+    backups
     jwt-auth
     rls
     pooled-vs-dedicated
@@ -235,6 +236,7 @@ The user should rarely encounter exhaustive mechanics before understanding the s
     nextjs
     clerk
     migrations
+    backups
     production-hardening
 
   /examples
@@ -590,6 +592,21 @@ Define:
 
 ---
 
+# /concepts/backups
+
+Define:
+
+* what a Flux backup contains per engine (`project_db` on v1, `tenant_export` on v2)
+* the three trust states (artifact validated, restore-verified, offsite replicated)
+* what backups guarantee and what they do not (the DR boundary)
+* how the trust state interacts with destructive-action gates (`flux nuke`, etc.)
+
+This page is the canonical home for backup vocabulary. Engine-specific phrasing belongs in [Pooled vs dedicated](pooled-vs-dedicated.md); CLI mechanics belong in the [Backups workflow guide](#guidesbackups). Operator concerns (`FLUX_BACKUPS_*`, host directories, image overrides) belong in [Production hardening](#guidesproduction-hardening), not here.
+
+The reader should leave this page understanding why "I created a backup" and "I have a restorable backup" are different statements.
+
+---
+
 # /concepts/jwt-auth
 
 Define:
@@ -855,6 +872,22 @@ Explain:
 * push strategy
 * common pitfalls
 * production safety
+
+---
+
+# /guides/backups
+
+Explain the day-to-day backup commands:
+
+* `flux backup create` (engine-aware: v1 full DB, v2 tenant export)
+* `flux backup list` and how to read trust labels
+* `flux backup verify` as the only step that promotes a backup to **Restorable**
+* `flux backup download` and TTY refusal semantics
+* manual restore mechanics for v1 (own Postgres) and v2 (portable target)
+* the pre-destructive workflow pattern most projects need
+* a CI pattern that backs up before staged deploys
+
+This page is the practical companion to [Backups (concept)](#conceptsbackups). It must not redefine the trust contract; it consumes the contract and shows what to do with it. Operator concerns (storage paths, verify image override) live in [Production hardening](#guidesproduction-hardening).
 
 ---
 

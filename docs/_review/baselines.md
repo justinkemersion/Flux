@@ -87,6 +87,32 @@ After the inaugural report was published, work on the IA-1 fix surfaced that the
 
 The three named guides — `pages/guides/{authjs,clerk,nextjs}.md` — were rewritten as full standalone guides using the substantive content from the now-retired repo-internal originals (`docs/guides/flux-nextjs-{v2-shared-quickstart,authjs-rls}.md`, `docs/guides/clerk-integration.md`). The originals were deleted; AGENTS.md, root README, OPERATIONS, and the surviving sibling guide were updated to point at the public docs paths. The dashboard sidebar was reordered so Next.js (the prerequisite) precedes Auth.js and Clerk. Single source of truth restored under `docs/pages/guides/`.
 
+### Backups feature surfaced in docs (mid-cycle addition)
+
+Backups had shipped in code (v1 nightly + on-demand, v2 on-demand tenant exports, the trust classifier in `@flux/core/backup-trust`, restore-verification in a disposable Postgres, optional offsite replication, the `flux nuke --skip-backup-check` destructive-action gate) but were only mentioned in scattered footnotes across `pooled-vs-dedicated.md`, `v1-dedicated-sql-workflows.md`, `flux-v2-architecture.md`, and a single CLI table row. The trust model itself had no public-facing definition.
+
+This pass added the missing surface as a clean concept-plus-guide pair (per the established corpus pattern that separates "what" from "how"):
+
+- `concepts/backups.md` — canonical concept page. Defines the two backup shapes (`project_db` on v1, `tenant_export` on v2), the **three trust states** (artifact validated → restore-verified → offsite replicated), what backups guarantee and what they do not (the DR boundary), how trust gates `flux nuke`, and where backups physically live (with the operator concerns punted to production-hardening).
+- `guides/backups.md` — practical workflow. Walks `create / list / verify / download` and the manual restore path for each engine (`pg_restore` against `flux project credentials` for v1; `pg_restore` against any Postgres of the same major version for v2 tenant exports). Closes with the pre-destructive workflow pattern and a CI snippet.
+
+The trust language decision (recorded under "Decisions of record" in this entry): expose the **three meaningful states** publicly (`artifact validated`, `restore-verified`, `offsite replicated`) rather than the seven internal classifier tiers. The internal tier names are documented inline in the troubleshooting page's tier-name decoder so readers can map a `--verbose` CLI line to the concept; the concept page itself stays clean.
+
+Cross-corpus updates:
+
+- `reference/cli.md`              expanded backup row to four engine-aware rows (create, list, verify, download)
+- `reference/troubleshooting.md`  added "Backup is not restore-verified" and "Backup download fails or refuses to write" entries; updated the opening "Most issues fall into..." list to include the backup category
+- `reference/env-vars.md`         no addition (operator env vars belong in production-hardening, not the app-builder env-var page)
+- `guides/production-hardening.md`  new "Backup storage and verification (self-hosted only)" section documenting `FLUX_BACKUPS_LOCAL_DIR`, `FLUX_BACKUPS_OFFSITE_DIR`, `FLUX_BACKUP_VERIFY_POSTGRES_IMAGE`
+- `concepts/pooled-vs-dedicated.md`, `guides/v1-dedicated-sql-workflows.md`, `architecture/flux-v2-architecture.md`  added link-ins to the new concept/guide rather than re-defining the trust contract locally
+- IA contract (`information-architecture.md`)  added `/concepts/backups` and `/guides/backups` section contracts; updated the `/concepts` and `/guides` trees
+- Dashboard sidebar (`docs-nav.ts`)  added both pages in their canonical slot
+
+| Decision | Choice | Alternative rejected |
+|----------|--------|----------------------|
+| Page shape for backups | Concept page + guide page (matches the corpus's "what vs how" split) | Single guide page (rejected: mixes the trust contract with the workflow); concept-only (rejected: leaves the workflow buried in a v1-only SQL page); full `/backups` section (rejected: overbuilds for current scope) |
+| Trust language | Expose the three meaningful states (`artifact validated`, `restore-verified`, `offsite replicated`); reference internal tier names only inline in troubleshooting | Document every internal tier verbatim (rejected: exposes implementation details that may churn); expose only `restore-verified or not` (rejected: loses the durability vs. usability distinction the post-v1-v2 plan considers important) |
+
 ### IA-3 / TROUBLE-1 closeout
 
 A canonical troubleshooting home was added at `pages/reference/troubleshooting.md`. The page is organized **by reader-observable symptom** (401, 403, empty array, 42501, migration succeeded but queries fail, JWT looks valid but rejected, pooled-specific misunderstandings) rather than by subsystem, and each entry follows a consistent shape: layer / what it means / how to verify / common fixes / engine scope / related pages. A "How to think about Flux failures" section at the top teaches the layer-stack debugging discipline before any individual entry, and a "When the issue is probably not Flux" section at the bottom prevents infrastructure blame inflation.
