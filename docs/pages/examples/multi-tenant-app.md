@@ -1,6 +1,7 @@
 ---
 title: Multi-tenant app example
 description: Patterns for tenant data isolation with RLS and JWT claims.
+section: examples
 ---
 
 # Multi-tenant app example

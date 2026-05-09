@@ -1,6 +1,7 @@
 ---
 title: Installation
 description: Install the Flux CLI, set environment variables, and verify login.
+section: getting-started
 ---
 
 # Installation

@@ -1,6 +1,7 @@
 ---
 title: Migrations
 description: SQL-first schema changes with flux push and PostgREST schema reload.
+section: concepts
 ---
 
 # Migrations

@@ -1,6 +1,7 @@
 ---
 title: CLI reference
 description: Flux CLI overview, common commands, and where exhaustive help lives.
+section: reference
 ---
 
 # CLI reference

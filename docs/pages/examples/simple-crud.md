@@ -1,6 +1,7 @@
 ---
 title: Simple CRUD example
 description: Smallest vertical slice—table, migration, and HTTP verbs against PostgREST.
+section: examples
 ---
 
 # Simple CRUD example

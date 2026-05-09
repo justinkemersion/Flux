@@ -1,6 +1,7 @@
 ---
 title: Row-level security
 description: Using Postgres RLS with PostgREST for multi-tenant row isolation.
+section: concepts
 ---
 
 # Row-level security

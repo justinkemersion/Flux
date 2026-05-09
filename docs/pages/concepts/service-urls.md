@@ -1,6 +1,7 @@
 ---
 title: Service URLs
 description: Canonical API hostnames for Flux projects—including flattened v2 URLs and legacy dotted forms.
+section: concepts
 ---
 
 # Service URLs

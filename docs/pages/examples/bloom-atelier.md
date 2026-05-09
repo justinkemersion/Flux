@@ -1,6 +1,7 @@
 ---
 title: Bloom Atelier example
 description: A realistic slug and hostname pattern used across Flux tests and docs.
+section: examples
 ---
 
 # Bloom Atelier example

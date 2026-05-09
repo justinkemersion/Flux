@@ -1,6 +1,7 @@
 ---
 title: Flux v2 shared
 description: Shared cluster architecture, invariants, and why the gateway is a security control.
+section: architecture
 ---
 
 # Flux v2 shared

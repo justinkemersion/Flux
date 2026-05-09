@@ -1,6 +1,7 @@
 ---
 title: Project secrets
 description: Gateway secrets, JWT signing material, and rotation without accidental exposure.
+section: security
 ---
 
 # Project secrets

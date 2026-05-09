@@ -1,6 +1,7 @@
 ---
 title: First request
 description: Make a successful HTTP call to your project API on v1 dedicated or v2 shared.
+section: getting-started
 ---
 
 # First request

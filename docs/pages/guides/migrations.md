@@ -1,6 +1,7 @@
 ---
 title: Migrations workflow
 description: Practical workflow for SQL migrations, tenant schemas, and flux push.
+section: guides
 ---
 
 # Migrations workflow

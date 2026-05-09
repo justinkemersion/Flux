@@ -1,6 +1,7 @@
 ---
 title: Configuration
 description: flux.json, dashboard settings, and CLI context for day-to-day work.
+section: reference
 ---
 
 # Configuration

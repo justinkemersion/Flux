@@ -1,6 +1,7 @@
 ---
 title: Pooled vs dedicated
 description: v2 shared versus v1 dedicated—operational and security tradeoffs in plain language.
+section: concepts
 ---
 
 # Pooled vs dedicated

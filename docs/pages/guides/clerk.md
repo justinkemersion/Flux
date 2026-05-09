@@ -1,6 +1,7 @@
 ---
 title: Clerk with Flux
 description: Clerk JWT templates and Flux v2 pooled stacks—browser and server fetch patterns.
+section: guides
 ---
 
 # Clerk with Flux

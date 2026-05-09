@@ -1,6 +1,7 @@
 ---
 title: Move from pooled to dedicated (v2 → v1)
 description: How to migrate a v2_shared project to v1_dedicated using the Flux CLI—plan, verify, cut over, post-cutover checklist, and app env updates.
+section: guides
 ---
 
 # Move from pooled to dedicated (v2 → v1)

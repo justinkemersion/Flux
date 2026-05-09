@@ -1,6 +1,7 @@
 ---
 title: RLS boundaries
 description: What row-level security fixes, what it does not, and operator vs application responsibilities.
+section: security
 ---
 
 # RLS boundaries

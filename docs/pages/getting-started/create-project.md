@@ -1,6 +1,7 @@
 ---
 title: Create a project
 description: Provision a Flux project with the CLI and apply your first schema migration.
+section: getting-started
 ---
 
 # Create a project

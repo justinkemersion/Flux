@@ -1,4 +1,3 @@
-````md
 # Flux Documentation Information Architecture
 
 This file defines the canonical documentation tree, ordering principles, disclosure model, and conceptual teaching flow for Flux documentation.
@@ -65,7 +64,7 @@ confused
 → impressed
 → trusting
 → building
-````
+```
 
 Each section of the docs contributes to this progression.
 

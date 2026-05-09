@@ -1,6 +1,7 @@
 ---
 title: V1 dedicated — quick SQL from your terminal
 description: Run ad-hoc or file-based SQL on a v1 dedicated project using flux push, flux project credentials, and local psql.
+section: guides
 ---
 
 # V1 dedicated — quick SQL from your terminal

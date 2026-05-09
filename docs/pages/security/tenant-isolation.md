@@ -1,6 +1,7 @@
 ---
 title: Tenant isolation (security)
 description: Guarantees, blast radius, and honest limits of pooled vs dedicated engines.
+section: security
 ---
 
 # Tenant isolation (security)

@@ -1,6 +1,7 @@
 ---
 title: Threat model
 description: In-scope attacks, primary controls, and explicit non-promises for Flux v2 shared.
+section: security
 ---
 
 # Threat model

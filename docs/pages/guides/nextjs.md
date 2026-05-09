@@ -1,6 +1,7 @@
 ---
 title: Next.js with Flux
 description: Bootstrap a Next.js app against a Flux v2 shared project—URLs, env vars, and common pitfalls.
+section: guides
 ---
 
 # Next.js with Flux

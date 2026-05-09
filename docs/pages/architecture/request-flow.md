@@ -1,6 +1,7 @@
 ---
 title: Request flow
 description: End-to-end lifecycle of one HTTP request on v2 shared vs v1 dedicated.
+section: architecture
 ---
 
 # Request flow

@@ -1,6 +1,7 @@
 ---
 title: Tenant isolation (architecture)
 description: Structural boundaries—schemas, roles, networks, and containers—for v1 and v2.
+section: architecture
 ---
 
 # Tenant isolation (architecture)

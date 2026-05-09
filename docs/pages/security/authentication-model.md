@@ -1,6 +1,7 @@
 ---
 title: Authentication model
 description: Who verifies which token, what can go wrong, and what Flux does not promise.
+section: security
 ---
 
 # Authentication model

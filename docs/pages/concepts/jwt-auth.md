@@ -1,6 +1,7 @@
 ---
 title: JWT authentication
 description: Project JWTs, gateway verification, bridge JWTs, and PostgREST roles.
+section: concepts
 ---
 
 # JWT authentication

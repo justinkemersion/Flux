@@ -1,6 +1,7 @@
 ---
 title: Gateway
 description: The Flux gateway as authentication and routing boundary for v2 shared traffic.
+section: architecture
 ---
 
 # Gateway

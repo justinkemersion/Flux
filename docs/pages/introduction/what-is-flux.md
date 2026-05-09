@@ -1,6 +1,7 @@
 ---
 title: What is Flux?
 description: Flux as a PostgreSQL and REST backend platform—not only a database host or a dashboard.
+section: introduction
 ---
 
 # What is Flux?

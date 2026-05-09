@@ -1,6 +1,7 @@
 ---
 title: Projects
 description: What a Flux project contains—more than a database name.
+section: concepts
 ---
 
 # Projects

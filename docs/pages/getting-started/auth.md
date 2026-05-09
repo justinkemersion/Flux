@@ -1,6 +1,7 @@
 ---
 title: Authentication
 description: Attach identity to Flux API calls—project JWTs at the gateway and Postgres roles inside the database.
+section: getting-started
 ---
 
 # Authentication

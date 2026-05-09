@@ -1,6 +1,7 @@
 ---
 title: Why Flux?
 description: When Flux fits, and what tradeoffs you accept compared to hosted Postgres only, heavy BaaS, or DIY orchestration.
+section: introduction
 ---
 
 # Why Flux?

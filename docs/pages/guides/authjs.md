@@ -1,6 +1,7 @@
 ---
 title: Auth.js with Flux
 description: Patterns for Next.js Auth.js sessions, JWTs, and Postgres RLS with Flux v2 shared.
+section: guides
 ---
 
 # Auth.js with Flux

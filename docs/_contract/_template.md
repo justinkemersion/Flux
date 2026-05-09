@@ -2,7 +2,6 @@
 title:
 description:
 section:
-order:
 ---
 
 # Title
@@ -11,9 +10,9 @@ Short introduction.
 
 ## What you will learn
 
-- 
-- 
-- 
+-
+-
+-
 
 ## The idea
 

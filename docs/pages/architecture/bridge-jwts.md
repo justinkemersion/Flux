@@ -1,6 +1,7 @@
 ---
 title: Bridge JWTs
 description: Short-lived internal JWTs from the gateway to PostgREST on v2 shared.
+section: architecture
 ---
 
 # Bridge JWTs

@@ -1,6 +1,7 @@
 ---
 title: Mental model
 description: The main parts of Flux and how an HTTP request reaches your tenant schema.
+section: introduction
 ---
 
 # Mental model

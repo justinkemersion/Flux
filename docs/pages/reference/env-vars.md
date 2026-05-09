@@ -1,6 +1,7 @@
 ---
 title: Environment variables
 description: The env vars you'll touch building on Flux — what they are, where they live, and the names that look alike.
+section: reference
 ---
 
 # Environment variables

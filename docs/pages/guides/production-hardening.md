@@ -1,6 +1,7 @@
 ---
 title: Production hardening
 description: Operational and security practices for running Flux-backed apps in production.
+section: guides
 ---
 
 # Production hardening
