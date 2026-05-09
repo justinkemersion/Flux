@@ -207,7 +207,7 @@ WHERE user_id = 'legacy-or-old-value';
 
 - [ ] Repeat per user or batch with a mapping table as appropriate — **do not** blindly set all rows to one id unless that is truly intended.
 
-- [ ] Verify RLS: authenticated requests with a real session JWT should only see rows whose `user_id` matches `auth.uid()` (see **`docs/guides/clerk-integration.md`**).
+- [ ] Verify RLS: authenticated requests with a real session JWT should only see rows whose `user_id` matches `auth.uid()` (see **`docs/pages/guides/clerk.md`**).
 
 ---
 
@@ -222,5 +222,7 @@ WHERE user_id = 'legacy-or-old-value';
 
 ## Related documentation
 
-- [`docs/guides/clerk-integration.md`](guides/clerk-integration.md) — JWTs, `auth.uid()`, RLS.
+- [`docs/pages/guides/clerk.md`](pages/guides/clerk.md) — JWTs, `auth.uid()`, RLS.
+- [`docs/pages/guides/authjs.md`](pages/guides/authjs.md) — Auth.js sessions + RLS.
+- [`docs/pages/guides/nextjs.md`](pages/guides/nextjs.md) — Next.js bootstrap against a v2 shared project.
 - [`docs/guides/postgresql-import-to-flux.md`](guides/postgresql-import-to-flux.md) — dumps, `flux push` flags, version pitfalls.

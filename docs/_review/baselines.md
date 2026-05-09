@@ -83,4 +83,8 @@ After the inaugural report was published, work on the IA-1 fix surfaced that the
 
 **Lesson for the system.** Severity for any finding that depends on runtime behavior should be deferred until the [technical-truth pass](technical-truth.md) runs. An IA-pass-only Blocker is a contradiction in terms when the file might be loaded through a non-canonical path the IA pass cannot see. The pass-ordering rule in [`README.md`](README.md) ("IA → cognitive → truth → editorial") is correct precisely so the truth pass can deflate or upgrade the earlier passes' suspicions before they ship as Blockers.
 
+### IA-2 closeout
+
+The three named guides — `pages/guides/{authjs,clerk,nextjs}.md` — were rewritten as full standalone guides using the substantive content from the now-retired repo-internal originals (`docs/guides/flux-nextjs-{v2-shared-quickstart,authjs-rls}.md`, `docs/guides/clerk-integration.md`). The originals were deleted; AGENTS.md, root README, OPERATIONS, and the surviving sibling guide were updated to point at the public docs paths. The dashboard sidebar was reordered so Next.js (the prerequisite) precedes Auth.js and Clerk. Single source of truth restored under `docs/pages/guides/`.
+
 ---

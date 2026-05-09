@@ -11,7 +11,7 @@
 Flux is a monorepo (pnpm workspaces) providing a control plane (dashboard), CLI, gateway, and execution engines (`v1_dedicated` vs `v2_shared`). This document records **what already works well**, **gaps** (CI, tests, perf, docs), and a **prioritized backlog** plus a **v2_shared-focused test matrix**.
 
 Canonical architecture and threat model: [docs/pages/architecture/flux-v2-architecture.md](./pages/architecture/flux-v2-architecture.md).  
-Operator and client-app pitfalls for pooled tenants: [AGENTS.md](../AGENTS.md), [docs/guides/flux-nextjs-v2-shared-quickstart.md](./guides/flux-nextjs-v2-shared-quickstart.md).
+Operator and client-app pitfalls for pooled tenants: [AGENTS.md](../AGENTS.md), [docs/pages/guides/nextjs.md](./pages/guides/nextjs.md).
 
 ---
 

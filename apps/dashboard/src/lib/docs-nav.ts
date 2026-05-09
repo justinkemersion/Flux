@@ -67,8 +67,8 @@ export const DOCS_NAV: DocsNavSection[] = [
   {
     label: "Guides",
     items: [
-      { title: "Auth.js", slug: ["guides", "authjs"] },
       { title: "Next.js", slug: ["guides", "nextjs"] },
+      { title: "Auth.js", slug: ["guides", "authjs"] },
       { title: "Clerk", slug: ["guides", "clerk"] },
       { title: "Migrations", slug: ["guides", "migrations"] },
       {

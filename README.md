@@ -290,7 +290,7 @@ On first connection to a new tenant DB, Flux runs SQL that:
 
 ### JWTs and keys
 
-PostgREST verifies JWTs with **`PGRST_JWT_SECRET`**. The dashboard (and **`getProjectKeys`** in core) derive **anon** and **service_role**-style JWTs **from the container env only** (same material PostgREST uses). You can align this secret with an external issuer (e.g. Clerk); see **`docs/guides/clerk-integration.md`**.
+PostgREST verifies JWTs with **`PGRST_JWT_SECRET`**. The dashboard (and **`getProjectKeys`** in core) derive **anon** and **service_role**-style JWTs **from the container env only** (same material PostgREST uses). You can align this secret with an external issuer (e.g. Clerk); see **`docs/pages/guides/clerk.md`** (renders at `/docs/guides/clerk`).
 
 ### Tenant environment variables (“project bucket”)
 
@@ -527,13 +527,13 @@ Root **[`AGENTS.md`](./AGENTS.md)** is the short operator/agent checklist for **
 
 ## Docs and guides
 
-- **`AGENTS.md`** (repo root) — v2_shared **client-app** pitfalls; keep in sync with [`docs/guides/flux-nextjs-v2-shared-quickstart.md`](./docs/guides/flux-nextjs-v2-shared-quickstart.md).
+- **`AGENTS.md`** (repo root) — v2_shared **client-app** pitfalls; keep in sync with [`docs/pages/guides/nextjs.md`](./docs/pages/guides/nextjs.md).
 - **`docs/production-security-audit.md`** — Production security posture, pinned images, and credential API behavior.
 - **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
 - **`docs/guides/flux-v1-dedicated-sql-workflows.md`** — Sarah-friendly quick SQL updates on v1 dedicated projects (`flux push` + direct `psql`).
-- **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
-- **`docs/guides/flux-nextjs-v2-shared-quickstart.md`** — Copy/paste bootstrap for a brand-new Next.js app backed by a Flux pooled (`v2_shared`) project.
-- **`docs/guides/flux-nextjs-authjs-rls.md`** — Follow-on guide for Auth.js integration and user-scoped RLS (`auth.uid()` + `text` user ids).
+- **`docs/pages/guides/clerk.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard. Renders at `/docs/guides/clerk`.
+- **`docs/pages/guides/nextjs.md`** — Copy/paste bootstrap for a brand-new Next.js app backed by a Flux pooled (`v2_shared`) project. Renders at `/docs/guides/nextjs`.
+- **`docs/pages/guides/authjs.md`** — Follow-on guide for Auth.js integration and user-scoped RLS (`auth.uid()` + `text` user ids). Renders at `/docs/guides/authjs`.
 - **`docs/pages/architecture/flux-v2-architecture.md`** — v2 invariants, threat model, tiering, and implementation red flags. Renders at `/docs/architecture/flux-v2-architecture` on the dashboard.
 - **`docs/UI-SCOPE-CONTRACT.md`** — CLI-first UI boundary, admission criteria, and scheduled scope revisit protocol.
 - **`docs/TRAJECTORY-TODO.md`** — internal execution roadmap and active priority backlog.

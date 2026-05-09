@@ -4,7 +4,7 @@ Flux tenants run a **pinned Postgres image** (see `FLUX_DOCKER_IMAGES.postgres` 
 
 ## Start here (choose your path)
 
-- **Brand-new app on pooled Flux (`v2_shared`)**: use [`docs/guides/flux-nextjs-v2-shared-quickstart.md`](./flux-nextjs-v2-shared-quickstart.md), then extend with [`docs/guides/flux-nextjs-authjs-rls.md`](./flux-nextjs-authjs-rls.md).
+- **Brand-new app on pooled Flux (`v2_shared`)**: use [`docs/pages/guides/nextjs.md`](../pages/guides/nextjs.md), then extend with [`docs/pages/guides/authjs.md`](../pages/guides/authjs.md) or [`docs/pages/guides/clerk.md`](../pages/guides/clerk.md).
 - **Existing app / database port**: continue with this guide for dump import, compatibility transforms, and `public` → `api` migration details.
 
 ## Universal issues (any source → Flux)
@@ -44,7 +44,7 @@ flux push ./dump.sql -p myproject --supabase-compat
 
 `--supabase-compat` (`-s`) turns on **Supabase compatibility**: dump transforms (minimal `auth` schema, `auth.users`, `auth.uid()` as **text**, seed before `auth.users` FKs), then **moves** tables, sequences, views, and materialized views from `public` into `api`, and reapplies grants on `api`. A short **post-migration report** lists how many objects moved. If your dump layout differs, adjust manually or extend `applySupabaseCompatibilityTransforms` in `@flux/core`.
 
-For **profiles** auto-provisioning without Supabase Auth triggers, see **Profiles row on first use** in [`docs/guides/clerk-integration.md`](clerk-integration.md) (RPC or trigger templates).
+For **profiles** auto-provisioning without Supabase Auth triggers, see the worked **first-touch profile** pattern in [`docs/pages/guides/clerk.md`](../pages/guides/clerk.md) (RPC and trigger templates).
 
 ### Supabase JS `createClient` (schema)
 

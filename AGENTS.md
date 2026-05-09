@@ -5,8 +5,9 @@ Use this file when scaffolding **external** repos (Next.js, scripts, etc.) that 
 Canonical deep dives in this repo:
 
 - [`README.md`](README.md) — architecture, **JWT and schema isolation handshake** (gateway `Accept-Profile` / `Content-Profile`).
-- [`docs/guides/flux-nextjs-v2-shared-quickstart.md`](docs/guides/flux-nextjs-v2-shared-quickstart.md) — minimal Next.js bootstrap (updated with pitfalls).
-- [`docs/guides/flux-nextjs-authjs-rls.md`](docs/guides/flux-nextjs-authjs-rls.md) — Auth.js + RLS patterns.
+- [`docs/pages/guides/nextjs.md`](docs/pages/guides/nextjs.md) — minimal Next.js bootstrap (updated with pitfalls). Renders at `/docs/guides/nextjs` on the dashboard.
+- [`docs/pages/guides/authjs.md`](docs/pages/guides/authjs.md) — Auth.js + RLS patterns. Renders at `/docs/guides/authjs`.
+- [`docs/pages/guides/clerk.md`](docs/pages/guides/clerk.md) — Clerk + RLS patterns. Renders at `/docs/guides/clerk`.
 - [`docs/pages/architecture/flux-v2-architecture.md`](docs/pages/architecture/flux-v2-architecture.md) — v2 invariants, threat model, tenant isolation, and operational behavior. Renders at `/docs/architecture/flux-v2-architecture` on the dashboard.
 
 ---
