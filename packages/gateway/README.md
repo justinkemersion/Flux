@@ -35,12 +35,12 @@ Implemented Node gateway request path with:
 
 ## Architecture reference
 
-See [`docs/flux-v2-architecture.md`](../../docs/flux-v2-architecture.md):
+See [`docs/pages/architecture/flux-v2-architecture.md`](../../docs/pages/architecture/flux-v2-architecture.md):
 
-- §6 — Gateway responsibility boundary
-- §7 — JWT contract
-- §11 — Redis and rate limiting
-- §12 — Custom domain resolution and cache eviction
+- §6 — Internal architecture (gateway responsibility boundary, custom domains)
+- §3 — Authentication flow (project JWT → bridge JWT, signing keys)
+- §7 — Operational behavior (rate limiting, activity tracking, Redis non-blocking pattern)
+- Reference → Invariants (the gateway is the only issuer of bridge JWTs; Redis is never authoritative)
 
 ### Schema-routing handshake (informational)
 

@@ -45,7 +45,7 @@ export const DOCS_NAV: DocsNavSection[] = [
     items: [
       { title: "Flux v2 shared", slug: ["architecture", "flux-v2"] },
       {
-        title: "V2 specification (full)",
+        title: "Flux v2 architecture",
         slug: ["architecture", "flux-v2-architecture"],
       },
       { title: "Gateway", slug: ["architecture", "gateway"] },

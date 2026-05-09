@@ -15,8 +15,8 @@ Do not import from this package until Phase 2 extraction is complete.
 
 ## Architecture reference
 
-See [`docs/flux-v2-architecture.md`](../../docs/flux-v2-architecture.md):
+See [`docs/pages/architecture/flux-v2-architecture.md`](../../docs/pages/architecture/flux-v2-architecture.md):
 
-- §9 — Engine abstraction (shared interface + v1-only methods)
-- §21 — Monorepo map
-- §3 — v1 vs v2 comparison
+- §6 — Internal architecture (engine abstraction, shared interface, v1/v2 coexistence)
+- Reference → Repository layout (monorepo map)
+- §6 — Engine selection by tier (when v1 dedicated is the right mode)

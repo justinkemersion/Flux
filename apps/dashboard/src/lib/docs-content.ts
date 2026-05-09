@@ -15,18 +15,17 @@ export type LoadedDocPage = {
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/u;
 
-/** Slug paths that load from `docs/<file>` instead of `docs/pages/`. Value = path under repo root. */
-const REPO_DOC_ALIASES: Record<string, string> = {
-  "architecture/flux-v2-architecture": join("docs", "flux-v2-architecture.md"),
-};
+/**
+ * Slug paths that load from `docs/<file>` instead of `docs/pages/`.
+ *
+ * Empty by design as of 2026-05-08: every doc page lives under `docs/pages/` with proper
+ * frontmatter. See `docs/_review/baselines.md` for the IA-1 reconciliation that retired
+ * the previous `architecture/flux-v2-architecture` alias. Re-introduce an entry here only
+ * if a doc must live outside `docs/pages/` for a documented architectural reason.
+ */
+const REPO_DOC_ALIASES: Record<string, string> = {};
 
-const REPO_DOC_ALIAS_METADATA: Record<string, DocsFrontmatter> = {
-  "architecture/flux-v2-architecture": {
-    title: "Flux v2 — architecture specification",
-    description:
-      "Authoritative v2 invariants, threat model, JWT contracts, and implementation gates for Flux.",
-  },
-};
+const REPO_DOC_ALIAS_METADATA: Record<string, DocsFrontmatter> = {};
 
 function tryRepoRoots(): string[] {
   return [join(process.cwd(), "..", ".."), process.cwd()];

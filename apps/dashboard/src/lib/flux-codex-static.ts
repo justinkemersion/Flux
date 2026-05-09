@@ -34,7 +34,8 @@ export const FLUX_CODEX_JSON = {
   /**
    * Execution modes (v1 vs v2) and product tiers (Free / Pro / Enterprise).
    * Codex must use this section when users ask about tiers, plans, isolation, or roadmap.
-   * Full architecture: `docs/flux-v2-architecture.md` in the Flux monorepo.
+   * Full architecture: `docs/pages/architecture/flux-v2-architecture.md` in the Flux monorepo
+   * (renders at `/docs/architecture/flux-v2-architecture` on the dashboard).
    */
   executionModesAndTiers: {
     overview:

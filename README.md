@@ -534,7 +534,7 @@ Root **[`AGENTS.md`](./AGENTS.md)** is the short operator/agent checklist for **
 - **`docs/guides/clerk-integration.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard.
 - **`docs/guides/flux-nextjs-v2-shared-quickstart.md`** — Copy/paste bootstrap for a brand-new Next.js app backed by a Flux pooled (`v2_shared`) project.
 - **`docs/guides/flux-nextjs-authjs-rls.md`** — Follow-on guide for Auth.js integration and user-scoped RLS (`auth.uid()` + `text` user ids).
-- **`docs/flux-v2-architecture.md`** — v2 invariants, threat model, tiering, and implementation red flags.
+- **`docs/pages/architecture/flux-v2-architecture.md`** — v2 invariants, threat model, tiering, and implementation red flags. Renders at `/docs/architecture/flux-v2-architecture` on the dashboard.
 - **`docs/UI-SCOPE-CONTRACT.md`** — CLI-first UI boundary, admission criteria, and scheduled scope revisit protocol.
 - **`docs/TRAJECTORY-TODO.md`** — internal execution roadmap and active priority backlog.
 

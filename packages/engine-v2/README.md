@@ -29,9 +29,9 @@ role       t_<shortid>_role
 
 ## Architecture reference
 
-See [`docs/flux-v2-architecture.md`](../../docs/flux-v2-architecture.md):
+See [`docs/pages/architecture/flux-v2-architecture.md`](../../docs/pages/architecture/flux-v2-architecture.md):
 
-- §9 — Engine abstraction (v2-only methods)
-- §10 — Tenant naming and identity
-- §14 — DB guardrails (`statement_timeout`, `CONNECTION LIMIT`)
-- §8 — PostgREST behavior and PGRST_DB_SCHEMAS policy
+- §6 — Internal architecture (engine abstraction, control plane vs data plane)
+- §4 — Tenant isolation (deterministic schema and role names from `tenant_id`)
+- §7 — Operational behavior (per-role `statement_timeout` and `CONNECTION LIMIT`)
+- §3 — Authentication flow and Reference → Invariants (`PGRST_DB_SCHEMAS` policy is invariant 6)

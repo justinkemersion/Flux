@@ -7,7 +7,7 @@ Canonical deep dives in this repo:
 - [`README.md`](README.md) — architecture, **JWT and schema isolation handshake** (gateway `Accept-Profile` / `Content-Profile`).
 - [`docs/guides/flux-nextjs-v2-shared-quickstart.md`](docs/guides/flux-nextjs-v2-shared-quickstart.md) — minimal Next.js bootstrap (updated with pitfalls).
 - [`docs/guides/flux-nextjs-authjs-rls.md`](docs/guides/flux-nextjs-authjs-rls.md) — Auth.js + RLS patterns.
-- [`docs/flux-v2-architecture.md`](docs/flux-v2-architecture.md) — v2 invariants and threat model.
+- [`docs/pages/architecture/flux-v2-architecture.md`](docs/pages/architecture/flux-v2-architecture.md) — v2 invariants, threat model, tenant isolation, and operational behavior. Renders at `/docs/architecture/flux-v2-architecture` on the dashboard.
 
 ---
 

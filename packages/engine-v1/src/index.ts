@@ -13,7 +13,8 @@
  *   once the engine interface in @flux/core is stabilised. Until then, @flux/core
  *   is the canonical home for v1_dedicated logic; this package is the future boundary.
  *
- * See docs/flux-v2-architecture.md — §9 (Engine abstraction) and §21 (Monorepo map).
+ * See docs/pages/architecture/flux-v2-architecture.md — §6 (Internal architecture, engine
+ * abstraction) and Reference → Repository layout.
  */
 
 export type EngineV1Placeholder = never;

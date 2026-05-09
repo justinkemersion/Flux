@@ -172,7 +172,7 @@ Not intended for public docs or marketing consumption.
 - **Status:** todo
 - **Owner:** platform docs
 - **Why:** docs drift is expensive during incidents
-- **Scope:** `README.md`, `docs/flux-v2-architecture.md`
+- **Scope:** `README.md`, `docs/pages/architecture/flux-v2-architecture.md`
 - **Acceptance criteria:**
   - update checklist added to PR template
   - each architecture-impact PR references affected diagrams/docs

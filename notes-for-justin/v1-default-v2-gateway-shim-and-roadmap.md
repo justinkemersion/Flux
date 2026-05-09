@@ -97,5 +97,5 @@ curl -sS -i -H "Host: api.<slug>.<hash>.<your-base-domain>" "http://127.0.0.1:<g
 - JWT + role naming: `packages/gateway/src/jwt-issuer.ts`, `packages/gateway/src/shortid.ts`
 - JWT + pool env: `packages/gateway/.env.example`
 - v1 tenant bootstrap: `packages/core/src/index.ts` (`BOOTSTRAP_SQL`, PostgREST env)
-- v2 architecture (target contract): `docs/flux-v2-architecture.md`
+- v2 architecture (target contract): `docs/pages/architecture/flux-v2-architecture.md`
 - Engine v2 stub: `packages/engine-v2/`
