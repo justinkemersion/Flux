@@ -36,6 +36,8 @@ Rendered documentation for https://flux.vsl-base.com/docs lives as Markdown in [
 
 ## Review system
 
+Before writing for a **new feature**, run the [feature intake](../_review/feature-intake.md) pass — six short questions that name the trust contract, audience, page shape, and negative space. The four passes below check that what was written matches the contract; the intake decides what is worth writing.
+
 After editing user-facing docs, run the relevant passes from [`docs/_review/`](../_review/):
 
 1. [IA pass](../_review/ia-review.md) — does the page belong here?

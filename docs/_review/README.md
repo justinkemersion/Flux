@@ -16,9 +16,13 @@ Without the review system, the contract slowly drifts: pages describe behavior t
 
 The review system exists to make drift visible and cheap to fix.
 
+## Pre-writing pass
+
+Before any of the post-writing passes, a new feature runs through [`feature-intake.md`](feature-intake.md). It is six short questions that name the trust contract, the audience, the page shape, and the negative space — the decisions every other pass downstream assumes were made. Skipping intake is the cheapest way to make the four standard passes find work later that should have been settled in minutes up front.
+
 ## The four standard passes
 
-Each pass is independent. Each has its own rubric file. A "major docs change" runs the first three; the editorial pass is optional but recommended before a release.
+Each post-writing pass is independent. Each has its own rubric file. A "major docs change" runs the first three; the editorial pass is optional but recommended before a release.
 
 | # | Pass | Rubric | Typical model | Always required? |
 |---|------|--------|---------------|------------------|
@@ -108,6 +112,7 @@ Snapshot reports for a specific pass go under `docs/_review/reports/<YYYY-MM-DD>
 
 ## Suggested order in a single change
 
+0. **Feature intake** (new features only) — answer the six questions in [`feature-intake.md`](feature-intake.md) before writing.
 1. **IA pass** first — without a stable home, every other check is wasted.
 2. **Cognitive pass** second — once the page belongs, make sure the reader can follow it.
 3. **Truth pass** third — once the prose is coherent, verify it against the system.

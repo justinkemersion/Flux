@@ -87,6 +87,31 @@ After the inaugural report was published, work on the IA-1 fix surfaced that the
 
 The three named guides — `pages/guides/{authjs,clerk,nextjs}.md` — were rewritten as full standalone guides using the substantive content from the now-retired repo-internal originals (`docs/guides/flux-nextjs-{v2-shared-quickstart,authjs-rls}.md`, `docs/guides/clerk-integration.md`). The originals were deleted; AGENTS.md, root README, OPERATIONS, and the surviving sibling guide were updated to point at the public docs paths. The dashboard sidebar was reordered so Next.js (the prerequisite) precedes Auth.js and Clerk. Single source of truth restored under `docs/pages/guides/`.
 
+### Feature-intake pass added (post-backups, formalizing what we just did)
+
+The backup-doc rollup implicitly used a pre-writing decision step (the AskQuestion block that resolved page-shape and trust-language before any prose was written). That step worked well enough to formalize: it caught both decisions in minutes, surfaced them in the commit message, and made them auditable from `baselines.md` instead of from agent memory.
+
+`docs/_review/feature-intake.md` encodes the step as the **pre-writing pass** in the review system. Six short questions:
+
+1. What is the public trust contract?
+2. What internal states remain private?
+3. Which audience owns this feature?
+4. Is this concept / guide / reference / troubleshooting?
+5. What promises are intentionally NOT made?
+6. What future commands or features are intentionally not implied?
+
+The answers go into the commit message (decision table) and the next `baselines.md` entry. No separate decision-record file; the existing artifacts already carry the load.
+
+The four standard passes (IA, cognitive, truth, voice) are now explicitly **post-writing**. Order is intake → write → IA → cognitive → truth → voice. A failed intake (the team cannot answer one of the six in plain English) is itself a finding: the feature is not yet ready to document.
+
+Cross-links updated:
+
+- `_review/README.md`              new "Pre-writing pass" section; intake added as step 0 in suggested order
+- `_contract/README.md`            "Review system" section now leads with the intake pass before the four post-writing passes
+- `_review/feature-intake.md`      points to the backup baseline + commit `5038af7` as the canonical worked example
+
+Implication for future work: every new-feature commit message should now carry an inline decision table similar to the backup commit. That table is the artifact of intake — it is what makes the trust contract auditable from `git log` years later.
+
 ### Backups feature surfaced in docs (mid-cycle addition)
 
 Backups had shipped in code (v1 nightly + on-demand, v2 on-demand tenant exports, the trust classifier in `@flux/core/backup-trust`, restore-verification in a disposable Postgres, optional offsite replication, the `flux nuke --skip-backup-check` destructive-action gate) but were only mentioned in scattered footnotes across `pooled-vs-dedicated.md`, `v1-dedicated-sql-workflows.md`, `flux-v2-architecture.md`, and a single CLI table row. The trust model itself had no public-facing definition.
