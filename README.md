@@ -17,6 +17,7 @@ The **control plane** (CLI + optional Next.js dashboard) provisions, tracks, and
   - [Mode-split: dashboard behavior per mode](#mode-split-dashboard-behavior-per-mode)
 - [Production deploy workflow (internal)](#production-deploy-workflow-internal)
 - [Monorepo layout](#monorepo-layout)
+- [Code ownership map](#code-ownership-map)
 - [Core concepts](#core-concepts)
 - [Supabase → Flux (migrations)](#supabase--flux-migrations)
 - [Packages deep dive](#packages-deep-dive)
@@ -274,6 +275,27 @@ The workspace is defined in **`pnpm-workspace.yaml`** (`packages/*`, `apps/*`). 
 | `docs/guides/` | — | **PostgreSQL / Supabase → Flux** import guide, **Clerk + PostgREST**, **Flux + Next.js (`v2_shared`) quickstart**, and **Auth.js + RLS extension**. |
 
 Root **`package.json`** is minimal; install and scripts are usually run with **`pnpm --filter <name>`** from the repo root.
+
+---
+
+## Code ownership map
+
+Focused notes for contributors: where to look before moving symbols or adding surface area. This is not a full architecture spec.
+
+| Area | Owns |
+|------|------|
+| **`packages/core/src/index.ts`** | Public **re-exports only** — add behavior in feature modules, then export from here. |
+| **`packages/core/src/projects/`** | Project orchestration (`ProjectManager`, lifecycle, runtime mode helpers, stack deletion). |
+| **`packages/core/src/docker/`** | Docker naming, client usage, resource limits, stack/container operations, log streaming. |
+| **`packages/core/src/database/`** | Tenant DB bootstrap SQL, tenant Postgres primitives (passwords, bootstrap helpers). |
+| **`packages/core/src/traefik/`** | Traefik labels, CORS origins, host rules, strip-prefix middleware wiring. |
+| **`packages/cli/src/index.ts`** | CLI **entrypoint only**. |
+| **`packages/cli/src/commands/`** | Commander registration and command wiring. |
+| **`packages/cli/src/api-client/`** | HTTP transport to the dashboard control-plane API, Zod schemas, and per-domain client helpers. |
+| **`apps/dashboard/src/lib/db/`** | **flux-system** catalog access: connection/bootstrap orchestration in `index.ts`. |
+| **`apps/dashboard/src/lib/db/system-db-bootstrap.ts`** | **Bootstrap / migration-sensitive** SQL for the system catalog. Do not edit casually without considering existing deployed databases. |
+
+CI runs typechecks and tests across these packages so barrel and import-path mistakes fail fast (see `.github/workflows/ci.yml`).
 
 ---
 

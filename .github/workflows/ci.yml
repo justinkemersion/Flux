@@ -23,7 +23,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run tests
+      # Guardrails after refactors: stale imports, missing re-exports, CLI bundle, nested test coverage.
+      - name: Typecheck @flux/core
+        run: pnpm --filter @flux/core exec tsc --noEmit
+
+      - name: Build @flux/cli
+        run: pnpm --filter @flux/cli build
+
+      - name: Typecheck dashboard
+        run: pnpm --filter dashboard exec tsc --noEmit
+
+      - name: Run workspace tests
         run: pnpm test
 
   # Opt-in: set repo variable FLUX_SMOKE_CI=true and repository secrets
