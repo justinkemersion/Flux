@@ -1,8 +1,11 @@
 # Flux
 
-**Flux** is a slim **Backend-as-a-Service (BaaS)** / **Database-as-a-Service (DBaaS)** platform. Each **project** is an isolated **tenant bucket**: a dedicated **PostgreSQL** container with durable storage and a **PostgREST** container that exposes your `api` schema as a **REST API** without hand-written CRUD servers.
+**Flux** is a slim **Backend-as-a-Service (BaaS)** / **Database-as-a-Service (DBaaS)** platform with two runtime modes:
 
-The goal is to make it straightforward to run **many isolated backends** on a **Docker host**—with a **control-plane** (CLI + optional Next.js dashboard) that provisions networks, containers, volumes, and bootstrap SQL in a repeatable way. Long-term, you can layer **auth**, **billing**, and **routing** without adopting a full managed platform like Supabase on day one.
+- **`v1_dedicated`** — each project gets its own **PostgreSQL** container with durable storage and a **PostgREST** container that exposes your tenant API schema as a **REST API** without hand-written CRUD servers.
+- **`v2_shared`** — projects share a **pooled** Postgres/PostgREST **data plane** with **schema + role** isolation behind the Flux gateway.
+
+The **control plane** (CLI + optional Next.js dashboard) provisions, tracks, and operates both modes through a common project catalog. The goal is to run **many tenant backends** on a **Docker host** (dedicated stacks) or a **shared pool** (schema-isolated tenants) in a repeatable way. Long-term, you can layer **auth**, **billing**, and **routing** without adopting a full managed platform like Supabase on day one.
 
 ---
 

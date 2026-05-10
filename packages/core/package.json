@@ -12,7 +12,7 @@
     "./backup-trust": "./src/backup-trust.ts"
   },
   "scripts": {
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "keywords": [],
   "author": "",

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { postgrestTraefikDockerLabels } from "./index.ts";
+import { postgrestTraefikDockerLabels } from "./traefik/traefik-labels.ts";
 
 test("postgrestTraefikDockerLabels Host rule includes flattened and legacy dotted hostnames", () => {
   const prev = process.env.FLUX_DOMAIN;
