@@ -59,6 +59,7 @@ async function _init(): Promise<void> {
   }
   const pool = new Pool({ connectionString });
 
+  // Catalog DDL: migration-sensitive; see `system-db-bootstrap.ts` file header.
   await runSystemDbBootstrap(pool);
 
   db = drizzle(pool, { schema });

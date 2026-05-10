@@ -1,6 +1,20 @@
+/**
+ * **flux-system** catalog bootstrap: idempotent DDL and data fixes for the dashboard’s
+ * system Postgres (Auth.js tables, `projects`, domains, backups, API keys, etc.).
+ *
+ * **Migration-sensitive.** This runs automatically after the app connects to `flux-system`
+ * (see `initSystemDb` in `index.ts`). Assume every change hits existing production and
+ * staging databases on the next deploy or process restart. Prefer additive,
+ * backwards-compatible steps (`CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`,
+ * guarded `DO $$ … $$` blocks). Do not drop or rename columns casually; destructive or
+ * reorder-dependent SQL needs an explicit rollout plan and operator communication.
+ * Longer-term, consider versioned migrations instead of only extending this file.
+ *
+ * Contributor map: [README.md](../../../../../README.md) → **Code ownership map**.
+ */
 import type { Pool } from "pg";
 
-/** Idempotent DDL / data fixes for the flux-system catalog (Auth.js + platform tables). */
+/** Runs all bootstrap queries; constraints and operator notes are in the file header above. */
 export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
   // One-time upgrade from the pre–Auth.js v5 UUID user model to Auth.js string ids.
   await pool.query(`
