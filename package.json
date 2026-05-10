@@ -10,6 +10,7 @@
     "docker:compose:traefik": "docker compose -f docker/traefik/docker-compose.yml up -d",
     "docker:compose:traefik:down": "docker compose -f docker/traefik/docker-compose.yml down",
     "test": "pnpm -r --if-present test",
+    "check:architecture": "tsx scripts/check-architecture.ts",
     "perf:gateway:matrix": "bash perf/k6/run-matrix.sh",
     "perf:gateway:warm": "k6 run perf/k6/scenarios/warm-steady.js",
     "perf:gateway:overload": "k6 run perf/k6/scenarios/overload.js",
@@ -21,5 +22,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.33.0"
+  "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "@types/node": "^20.19.4",
+    "tsx": "^4.21.0"
+  }
 }

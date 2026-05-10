@@ -24,6 +24,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Guardrails after refactors: stale imports, missing re-exports, CLI bundle, nested test coverage.
+      - name: Architecture guardrails
+        run: pnpm check:architecture
+
       - name: Typecheck @flux/core
         run: pnpm --filter @flux/core exec tsc --noEmit
 
