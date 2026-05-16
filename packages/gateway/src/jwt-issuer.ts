@@ -84,15 +84,34 @@ export function sanitizeExternalClaims(payload: JWTPayload): BridgeTokenClaims {
 export async function mintBridgeJwt(
   externalToken: string,
   projectSecret: string,
-): Promise<{ token: string; claims: BridgeTokenClaims }> {
+): Promise<{ claims: BridgeTokenClaims }> {
   const verified = await jwtVerify(externalToken, encoder.encode(projectSecret), {
     algorithms: ["HS256"],
   });
   const claims = sanitizeExternalClaims(verified.payload);
-  const token = await new SignJWT(claims)
+  return { claims };
+}
+
+/**
+ * Pool JWT after bridge auth: tenant role (v2_shared) + stable `sub` for RLS.
+ */
+export async function mintBridgedTenantJwt(
+  tenant: { tenantId: string },
+  claims: BridgeTokenClaims,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const body: Record<string, string> = {
+    role: defaultTenantRoleFromProjectId(tenant.tenantId),
+    tenant_id: tenant.tenantId,
+    sub: claims.sub,
+  };
+  if (claims.email) {
+    body.email = claims.email;
+  }
+  return new SignJWT(body)
     .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
+    .setIssuedAt(now)
+    .setNotBefore(now - 5)
     .setExpirationTime(BRIDGE_TOKEN_TTL)
     .sign(SECRET_BYTES);
-  return { token, claims };
 }

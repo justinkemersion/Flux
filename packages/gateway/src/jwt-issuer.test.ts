@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
+import { defaultTenantRoleFromProjectId } from "@flux/core/api-schema-strategy";
 
 const PROJECT_SECRET = "project-secret-for-tests-32-characters";
+const TENANT_ID = randomUUID();
 
 async function loadIssuerModule() {
   process.env.FLUX_SYSTEM_DATABASE_URL ??= "postgres://test:test@localhost:5432/flux";
@@ -20,15 +23,16 @@ async function signExternalToken(payload: Record<string, unknown>): Promise<stri
     .sign(new TextEncoder().encode(PROJECT_SECRET));
 }
 
-test("accepts valid external token and re-signs internal token", async () => {
-  const { mintBridgeJwt } = await loadIssuerModule();
+test("accepts valid external token and mints tenant-role pool JWT", async () => {
+  const { mintBridgeJwt, mintBridgedTenantJwt } = await loadIssuerModule();
   const external = await signExternalToken({
     sub: "user_123",
     email: "u@example.com",
     role: "service_role",
   });
 
-  const { token, claims } = await mintBridgeJwt(external, PROJECT_SECRET);
+  const { claims } = await mintBridgeJwt(external, PROJECT_SECRET);
+  const token = await mintBridgedTenantJwt({ tenantId: TENANT_ID }, claims);
 
   assert.equal(claims.sub, "user_123");
   assert.equal(claims.email, "u@example.com");
@@ -42,7 +46,8 @@ test("accepts valid external token and re-signs internal token", async () => {
 
   assert.equal(internal.payload.sub, "user_123");
   assert.equal(internal.payload.email, "u@example.com");
-  assert.equal(internal.payload.role, "authenticated");
+  assert.equal(internal.payload.role, defaultTenantRoleFromProjectId(TENANT_ID));
+  assert.equal(internal.payload.tenant_id, TENANT_ID);
   assert.equal(typeof internal.payload.iat, "number");
   assert.equal(typeof internal.payload.exp, "number");
   assert.ok((internal.payload.exp as number) - (internal.payload.iat as number) <= 300);
@@ -62,13 +67,14 @@ test("rejects token signed with wrong project secret", async () => {
   );
 });
 
-test("sanitizes role escalation attempt to authenticated", async () => {
-  const { mintBridgeJwt } = await loadIssuerModule();
+test("sanitizes external role before minting tenant pool JWT", async () => {
+  const { mintBridgeJwt, mintBridgedTenantJwt } = await loadIssuerModule();
   const external = await signExternalToken({
     sub: "user_456",
     role: "service_role",
   });
-  const { token } = await mintBridgeJwt(external, PROJECT_SECRET);
+  const { claims } = await mintBridgeJwt(external, PROJECT_SECRET);
+  const token = await mintBridgedTenantJwt({ tenantId: TENANT_ID }, claims);
 
   const internal = await jwtVerify(
     token,
@@ -76,7 +82,7 @@ test("sanitizes role escalation attempt to authenticated", async () => {
     { algorithms: ["HS256"] },
   );
 
-  assert.equal(internal.payload.role, "authenticated");
+  assert.equal(internal.payload.role, defaultTenantRoleFromProjectId(TENANT_ID));
 });
 
 test("rejects token missing sub claim", async () => {
@@ -89,19 +95,20 @@ test("rejects token missing sub claim", async () => {
 });
 
 test("coerces non-string email claim to null", async () => {
-  const { mintBridgeJwt } = await loadIssuerModule();
+  const { mintBridgeJwt, mintBridgedTenantJwt } = await loadIssuerModule();
   const external = await signExternalToken({
     sub: "user_789",
     email: 42,
   });
 
-  const { claims, token } = await mintBridgeJwt(external, PROJECT_SECRET);
+  const { claims } = await mintBridgeJwt(external, PROJECT_SECRET);
   assert.equal(claims.email, null);
+  const token = await mintBridgedTenantJwt({ tenantId: TENANT_ID }, claims);
 
   const internal = await jwtVerify(
     token,
     new TextEncoder().encode(process.env.FLUX_GATEWAY_JWT_SECRET!),
     { algorithms: ["HS256"] },
   );
-  assert.equal(internal.payload.email, null);
+  assert.equal(internal.payload.email, undefined);
 });

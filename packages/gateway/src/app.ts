@@ -6,7 +6,7 @@ import {
   type CacheSource,
 } from "./tenant-resolver.ts";
 import { acquireRateSlot } from "./rate-limiter.ts";
-import { mintBridgeJwt, mintJwt } from "./jwt-issuer.ts";
+import { mintBridgeJwt, mintBridgedTenantJwt, mintJwt } from "./jwt-issuer.ts";
 import { trackActivity } from "./activity-tracker.ts";
 import { proxyRequest } from "./proxy.ts";
 import { pingDb } from "./db.ts";
@@ -197,7 +197,7 @@ export function createApp(): Hono {
         }
         try {
           const bridged = await mintBridgeJwt(token, projectSecret);
-          downstreamJwt = bridged.token;
+          downstreamJwt = await mintBridgedTenantJwt(tenant, bridged.claims);
           logger.debug(
             {
               tenant_id: tenant.tenantId,
