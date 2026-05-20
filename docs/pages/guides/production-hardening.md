@@ -41,6 +41,8 @@ Both `FLUX_BACKUPS_*` paths must exist and be writable by the control-plane proc
 
 The user-facing trust contract (what backups guarantee, the three trust states) is engine-independent and lives in [Backups](/docs/concepts/backups). This section is purely about where bytes physically land on the operator's host.
 
+**Periodic audit (self-hosted):** from the repo on your laptop or the server checkout, run `bin/ops-audit.sh --remote` (SSH defaults match `bin/sync-env-remote.sh`). Add `--deep` to include backup-catalog trust rows from `flux-system` Postgres. Nightly scheduler dumps are not restore-verified until you run `flux backup verify` — the deep audit warns on `restore=pending`.
+
 ## Example
 
 For multi-region or multi-cluster, document **which** Postgres cluster holds a tenant before running destructive maintenance.
