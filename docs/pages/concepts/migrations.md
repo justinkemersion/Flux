@@ -22,15 +22,18 @@ On **v2 shared**, tables for your API must live in the tenant schema (e.g. `t_<s
 
 ## How it works
 
-Target the project explicitly (slug and 7-character hash from **`flux list`**, or the same fields in **`flux.json`**):
+Target the project explicitly (slug and 7-character hash from **`flux list`**, or the same fields in **`flux.json`**).
+
+**Directory mode** applies an ordered set of `.sql` files and records each success in a tenant-local ledger table (`flux.flux_migrations` in the reserved **`flux`** schema—not exposed via PostgREST). **Single-file mode** runs raw SQL without ledger entries (backward compatible).
 
 ```bash
+flux push migrations/
 flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
 ```
 
 Replace **`percept`** / **`b915ec8`** with the values from your listing.
 
-Author SQL idempotently where possible (`IF NOT EXISTS`, defensive guards). For pooled tenants, set `search_path` or schema-qualify objects explicitly.
+Author SQL idempotently where possible (`IF NOT EXISTS`, defensive guards). For pooled tenants, set `search_path` or schema-qualify objects explicitly. Do not edit migration files after they have been applied; Flux compares SHA-256 checksums and refuses drift.
 
 ## Example
 

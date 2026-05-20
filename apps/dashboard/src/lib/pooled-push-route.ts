@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import type { ExecutePushInput } from "@/src/lib/pooled-push";
+import type { ExecuteMigrationPushInput } from "@/src/lib/pooled-migrations";
 import {
   POOLED_PUSH_MAX_SQL_BYTES,
   extractPooledPushBearer,
@@ -25,6 +26,9 @@ export type PooledPushRouteDeps = {
     hash: string,
   ) => Promise<PooledPushProjectRow | null>;
   executePooledPush: (input: ExecutePushInput) => Promise<void>;
+  executePooledMigrationPush?: (
+    input: ExecuteMigrationPushInput,
+  ) => Promise<{ skipped: boolean }>;
   /** Defaults to {@link POOLED_PUSH_MAX_SQL_BYTES}; tests may lower for SQL size cases. */
   maxSqlBytes?: number;
 };
@@ -84,7 +88,7 @@ export async function runPooledPushPost(
   if (!parsedBody.ok) {
     return jsonError(parsedBody.error, 400);
   }
-  const { hash, sql } = parsedBody;
+  const { hash, sql, migration } = parsedBody;
 
   if (!isValidFluxProjectHash(hash)) {
     return jsonError(
@@ -93,7 +97,7 @@ export async function runPooledPushPost(
     );
   }
   const maxSql = deps.maxSqlBytes ?? POOLED_PUSH_MAX_SQL_BYTES;
-  const sqlCheck = validatePooledPushSqlPayload(sql, maxSql);
+  const sqlCheck = validatePooledPushSqlPayload(sql, maxSql, migration);
   if (!sqlCheck.ok) {
     return jsonError(sqlCheck.error, sqlCheck.status);
   }
@@ -141,6 +145,22 @@ export async function runPooledPushPost(
   const { schema } = schemaRes;
 
   try {
+    if (migration) {
+      const runMigration =
+        deps.executePooledMigrationPush ??
+        (async () => {
+          throw new Error("Migration push is not configured");
+        });
+      const result = await runMigration({
+        schema,
+        userSql: sql,
+        migration,
+      });
+      return Response.json(
+        { ok: true, schema, skipped: result.skipped },
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
     await deps.executePooledPush({ schema, sql });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -1,4 +1,5 @@
 import type { ImportSqlFileResult } from "@flux/core/standalone";
+import type { MigrationPushMeta } from "@flux/core/sql-migrations";
 import { readFile, stat } from "node:fs/promises";
 import type { ApiClientContext } from "./context";
 import {
@@ -7,14 +8,17 @@ import {
 } from "./json-response";
 import { pushSqlResponseSchema } from "./schemas";
 
+export type PushSqlResult = ImportSqlFileResult & { skipped?: boolean };
+
 export async function pushSql(
   ctx: ApiClientContext,
   input: {
     slug: string;
     hash: string;
     sql: string;
+    migration?: MigrationPushMeta;
   },
-): Promise<ImportSqlFileResult> {
+): Promise<PushSqlResult> {
   const token = ctx.tokenOrThrow();
   const url = `${ctx.baseUrl}/cli/v1/push`;
   const res = await fetch(url, {
@@ -28,6 +32,7 @@ export async function pushSql(
       slug: input.slug.trim(),
       hash: input.hash.trim().toLowerCase(),
       sql: input.sql,
+      ...(input.migration ? { migration: input.migration } : {}),
     }),
   });
   if (res.status === 401) {
@@ -51,6 +56,10 @@ export async function pushSql(
     tablesMoved: parsed.data.tablesMoved,
     sequencesMoved: parsed.data.sequencesMoved,
     viewsMoved: parsed.data.viewsMoved,
+    ...(("skipped" in (raw as object) &&
+      typeof (raw as { skipped?: unknown }).skipped === "boolean")
+      ? { skipped: (raw as { skipped: boolean }).skipped }
+      : {}),
   };
 }
 

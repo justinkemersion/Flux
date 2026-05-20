@@ -154,8 +154,13 @@ export function registerFluxCliCommands(program: Command): void {
 
   const push = program
     .command("push")
-    .description("Apply a SQL file to a project (via control plane when available)")
-    .argument("<file>", "path to .sql file")
+    .description(
+      "Apply SQL to a project: single .sql file, or ordered migrations from a directory",
+    )
+    .argument(
+      "[target]",
+      "path to .sql file or migrations directory (default: migrations/, flux/migrations/, sql/, schema.sql)",
+    )
     .option(
       "-p, --project <name>",
       "Project slug (default: \"slug\" in flux.json in CWD)",
@@ -176,7 +181,7 @@ export function registerFluxCliCommands(program: Command): void {
     )
     .option("--hash <hex>", hashFlagDesc);
 
-  push.action(async (file: string) => {
+  push.action(async (target: string | undefined) => {
     try {
       const opts = push.opts<{
         project?: string;
@@ -187,7 +192,7 @@ export function registerFluxCliCommands(program: Command): void {
       }>();
       const flux = await readFluxJson(process.cwd());
       await cmdPush(
-        file,
+        target,
         opts.project ?? "",
         {
           supabaseCompat: opts.supabaseCompat,

@@ -1,4 +1,8 @@
 import type {
+  FluxMigrationRecord,
+  MigrationPushMeta,
+} from "@flux/core/sql-migrations";
+import type {
   FluxProjectEnvEntry,
   FluxProjectSummary,
   ImportSqlFileResult,
@@ -11,6 +15,7 @@ import * as env from "./env";
 import * as logs from "./logs";
 import * as migrate from "./migrate";
 import * as projects from "./projects";
+import * as migrations from "./migrations";
 import * as push from "./push";
 import type {
   CreateProjectMode,
@@ -22,7 +27,6 @@ import type {
   VerifyBackupResult,
   VerifyTokenResult,
 } from "./schemas";
-import type { ApiClientContext } from "./context";
 
 const DEFAULT_BASE = HOSTED_FLUX_PUBLIC_API_BASE;
 
@@ -135,8 +139,13 @@ export class ApiClient {
     slug: string;
     hash: string;
     sql: string;
-  }): Promise<ImportSqlFileResult> {
+    migration?: MigrationPushMeta;
+  }): Promise<push.PushSqlResult> {
     return push.pushSql(this.asContext(), input);
+  }
+
+  listAppliedMigrations(hash: string): Promise<FluxMigrationRecord[]> {
+    return migrations.listAppliedMigrationsV1(this.asContext(), hash);
   }
 
   // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { executePooledPush } from "@/src/lib/pooled-push";
+import { executePooledMigrationPush } from "@/src/lib/pooled-migrations";
 import { runPooledPushPost } from "@/src/lib/pooled-push-route";
 
 export const runtime = "nodejs";
@@ -40,5 +41,6 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     initSystemDb,
     loadProjectForPush,
     executePooledPush,
+    executePooledMigrationPush,
   });
 }

@@ -18,7 +18,18 @@ import {
   type ImportSqlFileOptions,
 } from "../import-dump.ts";
 import {
+  buildMigrationPushSql,
+  FLUX_MIGRATIONS_DDL,
+  LIST_FLUX_MIGRATIONS_SQL,
+  migrationConflictMessage,
+  type FluxMigrationRecord,
+  type MigrationPushMeta,
+  resolveMigrationLedgerAction,
+  sqlLiteral,
+} from "../sql-migrations.ts";
+import {
   queryPsqlJsonRows,
+  queryPsqlScalar,
   runPsqlHostFileInsideContainer,
   runPsqlSqlInsideContainer,
   waitPostgresReadyInsideContainer,
@@ -1649,12 +1660,46 @@ export class ProjectManager {
    * HMAC-derived password to match the container’s `POSTGRES_PASSWORD` (see
    * {@link deriveTenantPostgresPasswordFromSecret}).
    */
+  /**
+   * Lists applied SQL migrations from `flux.flux_migrations` (empty if ledger never created).
+   */
+  async listAppliedSqlMigrations(
+    projectName: string,
+    hash: string,
+  ): Promise<FluxMigrationRecord[]> {
+    try {
+      const rows = await this.queryTenantJsonRows(
+        projectName,
+        hash,
+        LIST_FLUX_MIGRATIONS_SQL,
+      );
+      return rows.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          version: String(r.version ?? ""),
+          filename: String(r.filename ?? ""),
+          checksum: String(r.checksum ?? ""),
+          ...(r.appliedAt != null ? { appliedAt: String(r.appliedAt) } : {}),
+        };
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/does not exist|undefined_table|42P01|3F000/i.test(msg)) {
+        return [];
+      }
+      throw err;
+    }
+  }
+
   async pushSqlFromCli(
     projectName: string,
     hash: string,
     sql: string,
-    options?: { searchPathSchemas?: readonly string[] },
-  ): Promise<void> {
+    options?: {
+      searchPathSchemas?: readonly string[];
+      migration?: MigrationPushMeta;
+    },
+  ): Promise<{ skipped: boolean }> {
     const creds = await this.resolveRunningPostgresCredentials(projectName, hash);
     const secret =
       process.env.FLUX_PROJECT_PASSWORD_SECRET?.trim() ||
@@ -1679,23 +1724,68 @@ export class ProjectManager {
       }
       pathList = options.searchPathSchemas.join(", ");
     }
-    const wrapped = `BEGIN;\nSET LOCAL search_path TO ${pathList};\n${sql}\nNOTIFY pgrst, 'reload schema';\nCOMMIT;\n`;
-    await runPsqlSqlInsideContainer(
-      this.ctx.docker,
-      creds.containerId,
-      creds.password,
-      wrapped,
-      POSTGRES_USER,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const apiName = postgrestContainerName(hash, creds.slug);
-    try {
-      await this.ctx.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
-    } catch (err: unknown) {
-      const code = getDockerEngineHttpStatus(err);
-      if (code === 404 || code === 409) return;
-      throw err;
+
+    let userSql = sql;
+    let skipped = false;
+    const migration = options?.migration;
+    if (migration) {
+      await runPsqlSqlInsideContainer(
+        this.ctx.docker,
+        creds.containerId,
+        creds.password,
+        FLUX_MIGRATIONS_DDL,
+        POSTGRES_USER,
+      );
+      const lookupSql = `SELECT checksum FROM flux.flux_migrations WHERE version = ${sqlLiteral(migration.version)} LIMIT 1`;
+      let existingChecksum: string | undefined;
+      try {
+        const scalar = await queryPsqlScalar(
+          this.ctx.docker,
+          creds.containerId,
+          creds.password,
+          lookupSql,
+          POSTGRES_USER,
+        );
+        existingChecksum = scalar.length > 0 ? scalar : undefined;
+      } catch {
+        existingChecksum = undefined;
+      }
+      const action = resolveMigrationLedgerAction(
+        existingChecksum ? { checksum: existingChecksum } : undefined,
+        migration,
+      );
+      if (action === "conflict") {
+        throw new Error(
+          migrationConflictMessage(migration, existingChecksum!),
+        );
+      }
+      if (action === "skip") {
+        skipped = true;
+      } else {
+        userSql = buildMigrationPushSql({ userSql: sql, migration });
+      }
     }
+
+    if (!skipped) {
+      const wrapped = `BEGIN;\nSET LOCAL search_path TO ${pathList};\n${userSql}\nNOTIFY pgrst, 'reload schema';\nCOMMIT;\n`;
+      await runPsqlSqlInsideContainer(
+        this.ctx.docker,
+        creds.containerId,
+        creds.password,
+        wrapped,
+        POSTGRES_USER,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const apiName = postgrestContainerName(hash, creds.slug);
+      try {
+        await this.ctx.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
+      } catch (err: unknown) {
+        const code = getDockerEngineHttpStatus(err);
+        if (code === 404 || code === 409) return { skipped };
+        throw err;
+      }
+    }
+    return { skipped };
   }
 
   /**

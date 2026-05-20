@@ -4,6 +4,7 @@ import {
   POOLED_PUSH_MAX_SQL_BYTES,
   extractPooledPushBearer,
   isValidFluxProjectHash,
+  parseMigrationPushMeta,
   parsePooledPushJsonBody,
   tenantApiSchemaFromProjectId,
   validatePooledPushServiceRole,
@@ -38,6 +39,22 @@ test("parsePooledPushJsonBody normalizes hash and rejects bad shapes", () => {
   if (bad.ok === false) {
     assert.match(bad.error, /hash.*sql/);
   }
+});
+
+test("parseMigrationPushMeta validates checksum shape", () => {
+  const bad = parseMigrationPushMeta({
+    version: "a.sql",
+    filename: "a.sql",
+    checksum: "short",
+  });
+  assert.equal(bad.ok, false);
+
+  const ok = parseMigrationPushMeta({
+    version: "a.sql",
+    filename: "a.sql",
+    checksum: "a".repeat(64),
+  });
+  assert.equal(ok.ok, true);
 });
 
 test("validatePooledPushSqlPayload rejects empty and oversized sql", () => {

@@ -4,6 +4,13 @@ import { projects } from "@/src/db/schema";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
+import type { MigrationPushMeta } from "@flux/core/sql-migrations";
+import {
+  parseMigrationPushMeta,
+  pooledPushEffectiveSqlBytes,
+} from "@/src/lib/pooled-push-validators";
+import { executePooledPush } from "@/src/lib/pooled-push";
+import { executePooledMigrationPush } from "@/src/lib/pooled-migrations";
 
 export const runtime = "nodejs";
 
@@ -68,6 +75,14 @@ export async function POST(req: Request): Promise<Response> {
   const slug = (body as { slug: string }).slug.trim();
   const hash = (body as { hash: string }).hash.trim().toLowerCase();
   const sql = normalizeSqlForTarget((body as { sql: string }).sql);
+  let migration: MigrationPushMeta | undefined;
+  if ("migration" in body && (body as { migration: unknown }).migration != null) {
+    const parsed = parseMigrationPushMeta(
+      (body as { migration: unknown }).migration,
+    );
+    if (!parsed.ok) return jsonError(parsed.error, 400);
+    migration = parsed.migration;
+  }
 
   if (!slug) return jsonError("slug is required", 400);
   if (!isValidHash(hash)) {
@@ -76,7 +91,7 @@ export async function POST(req: Request): Promise<Response> {
       400,
     );
   }
-  if (Buffer.byteLength(sql, "utf8") > MAX_SQL_BYTES) {
+  if (pooledPushEffectiveSqlBytes(sql, migration) > MAX_SQL_BYTES) {
     return jsonError("sql exceeds maximum size", 413);
   }
 
@@ -111,9 +126,52 @@ export async function POST(req: Request): Promise<Response> {
 
   const pm = getProjectManager();
   try {
-    await pm.pushSqlFromCli(slug, hash, sql, {
+    if (row.mode === "v2_shared") {
+      if (migration) {
+        const result = await executePooledMigrationPush({
+          schema: apiSchema,
+          userSql: sql,
+          migration,
+        });
+        return Response.json(
+          {
+            ok: true,
+            skipped: result.skipped,
+            tablesMoved: 0,
+            sequencesMoved: 0,
+            viewsMoved: 0,
+          } as const,
+          { headers: { "Cache-Control": "private, no-store" } },
+        );
+      }
+      await executePooledPush({ schema: apiSchema, sql });
+      return Response.json(
+        {
+          ok: true,
+          tablesMoved: 0,
+          sequencesMoved: 0,
+          viewsMoved: 0,
+        } as const,
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
+
+    const pushResult = await pm.pushSqlFromCli(slug, hash, sql, {
       searchPathSchemas: [apiSchema, "public"],
+      ...(migration ? { migration } : {}),
     });
+    if (migration) {
+      return Response.json(
+        {
+          ok: true,
+          skipped: pushResult.skipped,
+          tablesMoved: 0,
+          sequencesMoved: 0,
+          viewsMoved: 0,
+        } as const,
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (
