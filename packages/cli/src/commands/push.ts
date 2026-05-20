@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { access, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { LEGACY_FLUX_API_SCHEMA } from "@flux/core";
@@ -7,7 +6,6 @@ import {
   loadLocalMigrations,
   migrationConflictMessage,
   planMigrations,
-  type FluxMigrationRecord,
   type MigrationPushMeta,
 } from "@flux/core/sql-migrations";
 import type { ImportSqlFileResult } from "@flux/core/standalone";
@@ -17,8 +15,22 @@ import { getApiClient } from "../api-client";
 import { sectionBanner } from "../cli-layout";
 import { resolveDashboardBase } from "../dashboard-base";
 import type { FluxJson } from "../flux-config";
+import {
+  fetchAppliedMigrations,
+  formatV2ServerError,
+  mintServiceRoleJwt,
+  resolveProjectJwtSecret,
+} from "../lib/migrations-remote";
+import {
+  assertMigrationPlanReadyForDryRun,
+  type MigrationPushMode,
+  printMigrationPlan,
+  printMigrationPlanSummary,
+  printSingleFilePushPreview,
+} from "../lib/migrations-output";
 import { resolveHash, resolveProjectSlug } from "../project-resolve";
-import { readEnvFile } from "../utils/env-file";
+
+export { mintServiceRoleJwt } from "../lib/migrations-remote";
 
 const MAX_SQL_BYTES = 4 * 1024 * 1024;
 
@@ -27,6 +39,7 @@ export type CmdPushOptions = {
   noSanitize: boolean;
   disableApiRls: boolean;
   hash?: string;
+  pushMode: MigrationPushMode;
 };
 
 export type PushTarget =
@@ -84,6 +97,28 @@ export async function cmdPush(
   const hash = resolveHash(options.hash, flux);
   const client = getApiClient();
   const metadata = await client.getProjectMetadata(hash);
+
+  if (target.kind === "file" && options.pushMode !== "apply") {
+    const schemaHint =
+      metadata.mode === "v1_dedicated"
+        ? `${metadata.mode}, schema ${metadata.apiSchema ?? LEGACY_FLUX_API_SCHEMA}`
+        : metadata.mode;
+    if (options.pushMode === "dry-run") {
+      const st = await stat(target.path);
+      if (st.size > MAX_SQL_BYTES) {
+        throw new Error(
+          "SQL file is larger than 4 MiB (server limit for flux push).",
+        );
+      }
+    }
+    printSingleFilePushPreview({
+      filePath: target.path,
+      slug,
+      schemaHint,
+      mode: options.pushMode,
+    });
+    return;
+  }
 
   if (target.kind === "directory") {
     if (metadata.mode === "v2_shared") {
@@ -155,7 +190,14 @@ async function cmdPushMigrationsDir(input: {
   schemaHint: string;
   options: CmdPushOptions;
 }): Promise<void> {
-  sectionBanner("Flux migrations");
+  const pushMode = input.options.pushMode;
+  const banner =
+    pushMode === "plan"
+      ? "Flux migrations (plan)"
+      : pushMode === "dry-run"
+        ? "Flux migrations (dry run)"
+        : "Flux migrations";
+  sectionBanner(banner);
   console.log(
     chalk.dim(
       `Project ${chalk.bold(input.slug)} (${input.schemaHint}) · ${input.dir}`,
@@ -171,6 +213,20 @@ async function cmdPushMigrationsDir(input: {
     mode: input.mode,
   });
   const plan = planMigrations(local, applied);
+
+  if (pushMode === "plan" || pushMode === "dry-run") {
+    const counts = printMigrationPlan({ plan, mode: pushMode });
+    if (pushMode === "dry-run") {
+      assertMigrationPlanReadyForDryRun(plan);
+    }
+    printMigrationPlanSummary({
+      mode: pushMode,
+      wouldApply: counts.wouldApply,
+      wouldSkip: counts.wouldSkip,
+      conflicts: counts.conflicts,
+    });
+    return;
+  }
 
   for (const { file, appliedChecksum } of plan.conflicts) {
     throw new Error(migrationConflictMessage(file, appliedChecksum));
@@ -217,66 +273,14 @@ async function cmdPushMigrationsDir(input: {
     }
   }
 
-  console.log();
-  console.log(
-    chalk.white(
-      `Done. ${String(appliedCount)} applied, ${String(skippedCount)} skipped.`,
-    ),
-  );
-}
-
-async function fetchAppliedMigrations(input: {
-  slug: string;
-  hash: string;
-  mode: string;
-}): Promise<FluxMigrationRecord[]> {
-  if (input.mode === "v2_shared") {
-    return listAppliedMigrationsV2(input);
-  }
-  const client = getApiClient();
-  return client.listAppliedMigrations(input.hash);
-}
-
-async function listAppliedMigrationsV2(input: {
-  slug: string;
-  hash: string;
-}): Promise<FluxMigrationRecord[]> {
-  const secret = await resolveProjectJwtSecret();
-  const token = mintServiceRoleJwt(secret, input.hash);
-  const base = resolveDashboardBase();
-  const url = new URL(
-    `/api/projects/${encodeURIComponent(input.slug)}/migrations`,
-    base.endsWith("/") ? base : `${base}/`,
-  );
-  url.searchParams.set("hash", input.hash);
-  const res = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
+  printMigrationPlanSummary({
+    mode: "apply",
+    wouldApply: 0,
+    wouldSkip: 0,
+    conflicts: 0,
+    appliedCount,
+    skippedCount,
   });
-  const text = await res.text();
-  let body: unknown = null;
-  try {
-    body = text.trim() ? (JSON.parse(text) as unknown) : null;
-  } catch {
-    throw new Error(
-      `flux push (v2): migrations list was not JSON (${String(res.status)}).`,
-    );
-  }
-  if (!res.ok) {
-    throw new Error(formatV2ServerError(res.status, body));
-  }
-  if (
-    !body ||
-    typeof body !== "object" ||
-    !("applied" in body) ||
-    !Array.isArray((body as { applied: unknown }).applied)
-  ) {
-    throw new Error("flux push (v2): unexpected migrations list response.");
-  }
-  return (body as { applied: FluxMigrationRecord[] }).applied;
 }
 
 async function pushMigrationFile(input: {
@@ -447,63 +451,3 @@ async function pushSqlV2Migration(input: {
   return false;
 }
 
-function formatV2ServerError(status: number, body: unknown): string {
-  const obj = (body && typeof body === "object" ? body : {}) as Record<
-    string,
-    unknown
-  >;
-  const message =
-    typeof obj.error === "string" && obj.error.trim()
-      ? obj.error
-      : `Request failed (${String(status)})`;
-  const tail: string[] = [];
-  if (typeof obj.sqlState === "string") tail.push(`SQLSTATE ${obj.sqlState}`);
-  if (typeof obj.position === "string") tail.push(`position ${obj.position}`);
-  if (typeof obj.hint === "string") tail.push(`hint: ${obj.hint}`);
-  if (tail.length === 0) return message;
-  return `${message} (${tail.join("; ")})`;
-}
-
-async function resolveProjectJwtSecret(): Promise<string> {
-  const fromEnv = process.env.FLUX_GATEWAY_JWT_SECRET?.trim();
-  if (fromEnv) return fromEnv;
-  const dotenv = await readEnvFile(process.cwd());
-  const fromFile = dotenv.FLUX_GATEWAY_JWT_SECRET?.trim();
-  if (fromFile) return fromFile;
-  throw new Error(
-    "FLUX_GATEWAY_JWT_SECRET is not set. Run `flux project credentials` and paste the printed line into your local .env (same value as the project's jwt_secret).",
-  );
-}
-
-function base64UrlEncode(input: Buffer | string): string {
-  const buf = typeof input === "string" ? Buffer.from(input, "utf8") : input;
-  return buf
-    .toString("base64")
-    .replace(/=+$/u, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-}
-
-/**
- * Mints a 60-second HS256 JWT carrying `role: "service_role"` for the given
- * project hash. Built on `node:crypto` to keep the CLI dependency-light
- * (per Flux project rules: prefer Node built-ins).
- */
-export function mintServiceRoleJwt(secret: string, hash: string): string {
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "HS256", typ: "JWT" };
-  const payload = {
-    role: "service_role",
-    hash,
-    iat: now,
-    nbf: now - 5,
-    exp: now + 60,
-  };
-  const headerB64 = base64UrlEncode(JSON.stringify(header));
-  const payloadB64 = base64UrlEncode(JSON.stringify(payload));
-  const signingInput = `${headerB64}.${payloadB64}`;
-  const signature = base64UrlEncode(
-    createHmac("sha256", secret).update(signingInput).digest(),
-  );
-  return `${signingInput}.${signature}`;
-}

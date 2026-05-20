@@ -26,6 +26,7 @@ import {
 import { saveConfig } from "../config";
 import { cmdCreate } from "./create";
 import { cmdProjectCredentials } from "./project-credentials";
+import { cmdMigrationsList } from "./migrations";
 import { cmdPush } from "./push";
 import { readFluxJson } from "../flux-config";
 import { resolveExplicitCreateMode } from "../mode-default";
@@ -179,7 +180,17 @@ export function registerFluxCliCommands(program: Command): void {
       "Disable RLS on api tables after import (when API supports it)",
       false,
     )
-    .option("--hash <hex>", hashFlagDesc);
+    .option("--hash <hex>", hashFlagDesc)
+    .option(
+      "--plan",
+      "Show what directory push would do (skip, apply, conflicts) without applying",
+      false,
+    )
+    .option(
+      "--dry-run",
+      "Validate migration plan and conflicts without applying SQL",
+      false,
+    );
 
   push.action(async (target: string | undefined) => {
     try {
@@ -189,7 +200,17 @@ export function registerFluxCliCommands(program: Command): void {
         noSanitize?: boolean;
         disableApiRls?: boolean;
         hash?: string;
+        plan?: boolean;
+        dryRun?: boolean;
       }>();
+      if (opts.plan && opts.dryRun) {
+        throw new Error("Use only one of --plan or --dry-run.");
+      }
+      const pushMode = opts.dryRun
+        ? ("dry-run" as const)
+        : opts.plan
+          ? ("plan" as const)
+          : ("apply" as const);
       const flux = await readFluxJson(process.cwd());
       await cmdPush(
         target,
@@ -198,10 +219,37 @@ export function registerFluxCliCommands(program: Command): void {
           supabaseCompat: opts.supabaseCompat,
           noSanitize: opts.noSanitize === true,
           disableApiRls: opts.disableApiRls === true,
+          pushMode,
           ...(opts.hash ? { hash: opts.hash } : {}),
         },
         flux,
       );
+    } catch (err: unknown) {
+      printErrorAndExit(err);
+    }
+  });
+
+  const migrationsCmd = program
+    .command("migrations")
+    .description("Inspect SQL migration ledger (flux.flux_migrations)");
+
+  const migrationsListCmd = migrationsCmd
+    .command("list")
+    .description("List migrations recorded on the project")
+    .option(
+      "-p, --project <name>",
+      "Project slug (default: \"slug\" in flux.json in CWD)",
+    )
+    .option("--hash <hex>", hashFlagDesc);
+
+  migrationsListCmd.action(async () => {
+    try {
+      const opts = migrationsListCmd.opts<{
+        project?: string;
+        hash?: string;
+      }>();
+      const flux = await readFluxJson(process.cwd());
+      await cmdMigrationsList(opts.project ?? "", opts, flux);
     } catch (err: unknown) {
       printErrorAndExit(err);
     }

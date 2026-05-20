@@ -82,7 +82,7 @@ If the public API endpoint presents a cert that Node does not trust (private CA,
 
 ## 7) CLI ergonomics
 
-- Put **`slug`** (and **`hash`** when required) in a repo-root **`flux.json`** so `flux push migrations/` or `flux push ./migration.sql` does not require `-p` / `--hash` every time (`flux push --help`). Directory push applies ordered `.sql` files with a `flux.flux_migrations` ledger; single-file push is unchanged.
+- Put **`slug`** (and **`hash`** when required) in a repo-root **`flux.json`** so `flux push migrations/` or `flux push ./migration.sql` does not require `-p` / `--hash` every time (`flux push --help`). Directory push applies ordered `.sql` files with a `flux.flux_migrations` ledger (`flux` schema, not in PostgREST); use **`flux push --plan`**, **`--dry-run`**, and **`flux migrations list`** to inspect before applying. **Do not edit a migration after it has been applied—create a new migration instead.** Single-file push is unchanged (no ledger).
 - After SQL, Flux triggers PostgREST reload; large schema changes may still need a moment before first request.
 
 ---

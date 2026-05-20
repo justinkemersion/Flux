@@ -26,9 +26,15 @@ After push, wait briefly for reload before assuming new tables exist in PostgRES
 
 Every push must resolve a project. From your machine, pass **`--project`** and **`--hash`** from **`flux list`** (example values—use yours), or put **`slug`** and **`hash`** in repo-root **`flux.json`**.
 
+### Golden rule
+
+**Do not edit a migration after it has been applied. Create a new migration instead.**
+
+Flux stores a SHA-256 checksum per file in **`flux.flux_migrations`** (in the reserved **`flux`** schema, outside PostgREST). If you change an applied file, the next push reports a **checksum conflict** and refuses to run.
+
 ### Ordered directory migrations (recommended)
 
-Keep numbered SQL files in **`migrations/`** (or **`flux/migrations/`**). Flux applies them **in lexicographic order**, skips files already recorded in the tenant ledger (`flux.flux_migrations`), and stops on checksum drift if an applied file was edited later.
+Keep numbered SQL files in **`migrations/`** (or **`flux/migrations/`**). Flux applies them **in lexicographic order**, skips files already recorded in the tenant ledger, and stops on checksum drift if an applied file was edited later.
 
 ```bash
 flux push migrations/ --project percept --hash b915ec8
@@ -55,6 +61,20 @@ flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
 ```
 
 Single-file pushes do **not** write to the migration ledger—use directory mode when you want Flux to own ordering and idempotency.
+
+### Plan, dry run, and ledger
+
+```bash
+flux push migrations/ --plan      # show skip / would apply / conflicts
+flux push migrations/ --dry-run   # validate conflicts and size; apply nothing
+flux migrations list              # show flux.flux_migrations for the project
+```
+
+**`--plan`** prints what would happen (including conflicts) and exits without applying SQL.
+
+**`--dry-run`** builds the same plan, fails on checksum conflicts or oversized files, and applies nothing—useful in CI before a real push.
+
+**`flux migrations list`** reads the remote ledger only (not your local folder).
 
 In CI, use non-interactive tokens, pinned **`FLUX_API_BASE`**, and either the same flags or a checked-in **`flux.json`** with **`slug`** + **`hash`** so pipelines do not drift.
 

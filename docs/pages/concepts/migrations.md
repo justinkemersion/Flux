@@ -26,6 +26,8 @@ Target the project explicitly (slug and 7-character hash from **`flux list`**, o
 
 **Directory mode** applies an ordered set of `.sql` files and records each success in a tenant-local ledger table (`flux.flux_migrations` in the reserved **`flux`** schema—not exposed via PostgREST). **Single-file mode** runs raw SQL without ledger entries (backward compatible).
 
+**Do not edit a migration after it has been applied. Create a new migration instead.** Flux compares checksums on every directory push; changed files raise a clear conflict instead of silently re-running SQL.
+
 ```bash
 flux push migrations/
 flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
@@ -33,7 +35,9 @@ flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
 
 Replace **`percept`** / **`b915ec8`** with the values from your listing.
 
-Author SQL idempotently where possible (`IF NOT EXISTS`, defensive guards). For pooled tenants, set `search_path` or schema-qualify objects explicitly. Do not edit migration files after they have been applied; Flux compares SHA-256 checksums and refuses drift.
+Author SQL idempotently where possible (`IF NOT EXISTS`, defensive guards). For pooled tenants, set `search_path` or schema-qualify objects explicitly.
+
+Use **`flux push migrations/ --plan`**, **`--dry-run`**, and **`flux migrations list`** to inspect pending work and the ledger before applying.
 
 ## Example
 
