@@ -83,7 +83,7 @@ function CliSnippetBlock({
   hash: string;
   v1Dedicated: boolean;
 }) {
-  const pushLine = `flux push ./migrations/schema.sql --project ${slug} --hash ${hash}`;
+  const pushLine = `flux push migrations/ --project ${slug} --hash ${hash}`;
   const credLine = `flux project credentials ${slug} --hash ${hash}`;
 
   return (

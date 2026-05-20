@@ -76,7 +76,9 @@ flux migrations list              # show flux.flux_migrations for the project
 
 **`--dry-run`** builds the same plan, fails on checksum conflicts or oversized files, and applies nothing—useful in CI before a real push.
 
-**`flux migrations list`** reads the remote ledger only (not your local folder).
+**`flux migrations list`** reads the remote ledger only (not your local folder). For full flag detail (directory vs file, `--plan` vs `--dry-run`), run **`flux push --help`** and **`flux migrations --help`** on your installed CLI.
+
+**`flux migrations`** is the SQL ledger inspector—not **`flux migrate`** (engine conversion from v2 shared to v1 dedicated).
 
 In CI, use non-interactive tokens, pinned **`FLUX_API_BASE`**, and either the same flags or a checked-in **`flux.json`** with **`slug`** + **`hash`** so pipelines do not drift.
 

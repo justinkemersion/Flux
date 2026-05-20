@@ -156,11 +156,11 @@ export function registerFluxCliCommands(program: Command): void {
   const push = program
     .command("push")
     .description(
-      "Apply SQL to a project: single .sql file, or ordered migrations from a directory",
+      "Apply SQL to a project. Directory: lexicographic *.sql with flux.flux_migrations ledger. File: raw SQL, no ledger.",
     )
     .argument(
       "[target]",
-      "path to .sql file or migrations directory (default: migrations/, flux/migrations/, sql/, schema.sql)",
+      "migrations directory (ledger + checksums) or .sql file (no ledger); default discovery: migrations/, flux/migrations/, sql/, schema.sql",
     )
     .option(
       "-p, --project <name>",
@@ -183,14 +183,24 @@ export function registerFluxCliCommands(program: Command): void {
     .option("--hash <hex>", hashFlagDesc)
     .option(
       "--plan",
-      "Show what directory push would do (skip, apply, conflicts) without applying",
+      "Directory only: show skip / would apply / conflicts without applying (single file: preview only)",
       false,
     )
     .option(
       "--dry-run",
-      "Validate migration plan and conflicts without applying SQL",
+      "Directory: validate plan, conflicts, and 4 MiB per pending file; file: size check + preview. Incompatible with --plan",
       false,
     );
+
+  push.addHelpText(
+    "after",
+    `
+Examples:
+  $ flux push migrations/ --plan
+  $ flux push migrations/ --dry-run
+  $ flux migrations list
+`,
+  );
 
   push.action(async (target: string | undefined) => {
     try {
@@ -231,11 +241,15 @@ export function registerFluxCliCommands(program: Command): void {
 
   const migrationsCmd = program
     .command("migrations")
-    .description("Inspect SQL migration ledger (flux.flux_migrations)");
+    .description(
+      "Remote SQL migration ledger (flux.flux_migrations). Not flux migrate (v2_shared → v1_dedicated engine conversion).",
+    );
 
   const migrationsListCmd = migrationsCmd
     .command("list")
-    .description("List migrations recorded on the project")
+    .description(
+      "List applied migrations on the project (remote ledger, not local files). Compare local vs remote with flux push <dir> --plan",
+    )
     .option(
       "-p, --project <name>",
       "Project slug (default: \"slug\" in flux.json in CWD)",

@@ -164,7 +164,7 @@ Run from your terminal.
 ### Example
 
 ```txt
-flux push ./migrations/schema.sql
+flux push migrations/
 ```
 
 ---
