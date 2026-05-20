@@ -352,25 +352,51 @@ probe_tenant_api() {
     fail "$label — edge smoke HTTP ${code} (Host: ${host})"
   fi
 
-  # v2_shared: optional gateway routing check (JWT path); WARN only so edge+app TLS issues do not false-FAIL.
+  # v2_shared: gateway must resolve Host and proxy (real app path). Use node:http — fetch()
+  # cannot set Host (forbidden header); the server would see 127.0.0.1:4000 and 404.
   if [[ "$mode" == "v2_shared" ]] && container_running "$FLUX_NODE_GATEWAY_CONTAINER"; then
     set +e
     gw_code="$(docker exec "$FLUX_NODE_GATEWAY_CONTAINER" node -e "
-const host='${host}';
-fetch('http://127.0.0.1:4000/', { headers: { Host: host }, signal: AbortSignal.timeout(5000) })
-  .then((r) => { console.log(String(r.status)); process.exit(0); })
-  .catch(() => process.exit(2));
+const http = require('http');
+const host = '${host}';
+const req = http.request(
+  { hostname: '127.0.0.1', port: 4000, path: '/', method: 'GET', headers: { host }, timeout: 5000 },
+  (res) => { console.log(String(res.statusCode)); res.resume(); },
+);
+req.on('error', () => process.exit(2));
+req.end();
 " 2>/dev/null)"
     set -e
     gw_code="${gw_code//$'\n'/}"
     if [[ -z "$gw_code" || "$gw_code" == "2" ]]; then
       warn "$label — gateway smoke unreachable (internal Host:${host})"
     elif [[ "$gw_code" == "404" ]]; then
-      warn "$label — gateway returned 404 (tenant not in gateway catalog?)"
+      fail "$label — gateway tenant not found (catalog/parse miss for Host:${host})"
     elif edge_smoke_status_ok "$gw_code"; then
       pass "$label — gateway internal Host:${host} → ${gw_code}"
     else
       warn "$label — gateway HTTP ${gw_code} (edge was ${code})"
+    fi
+  elif [[ "$mode" == "v1_dedicated" ]] && container_running "$FLUX_NODE_GATEWAY_CONTAINER"; then
+    set +e
+    gw_code="$(docker exec "$FLUX_NODE_GATEWAY_CONTAINER" node -e "
+const http = require('http');
+const host = '${host}';
+const req = http.request(
+  { hostname: '127.0.0.1', port: 4000, path: '/', method: 'GET', headers: { host }, timeout: 5000 },
+  (res) => { console.log(String(res.statusCode)); res.resume(); },
+);
+req.on('error', () => process.exit(2));
+req.end();
+" 2>/dev/null)"
+    set -e
+    gw_code="${gw_code//$'\n'/}"
+    if [[ "$gw_code" == "502" ]]; then
+      pass "$label — gateway correctly rejects v1 (502, use Traefik → dedicated PostgREST)"
+    elif [[ "$gw_code" == "404" ]]; then
+      fail "$label — gateway catalog miss for v1 Host:${host}"
+    elif [[ -n "$gw_code" && "$gw_code" != "2" ]]; then
+      warn "$label — gateway returned ${gw_code} for v1 (expected 502)"
     fi
   fi
 }
