@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { buildBackupVerifyPreRestoreSql } from "@/src/lib/backup-verify-pre-restore-sql";
 import { probeBackupArtifactOnDisk } from "@/src/lib/backup-artifact-probe";
 import { backupLocks, projectBackups, projects } from "@/src/db/schema";
 import { getBackupStorage } from "@/src/lib/backup-storage";
@@ -525,10 +526,9 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
       created = true;
       await waitForPgReady(verifyName, 30_000);
 
-      // v2_shared `pg_dump -Fc --schema=t_<short>_api --no-owner --no-acl` strips OWNER/GRANT but
-      // KEEPS `CREATE POLICY ... TO authenticated` (policy roles are not ACLs). The disposable
-      // Postgres has only `postgres`, so we pre-create the platform request roles. Idempotent and
-      // harmless for v1 dedicated dumps (which don't reference these roles).
+      // `pg_dump --no-acl` strips GRANT but keeps `CREATE POLICY ... TO <role>`. v2 tenant exports
+      // reference `t_<shortId>_role`; legacy dumps may reference `authenticated`. Pre-create both
+      // sets idempotently in the disposable Postgres (only `postgres` exists by default).
       await runDocker([
         "exec",
         "-e",
@@ -542,13 +542,10 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         "-v",
         "ON_ERROR_STOP=1",
         "-c",
-        [
-          "DO $$ BEGIN CREATE ROLE anon NOLOGIN NOINHERIT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
-          "DO $$ BEGIN CREATE ROLE authenticated NOLOGIN NOINHERIT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
-          "DO $$ BEGIN CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
-          "DO $$ BEGIN CREATE ROLE authenticator NOLOGIN NOINHERIT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
-          "GRANT anon, authenticated, service_role TO authenticator;",
-        ].join(" "),
+        buildBackupVerifyPreRestoreSql({
+          projectId: backup.projectId,
+          kind: backup.kind as "project_db" | "tenant_export",
+        }),
       ]);
 
       await pipeBackupFileToPgRestoreInContainer(

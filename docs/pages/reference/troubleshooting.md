@@ -317,7 +317,7 @@ Tier-name decoder:
 |------|---------|
 | `restorable` | Restore-verified. Trustworthy. |
 | `not_restore_verified` | File exists, never restored. Run `flux backup verify --latest`. |
-| `restore_failed` | A `pg_restore` was attempted and failed. The artifact is broken; create a new backup. |
+| `restore_failed` | A `pg_restore` was attempted and failed. Usually the artifact is broken — create a new backup. If stderr mentions `role "t_*_role" does not exist`, the dump may be fine and the verify environment was missing the tenant role (fixed in current control-plane builds); re-run verify after upgrade before re-dumping. |
 | `artifact_pending` | Upload completed; validator still running. Wait briefly. |
 | `pipeline_incomplete` | The artifact validator marked the file invalid (size mismatch, checksum off). Re-create. |
 | `latest_not_complete` | The newest row never finished writing. Re-create. |
@@ -326,6 +326,7 @@ Tier-name decoder:
 
 - If the latest is `not_restore_verified`, run `flux backup verify --project <slug> --hash <hash> --latest`. That is the only step that promotes the trust state.
 - If verify keeps failing with `restore_failed`, create a new backup and verify it. The old artifact may be truncated or corrupt; the catalog row remains as evidence.
+- If stderr is `role "t_<shortId>_role" does not exist` during verify on a **v2_shared** tenant export, the backup file is often still valid — policies in the dump reference the per-tenant DB role, which is not included in a schema-only export. Upgrade the control plane (or pre-create that role before manual `pg_restore`), then re-run `flux backup verify --latest`.
 - If you genuinely need to run a destructive command without a verified backup, pass `--skip-backup-check`. The CLI prints a clear warning and proceeds.
 
 **Engine.** Both engines.

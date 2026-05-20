@@ -124,7 +124,7 @@ pg_restore --no-owner --no-acl \
   ./bloom.dump
 ```
 
-The dump uses `--no-owner --no-acl` at create time, so role names and grants do not need to line up between the source tenant and the restore target. Re-create your application roles and grants in the target database before serving traffic.
+The dump uses `--no-owner --no-acl` at create time, so role names and grants do not need to line up between the source tenant and the restore target. Before `pg_restore`, create stub roles that policies reference — at minimum the per-tenant role `t_<shortId>_role` (from `flux list` / dashboard) plus the platform roles (`anon`, `authenticated`, `service_role`, `authenticator`) if your policies target them. Re-create grants in the target database before serving traffic.
 
 ## 6) Pre-destructive workflow pattern
 
