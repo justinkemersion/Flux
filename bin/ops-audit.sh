@@ -6,6 +6,11 @@
 #
 # Run from your laptop over SSH (same defaults as bin/sync-env-remote.sh):
 #   ./bin/ops-audit.sh --remote
+#   ./bin/ops-audit.sh --remote --deep --smoke
+#
+# --smoke  GET each tenant API via Traefik :80 (Host: api--<slug>--<hash>.<domain>); v2 also warns on gateway catalog miss.
+#          Targets: bin/ops-audit-smoke.projects (copy from ops-audit-smoke.projects.example),
+#          or FLUX_OPS_SMOKE_PROJECTS=slug:hash,... or catalog query when unset.
 #
 # Env overrides (match bin/sync-env-remote.sh / bin/use-remote-docker-hetzner.sh):
 #   FLUX_SYNC_REMOTE=root@host
@@ -26,8 +31,19 @@ FLUX_TRAEFIK_CONTAINER="${FLUX_TRAEFIK_CONTAINER:-flux-gateway}"
 FLUX_NODE_GATEWAY_CONTAINER="${FLUX_NODE_GATEWAY_CONTAINER:-flux-node-gateway}"
 FLUX_V2_POSTGRES_CONTAINER="${FLUX_V2_POSTGRES_CONTAINER:-flux-postgres-v2}"
 
+# When piped over SSH (`bash -s`), BASH_SOURCE is unset; use FLUX_REMOTE_REPO_ROOT/bin.
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  SCRIPT_DIR="$(cd "${FLUX_REMOTE_REPO_ROOT:-.}/bin" && pwd)"
+fi
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 LOG_TAIL="${FLUX_OPS_LOG_TAIL:-500}"
 DEEP="${FLUX_OPS_DEEP:-0}"
+SMOKE="${FLUX_OPS_SMOKE:-0}"
+FLUX_OPS_SMOKE_FILE="${FLUX_OPS_SMOKE_FILE:-$SCRIPT_DIR/ops-audit-smoke.projects}"
+
 FAIL_COUNT=0
 WARN_COUNT=0
 
@@ -294,6 +310,147 @@ audit_backup_catalog() {
   done <<<"$rows"
 }
 
+read_flux_domain() {
+  local env_file="${FLUX_REMOTE_REPO_ROOT}/docker/web/.env"
+  local d=""
+  if [[ -f "$env_file" ]]; then
+    d="$(grep -E '^\s*FLUX_DOMAIN=' "$env_file" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"' " | tr -d ' ' || true)"
+  fi
+  echo "${d:-vsl-base.com}"
+}
+
+tenant_smoke_host() {
+  local slug="$1" hash="$2" domain="$3"
+  echo "api--${slug}--${hash}.${domain}"
+}
+
+edge_smoke_status_ok() {
+  case "$1" in
+    200|301|302|307|308) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+probe_tenant_api() {
+  local slug="$1" hash="$2" mode="${3:-}"
+  local domain host label code gw_code
+  domain="$(read_flux_domain)"
+  host="$(tenant_smoke_host "$slug" "$hash" "$domain")"
+  label="$slug:$hash"
+  [[ -n "$mode" ]] && label="$label ($mode)"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "$label — skip edge smoke (curl not on host)"
+    return
+  fi
+
+  # Public edge (Traefik :80): same Host clients use after DNS — matches deploy-web.sh probes.
+  code="$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 5 -H "Host: ${host}" "http://127.0.0.1/" 2>/dev/null || echo "000")"
+  if edge_smoke_status_ok "$code"; then
+    pass "$label — edge GET Host:${host} → ${code}"
+  else
+    fail "$label — edge smoke HTTP ${code} (Host: ${host})"
+  fi
+
+  # v2_shared: optional gateway routing check (JWT path); WARN only so edge+app TLS issues do not false-FAIL.
+  if [[ "$mode" == "v2_shared" ]] && container_running "$FLUX_NODE_GATEWAY_CONTAINER"; then
+    set +e
+    gw_code="$(docker exec "$FLUX_NODE_GATEWAY_CONTAINER" node -e "
+const host='${host}';
+fetch('http://127.0.0.1:4000/', { headers: { Host: host }, signal: AbortSignal.timeout(5000) })
+  .then((r) => { console.log(String(r.status)); process.exit(0); })
+  .catch(() => process.exit(2));
+" 2>/dev/null)"
+    set -e
+    gw_code="${gw_code//$'\n'/}"
+    if [[ -z "$gw_code" || "$gw_code" == "2" ]]; then
+      warn "$label — gateway smoke unreachable (internal Host:${host})"
+    elif [[ "$gw_code" == "404" ]]; then
+      warn "$label — gateway returned 404 (tenant not in gateway catalog?)"
+    elif edge_smoke_status_ok "$gw_code"; then
+      pass "$label — gateway internal Host:${host} → ${gw_code}"
+    else
+      warn "$label — gateway HTTP ${gw_code} (edge was ${code})"
+    fi
+  fi
+}
+
+load_smoke_targets() {
+  if [[ -n "${FLUX_OPS_SMOKE_PROJECTS:-}" ]]; then
+    local IFS=,
+    local entry slug hash mode rest
+    for entry in $FLUX_OPS_SMOKE_PROJECTS; do
+      entry="${entry#"${entry%%[![:space:]]*}"}"
+      entry="${entry%"${entry##*[![:space:]]}"}"
+      [[ -z "$entry" ]] && continue
+      IFS=: read -r slug hash mode rest <<<"$entry"
+      [[ -z "$slug" || -z "$hash" ]] && continue
+      echo "$slug|$hash|${mode:-}"
+    done
+    return
+  fi
+
+  if [[ -f "$FLUX_OPS_SMOKE_FILE" ]]; then
+    local line slug hash mode rest
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line="${line%%#*}"
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      [[ -z "$line" ]] && continue
+      IFS=: read -r slug hash mode rest <<<"$line"
+      [[ -z "$slug" || -z "$hash" ]] && continue
+      echo "$slug|$hash|${mode:-}"
+    done <"$FLUX_OPS_SMOKE_FILE"
+    return
+  fi
+
+  local sys_db
+  sys_db="$(docker ps --format '{{.Names}}' | grep -E 'flux-system-db$' | head -1 || true)"
+  if [[ -z "$sys_db" ]]; then
+    return
+  fi
+  docker exec "$sys_db" psql -U postgres -d postgres -tA -F '|' -c "
+    SELECT slug, hash, COALESCE(mode, '')
+    FROM projects
+    WHERE slug NOT IN ('flux-system', 'static')
+    ORDER BY slug;
+  " 2>/dev/null || true
+}
+
+audit_tenant_smoke() {
+  section "Tenant API smoke (Traefik edge Host header)"
+  if ! container_running "$FLUX_TRAEFIK_CONTAINER"; then
+    warn "skip — $FLUX_TRAEFIK_CONTAINER not running"
+    return
+  fi
+
+  local env_file="${FLUX_REMOTE_REPO_ROOT}/docker/web/.env"
+  if [[ -f "$env_file" ]] && grep -Eq '^\s*FLUX_TENANT_PROBE_GATEWAY_URL=' "$env_file"; then
+    pass "FLUX_TENANT_PROBE_GATEWAY_URL set (fleet monitor); smoke uses Traefik :80 for edge routing"
+  else
+    warn "FLUX_TENANT_PROBE_GATEWAY_URL unset — fleet mesh may disagree with edge smoke"
+  fi
+
+  local rows target_count=0
+  rows="$(load_smoke_targets)"
+  if [[ -z "$rows" ]]; then
+    warn "no smoke targets — copy bin/ops-audit-smoke.projects.example to bin/ops-audit-smoke.projects"
+    return
+  fi
+
+  while IFS='|' read -r slug hash mode; do
+    [[ -z "$slug" || -z "$hash" ]] && continue
+    target_count=$((target_count + 1))
+    probe_tenant_api "$slug" "$hash" "$mode"
+  done <<<"$rows"
+
+  if [[ "$target_count" -eq 0 ]]; then
+    warn "smoke file/env had no valid slug:hash lines"
+  else
+    pass "smoke probes attempted: $target_count"
+  fi
+}
+
 audit_host_cron() {
   section "Host cron (flux reap / custom)"
   if command -v crontab >/dev/null 2>&1; then
@@ -323,6 +480,9 @@ run_audit() {
   audit_stale_containers
   if [[ "$DEEP" == "1" ]]; then
     audit_backup_catalog
+  fi
+  if [[ "$SMOKE" == "1" ]]; then
+    audit_tenant_smoke
   fi
   audit_disk
   audit_host_cron
@@ -357,6 +517,10 @@ main() {
         DEEP=1
         shift
         ;;
+      --smoke)
+        SMOKE=1
+        shift
+        ;;
       *)
         echo "Unknown option: $1" >&2
         usage
@@ -365,9 +529,9 @@ main() {
     esac
   done
   if [[ "$remote" == "1" ]]; then
-    echo "Remote audit via SSH: $FLUX_SYNC_REMOTE (deep=${DEEP})"
+    echo "Remote audit via SSH: $FLUX_SYNC_REMOTE (deep=${DEEP} smoke=${SMOKE})"
     ssh -o BatchMode=yes -o ConnectTimeout=15 "$FLUX_SYNC_REMOTE" \
-      "FLUX_REMOTE_REPO_ROOT='$FLUX_REMOTE_REPO_ROOT' FLUX_OPS_DEEP='$DEEP' bash -s" <"$0"
+      "FLUX_REMOTE_REPO_ROOT='$FLUX_REMOTE_REPO_ROOT' FLUX_OPS_DEEP='$DEEP' FLUX_OPS_SMOKE='$SMOKE' FLUX_OPS_SMOKE_FILE='$FLUX_REMOTE_REPO_ROOT/bin/ops-audit-smoke.projects' bash -s" <"$0"
     exit $?
   fi
   run_audit

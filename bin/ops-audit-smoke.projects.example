@@ -1,0 +1,16 @@
+# Tenant API smoke targets for: ./bin/ops-audit.sh --smoke
+#
+# Copy to ops-audit-smoke.projects (same directory) and edit. One project per line:
+#   slug:hash
+#   slug:hash:mode     optional — v1_dedicated | v2_shared (informational in logs)
+#
+# Or set FLUX_OPS_SMOKE_FILE to another path, or FLUX_OPS_SMOKE_PROJECTS="slug:hash,..."
+#
+# When no file exists, --smoke probes all catalog projects except flux-system and static.
+
+bloom-atelier:61d9dff:v1_dedicated
+yeastcoast:ffca33f:v1_dedicated
+habitat:59b73eb:v2_shared
+roommating:85a68e7:v2_shared
+# percept:b915ec8:v2_shared
+# yeastcoast:3db3f78:v2_shared

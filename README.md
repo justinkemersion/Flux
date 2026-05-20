@@ -535,6 +535,28 @@ Full Sarah-friendly walkthrough: [`docs/guides/flux-v1-dedicated-sql-workflows.m
 
 ## Security and operations
 
+### Operations audit (self-hosted)
+
+Read-only health pass for the Docker host (containers, schedulers, backups, disk). SSH defaults match **`bin/sync-env-remote.sh`** / **`bin/use-remote-docker-hetzner.sh`** (`root@178.104.205.138`, repo on server at **`/srv/platform/flux`**).
+
+```bash
+# Weekly — control plane + logs + disk
+./bin/ops-audit.sh --remote
+
+# Monthly — backup trust rows in flux-system + tenant edge smoke
+./bin/ops-audit.sh --remote --deep --smoke
+```
+
+| Flag | What it checks |
+|------|----------------|
+| *(default)* | Core containers, `flux-web` log errors, backup volume size, gateway `/health`, stale exited `flux-*` containers |
+| `--deep` | Latest `project_backups` per slug (`restore=pending` warns) |
+| `--smoke` | `GET http://127.0.0.1/` with `Host: api--<slug>--<hash>.<domain>` via Traefik (301/200 = edge routing). For **v2_shared**, also warns if `flux-node-gateway` returns `tenant not found`. |
+
+**Smoke targets:** copy **`bin/ops-audit-smoke.projects.example`** → **`bin/ops-audit-smoke.projects`** (one `slug:hash[:mode]` per line), set **`FLUX_OPS_SMOKE_PROJECTS`**, or omit the file to probe every catalog project except `flux-system` / `static`.
+
+Nightly v1 backups stay **`restore=pending`** until you run **`flux backup verify`** — the deep audit reminds you; see [Backups](#backups) above.
+
 - **Secrets** — Postgres password and `PGRST_JWT_SECRET` are generated at provision time (unless overridden for JWT). Treat shell history and logs as sensitive.
 - **Dashboard projects** — `GET /api/projects` reads **`flux-system.projects`** first, then resolves Docker status with **`getProjectSummariesForSlugs`** (per-slug inspects, not a full container list). It does not return DB URIs or API keys; use `GET /api/projects/[slug]/credentials` to reveal them. **Repair** uses `POST /api/projects/[slug]/repair`. See **`docs/production-security-audit.md`**.
 - **Idle RAM (reaper)** — Catalog column **`last_accessed_at`** is updated by **`POST /api/projects/[slug]/activity`** (SDK **`activity`** option). Schedule **`flux reap --hours …`** on the server to **`stopProject`** for rows past the threshold.
