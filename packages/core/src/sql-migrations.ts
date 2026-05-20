@@ -164,10 +164,10 @@ VALUES (${v}, ${f}, ${c});`.trim();
     .join("\n\n");
 }
 
-/** Parameterized lookup for ledger row by version (server uses with bound params). */
-export const SELECT_MIGRATION_CHECKSUM_SQL = `
-SELECT checksum FROM flux.flux_migrations WHERE version = $1 LIMIT 1;
-`.trim();
+/** Lookup ledger checksum for a version (literal-safe for PushPgClient single-arg query). */
+export function selectMigrationChecksumSql(version: string): string {
+  return `SELECT checksum FROM flux.flux_migrations WHERE version = ${sqlLiteral(version)} LIMIT 1`;
+}
 
 export function migrationConflictMessage(
   migration: MigrationPushMeta,

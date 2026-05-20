@@ -17,11 +17,14 @@ class FakePgClient implements PushPgClient {
     return undefined;
   }
 
-  async query(sql: string, params?: unknown[]): Promise<{ rows: Row[] }> {
+  async query(sql: string): Promise<{ rows: Row[] }> {
     this.queries.push(sql);
     const trimmed = sql.trim();
     if (trimmed.startsWith("SELECT checksum")) {
-      const version = String(params?.[0] ?? "");
+      const match = /WHERE version = '((?:[^']|'')*)'/u.exec(trimmed);
+      const version = match
+        ? match[1]!.replaceAll("''", "'")
+        : "";
       const checksum = this.checksumByVersion.get(version);
       return { rows: checksum ? [{ checksum }] : [] };
     }

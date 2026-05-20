@@ -6,7 +6,7 @@ import {
   type FluxMigrationRecord,
   type MigrationPushMeta,
   resolveMigrationLedgerAction,
-  SELECT_MIGRATION_CHECKSUM_SQL,
+  selectMigrationChecksumSql,
 } from "@flux/core/sql-migrations";
 import type { PushPgClient, PushPgClientFactory } from "@/src/lib/pooled-push";
 import { quoteIdent, PUSH_TIMEOUT_MS } from "@/src/lib/pooled-push";
@@ -90,9 +90,9 @@ export async function executePooledMigrationPush(
       );
       await client.query(FLUX_MIGRATIONS_DDL);
 
-      const lookup = await client.query(SELECT_MIGRATION_CHECKSUM_SQL, [
-        input.migration.version,
-      ]);
+      const lookup = await client.query(
+        selectMigrationChecksumSql(input.migration.version),
+      );
       const rows = (lookup as { rows?: { checksum: string }[] }).rows ?? [];
       const existing = rows[0]?.checksum
         ? { checksum: rows[0].checksum }
