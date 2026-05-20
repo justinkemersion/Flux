@@ -1,5 +1,6 @@
 import {
   migrationConflictMessage,
+  migrationPlanTimeline,
   type MigrationPlanResult,
 } from "@flux/core/sql-migrations";
 import type { FluxMigrationRecord } from "@flux/core/sql-migrations";
@@ -34,19 +35,27 @@ export function printMigrationPlan(input: {
   const { plan, mode } = input;
   const isPreview = mode === "plan" || mode === "dry-run";
 
-  for (const file of plan.skip) {
-    const label = isPreview ? "already applied" : "already applied";
-    console.log(chalk.green("✓"), chalk.white(`${file.filename} ${label}`));
-  }
-
-  for (const { file } of plan.conflicts) {
-    console.log(chalk.red("✗"), chalk.white(`${file.filename} checksum conflict`));
-    if (mode === "plan") {
-      console.log(chalk.dim("  (run without --plan to see full details on failure)"));
+  for (const entry of migrationPlanTimeline(plan)) {
+    const { file, status } = entry;
+    if (status === "skip") {
+      console.log(
+        chalk.green("✓"),
+        chalk.white(`${file.filename} already applied`),
+      );
+      continue;
     }
-  }
-
-  for (const file of plan.apply) {
+    if (status === "conflict") {
+      console.log(
+        chalk.red("✗"),
+        chalk.white(`${file.filename} checksum conflict`),
+      );
+      if (mode === "plan") {
+        console.log(
+          chalk.dim("  (run without --plan to see full details on failure)"),
+        );
+      }
+      continue;
+    }
     if (isPreview) {
       console.log(
         chalk.blue("→"),

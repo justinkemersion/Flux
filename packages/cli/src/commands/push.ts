@@ -5,6 +5,7 @@ import {
   listMigrationSqlFiles,
   loadLocalMigrations,
   migrationConflictMessage,
+  migrationPlanTimeline,
   planMigrations,
   type MigrationPushMeta,
 } from "@flux/core/sql-migrations";
@@ -235,15 +236,19 @@ async function cmdPushMigrationsDir(input: {
   let appliedCount = 0;
   let skippedCount = 0;
 
-  for (const file of plan.skip) {
-    console.log(
-      chalk.green("✓"),
-      chalk.white(`${file.filename} already applied`),
-    );
-    skippedCount += 1;
-  }
-
-  for (const file of plan.apply) {
+  for (const entry of migrationPlanTimeline(plan)) {
+    const { file, status } = entry;
+    if (status === "skip") {
+      console.log(
+        chalk.green("✓"),
+        chalk.white(`${file.filename} already applied`),
+      );
+      skippedCount += 1;
+      continue;
+    }
+    if (status !== "apply") {
+      continue;
+    }
     console.log(
       chalk.blue("→"),
       chalk.white(`${file.filename} applying...`),

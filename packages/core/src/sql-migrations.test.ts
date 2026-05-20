@@ -9,6 +9,7 @@ import {
   loadLocalMigrations,
   migrationChecksum,
   migrationConflictMessage,
+  migrationPlanTimeline,
   planMigrations,
   resolveMigrationLedgerAction,
   sqlLiteral,
@@ -24,6 +25,39 @@ test("migrationChecksum is stable sha256 hex", () => {
 
 test("sqlLiteral escapes single quotes", () => {
   assert.equal(sqlLiteral("it's"), "'it''s'");
+});
+
+test("migrationPlanTimeline sorts by version regardless of status", () => {
+  const local = [
+    {
+      version: "024_room.sql",
+      filename: "024_room.sql",
+      path: "/m/024",
+      content: "b",
+      checksum: migrationChecksum("b"),
+    },
+    {
+      version: "023_init.sql",
+      filename: "023_init.sql",
+      path: "/m/023",
+      content: "a",
+      checksum: migrationChecksum("a"),
+    },
+  ];
+  const applied = [
+    {
+      version: "023_init.sql",
+      filename: "023_init.sql",
+      checksum: migrationChecksum("a"),
+    },
+  ];
+  const plan = planMigrations(local, applied);
+  const timeline = migrationPlanTimeline(plan);
+  assert.equal(timeline.length, 2);
+  assert.equal(timeline[0]?.status, "skip");
+  assert.equal(timeline[0]?.file.version, "023_init.sql");
+  assert.equal(timeline[1]?.status, "apply");
+  assert.equal(timeline[1]?.file.version, "024_room.sql");
 });
 
 test("planMigrations: skip, apply, conflict", () => {

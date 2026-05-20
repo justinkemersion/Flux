@@ -43,6 +43,31 @@ export type MigrationPlanResult = {
   }>;
 };
 
+export type MigrationPlanStatus = "skip" | "apply" | "conflict";
+
+export type MigrationPlanEntry = {
+  file: LocalMigrationFile;
+  status: MigrationPlanStatus;
+  appliedChecksum?: string;
+};
+
+/** Plan entries sorted by version/filename (migration timeline order). */
+export function migrationPlanTimeline(
+  plan: MigrationPlanResult,
+): MigrationPlanEntry[] {
+  const entries: MigrationPlanEntry[] = [];
+  for (const file of plan.skip) {
+    entries.push({ file, status: "skip" });
+  }
+  for (const file of plan.apply) {
+    entries.push({ file, status: "apply" });
+  }
+  for (const { file, appliedChecksum } of plan.conflicts) {
+    entries.push({ file, status: "conflict", appliedChecksum });
+  }
+  return entries.sort((a, b) => a.file.version.localeCompare(b.file.version));
+}
+
 /** SHA-256 hex digest of migration file content (UTF-8). */
 export function migrationChecksum(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");

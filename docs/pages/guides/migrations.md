@@ -54,6 +54,8 @@ Flux migrations
 Done. 1 applied, 1 skipped.
 ```
 
+Lines are always shown in **filename order** (the migration timeline), not grouped by status.
+
 ### Single-file push (unchanged)
 
 ```bash
