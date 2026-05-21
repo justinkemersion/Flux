@@ -69,6 +69,15 @@ export const projectMetadataSchema = z.object({
   apiSchema: z.string().optional(),
 });
 
+export const initProjectResponseSchema = z.object({
+  action: z.enum(["linked", "created"]),
+  slug: z.string(),
+  hash: z.string(),
+  mode: z.enum(["v1_dedicated", "v2_shared"]),
+  apiUrl: z.string(),
+  apiSchema: z.string(),
+});
+
 export const pushSqlResponseSchema = z.object({
   ok: z.boolean().optional(),
   tablesMoved: z.number(),
@@ -142,6 +151,7 @@ export type ProjectCredentialsByHash = z.infer<
 export type CreateProjectMode = "v1_dedicated" | "v2_shared";
 export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
+export type InitProjectResult = z.infer<typeof initProjectResponseSchema>;
 export type ProjectBackup = z.infer<typeof backupItemSchema>;
 export type ListProjectBackupsResult = {
   backups: ProjectBackup[];

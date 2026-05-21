@@ -16,9 +16,11 @@ A **Flux project** is the unit you provision: database surface, API, routing ide
 
 ## The idea
 
-`flux create` talks to the control plane, which schedules provisioning for your **engine** (v1 dedicated or v2 shared depending on tier/configuration). You do not pick “a different product”—you get a project; the engine describes how infrastructure is shared.
+**Greenfield:** **`flux create`** talks to the control plane, which schedules provisioning for your **engine** (v1 dedicated or v2 shared depending on tier/configuration). You do not pick “a different product”—you get a project; the engine describes how infrastructure is shared.
 
-After create, you apply SQL from your repo with **`flux push`**. For any command that mutates an **existing** project, the CLI needs to know **which** project: pass **`--project <slug>`** and **`--hash <7hex>`** (or put the same fields in repo-root **`flux.json`** so you can omit the flags). Those values always come from **`flux list`** (or the dashboard), not from guesswork.
+**Foundry / forked app repo:** the template already includes **`flux.json`** with **`REPLACE_AFTER_FLUX_INIT`**. Run **`flux login`**, then **`flux init`** from the repo root to link an existing project or create one by **slug**—the CLI writes the real **hash** (and optional metadata) back into **`flux.json`**.
+
+After the project exists, apply SQL from your repo with **`flux push`**. For any command that mutates an **existing** project, the CLI needs to know **which** project: pass **`--project <slug>`** and **`--hash <7hex>`** (or put the same fields in repo-root **`flux.json`** so you can omit the flags). Those values come from **`flux init`**, **`flux list`**, or the dashboard—not from guesswork.
 
 `flux push` updates the tenant database and triggers PostgREST reload so new tables appear in the API (for v2 pooled, tables belong in the tenant API schema—see [Migrations](/docs/concepts/migrations)).
 
@@ -28,6 +30,13 @@ Create a project (name becomes the slug unless your host normalizes it):
 
 ```bash
 flux create "percept"
+```
+
+Or initialize from an app repo that already has **`flux.json`**:
+
+```bash
+flux login
+flux init
 ```
 
 List projects and copy the **slug** and **hash** for the row you care about:

@@ -20,6 +20,7 @@ import * as push from "./push";
 import type {
   CreateProjectMode,
   CreateProjectResult,
+  InitProjectResult,
   ListProjectBackupsResult,
   ProjectBackup,
   ProjectCredentialsByHash,
@@ -123,6 +124,17 @@ export class ApiClient {
     mode?: CreateProjectMode;
   }): Promise<CreateProjectResult> {
     return projects.createProject(this.asContext(), input);
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /api/cli/v1/init — link or create by slug (no secrets in response)
+  // ---------------------------------------------------------------------------
+  initProject(input: {
+    slug: string;
+    stripSupabaseRestPrefix?: boolean;
+    mode?: CreateProjectMode;
+  }): Promise<InitProjectResult> {
+    return projects.initProject(this.asContext(), input);
   }
 
   // ---------------------------------------------------------------------------

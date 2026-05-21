@@ -1,8 +1,11 @@
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import {
   assertWithinProjectLimit,
+  buildInitPayloadFromCatalogRow,
+  buildInitPayloadFromProvision,
   countUserProjects,
   findCatalogRowBySlug,
+  initialApiSchemaStrategy,
   loadUserPlan,
   parseOptionalMode,
   parseOptionalStripSupabase,
@@ -19,9 +22,12 @@ function jsonError(message: string, status: number): Response {
 }
 
 /**
- * POST /api/cli/v1/create
+ * POST /api/cli/v1/init
  * Authorization: Bearer flx_live_…
- * Body: `{ "name": string, "stripSupabaseRestPrefix"?: boolean, "mode"?: "v1_dedicated" | "v2_shared" }` — defaults by plan when omitted
+ * Body: `{ "slug": string, "stripSupabaseRestPrefix"?: boolean, "mode"?: "v1_dedicated" | "v2_shared" }`
+ *
+ * Idempotent Foundry entry: link existing (user, slug) or provision a new project.
+ * Response omits secrets (unlike POST /create).
  */
 export async function POST(req: Request): Promise<Response> {
   await initSystemDb();
@@ -42,14 +48,14 @@ export async function POST(req: Request): Promise<Response> {
   if (
     !body ||
     typeof body !== "object" ||
-    !("name" in body) ||
-    typeof (body as { name: unknown }).name !== "string"
+    !("slug" in body) ||
+    typeof (body as { slug: unknown }).slug !== "string"
   ) {
-    return jsonError('Expected JSON body with a string "name" field', 400);
+    return jsonError('Expected JSON body with a string "slug" field', 400);
   }
 
-  const rawName = (body as { name: string }).name.trim();
-  if (!rawName) return jsonError("Project name is required", 400);
+  const rawSlug = (body as { slug: string }).slug.trim();
+  if (!rawSlug) return jsonError("Project slug is required", 400);
 
   const bodyObj = body as Record<string, unknown>;
   const stripSupabaseRestPrefix = parseOptionalStripSupabase(bodyObj);
@@ -60,14 +66,26 @@ export async function POST(req: Request): Promise<Response> {
 
   let slug: string;
   try {
-    slug = slugifyProjectName(rawName);
+    slug = slugifyProjectName(rawSlug);
   } catch (err) {
     return jsonError(err instanceof Error ? err.message : String(err), 400);
   }
 
+  if (slug !== rawSlug) {
+    return jsonError(
+      `slug must already be normalized (expected "${slug}", got "${rawSlug}").`,
+      400,
+    );
+  }
+
+  const isProduction = process.env.NODE_ENV === "production";
   const existing = await findCatalogRowBySlug(db, auth.userId, slug);
   if (existing) {
-    return jsonError("You already have a project with this name.", 409);
+    const payload = buildInitPayloadFromCatalogRow(existing, isProduction);
+    return Response.json(payload, {
+      status: 200,
+      headers: { "Cache-Control": "private, no-store" },
+    });
   }
 
   const plan = await loadUserPlan(db, auth.userId);
@@ -82,11 +100,10 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(modePolicy.message, 403);
   }
 
-  const isProduction = process.env.NODE_ENV === "production";
   const result = await provisionProjectForUser({
     db,
     userId: auth.userId,
-    projectName: rawName,
+    projectName: rawSlug,
     slug,
     mode: modePolicy.mode,
     stripSupabaseRestPrefix,
@@ -97,15 +114,15 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(result.message, result.status);
   }
 
-  const payload = {
-    summary: result.summary,
-    mode: result.mode,
-    projectJwtSecret: result.projectJwtSecret,
-    secrets: result.secrets,
-  };
+  const payload = buildInitPayloadFromProvision(
+    result.summary,
+    result.mode,
+    result.tenantId,
+    initialApiSchemaStrategy(result.mode),
+  );
 
   return Response.json(payload, {
-    status: 201,
+    status: 200,
     headers: { "Cache-Control": "private, no-store" },
   });
 }

@@ -18,7 +18,11 @@ Flux configuration spans **repo-level** developer ergonomics and **per-project**
 
 ### flux.json
 
-Place **`flux.json`** at a repository root with **`slug`** and **`hash`** (both from **`flux list`**) so commands like **`flux push migrations/`** or **`flux push db/migrations/0001_moods.sql`** resolve the project **without** repeating **`--project`** / **`--hash`** on every invocation.
+Place **`flux.json`** at a repository root with **`slug`** and **`hash`** so commands like **`flux push migrations/`** resolve the project **without** repeating **`--project`** / **`--hash`** on every invocation.
+
+**Foundry apps** ship a placeholder hash (`REPLACE_AFTER_FLUX_INIT`). Run **`flux login`** then **`flux init`** once per machine/repo to link or create the project and replace the hash with the value from the control plane. You do not need to copy the hash manually from **`flux list`** for that workflow.
+
+After init, optional fields may be present for tooling: **`apiUrl`**, **`mode`**, **`apiSchema`**. Secrets (**`jwt_secret`**, gateway signing keys) must **not** live in **`flux.json`**.
 
 Commands that accept **`--project`** and **`--hash`**—including **`flux migrate`**—do **not** require **`flux.json`** when you pass both flags every time from any working directory.
 
@@ -39,7 +43,16 @@ Structured CLI + architecture rules for assistants ship as JSON: fetch **`GET /a
 }
 ```
 
-Use the **slug** and **hash** from **`flux list`** for your real project (the values above are illustrative).
+Before **`flux init`**, Foundry templates use:
+
+```json
+{
+  "slug": "my-app",
+  "hash": "REPLACE_AFTER_FLUX_INIT"
+}
+```
+
+Use the **slug** and **hash** from **`flux list`** when creating **`flux.json` by hand**; use **`flux init`** when the repo already has the Foundry placeholder.
 
 Exact schema follows CLI expectations—run `flux push --help` for current options.
 

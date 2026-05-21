@@ -24,7 +24,7 @@ After push, wait briefly for reload before assuming new tables exist in PostgRES
 
 ## How it works
 
-Every push must resolve a project. From your machine, pass **`--project`** and **`--hash`** from **`flux list`** (example values—use yours), or put **`slug`** and **`hash`** in repo-root **`flux.json`**.
+Every push must resolve a project. From your machine, pass **`--project`** and **`--hash`** from **`flux list`** (example values—use yours), or put **`slug`** and **`hash`** in repo-root **`flux.json`**. If **`flux.json`** still has **`REPLACE_AFTER_FLUX_INIT`**, run **`flux init`** first (not manual hash edits).
 
 ### Golden rule
 

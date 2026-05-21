@@ -25,6 +25,7 @@ import {
 } from "../cli-handlers";
 import { saveConfig } from "../config";
 import { cmdCreate } from "./create";
+import { cmdInit } from "./init";
 import { cmdProjectCredentials } from "./project-credentials";
 import { cmdMigrationsList } from "./migrations";
 import { cmdPush } from "./push";
@@ -89,6 +90,51 @@ export function registerFluxCliCommands(program: Command): void {
 
   const hashFlagDesc =
     '7-hex project hash (overrides "hash" in flux.json)';
+
+  const initCmd = program
+    .command("init")
+    .description(
+      "Link or create a Flux project from repo-root flux.json (Foundry placeholder hash)",
+    )
+    .option("--slug <slug>", "Override slug from flux.json")
+    .option(
+      "--mode <mode>",
+      "Optional. v1_dedicated or v2_shared. If omitted, the control plane picks from your plan.",
+    )
+    .option(
+      "--yes",
+      "Non-interactive (reserved; init does not prompt today)",
+      false,
+    )
+    .option(
+      "--no-supabase-rest-path",
+      "Disable Supabase /rest/v1 path strip when creating a new project",
+      false,
+    )
+    .action(async () => {
+      try {
+        const opts = initCmd.opts<{
+          slug?: string;
+          mode?: string;
+          yes?: boolean;
+          noSupabaseRestPath?: boolean;
+        }>();
+        const mode = resolveExplicitCreateMode({
+          explicitMode: opts.mode,
+          envMode: process.env.FLUX_DEFAULT_MODE,
+        });
+        await cmdInit({
+          ...(opts.slug ? { slug: opts.slug } : {}),
+          ...(mode !== undefined ? { mode } : {}),
+          ...(opts.yes === true ? { yes: true } : {}),
+          ...(opts.noSupabaseRestPath === true
+            ? { noSupabaseRestPath: true }
+            : {}),
+        });
+      } catch (err: unknown) {
+        printErrorAndExit(err);
+      }
+    });
 
   const createCmd = program
     .command("create")

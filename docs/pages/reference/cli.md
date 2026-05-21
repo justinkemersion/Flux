@@ -23,6 +23,7 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | Command | Purpose |
 |---------|---------|
 | `flux login` | Verify API token / base URL |
+| `flux init` | Link or create a project from repo-root `flux.json` (Foundry placeholder hash) |
 | `flux create` | Provision a project |
 | `flux list` | Show projects and Service URLs |
 | `flux push` | Apply a `.sql` file or ordered **`migrations/`** directory—**`--plan`** / **`--dry-run`** preview directory pushes; pass **`--project`** / **`--hash`** (or **`flux.json`**) |
@@ -48,6 +49,19 @@ The same **Codex** contract JSON is available from the dashboard at **`GET /api/
 ## How it works
 
 Install: [Installation](/docs/getting-started/installation).
+
+### Foundry / app repo workflow
+
+When the repo already has `flux.json` with `"hash": "REPLACE_AFTER_FLUX_INIT"`:
+
+```bash
+flux login
+flux init
+pnpm flux:schema:sync
+flux push sql/migrations/ --plan
+```
+
+`flux init` writes the control-plane **slug**, **hash**, and optional **apiUrl** / **mode** / **apiSchema** into `flux.json`. It does **not** write JWT or gateway secrets—use `flux project credentials` or the dashboard for those.
 
 ## Example
 

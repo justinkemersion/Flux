@@ -10,6 +10,7 @@ import {
 } from "./json-response";
 import {
   createProjectResponseSchema,
+  initProjectResponseSchema,
   listProjectsResponseSchema,
   projectCredentialsResponseSchema,
   projectMetadataSchema,
@@ -17,6 +18,7 @@ import {
   verifyTokenResponseSchema,
   type CreateProjectMode,
   type CreateProjectResult,
+  type InitProjectResult,
   type ProjectCredentialsByHash,
   type ProjectMetadata,
   type VerifyTokenResult,
@@ -120,6 +122,56 @@ export async function listProjects(
   if (!parsed.success) {
     throw new Error(
       "CLI list: response did not match expected FluxProjectSummary[] shape.",
+    );
+  }
+  return parsed.data;
+}
+
+export async function initProject(
+  ctx: ApiClientContext,
+  input: {
+    slug: string;
+    stripSupabaseRestPrefix?: boolean;
+    mode?: CreateProjectMode;
+  },
+): Promise<InitProjectResult> {
+  const token = ctx.tokenOrThrow();
+  const url = `${ctx.baseUrl}/cli/v1/init`;
+  const body: {
+    slug: string;
+    stripSupabaseRestPrefix?: boolean;
+    mode?: CreateProjectMode;
+  } = { slug: input.slug.trim() };
+  if (input.stripSupabaseRestPrefix === false) {
+    body.stripSupabaseRestPrefix = false;
+  }
+  if (input.mode) {
+    body.mode = input.mode;
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    throw new Error("Invalid or expired API token. Run `flux login`.");
+  }
+  const text = await res.text();
+  const raw = parseJsonResponseBody(
+    text,
+    `CLI init: response was not JSON (${res.status}). Check FLUX_API_BASE.`,
+  );
+  if (!res.ok) {
+    throw new Error(errorMessageFromJsonBody(raw, res.status));
+  }
+  const parsed = initProjectResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      "CLI init: response did not match expected { action, slug, hash, mode, apiUrl, apiSchema } shape.",
     );
   }
   return parsed.data;

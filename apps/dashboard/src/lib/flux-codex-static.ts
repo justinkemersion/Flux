@@ -144,6 +144,13 @@ export const FLUX_CODEX_JSON = {
       result:
         "Provision an isolated Postgres database and PostgREST API endpoint for the project.",
     },
+    foundryApp: {
+      command: "flux login && flux init",
+      followUp:
+        "pnpm flux:schema:sync && flux push sql/migrations/ --plan && flux push sql/migrations/",
+      note:
+        "Foundry repos include flux.json with hash REPLACE_AFTER_FLUX_INIT; flux init links or creates by slug without writing JWT secrets to flux.json.",
+    },
     accessingData: {
       apiUrl:
         "Use the API URL returned by `flux create` as your app's REST base URL.",
@@ -164,6 +171,8 @@ export const FLUX_CODEX_JSON = {
       "GET /api/cli/v1/auth/verify — validate Bearer `flx_live_…` key; returns { ok: true, user } (used by `flux login`).",
     create:
       "POST /api/cli/v1/create — provision a new tenant (Postgres + PostgREST) and return summary + secrets.",
+    init:
+      "POST /api/cli/v1/init — idempotent link-or-create by slug; returns slug, hash, mode, apiUrl, apiSchema (no secrets). Used by `flux init`.",
     list: "GET /api/cli/v1/list — list projects for the authenticated account.",
     push:
       "POST /api/cli/v1/push — apply a SQL file to a project's database in a transaction and notify PostgREST to reload the schema cache.",
