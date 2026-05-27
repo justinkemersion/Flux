@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { users } from "@/src/db/schema";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
+import { resolveCliRoleForUser } from "@/src/lib/cli-admin";
 import { defaultModeForPlan } from "@/src/lib/cli-mode-policy";
 
 export const runtime = "nodejs";
@@ -30,9 +31,14 @@ export async function GET(req: Request): Promise<Response> {
     row?.email?.trim() || row?.name?.trim() || auth.userId;
   const plan = row?.plan === "pro" ? "pro" : "hobby";
   const defaultMode = defaultModeForPlan(plan);
+  const cliRole = resolveCliRoleForUser({
+    userId: auth.userId,
+    email: row?.email,
+    name: row?.name,
+  });
 
   return Response.json(
-    { ok: true as const, user, plan, defaultMode },
+    { ok: true as const, user, plan, defaultMode, cliRole },
     { headers: { "Cache-Control": "private, no-store" } },
   );
 }

@@ -75,14 +75,52 @@ export function registerFluxCliCommands(program: Command): void {
           throw new Error("No API key entered.");
         }
         const client = getApiClient();
-        const { user, plan, defaultMode } = await client.verifyToken(key);
-        saveConfig({ token: key, profile: { plan, defaultMode } });
+        const { user, plan, defaultMode, cliRole } = await client.verifyToken(key);
+        saveConfig({
+          token: key,
+          profile: { plan, defaultMode, user, cliRole },
+        });
         console.log(`Flux authenticated as ${user}.`);
-        console.log(
-          chalk.dim(
-            `  Plan at login: ${plan} (typical default mode: ${defaultMode}). On create, omit --mode to let the control plane pick from your current plan; use --mode or FLUX_DEFAULT_MODE to override.`,
-          ),
+        const { cliDimHint } = await import("../utils/cli-audience");
+        cliDimHint(
+          `  Plan at login: ${plan} (typical default mode: ${defaultMode}). On create, omit --mode to let the control plane pick from your current plan; use --mode or FLUX_DEFAULT_MODE to override.`,
+          { plan, defaultMode, user, cliRole },
         );
+        if (cliRole === "operator") {
+          console.log(
+            chalk.dim(
+              "  Operator mode: non-essential CLI hints are hidden.",
+            ),
+          );
+        }
+      } catch (err: unknown) {
+        printErrorAndExit(err);
+      }
+    });
+
+  program
+    .command("whoami")
+    .description("Show authenticated CLI user and operator/admin hint mode")
+    .action(async () => {
+      try {
+        const { loadConfig } = await import("../config");
+        const { resolveCliRole } = await import("../utils/cli-audience");
+        const cfg = loadConfig();
+        if (!cfg?.token) {
+          throw new Error("Not authenticated. Run `flux login`.");
+        }
+        const profile = cfg.profile;
+        const user = profile?.user ?? "(unknown — run `flux login` again)";
+        const role = resolveCliRole(profile);
+        console.log(`User: ${user}`);
+        console.log(`CLI role: ${role}`);
+        if (role === "operator") {
+          console.log(
+            chalk.dim(
+              "  Hints hidden. Admins: FLUX_CLI_ADMIN_EMAILS on control plane, or FLUX_CLI_VERBOSE=1 locally.",
+            ),
+          );
+        }
       } catch (err: unknown) {
         printErrorAndExit(err);
       }
@@ -393,10 +431,9 @@ Examples:
         );
       }
       if (opts.skipBackupCheck !== true) {
-        console.error(
-          chalk.yellow(
-            "Note: run `flux backup create && flux backup verify --latest` first for a portable tenant export (pg_dump -Fc --schema=t_<short>_api). Migrate also performs its own live pg_dump from the pooled cluster.",
-          ),
+        const { cliWarn } = await import("../utils/cli-audience");
+        cliWarn(
+          "Note: run `flux backup create && flux backup verify --latest` first for a portable tenant export (pg_dump -Fc --schema=t_<short>_api). Migrate also performs its own live pg_dump from the pooled cluster.",
         );
       }
       if (opts.staged && opts.newJwtSecret) {

@@ -431,6 +431,11 @@ pnpm run flux -- --help
 If you use a shell alias via `npx --prefix packages/cli`, `packages/cli/.npmrc` disables update
 notifier spam; upgrading global npm (`npm install -g npm@11.15.0`) is optional.
 
+**CLI audience:** After `flux login`, most users run in **operator** mode (quiet — no npm update
+notices, version nags, or yellow advisory lines). **Admins** are listed on the control plane via
+`FLUX_CLI_ADMIN_EMAILS` (dashboard `.env`). Local override: `FLUX_CLI_VERBOSE=1`. Check with
+`flux whoami`.
+
 Run the dashboard:
 
 ```bash

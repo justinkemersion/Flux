@@ -119,10 +119,9 @@ export async function cmdCreate(
   options: { noSupabaseRestPath?: boolean; hash?: string; mode?: CreateProjectMode },
 ): Promise<void> {
   if (options.hash?.trim()) {
-    console.log(
-      chalk.dim(
-        "Note: --hash is ignored for remote create; the control plane allocates a unique 7-hex id.",
-      ),
+    const { cliDimHint } = await import("../utils/cli-audience");
+    cliDimHint(
+      "Note: --hash is ignored for remote create; the control plane allocates a unique 7-hex id.",
     );
   }
   const client = getApiClient();

@@ -59,6 +59,7 @@ export const verifyTokenResponseSchema = z.object({
   user: z.string(),
   plan: z.union([z.literal("hobby"), z.literal("pro")]),
   defaultMode: z.union([z.literal("v1_dedicated"), z.literal("v2_shared")]),
+  cliRole: z.union([z.literal("admin"), z.literal("operator")]).default("operator"),
 });
 
 export const projectMetadataSchema = z.object({

@@ -23,6 +23,7 @@ import { cmdProjectCredentials } from "./commands/project-credentials";
 import { cmdPush } from "./commands/push";
 import { saveConfig } from "./config";
 import { resolveDashboardBase } from "./dashboard-base";
+import { isCliAdmin } from "./utils/cli-audience";
 import { type FluxJson, readFluxJson } from "./flux-config";
 import { resolveExplicitCreateMode } from "./mode-default";
 import {
@@ -70,12 +71,11 @@ async function fetchRemoteCliVersion(): Promise<string | null> {
 }
 
 export async function runVersionOutput(): Promise<void> {
+  const { cliDimHint } = await import("./utils/cli-audience");
   console.log(CLI_VERSION);
   const remote = await fetchRemoteCliVersion();
   if (remote && isRemoteVersionNewer(remote, CLI_VERSION)) {
-    console.log(
-      chalk.dim(`Update available: ${remote} (current ${CLI_VERSION})`),
-    );
+    cliDimHint(`Update available: ${remote} (current ${CLI_VERSION})`);
   }
 }
 export async function cmdUpdate(): Promise<void> {
@@ -291,6 +291,9 @@ function printBackupTrustSummary(
   classification: ReturnType<typeof classifyNewestBackup>,
   kind?: "project_db" | "tenant_export" | null,
 ): void {
+  if (!isCliAdmin() && classification.tier !== "restore_failed") {
+    return;
+  }
   const k = kind ?? "project_db";
   const label = backupTrustTierLabelForKind(k, classification.tier);
   if (classification.tier === "restorable") {

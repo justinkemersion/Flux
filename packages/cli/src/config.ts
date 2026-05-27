@@ -6,11 +6,17 @@ import { join } from "node:path";
 const CONFIG_DIR = join(homedir(), ".flux");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
+export type CliRole = "admin" | "operator";
+
 export type FluxConfig = {
   token: string;
   profile?: {
     plan: "hobby" | "pro";
     defaultMode: "v1_dedicated" | "v2_shared";
+    /** Display identity from `flux login` (email or name). */
+    user?: string;
+    /** `admin` sees CLI hints; `operator` gets a quieter terminal. */
+    cliRole?: CliRole;
   };
 };
 
@@ -39,11 +45,22 @@ export function loadConfig(): FluxConfig | null {
     if (profileRaw && typeof profileRaw === "object") {
       const plan = (profileRaw as { plan?: unknown }).plan;
       const defaultMode = (profileRaw as { defaultMode?: unknown }).defaultMode;
+      const user = (profileRaw as { user?: unknown }).user;
+      const cliRole = (profileRaw as { cliRole?: unknown }).cliRole;
       if (
         (plan === "hobby" || plan === "pro") &&
         (defaultMode === "v1_dedicated" || defaultMode === "v2_shared")
       ) {
-        profile = { plan, defaultMode };
+        profile = {
+          plan,
+          defaultMode,
+          ...(typeof user === "string" && user.trim()
+            ? { user: user.trim() }
+            : {}),
+          ...(cliRole === "admin" || cliRole === "operator"
+            ? { cliRole }
+            : {}),
+        };
       }
     }
     return { token: t.trim(), ...(profile ? { profile } : {}) };
