@@ -1,4 +1,3 @@
-import { createInterface } from "node:readline/promises";
 import chalk from "chalk";
 import { type Command } from "commander";
 import { getApiClient } from "../api-client";
@@ -56,43 +55,21 @@ export function registerFluxCliCommands(program: Command): void {
       }
     });
 
-  program
+  const loginCmd = program
     .command("login")
-    .description("Authenticate with a Dashboard API key (stored in ~/.flux/config.json)")
+    .description(
+      "Authenticate with a Dashboard API key (stored in ~/.flux/config.json)",
+    )
+    .option(
+      "--refresh",
+      "Re-verify the saved token and refresh profile (no new API key)",
+      false,
+    )
     .action(async () => {
       try {
-        const rl = createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
-        const key = (
-          await rl.question(
-            "API key (Dashboard → Settings → API keys): ",
-          )
-        ).trim();
-        await rl.close();
-        if (!key) {
-          throw new Error("No API key entered.");
-        }
-        const client = getApiClient();
-        const { user, plan, defaultMode, cliRole } = await client.verifyToken(key);
-        saveConfig({
-          token: key,
-          profile: { plan, defaultMode, user, cliRole },
-        });
-        console.log(`Flux authenticated as ${user}.`);
-        const { cliDimHint } = await import("../utils/cli-audience");
-        cliDimHint(
-          `  Plan at login: ${plan} (typical default mode: ${defaultMode}). On create, omit --mode to let the control plane pick from your current plan; use --mode or FLUX_DEFAULT_MODE to override.`,
-          { plan, defaultMode, user, cliRole },
-        );
-        if (cliRole === "operator") {
-          console.log(
-            chalk.dim(
-              "  Operator mode: non-essential CLI hints are hidden.",
-            ),
-          );
-        }
+        const { runFluxLogin } = await import("./login");
+        const opts = loginCmd.opts<{ refresh?: boolean }>();
+        await runFluxLogin({ refresh: opts.refresh === true });
       } catch (err: unknown) {
         printErrorAndExit(err);
       }

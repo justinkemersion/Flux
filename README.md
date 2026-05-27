@@ -436,6 +436,11 @@ notices, version nags, or yellow advisory lines). **Admins** are listed on the c
 `FLUX_CLI_ADMIN_EMAILS` (dashboard `.env`). Local override: `FLUX_CLI_VERBOSE=1`. Check with
 `flux whoami`.
 
+**Re-login without a new key:** `flux login --refresh` re-verifies `~/.flux/config.json` (or
+`FLUX_API_TOKEN`) and updates plan / CLI role. On interactive `flux login`, press **Enter** at the
+prompt to keep the saved key. API keys are created only in the dashboard (shown once); the CLI
+does not mint keys.
+
 Run the dashboard:
 
 ```bash
