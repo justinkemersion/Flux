@@ -415,12 +415,21 @@ cd flux
 pnpm install
 ```
 
-Run the CLI from the package (or link/use the `flux` bin):
+Run the CLI from the repo root (preferred — avoids `npx` npm update notices):
+
+```bash
+pnpm run flux -- --help
+```
+
+Or from `packages/cli`:
 
 ```bash
 cd packages/cli
 pnpm run flux -- --help
 ```
+
+If you use a shell alias via `npx --prefix packages/cli`, `packages/cli/.npmrc` disables update
+notifier spam; upgrading global npm (`npm install -g npm@11.15.0`) is optional.
 
 Run the dashboard:
 

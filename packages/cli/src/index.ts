@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Quiet npm update notices when the bin is launched via `npx` (see packages/cli/.npmrc).
+process.env.npm_config_update_notifier ??= "false";
+
 // Re-export SDK for bundling and programmatic use of PostgREST client types.
 export {
   type FluxActivityOptions,
