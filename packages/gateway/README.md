@@ -23,8 +23,9 @@ Implemented Node gateway request path with:
 ## Contracts
 
 1. **Sole upstream JWT issuer** — gateway is the only service that mints short-lived pool-signed
-   runtime JWTs (`{ role, tenant_id, exp }`) for PostgREST. Optional: clients may send Bearer tokens
-   signed with the per-project `jwt_secret`; the gateway verifies those before proxying.
+   bridge JWTs (`{ role, tenant_id, sub, exp }`) for PostgREST. Every proxied request must include
+   `Authorization: Bearer <project JWT>` signed with the per-project `jwt_secret`; the gateway verifies
+   it before minting the bridge token and proxying.
 2. **PostgREST is private** — gateway is the only upstream for PostgREST; it must never be
    exposed to the public internet.
 3. **Redis is best-effort** — all Redis calls (`rate:*`, `activity:*`, `hostname:*`) must be

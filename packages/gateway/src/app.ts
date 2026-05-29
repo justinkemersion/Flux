@@ -2,11 +2,10 @@ import { FLUX_GATEWAY_DRAINING_MIGRATION_STATUS } from "@flux/core/migration-sta
 import { Hono } from "hono";
 import {
   resolveTenant,
-  fetchProjectJwtSecret,
   type CacheSource,
 } from "./tenant-resolver.ts";
 import { acquireRateSlot } from "./rate-limiter.ts";
-import { mintBridgeJwt, mintBridgedTenantJwt, mintJwt } from "./jwt-issuer.ts";
+import { verifyInboundProjectBearer } from "./inbound-project-auth.ts";
 import { trackActivity } from "./activity-tracker.ts";
 import { proxyRequest } from "./proxy.ts";
 import { pingDb } from "./db.ts";
@@ -176,52 +175,34 @@ export function createApp(): Hono {
       );
     }
 
-    // 2b. Optional inbound Bearer — verify HS256 with per-project jwt_secret (not the pool secret).
-    const authz = c.req.header("authorization")?.trim();
-    let downstreamJwt: string | undefined;
-    if (authz?.toLowerCase().startsWith("bearer ")) {
-      const token = authz.slice(7).trim();
-      if (token) {
-        let projectSecret = tenant.jwtSecret;
-        if (projectSecret == null) {
-          projectSecret = await fetchProjectJwtSecret(tenant.projectId);
-        }
-        if (projectSecret == null) {
-          return c.json(
-            {
-              error:
-                "project jwt_secret missing; run repair on the control plane",
-            },
-            503,
-          );
-        }
-        try {
-          const bridged = await mintBridgeJwt(token, projectSecret);
-          downstreamJwt = await mintBridgedTenantJwt(tenant, bridged.claims);
-          logger.debug(
-            {
-              tenant_id: tenant.tenantId,
-              sub: bridged.claims.sub,
-              route: c.req.path,
-              auth_status: "verified",
-            },
-            "bridge auth verified",
-          );
-        } catch (err) {
-          logger.debug(
-            {
-              tenant_id: tenant.tenantId,
-              sub: null,
-              route: c.req.path,
-              auth_status: "rejected",
-              reason: err instanceof Error ? err.message : "invalid token",
-            },
-            "bridge auth rejected",
-          );
-          return c.json({ error: "invalid or expired token" }, 401);
-        }
+    // 2b. Inbound Bearer — required project JWT (HS256 with per-project jwt_secret).
+    const authResult = await verifyInboundProjectBearer(
+      c.req.header("authorization"),
+      tenant,
+    );
+    if (!authResult.ok) {
+      if (authResult.status === 401) {
+        log({
+          host: rawHost,
+          tenantId: tenant.tenantId,
+          mode: tenant.mode,
+          status: 401,
+          start,
+          rateLimited: false,
+          cache: cacheSource,
+        });
       }
+      return c.json({ error: authResult.error }, authResult.status);
     }
+    const downstreamJwt = authResult.downstreamJwt;
+    logger.debug(
+      {
+        tenant_id: tenant.tenantId,
+        route: c.req.path,
+        auth_status: "verified",
+      },
+      "bridge auth verified",
+    );
 
     // 3. Rate limit
     const allowed = await acquireRateSlot(tenant.tenantId);
@@ -259,12 +240,11 @@ export function createApp(): Hono {
       );
     }
 
-    // 5. Mint JWT + 6. Activity tracking + 7. Proxy
+    // 5. Activity tracking + 6. Proxy (bridge JWT minted above)
     const proxyStart = Date.now();
     try {
-      const jwt = downstreamJwt ?? (await mintJwt(tenant));
       trackActivity(tenant.tenantId);
-      const res = await proxyRequest(c, jwt, tenant);
+      const res = await proxyRequest(c, downstreamJwt, tenant);
       log({
         host: rawHost,
         tenantId: tenant.tenantId,
