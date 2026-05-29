@@ -5,7 +5,7 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Deferred** — remaining large-file splits (#10) |
+| **Active phase** | **Deferred** — `project-manager.ts`, `register-cli.ts` (#10) |
 | **Pass 1** | **Complete** (code + docs; server e2e smoke verified 2026-05-29) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
@@ -77,13 +77,19 @@
 |------|--------|--------|
 | Extract connect / CLI / logs / modals | Done | `project-card.tsx` 786 lines; 6 sibling modules |
 
-**Still warn:** `project-manager.ts`, `register-cli.ts`, `cli-handlers.ts` — defer to next touch.
+## Pass 5b — done (audit #10, CLI handlers)
+
+| Item | Status | Notes |
+|------|--------|--------|
+| Split `cli-handlers.ts` | Done | 8 modules under `cli-handlers/`; barrel `cli-handlers.ts` |
+
+**Still warn:** `project-manager.ts`, `register-cli.ts`.
 
 ---
 
 ## Deferred
 
-- [ ] Remaining large-file splits (#10): core `project-manager`, CLI `register-cli` / `cli-handlers`
+- [ ] Remaining large-file splits (#10): core `project-manager`, CLI `register-cli`
 
 ---
 
