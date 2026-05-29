@@ -56,7 +56,7 @@ pnpm test                       # all workspace packages green
 # Live stack only (requires gateway + catalog project):
 export FLUX_SMOKE_GATEWAY_URL=http://127.0.0.1:4000   # or flux-node-gateway:4000 in Compose
 export FLUX_SMOKE_KNOWN_HOST=api--<slug>--<hash>.<domain>
-export FLUX_SMOKE_BEARER="$(mint HS256 with project jwt_secret; role per tenant)"
+export FLUX_SMOKE_BEARER="$(FLUX_SMOKE_PROJECT_SLUG=<slug> FLUX_SMOKE_PROJECT_HASH=<hash> ./bin/mint-smoke-bearer.sh)"
 ./bin/e2e-v2-shared-smoke.sh    # expects 2xx through gateway → PostgREST
 ```
 

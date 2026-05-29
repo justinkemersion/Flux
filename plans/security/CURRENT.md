@@ -5,8 +5,8 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Pass 5** — large-file splits (audit #10, dashboard project-card) |
-| **Pass 1** | **Complete** (code + docs; deploy/e2e on server may still be pending) |
+| **Active phase** | **Deferred** — remaining large-file splits (#10) |
+| **Pass 1** | **Complete** (code + docs; server e2e smoke verified 2026-05-29) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
 | **Last updated** | 2026-05-29 |
@@ -110,7 +110,8 @@ When the agent is about to start substantial work, it should ask:
 
 ```bash
 pnpm check:architecture && pnpm typecheck && pnpm test
-# Live: FLUX_SMOKE_KNOWN_HOST=… FLUX_SMOKE_BEARER=… ./bin/e2e-v2-shared-smoke.sh
+# Live: FLUX_SMOKE_BEARER="$(FLUX_SMOKE_PROJECT_SLUG=… FLUX_SMOKE_PROJECT_HASH=… ./bin/mint-smoke-bearer.sh)"
+#       FLUX_SMOKE_KNOWN_HOST=api--<slug>--<hash>.<domain> ./bin/e2e-v2-shared-smoke.sh
 ```
 
 Pass 2 Cursor prompt: [`pass-1-summary.md` § Pass 2](pass-1-summary.md#pass-2--next-destructive-operation-guardrails).

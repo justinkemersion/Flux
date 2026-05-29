@@ -11,8 +11,8 @@
 #   FLUX_SMOKE_KNOWN_HOST=api--myproj--4f9aeaa.example.com \
 #     ./bin/e2e-v2-shared-smoke.sh
 #
-# Optional: pass a tenant JWT if your pool rejects unauthenticated root:
-#   FLUX_SMOKE_BEARER="$(... mint HS256 with project jwt_secret, sub, ...)" \
+# v2 gateway requires Bearer (Pass 1A). Mint from catalog or secret:
+#   FLUX_SMOKE_BEARER="$(FLUX_SMOKE_PROJECT_SLUG=myproj FLUX_SMOKE_PROJECT_HASH=abc123 ./bin/mint-smoke-bearer.sh)" \
 #     ./bin/e2e-v2-shared-smoke.sh
 #
 # GitHub Actions (opt-in, keeps default CI fast):
