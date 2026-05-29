@@ -7,19 +7,26 @@ import { FLUX_INIT_PLACEHOLDER_HASH } from "../flux-config";
 
 test("cmdInit fails without flux.json", async () => {
   const dir = await mkdtemp(join(tmpdir(), "flux-init-"));
+  const prevToken = process.env.FLUX_API_TOKEN;
+  process.env.FLUX_API_TOKEN = "unit-test-token";
   const { cmdInit } = await import(`./init.ts?test=${Date.now()}`);
-  await assert.rejects(
-    async () => {
-      const prev = process.cwd();
-      try {
-        process.chdir(dir);
-        await cmdInit({});
-      } finally {
-        process.chdir(prev);
-      }
-    },
-    /No flux\.json found/,
-  );
+  try {
+    await assert.rejects(
+      async () => {
+        const prev = process.cwd();
+        try {
+          process.chdir(dir);
+          await cmdInit({});
+        } finally {
+          process.chdir(prev);
+        }
+      },
+      /No flux\.json found/,
+    );
+  } finally {
+    if (prevToken === undefined) delete process.env.FLUX_API_TOKEN;
+    else process.env.FLUX_API_TOKEN = prevToken;
+  }
 });
 
 test("requireInitAuth fails when token is missing", async () => {
