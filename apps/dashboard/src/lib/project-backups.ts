@@ -400,6 +400,8 @@ async function pipeBackupFileToPgRestoreInContainer(
       `PGPASSWORD=${password}`,
       containerName,
       "pg_restore",
+      "-h",
+      "127.0.0.1",
       "-U",
       "postgres",
       "-d",
@@ -438,12 +440,39 @@ async function pipeBackupFileToPgRestoreInContainer(
   }
 }
 
-async function waitForPgReady(containerName: string, timeoutMs: number): Promise<void> {
+/**
+ * Wait until disposable verify Postgres accepts queries.
+ * `pg_isready` alone is insufficient: during the official image init handoff it can
+ * report "accepting connections" while the Unix socket is not yet usable for `psql`.
+ */
+async function waitForPgReady(
+  containerName: string,
+  password: string,
+  timeoutMs: number,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      await runDocker(["exec", containerName, "pg_isready", "-U", "postgres"]);
-      return;
+      const out = await runDocker([
+        "exec",
+        "-e",
+        `PGPASSWORD=${password}`,
+        containerName,
+        "psql",
+        "-h",
+        "127.0.0.1",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-tAc",
+        "SELECT 1",
+      ]);
+      if (out.trim() === "1") {
+        return;
+      }
     } catch {
       // keep polling
     }
@@ -524,7 +553,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         image,
       ]);
       created = true;
-      await waitForPgReady(verifyName, 30_000);
+      await waitForPgReady(verifyName, verifyPassword, 30_000);
 
       // `pg_dump --no-acl` strips GRANT but keeps `CREATE POLICY ... TO <role>`. v2 tenant exports
       // reference `t_<shortId>_role`; legacy dumps may reference `authenticated`. Pre-create both
@@ -535,6 +564,8 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         `PGPASSWORD=${verifyPassword}`,
         verifyName,
         "psql",
+        "-h",
+        "127.0.0.1",
         "-U",
         "postgres",
         "-d",
@@ -559,6 +590,8 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         `PGPASSWORD=${verifyPassword}`,
         verifyName,
         "psql",
+        "-h",
+        "127.0.0.1",
         "-U",
         "postgres",
         "-d",
@@ -582,6 +615,8 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         `PGPASSWORD=${verifyPassword}`,
         verifyName,
         "psql",
+        "-h",
+        "127.0.0.1",
         "-U",
         "postgres",
         "-d",
