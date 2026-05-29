@@ -41,6 +41,8 @@ export type MigrateCliPayload = {
   lockWrites?: boolean;
   noLockWrites?: boolean;
   dropSourceAfter?: boolean;
+  /** When true, skip restore-verified backup gate (dangerous). */
+  skipBackupCheck?: boolean;
 };
 
 export type MigrateApiResult =

@@ -10,6 +10,11 @@ import {
   extractBearerToken,
 } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
+import {
+  assertDestructiveBackupAllowed,
+  destructiveBackupBlockedResponse,
+  parseSkipBackupCheckParam,
+} from "@/src/lib/destructive-backup-gate";
 import { getProjectManager } from "@/src/lib/flux";
 
 export const runtime = "nodejs";
@@ -118,6 +123,9 @@ export async function DELETE(
   const force =
     u.searchParams.get("force") === "1" || u.searchParams.get("force") === "true";
   const forceSlugParam = (u.searchParams.get("slug") ?? "").trim();
+  const skipBackupCheck = parseSkipBackupCheckParam(
+    u.searchParams.get("skipBackupCheck"),
+  );
 
   const [row] = await db
     .select()
@@ -131,6 +139,14 @@ export async function DELETE(
 
   if (row) {
     try {
+      if (!skipBackupCheck) {
+        try {
+          await assertDestructiveBackupAllowed(row.id);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return destructiveBackupBlockedResponse(msg);
+        }
+      }
       const result = await pm.deleteProjectInfrastructure(row.slug, row.hash);
       await db.delete(projects).where(eq(projects.id, row.id));
       return Response.json({

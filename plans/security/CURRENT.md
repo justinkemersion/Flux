@@ -5,7 +5,7 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Pass 2** — destructive-operation guardrails |
+| **Active phase** | **Pass 2 complete** — pick next work from Deferred or new audit |
 | **Pass 1** | **Complete** (code + docs; deploy/e2e on server may still be pending) |
 | **Last updated** | 2026-05-29 |
 
@@ -28,12 +28,12 @@
 
 | Surface | Status | Notes |
 |---------|--------|--------|
-| `flux nuke` | Done (CLI) | `--skip-backup-check`; use as reference UX |
-| `flux migrate` (v2→v1) | Todo | Flag exists; enforce gate |
-| `flux` reset / `db-reset` | Todo | Audit parity with nuke |
-| Dashboard DELETE project | Todo | `DELETE /api/projects/[slug]` |
-| Dashboard factory reset | Todo | `POST …/factory-reset` |
-| Dashboard migrate UI | Todo | Only if a destructive path exists |
+| `flux nuke` | Done | CLI + server `DELETE /cli/v1/projects/:hash`; `--skip-backup-check` |
+| `flux migrate` (v2→v1) | Done | CLI + `POST /cli/v1/migrate` when not `--dry-run` |
+| `flux db-reset` | Done | Already used `ensureRestoreVerifiedLatestBackup` |
+| Dashboard DELETE project | Done | `DELETE /api/projects/[slug]` → 412; `?skipBackupCheck=true` override |
+| Dashboard factory reset | Done | `POST …/factory-reset` → 412; query override |
+| Dashboard migrate UI | N/A | No destructive dashboard route (CLI only) |
 
 **Shared primitive:** `@flux/core/backup-trust` (`classifyBackupTrust`, `allowsDestructiveWithoutOverride`).
 

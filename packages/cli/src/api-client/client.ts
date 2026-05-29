@@ -104,6 +104,7 @@ export class ApiClient {
     lockWrites?: boolean;
     noLockWrites?: boolean;
     dropSourceAfter?: boolean;
+    skipBackupCheck?: boolean;
   }): Promise<unknown> {
     return migrate.migrateV2ToV1(this.asContext(), input);
   }

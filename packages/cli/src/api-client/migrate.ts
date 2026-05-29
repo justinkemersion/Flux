@@ -15,6 +15,7 @@ export async function migrateV2ToV1(
     lockWrites?: boolean;
     noLockWrites?: boolean;
     dropSourceAfter?: boolean;
+    skipBackupCheck?: boolean;
   },
 ): Promise<unknown> {
   const token = ctx.tokenOrThrow();
@@ -38,6 +39,7 @@ export async function migrateV2ToV1(
       lockWrites: input.lockWrites,
       noLockWrites: input.noLockWrites,
       dropSourceAfter: input.dropSourceAfter,
+      skipBackupCheck: input.skipBackupCheck,
     }),
   });
   const text = await res.text();

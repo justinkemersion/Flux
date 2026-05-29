@@ -322,7 +322,7 @@ export async function nukeProject(
   ctx: ApiClientContext,
   project: string,
   hash: string,
-  options?: { forceOrphan?: boolean },
+  options?: { forceOrphan?: boolean; skipBackupCheck?: boolean },
 ): Promise<{ mode: "catalog" | "orphan" }> {
   const token = ctx.tokenOrThrow();
   const slug = slugifyProjectName(project);
@@ -330,6 +330,9 @@ export async function nukeProject(
   if (options?.forceOrphan) {
     u.searchParams.set("force", "1");
     u.searchParams.set("slug", slug);
+  }
+  if (options?.skipBackupCheck) {
+    u.searchParams.set("skipBackupCheck", "true");
   }
   const res = await fetch(u, {
     method: "DELETE",

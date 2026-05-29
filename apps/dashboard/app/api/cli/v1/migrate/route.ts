@@ -1,6 +1,12 @@
+import { and, eq } from "drizzle-orm";
+import { projects } from "@/src/db/schema";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
+import {
+  assertDestructiveBackupAllowed,
+  destructiveBackupBlockedResponse,
+} from "@/src/lib/destructive-backup-gate";
 import { runV2SharedToV1DedicatedMigration } from "@/src/lib/v2-to-v1-migrate";
 import type { MigrateCliPayload } from "@flux/migrate";
 
@@ -43,6 +49,30 @@ export async function POST(req: Request): Promise<Response> {
 
   const payload = body as MigrateCliPayload;
   const pm = getProjectManager();
+
+  if (!payload.dryRun && !payload.skipBackupCheck) {
+    const [row] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.userId, auth.userId),
+          eq(projects.slug, payload.slug.trim()),
+          eq(projects.hash, payload.hash.trim().toLowerCase()),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      return jsonError("Project not found for this API key", 404);
+    }
+    try {
+      await assertDestructiveBackupAllowed(row.id);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return destructiveBackupBlockedResponse(msg);
+    }
+  }
+
   let result: Awaited<ReturnType<typeof runV2SharedToV1DedicatedMigration>>;
   try {
     result = await runV2SharedToV1DedicatedMigration({

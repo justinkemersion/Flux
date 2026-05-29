@@ -4,6 +4,11 @@ import { auth } from "@/src/lib/auth";
 import { projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
+import {
+  assertDestructiveBackupAllowed,
+  destructiveBackupBlockedResponse,
+  parseSkipBackupCheckParam,
+} from "@/src/lib/destructive-backup-gate";
 import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
 
 export const runtime = "nodejs";
@@ -20,7 +25,7 @@ function jsonError(message: string, status: number): Response {
  * then reprovisions an empty stack for the same slug/hash.
  */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: Ctx,
 ): Promise<Response> {
   const session = await auth();
@@ -41,6 +46,16 @@ export async function POST(
       "Factory reset is only supported for v1_dedicated projects.",
       400,
     );
+  }
+
+  const skipBackupCheck = parseSkipBackupCheckParam(
+    req.nextUrl.searchParams.get("skipBackupCheck"),
+  );
+  try {
+    await assertDestructiveBackupAllowed(project.id, { skipBackupCheck });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return destructiveBackupBlockedResponse(msg);
   }
 
   const pm = getProjectManager();

@@ -273,7 +273,7 @@ export async function cmdCors(options: {
   }
 }
 
-async function ensureRestoreVerifiedLatestBackup(
+export async function ensureRestoreVerifiedLatestBackup(
   client: ReturnType<typeof getApiClient>,
   hash: string,
   skipBackupCheck: boolean,
@@ -833,7 +833,10 @@ export async function cmdNuke(
   for (const r of [names.api, names.db, names.volume, names.network] as const) {
     console.log(`PURGING: ${r}`);
   }
-  await client.nukeProject(slug, hash, { forceOrphan: forceOrphan });
+  await client.nukeProject(slug, hash, {
+    forceOrphan: forceOrphan,
+    skipBackupCheck: skipBackupCheck,
+  });
   console.log(
     `Cleanup Complete: ${hash} infrastructure erased.`,
   );

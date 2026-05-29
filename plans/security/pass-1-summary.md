@@ -99,7 +99,7 @@ Do **not** mint project JWTs from fleet monitoring in Pass 1; that is a later �
 
 ---
 
-## Pass 2 — Next (destructive-operation guardrails)
+## Pass 2 — destructive-operation guardrails (complete 2026-05-29)
 
 **Goal:** Same backup-trust bar everywhere destructive work happens.
 

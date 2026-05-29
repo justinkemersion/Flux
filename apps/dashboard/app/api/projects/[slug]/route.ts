@@ -11,6 +11,11 @@ import {
   evictHostnames,
   v2SharedGatewayCacheHostnames,
 } from "@/src/lib/gateway-cache";
+import {
+  assertDestructiveBackupAllowed,
+  destructiveBackupBlockedResponse,
+  parseSkipBackupCheckParam,
+} from "@/src/lib/destructive-backup-gate";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
 export const runtime = "nodejs";
@@ -241,18 +246,28 @@ export async function PATCH(
  *   proceed — the gateway TTL bounds the zombie-routing window to ≤60 s.
  */
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: Ctx,
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user?.id) return jsonError("Unauthorized", 401);
 
   const { slug } = await ctx.params;
+  const skipBackupCheck = parseSkipBackupCheckParam(
+    req.nextUrl.searchParams.get("skipBackupCheck"),
+  );
 
   await initSystemDb();
   const db = getDb();
   const project = await resolveOwnedProject(slug, session.user.id);
   if (!project) return jsonError("Project not found", 404);
+
+  try {
+    await assertDestructiveBackupAllowed(project.id, { skipBackupCheck });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return destructiveBackupBlockedResponse(msg);
+  }
 
   // 1. Collect all custom-domain hostnames before deleting anything.
   //    We need them for cache eviction; the cascade-delete will remove the rows.

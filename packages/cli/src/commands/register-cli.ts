@@ -21,6 +21,7 @@ import {
   cmdStop,
   cmdSupabaseRestPath,
   cmdUpdate,
+  ensureRestoreVerifiedLatestBackup,
 } from "../cli-handlers";
 import { saveConfig } from "../config";
 import { cmdCreate } from "./create";
@@ -407,11 +408,8 @@ Examples:
           `flux migrate requires v2_shared; this project is ${meta.mode}.`,
         );
       }
-      if (opts.skipBackupCheck !== true) {
-        const { cliWarn } = await import("../utils/cli-audience");
-        cliWarn(
-          "Note: run `flux backup create && flux backup verify --latest` first for a portable tenant export (pg_dump -Fc --schema=t_<short>_api). Migrate also performs its own live pg_dump from the pooled cluster.",
-        );
+      if (!opts.dryRun && !opts.skipBackupCheck) {
+        await ensureRestoreVerifiedLatestBackup(client, hash, false);
       }
       if (opts.staged && opts.newJwtSecret) {
         throw new Error(
@@ -430,6 +428,7 @@ Examples:
         dropSourceAfter: opts.dropSourceAfter,
         preserveJwtSecret: !opts.newJwtSecret,
         lockWrites: !opts.noLockWrites,
+        skipBackupCheck: opts.skipBackupCheck === true,
       });
       console.log(JSON.stringify(result, null, 2));
     } catch (err: unknown) {
