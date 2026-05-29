@@ -33,6 +33,7 @@
 | `flux db-reset` | Done | Already used `ensureRestoreVerifiedLatestBackup` |
 | Dashboard DELETE project | Done | `DELETE /api/projects/[slug]` → 412; `?skipBackupCheck=true` override |
 | Dashboard factory reset | Done | `POST …/factory-reset` → 412; query override |
+| Dashboard UI gate | Done | Delete + factory reset disabled until restorable; modals + Database tools link |
 | Dashboard migrate UI | N/A | No destructive dashboard route (CLI only) |
 
 **Shared primitive:** `@flux/core/backup-trust` (`classifyBackupTrust`, `allowsDestructiveWithoutOverride`).

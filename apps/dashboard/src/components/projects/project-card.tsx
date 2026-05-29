@@ -27,8 +27,13 @@ import {
   errorMessageFromJsonBody,
   readResponseJson,
 } from "@/src/lib/fetch-json";
+import { DestructiveBackupGateBanner } from "@/src/components/projects/destructive-backup-gate-banner";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
 import type { ProjectRow } from "@/src/components/projects/project-types";
+import {
+  destructiveActionBlockedTitle,
+  useProjectBackupTrust,
+} from "@/src/lib/project-backup-trust-client";
 import { createPortal } from "react-dom";
 
 /** Full-screen dialogs: portal to `document.body` so `fixed` is not clipped by card / mesh readout ancestors. Z: settings z-[240], delete+reset z-[250]. */
@@ -177,6 +182,23 @@ export function ProjectCard({
   const didAutoOpenSettings = useRef(false);
 
   const isV2Shared = p.mode === "v2_shared";
+
+  const {
+    trust: backupTrust,
+    loading: backupTrustLoading,
+    error: backupTrustError,
+    refresh: refreshBackupTrust,
+  } = useProjectBackupTrust(p.hash);
+
+  const destructiveBlocked =
+    backupTrustLoading ||
+    backupTrustError != null ||
+    !backupTrust.allowsDestructiveWithoutOverride;
+
+  const destructiveBlockedTitle = destructiveActionBlockedTitle(backupTrust, {
+    loading: backupTrustLoading,
+    fetchError: backupTrustError,
+  });
 
   const canRevealCredentials =
     !isV2Shared &&
@@ -393,9 +415,11 @@ export function ProjectCard({
   }
 
   function openDeleteModal(): void {
+    if (destructiveBlocked) return;
     setDeleteConfirm("");
     setDeleteError(null);
     setDeleteOpen(true);
+    void refreshBackupTrust();
   }
 
   function closeDeleteModal(): void {
@@ -404,9 +428,11 @@ export function ProjectCard({
   }
 
   function openResetModal(): void {
+    if (destructiveBlocked) return;
     setResetConfirm("");
     setResetError(null);
     setResetOpen(true);
+    void refreshBackupTrust();
   }
 
   function closeResetModal(): void {
@@ -680,9 +706,18 @@ export function ProjectCard({
               <button
                 type="button"
                 onClick={openDeleteModal}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                aria-label={`Delete project ${p.name}`}
-                title="Delete project"
+                disabled={destructiveBlocked}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-zinc-600 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400 dark:disabled:hover:bg-transparent dark:disabled:hover:text-zinc-400"
+                aria-label={
+                  destructiveBlocked
+                    ? `Delete project ${p.name} unavailable until backup is restore-verified`
+                    : `Delete project ${p.name}`
+                }
+                title={
+                  destructiveBlocked
+                    ? destructiveBlockedTitle
+                    : "Delete project"
+                }
               >
                 <Trash2 className="h-4 w-4" aria-hidden />
               </button>
@@ -1039,7 +1074,13 @@ export function ProjectCard({
                       <button
                         type="button"
                         onClick={openResetModal}
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40"
+                        disabled={destructiveBlocked}
+                        title={
+                          destructiveBlocked
+                            ? destructiveBlockedTitle
+                            : "Factory reset project"
+                        }
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent dark:text-red-400 dark:hover:bg-red-950/40 dark:disabled:hover:bg-transparent"
                       >
                         <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
                         Factory reset project
@@ -1104,6 +1145,14 @@ export function ProjectCard({
                 </div>
               </div>
 
+              <DestructiveBackupGateBanner
+                slug={p.slug}
+                trust={backupTrust}
+                loading={backupTrustLoading}
+                fetchError={backupTrustError}
+                onRefresh={() => void refreshBackupTrust()}
+              />
+
               <form onSubmit={(e) => void handleDelete(e)}>
                 <label
                   htmlFor={`delete-confirm-${p.id}`}
@@ -1141,7 +1190,11 @@ export function ProjectCard({
                   </button>
                   <button
                     type="submit"
-                    disabled={deleteConfirm !== p.name || isDeleting}
+                    disabled={
+                      deleteConfirm !== p.name ||
+                      isDeleting ||
+                      destructiveBlocked
+                    }
                     className="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
                   >
                     {isDeleting ? (
@@ -1210,6 +1263,14 @@ export function ProjectCard({
                 </div>
               </div>
 
+              <DestructiveBackupGateBanner
+                slug={p.slug}
+                trust={backupTrust}
+                loading={backupTrustLoading}
+                fetchError={backupTrustError}
+                onRefresh={() => void refreshBackupTrust()}
+              />
+
               <form onSubmit={(e) => void handleFactoryReset(e)}>
                 <label
                   htmlFor={`reset-confirm-${p.id}`}
@@ -1247,7 +1308,11 @@ export function ProjectCard({
                   </button>
                   <button
                     type="submit"
-                    disabled={resetConfirm !== `RESET ${p.name}` || resetBusy}
+                    disabled={
+                      resetConfirm !== `RESET ${p.name}` ||
+                      resetBusy ||
+                      destructiveBlocked
+                    }
                     className="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
                   >
                     {resetBusy ? (

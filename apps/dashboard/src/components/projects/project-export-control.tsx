@@ -5,28 +5,17 @@ import {
   BACKUP_TRUST_REMEDIATION_CLI,
   classifyNewestBackup,
   type BackupKind,
-  type BackupTrustInput,
   type BackupTrustTier,
 } from "@flux/core/backup-trust";
 import { ChevronDown, Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { useProjectBackupTrust } from "@/src/lib/project-backup-trust-client";
 
 type Props = {
   hash: string;
   /** Used when no backup rows yet (correct pooled vs dedicated copy). */
   mode: "v1_dedicated" | "v2_shared";
-};
-
-type BackupItem = {
-  id: string;
-  kind?: BackupKind;
-  status: string;
-  sizeBytes?: number | null;
-  createdAt?: string | null;
-  offsiteStatus?: string | null;
-  artifactValidationStatus?: string | null;
-  restoreVerificationStatus?: string | null;
 };
 
 function backupTrustBadgeClass(tier: BackupTrustTier): string {
@@ -81,8 +70,13 @@ export function ProjectExportControl({ hash, mode }: Props) {
   const [schemaOnly, setSchemaOnly] = useState(false);
   const [dataOnly, setDataOnly] = useState(false);
   const [clean, setClean] = useState(false);
-  const [backups, setBackups] = useState<BackupItem[]>([]);
-  const [backupsLoading, setBackupsLoading] = useState(false);
+  const {
+    backups,
+    trust: backupTrust,
+    loading: backupsLoading,
+    error: backupFetchError,
+    refresh: refreshBackups,
+  } = useProjectBackupTrust(hash, { enabled: toolsOpen });
   const [backupBusy, setBackupBusy] = useState(false);
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
@@ -96,11 +90,6 @@ export function ProjectExportControl({ hash, mode }: Props) {
     const base = `/api/cli/v1/projects/${encodeURIComponent(hash)}/dump`;
     return q.length > 0 ? `${base}?${q}` : base;
   }, [clean, dataOnly, hash, schemaOnly]);
-
-  const backupTrust = useMemo(
-    () => classifyNewestBackup(backups as BackupTrustInput[]),
-    [backups],
-  );
 
   const newestBackupKind =
     backups[0]?.kind ?? (mode === "v2_shared" ? "tenant_export" : "project_db");
@@ -139,20 +128,8 @@ export function ProjectExportControl({ hash, mode }: Props) {
   }
 
   async function loadBackups(): Promise<void> {
-    setBackupsLoading(true);
     setBackupError(null);
-    try {
-      const res = await fetch(`/api/cli/v1/projects/${encodeURIComponent(hash)}/backups`);
-      const body = (await res.json()) as { backups?: BackupItem[]; error?: string };
-      if (!res.ok) {
-        throw new Error(body.error || `Request failed (${String(res.status)})`);
-      }
-      setBackups(Array.isArray(body.backups) ? body.backups : []);
-    } catch (err: unknown) {
-      setBackupError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBackupsLoading(false);
-    }
+    await refreshBackups();
   }
 
   async function createBackupNow(): Promise<void> {
@@ -166,7 +143,7 @@ export function ProjectExportControl({ hash, mode }: Props) {
       if (!res.ok) {
         throw new Error(body.error || `Request failed (${String(res.status)})`);
       }
-      await loadBackups();
+      await refreshBackups();
     } catch (err: unknown) {
       setBackupError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -199,7 +176,7 @@ export function ProjectExportControl({ hash, mode }: Props) {
       if (!res.ok) {
         throw new Error(body.error || `Request failed (${String(res.status)})`);
       }
-      await loadBackups();
+      await refreshBackups();
     } catch (err: unknown) {
       setBackupError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -226,9 +203,8 @@ export function ProjectExportControl({ hash, mode }: Props) {
   }, [toolsOpen]);
 
   useEffect(() => {
-    if (!toolsOpen) return;
-    void loadBackups();
-  }, [hash, toolsOpen]);
+    if (backupFetchError) setBackupError(backupFetchError);
+  }, [backupFetchError]);
 
   return (
     <>

@@ -533,6 +533,8 @@ When you just need a quick update, you have two safe paths:
 - **One-off terminal path (fast ad-hoc):**
   - use `psql -c "<sql>"` with the connection string from `flux project credentials`
 
+### Backups
+
 Before destructive SQL (`DROP`, irreversible `ALTER`, broad deletes), create and verify a backup first:
 
 ```bash
@@ -547,6 +549,24 @@ Backup trust model:
 - Restore verification runs `pg_restore` in a disposable database.
 
 **v2_shared (pooled):** `flux backup create` stores a **portable tenant export** — `pg_dump -Fc` scoped to your `t_<shortId>_api` schema only (not the whole shared cluster). Same CLI commands and restore-verification loop; the catalog row is labeled `tenant_export`. Shared-cluster DR remains an operator concern.
+
+#### Restore-verified gate (destructive actions)
+
+Flux refuses **project delete**, **factory reset**, **`flux nuke`**, **`flux migrate`** (non–dry-run), and **`flux db-reset`** unless the **newest** backup is **restore-verified** (complete row + `artifact_valid` + `restore_verified`, or a successful verify run). The control plane returns **HTTP 412** with remediation text when the gate blocks an API call.
+
+| Surface | Remediation in UI / CLI |
+|---------|-------------------------|
+| **Dashboard** (`/projects` → project detail) | **Database** tools: create backup → **Verify latest**. **Delete** and **Factory reset** stay disabled until trust is **restorable**; modals explain why and link to Database tools. The API still enforces **412** if something bypasses the UI. |
+| **CLI** | `flux backup create && flux backup verify --latest` (same as SQL workflows above). Override only when you accept no recovery path: `--skip-backup-check` on **`nuke`**, **`migrate`**, **`db-reset`**; dashboard delete/reset: `?skipBackupCheck=true` (not exposed in the main UI). |
+
+Typical operator flow:
+
+1. Open the project in the dashboard (or use CLI with `-p` / `--hash`).
+2. `flux backup create` (or dashboard **Create backup**).
+3. `flux backup verify --latest` (or dashboard **Verify latest**).
+4. Confirm trust shows **restorable**, then run delete / reset / `nuke` / migrate.
+
+Implementation: shared classification in `@flux/core/backup-trust`; server gate in `apps/dashboard/src/lib/destructive-backup-gate.ts`; dashboard client hook `apps/dashboard/src/lib/project-backup-trust-client.ts`.
 
 Full Sarah-friendly walkthrough: [`docs/guides/flux-v1-dedicated-sql-workflows.md`](./docs/guides/flux-v1-dedicated-sql-workflows.md). On [flux.vsl-base.com](https://flux.vsl-base.com/docs/guides/v1-dedicated-sql-workflows), the rendered page lives under **Guides → V1 dedicated quick SQL** (source: `docs/pages/guides/v1-dedicated-sql-workflows.md`).
 
@@ -574,7 +594,7 @@ Read-only health pass for the Docker host (containers, schedulers, backups, disk
 
 **Smoke targets:** copy **`bin/ops-audit-smoke.projects.example`** → **`bin/ops-audit-smoke.projects`** (one `slug:hash[:mode]` per line), set **`FLUX_OPS_SMOKE_PROJECTS`**, or omit the file to probe every catalog project except `flux-system` / `static`.
 
-Nightly v1 backups stay **`restore=pending`** until you run **`flux backup verify`** — the deep audit reminds you; see [Backups](#backups) above.
+Nightly v1 backups stay **`restore=pending`** until you run **`flux backup verify`** — the deep audit reminds you; see [Backups](#backups) (restore-verified gate) above.
 
 - **Secrets** — Postgres password and `PGRST_JWT_SECRET` are generated at provision time (unless overridden for JWT). Treat shell history and logs as sensitive.
 - **Dashboard projects** — `GET /api/projects` reads **`flux-system.projects`** first, then resolves Docker status with **`getProjectSummariesForSlugs`** (per-slug inspects, not a full container list). It does not return DB URIs or API keys; use `GET /api/projects/[slug]/credentials` to reveal them. **Repair** uses `POST /api/projects/[slug]/repair`. See **`docs/production-security-audit.md`**.
