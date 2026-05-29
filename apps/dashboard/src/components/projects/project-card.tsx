@@ -1,17 +1,6 @@
 "use client";
 
-import {
-  AlertTriangle,
-  Check,
-  Clipboard,
-  Eye,
-  Loader2,
-  RefreshCw,
-  Trash2,
-  Wrench,
-  X,
-} from "lucide-react";
-import { CopyableConnectField } from "@/src/components/projects/copyable-connect-field";
+import { AlertTriangle, Loader2, RefreshCw, Trash2, Wrench } from "lucide-react";
 import Link from "next/link";
 import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
 import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
@@ -27,89 +16,24 @@ import {
   errorMessageFromJsonBody,
   readResponseJson,
 } from "@/src/lib/fetch-json";
-import { DestructiveBackupGateBanner } from "@/src/components/projects/destructive-backup-gate-banner";
+import { ProjectCardCliSnippetBlock } from "@/src/components/projects/project-card-cli-snippets";
+import { ProjectCardConnectSection } from "@/src/components/projects/project-card-connect-section";
+import { ProjectCardDeleteModal } from "@/src/components/projects/project-card-delete-modal";
+import { ProjectCardFactoryResetModal } from "@/src/components/projects/project-card-factory-reset-modal";
+import { ProjectCardSettingsModal } from "@/src/components/projects/project-card-settings-modal";
+import { ProjectCardV1LogsPanel } from "@/src/components/projects/project-card-v1-logs-panel";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import {
   destructiveActionBlockedTitle,
   useProjectBackupTrust,
 } from "@/src/lib/project-backup-trust-client";
-import { createPortal } from "react-dom";
-
-/** Full-screen dialogs: portal to `document.body` so `fixed` is not clipped by card / mesh readout ancestors. Z: settings z-[240], delete+reset z-[250]. */
-
 export type { ProjectRow } from "@/src/components/projects/project-types";
 
 export const HOBBY_LIMIT_API_MESSAGE =
   "Project limit reached. Please upgrade to Pro.";
 export const PRO_LIMIT_API_MESSAGE =
   "Project limit reached (10 projects on Pro).";
-
-function CliSnippetRow({ line }: { line: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyLine(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(line);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard denied */
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-      <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-zinc-200 bg-white px-3 py-2.5 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-        {line}
-      </pre>
-      <button
-        type="button"
-        onClick={() => void copyLine()}
-        className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-      >
-        {copied ? (
-          <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
-        ) : (
-          <Clipboard className="h-4 w-4" aria-hidden />
-        )}
-        Copy
-      </button>
-    </div>
-  );
-}
-
-function CliSnippetBlock({
-  slug,
-  hash,
-  v1Dedicated,
-}: {
-  slug: string;
-  hash: string;
-  v1Dedicated: boolean;
-}) {
-  const pushLine = `flux push migrations/ --project ${slug} --hash ${hash}`;
-  const credLine = `flux project credentials ${slug} --hash ${hash}`;
-
-  return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/30">
-      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-        CLI
-      </h3>
-      <div className="mt-3 flex flex-col gap-3">
-        <CliSnippetRow line={pushLine} />
-        {v1Dedicated ? (
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-              Postgres URI and keys (terminal)
-            </p>
-            <CliSnippetRow line={credLine} />
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 type ProjectCardProps = {
   project: ProjectRow;
@@ -726,196 +650,42 @@ export function ProjectCard({
         />
 
         {!meshReadoutCompanion || !isV2Shared ? (
-          <section className="mt-6" aria-labelledby={`connect-heading-${p.id}`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h2
-                  id={`connect-heading-${p.id}`}
-                  className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
-                >
-                  How to connect
-                </h2>
-                <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-                  {isV2Shared
-                    ? "Pooled project: use the service URL with short-lived JWTs from the Flux gateway. Per-tenant Docker Postgres strings and static anon/service keys are not exposed from this UI."
-                    : "Everything you need to reach Postgres and the REST API. Load secrets once; they are not stored in the project list. Use the eye icon to reveal the Postgres URI or service role key before copying."}
-                </p>
-              </div>
-              {!credentialsLoaded && canRevealCredentials ? (
-                <button
-                  type="button"
-                  onClick={() => void revealKeys()}
-                  disabled={revealBusy}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                >
-                  {revealBusy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  ) : (
-                    <Eye className="h-4 w-4" aria-hidden />
-                  )}
-                  Load connection secrets
-                </button>
-              ) : null}
-            </div>
-
-            {revealError ? (
-              <p
-                className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-400"
-                role="alert"
-              >
-                {revealError}
-              </p>
-            ) : null}
-            {keysRotationNotice ? (
-              <p
-                className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
-                role="status"
-              >
-                JWT secret was updated. Previously copied anon/service keys are now
-                stale. Click <strong className="font-medium">Load connection secrets</strong>{" "}
-                to refresh them before using signed-out requests.
-              </p>
-            ) : null}
-
-            <div className="mt-6 flex flex-col gap-6">
-              {isV2Shared ? (
-                <CopyableConnectField
-                    label="API URL"
-                  value={p.apiUrl || null}
-                  isSecret={false}
-                  visuallyTruncate
-                  prominent
-                />
-              ) : (
-                <>
-                  <CopyableConnectField
-                    label="Postgres connection string"
-                    value={
-                      credentialsLoaded ? (p.postgresConnectionString ?? null) : null
-                    }
-                    isSecret
-                    prominent
-                    emptyHint={connectSecretEmptyHint}
-                  />
-                  <CopyableConnectField
-                    label="Anon key"
-                    value={credentialsLoaded ? (p.anonKey ?? null) : null}
-                    isSecret={false}
-                    visuallyTruncate
-                    prominent
-                    emptyHint={connectSecretEmptyHint}
-                  />
-                  <CopyableConnectField
-                    label="API URL"
-                    value={p.apiUrl || null}
-                    isSecret={false}
-                    visuallyTruncate
-                    prominent
-                  />
-                  <CopyableConnectField
-                    label="Service role key"
-                    value={credentialsLoaded ? (p.serviceRoleKey ?? null) : null}
-                    isSecret
-                    prominent
-                    emptyHint={connectSecretEmptyHint}
-                  />
-                </>
-              )}
-            </div>
-
-            {!credentialsLoaded && !canRevealCredentials ? (
-              <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-                {isV2Shared ? (
-                  <>
-                    Use the service URL above with gateway-issued JWTs. If the API
-                    stays unhealthy, try <strong className="font-medium">Repair</strong>{" "}
-                    or <strong className="font-medium">Delete</strong>.
-                  </>
-                ) : (
-                  <>
-                    Secrets stay hidden until the stack is healthy. Use{" "}
-                    <strong className="font-medium">Repair</strong> if Docker is out
-                    of sync, or <strong className="font-medium">Delete</strong> to
-                    remove this project.
-                  </>
-                )}
-              </p>
-            ) : null}
-            {credentialsLoaded && !isV2Shared ? (
-              <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
-                Update the JWT signing secret or CORS from project settings when
-                your auth setup changes.
-              </p>
-            ) : null}
-          </section>
+          <ProjectCardConnectSection
+            project={p}
+            isV2Shared={isV2Shared}
+            credentialsLoaded={credentialsLoaded}
+            canRevealCredentials={canRevealCredentials}
+            connectSecretEmptyHint={connectSecretEmptyHint}
+            revealBusy={revealBusy}
+            revealError={revealError}
+            keysRotationNotice={keysRotationNotice}
+            onRevealKeys={() => void revealKeys()}
+          />
         ) : null}
 
         <div className="mt-8">
-          <CliSnippetBlock
+          <ProjectCardCliSnippetBlock
             slug={p.slug}
             hash={p.hash}
             v1Dedicated={!isV2Shared}
           />
         </div>
 
-        <div className="mt-6">
-          {!isV2Shared && !meshReadoutCompanion ? (
-            <button
-              type="button"
-              onClick={() => setLogsOpen((open) => !open)}
-              aria-expanded={logsOpen}
-              className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-            >
-              {logsOpen ? "Hide logs" : "Show logs"}
-            </button>
-          ) : null}
-
-          {!isV2Shared && !meshReadoutCompanion && logsOpen ? (
-            <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40">
-              <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                  Source
-                </span>
-                <div className="flex rounded-md border border-zinc-200 bg-white p-0.5 dark:border-zinc-700 dark:bg-zinc-950">
-                  <button
-                    type="button"
-                    onClick={() => setLogsService("api")}
-                    className={`${logSourceBtn} ${logsService === "api" ? logSourceActive : logSourceIdle}`}
-                  >
-                    PostgREST
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLogsService("db")}
-                    className={`${logSourceBtn} ${logsService === "db" ? logSourceActive : logSourceIdle}`}
-                  >
-                    Postgres
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void fetchLogs()}
-                  disabled={logsLoading}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                >
-                  <RefreshCw
-                    className={`h-3.5 w-3.5 ${logsLoading ? "animate-spin" : ""}`}
-                    aria-hidden
-                  />
-                  Refresh
-                </button>
-              </div>
-              {logsError ? (
-                <p className="border-b border-zinc-200 px-3 py-2 text-sm text-red-600 dark:border-zinc-800 dark:text-red-400">
-                  {logsError}
-                </p>
-              ) : null}
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all px-3 py-3 font-mono text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300">
-                {logsLoading && !logsText ? "Loading…" : logsText}
-              </pre>
-            </div>
-          ) : null}
-        </div>
+        {!isV2Shared && !meshReadoutCompanion ? (
+          <ProjectCardV1LogsPanel
+            logsOpen={logsOpen}
+            logsService={logsService}
+            logsText={logsText}
+            logsLoading={logsLoading}
+            logsError={logsError}
+            logSourceBtn={logSourceBtn}
+            logSourceActive={logSourceActive}
+            logSourceIdle={logSourceIdle}
+            onToggleOpen={() => setLogsOpen((open) => !open)}
+            onSetService={setLogsService}
+            onRefresh={() => void fetchLogs()}
+          />
+        ) : null}
 
         <p className="mt-6 border-t border-zinc-200 pt-4 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
           Created{" "}
@@ -947,389 +717,62 @@ export function ProjectCard({
         ) : null}
       </article>
 
-      {settingsOpen && mounted
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[240] flex items-start justify-center overflow-y-auto bg-zinc-950/70 p-4 pt-3 backdrop-blur-md sm:pt-4"
-              role="presentation"
-              onClick={closeSettingsModal}
-            >
-              <div
-                className="relative w-full max-w-md rounded-md border border-zinc-200/70 bg-white p-6 shadow-2xl dark:border-zinc-800/80 dark:bg-zinc-900"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={`settings-title-${p.id}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  onClick={closeSettingsModal}
-                  disabled={settingsSaving}
-                  className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                  aria-label="Close"
-                >
-                  <X className="h-5 w-5" aria-hidden />
-                </button>
+      <ProjectCardSettingsModal
+        open={settingsOpen}
+        mounted={mounted}
+        project={p}
+        isV2Shared={isV2Shared}
+        jwtSecretInput={jwtSecretInput}
+        onJwtSecretInputChange={setJwtSecretInput}
+        lastSavedJwtSecret={lastSavedJwtSecret}
+        onClearLastSavedJwtSecret={() => {
+          setLastSavedJwtSecret(null);
+          setJwtSecretInput("");
+        }}
+        settingsSaving={settingsSaving}
+        settingsError={settingsError}
+        settingsSuccess={settingsSuccess}
+        destructiveBlocked={destructiveBlocked}
+        destructiveBlockedTitle={destructiveBlockedTitle}
+        onOpenFactoryReset={openResetModal}
+        onClose={closeSettingsModal}
+        onSubmit={(e) => void saveJwtSettings(e)}
+      />
 
-                <div className="pr-10">
-                  <h2
-                    id={`settings-title-${p.id}`}
-                    className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
-                  >
-                    Project settings
-                  </h2>
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    Use the same signing secret as your auth provider (e.g. Clerk JWT
-                    template or NextAuth) so PostgREST can verify user tokens. After
-                    you save, use{" "}
-                    <strong className="font-medium text-zinc-800 dark:text-zinc-200">
-                      Load connection secrets
-                    </strong>{" "}
-                    on the project card to refresh anon and service-role JWTs.
-                  </p>
+      <ProjectCardDeleteModal
+        open={deleteOpen}
+        mounted={mounted}
+        project={p}
+        isV2Shared={isV2Shared}
+        backupTrust={backupTrust}
+        backupTrustLoading={backupTrustLoading}
+        backupTrustError={backupTrustError}
+        onRefreshBackupTrust={() => void refreshBackupTrust()}
+        deleteConfirm={deleteConfirm}
+        onDeleteConfirmChange={setDeleteConfirm}
+        isDeleting={isDeleting}
+        deleteError={deleteError}
+        destructiveBlocked={destructiveBlocked}
+        onClose={closeDeleteModal}
+        onSubmit={(e) => void handleDelete(e)}
+      />
 
-                  <form onSubmit={(e) => void saveJwtSettings(e)} className="mt-6">
-                    {lastSavedJwtSecret ? (
-                      <div className="mb-6 space-y-2">
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                          Signing key below is only kept until you close this dialog;
-                          the server never sends it back.
-                        </p>
-                        <CopyableConnectField
-                          key={lastSavedJwtSecret}
-                          label="Signing key you saved"
-                          value={lastSavedJwtSecret}
-                          isSecret
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLastSavedJwtSecret(null);
-                            setJwtSecretInput("");
-                          }}
-                          className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
-                        >
-                          Replace secret
-                        </button>
-                      </div>
-                    ) : null}
-                    <label
-                      htmlFor={`jwt-secret-${p.id}`}
-                      className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
-                    >
-                      {lastSavedJwtSecret
-                        ? "Update JWT secret (optional)"
-                        : "JWT secret / webhook secret"}
-                    </label>
-                    <input
-                      id={`jwt-secret-${p.id}`}
-                      type="password"
-                      value={jwtSecretInput}
-                      onChange={(e) => setJwtSecretInput(e.target.value)}
-                      autoComplete="off"
-                      placeholder="Paste signing key"
-                      disabled={settingsSaving}
-                      className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2.5 font-mono text-sm outline-none transition-shadow focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-600 dark:bg-zinc-950 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
-                    />
-
-                    {settingsError ? (
-                      <p className="mt-2 text-sm text-red-600 dark:text-red-400">
-                        {settingsError}
-                      </p>
-                    ) : null}
-                    {settingsSuccess ? (
-                      <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">
-                        Saved. PostgREST restarted with the new secret. Existing
-                        anon/service keys are now stale; reload connection secrets
-                        on the project card.
-                      </p>
-                    ) : null}
-
-                    <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                      <button
-                        type="button"
-                        onClick={closeSettingsModal}
-                        disabled={settingsSaving}
-                        className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                      >
-                        Close
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={settingsSaving}
-                        className="inline-flex items-center justify-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                      >
-                        {settingsSaving ? (
-                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                        ) : null}
-                        {settingsSaving ? "Saving…" : "Save settings"}
-                      </button>
-                    </div>
-                  </form>
-                  {!isV2Shared ? (
-                    <div className="mt-6 border-t border-zinc-200/70 pt-4 dark:border-zinc-800/80">
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        Destructive operation
-                      </p>
-                      <button
-                        type="button"
-                        onClick={openResetModal}
-                        disabled={destructiveBlocked}
-                        title={
-                          destructiveBlocked
-                            ? destructiveBlockedTitle
-                            : "Factory reset project"
-                        }
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent dark:text-red-400 dark:hover:bg-red-950/40 dark:disabled:hover:bg-transparent"
-                      >
-                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                        Factory reset project
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
-
-      {deleteOpen && mounted
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[250] flex items-start justify-center overflow-y-auto bg-zinc-950/75 p-4 pt-3 backdrop-blur-md sm:pt-4"
-              role="presentation"
-              onClick={closeDeleteModal}
-            >
-              <div
-                className="relative w-full max-w-md rounded-md border border-zinc-200/70 bg-white p-6 shadow-2xl dark:border-zinc-800/80 dark:bg-zinc-900"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={`delete-title-${p.id}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-            <button
-              type="button"
-              onClick={closeDeleteModal}
-              disabled={isDeleting}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" aria-hidden />
-            </button>
-
-            <div className="pr-10">
-              <div className="mb-4 flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950">
-                  <AlertTriangle
-                    className="h-5 w-5 text-red-600 dark:text-red-400"
-                    aria-hidden
-                  />
-                </div>
-                <div className="min-w-0">
-                  <h2
-                    id={`delete-title-${p.id}`}
-                    className="text-base font-semibold text-zinc-900 dark:text-zinc-50"
-                  >
-                    Delete project
-                  </h2>
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    {isV2Shared
-                      ? "This permanently removes the shared-cluster tenant schema and role for"
-                      : "This permanently destroys all containers and database volumes for"}{" "}
-                    <strong className="text-zinc-900 dark:text-zinc-100">
-                      {p.name}
-                    </strong>
-                    . This action cannot be undone.
-                  </p>
-                </div>
-              </div>
-
-              <DestructiveBackupGateBanner
-                slug={p.slug}
-                trust={backupTrust}
-                loading={backupTrustLoading}
-                fetchError={backupTrustError}
-                onRefresh={() => void refreshBackupTrust()}
-              />
-
-              <form onSubmit={(e) => void handleDelete(e)}>
-                <label
-                  htmlFor={`delete-confirm-${p.id}`}
-                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
-                >
-                  Type{" "}
-                  <span className="font-geist-sans font-semibold">{p.name}</span> to
-                  confirm
-                </label>
-                <input
-                  id={`delete-confirm-${p.id}`}
-                  type="text"
-                  value={deleteConfirm}
-                  onChange={(e) => setDeleteConfirm(e.target.value)}
-                  className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none ring-zinc-200 transition-shadow focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-600 dark:bg-zinc-950 dark:ring-zinc-800 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
-                  placeholder={p.name}
-                  autoComplete="off"
-                  disabled={isDeleting}
-                />
-
-                {deleteError ? (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
-                    {deleteError}
-                  </p>
-                ) : null}
-
-                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                  <button
-                    type="button"
-                    onClick={closeDeleteModal}
-                    disabled={isDeleting}
-                    className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={
-                      deleteConfirm !== p.name ||
-                      isDeleting ||
-                      destructiveBlocked
-                    }
-                    className="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
-                  >
-                    {isDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : (
-                      <Trash2 className="h-4 w-4" aria-hidden />
-                    )}
-                    {isDeleting ? "Deleting…" : "Delete project"}
-                  </button>
-                </div>
-              </form>
-              </div>
-            </div>
-            </div>,
-            document.body,
-          )
-        : null}
-
-      {resetOpen && mounted
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[250] flex items-start justify-center overflow-y-auto bg-zinc-950/75 p-4 pt-3 backdrop-blur-md sm:pt-4"
-              role="presentation"
-              onClick={closeResetModal}
-            >
-              <div
-                className="relative w-full max-w-md rounded-md border border-red-300 bg-white p-6 shadow-2xl dark:border-red-900 dark:bg-zinc-900"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={`reset-title-${p.id}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-            <button
-              type="button"
-              onClick={closeResetModal}
-              disabled={resetBusy}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" aria-hidden />
-            </button>
-
-            <div className="pr-10">
-              <div className="mb-4 flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950">
-                  <AlertTriangle
-                    className="h-5 w-5 text-red-600 dark:text-red-400"
-                    aria-hidden
-                  />
-                </div>
-                <div className="min-w-0">
-                  <h2
-                    id={`reset-title-${p.id}`}
-                    className="text-base font-semibold text-zinc-900 dark:text-zinc-50"
-                  >
-                    Factory reset project
-                  </h2>
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    This destroys all database data for{" "}
-                    <strong className="text-zinc-900 dark:text-zinc-100">
-                      {p.name}
-                    </strong>{" "}
-                    by removing containers and volumes, then reprovisions a fresh
-                    empty stack.
-                  </p>
-                </div>
-              </div>
-
-              <DestructiveBackupGateBanner
-                slug={p.slug}
-                trust={backupTrust}
-                loading={backupTrustLoading}
-                fetchError={backupTrustError}
-                onRefresh={() => void refreshBackupTrust()}
-              />
-
-              <form onSubmit={(e) => void handleFactoryReset(e)}>
-                <label
-                  htmlFor={`reset-confirm-${p.id}`}
-                  className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
-                >
-                  Type{" "}
-                  <span className="font-geist-sans font-semibold">{`RESET ${p.name}`}</span>{" "}
-                  to confirm
-                </label>
-                <input
-                  id={`reset-confirm-${p.id}`}
-                  type="text"
-                  value={resetConfirm}
-                  onChange={(e) => setResetConfirm(e.target.value)}
-                  className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none ring-zinc-200 transition-shadow focus:border-zinc-400 focus:ring-2 focus:ring-zinc-400/30 dark:border-zinc-600 dark:bg-zinc-950 dark:ring-zinc-800 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/25"
-                  placeholder={`RESET ${p.name}`}
-                  autoComplete="off"
-                  disabled={resetBusy}
-                />
-
-                {resetError ? (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
-                    {resetError}
-                  </p>
-                ) : null}
-
-                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                  <button
-                    type="button"
-                    onClick={closeResetModal}
-                    disabled={resetBusy}
-                    className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-60 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={
-                      resetConfirm !== `RESET ${p.name}` ||
-                      resetBusy ||
-                      destructiveBlocked
-                    }
-                    className="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
-                  >
-                    {resetBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : (
-                      <AlertTriangle className="h-4 w-4" aria-hidden />
-                    )}
-                    {resetBusy ? "Resetting…" : "Factory reset"}
-                  </button>
-                </div>
-              </form>
-              </div>
-            </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      <ProjectCardFactoryResetModal
+        open={resetOpen}
+        mounted={mounted}
+        project={p}
+        backupTrust={backupTrust}
+        backupTrustLoading={backupTrustLoading}
+        backupTrustError={backupTrustError}
+        onRefreshBackupTrust={() => void refreshBackupTrust()}
+        resetConfirm={resetConfirm}
+        onResetConfirmChange={setResetConfirm}
+        resetBusy={resetBusy}
+        resetError={resetError}
+        destructiveBlocked={destructiveBlocked}
+        onClose={closeResetModal}
+        onSubmit={(e) => void handleFactoryReset(e)}
+      />
 
       <V2GettingStartedModal
         open={isV2Shared && gettingStartedOpen}

@@ -295,6 +295,7 @@ Focused notes for contributors: where to look before moving symbols or adding su
 | **`packages/cli/src/api-client/`** | HTTP transport to the dashboard control-plane API, Zod schemas, and per-domain client helpers. |
 | **`apps/dashboard/src/lib/db/`** | **flux-system** catalog access: connection/bootstrap orchestration in `index.ts`. |
 | **`apps/dashboard/src/lib/db/system-db-bootstrap.ts`** | **Bootstrap / migration-sensitive** additive catalog DDL. Destructive legacy cutovers are gated in `system-db-cutovers.ts` (`FLUX_SYSTEM_DB_ALLOW_DESTRUCTIVE_CUTOVER`). |
+| **`apps/dashboard/src/components/projects/project-card*.tsx`** | Project detail card UI; modals and connect panel split from `project-card.tsx`. |
 
 CI runs typechecks and tests across these packages so barrel and import-path mistakes fail fast (see `.github/workflows/ci.yml`).
 

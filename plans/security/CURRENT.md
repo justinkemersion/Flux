@@ -5,7 +5,7 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Pass 4** — fleet JWT deep probe (complete pending commit) |
+| **Active phase** | **Pass 5** — large-file splits (audit #10, dashboard project-card) |
 | **Pass 1** | **Complete** (code + docs; deploy/e2e on server may still be pending) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
@@ -24,7 +24,7 @@
 
 ---
 
-## Pass 2 — active (next implementation)
+## Pass 2 — done
 
 **Goal:** Restore-verified backup required before destructive actions (same bar as `flux nuke`), unless explicit override.
 
@@ -69,9 +69,21 @@
 
 ---
 
+## Pass 5 — done (audit #10, dashboard)
+
+**Goal:** Split `project-card.tsx` below architecture warn threshold (800 lines).
+
+| Item | Status | Notes |
+|------|--------|--------|
+| Extract connect / CLI / logs / modals | Done | `project-card.tsx` 786 lines; 6 sibling modules |
+
+**Still warn:** `project-manager.ts`, `register-cli.ts`, `cli-handlers.ts` — defer to next touch.
+
+---
+
 ## Deferred
 
-- [ ] Large-file splits (audit #10)
+- [ ] Remaining large-file splits (#10): core `project-manager`, CLI `register-cli` / `cli-handlers`
 
 ---
 
