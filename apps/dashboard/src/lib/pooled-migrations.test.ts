@@ -7,10 +7,15 @@ type Row = Record<string, unknown>;
 
 class FakePgClient implements PushPgClient {
   queries: string[] = [];
-  private checksumByVersion = new Map<string, string>();
+  private ledger = new Map<string, Map<string, string>>();
 
-  seedVersion(version: string, checksum: string): void {
-    this.checksumByVersion.set(version, checksum);
+  seedVersion(tenantSchema: string, version: string, checksum: string): void {
+    let byVersion = this.ledger.get(tenantSchema);
+    if (!byVersion) {
+      byVersion = new Map();
+      this.ledger.set(tenantSchema, byVersion);
+    }
+    byVersion.set(version, checksum);
   }
 
   async connect(): Promise<void> {
@@ -21,15 +26,24 @@ class FakePgClient implements PushPgClient {
     this.queries.push(sql);
     const trimmed = sql.trim();
     if (trimmed.startsWith("SELECT checksum")) {
-      const match = /WHERE version = '((?:[^']|'')*)'/u.exec(trimmed);
-      const version = match
-        ? match[1]!.replaceAll("''", "'")
+      const schemaMatch = /tenant_schema = '((?:[^']|'')*)'/u.exec(trimmed);
+      const versionMatch = /version = '((?:[^']|'')*)'/u.exec(trimmed);
+      const tenantSchema = schemaMatch
+        ? schemaMatch[1]!.replaceAll("''", "'")
         : "";
-      const checksum = this.checksumByVersion.get(version);
+      const version = versionMatch
+        ? versionMatch[1]!.replaceAll("''", "'")
+        : "";
+      const checksum = this.ledger.get(tenantSchema)?.get(version);
       return { rows: checksum ? [{ checksum }] : [] };
     }
     if (trimmed.startsWith("SELECT version")) {
-      const rows = [...this.checksumByVersion.entries()].map(
+      const schemaMatch = /tenant_schema = '((?:[^']|'')*)'/u.exec(trimmed);
+      const tenantSchema = schemaMatch
+        ? schemaMatch[1]!.replaceAll("''", "'")
+        : "";
+      const byVersion = this.ledger.get(tenantSchema);
+      const rows = [...(byVersion ?? new Map()).entries()].map(
         ([version, checksum]) => ({
           version,
           filename: version,
@@ -50,7 +64,7 @@ class FakePgClient implements PushPgClient {
 test("executePooledMigrationPush skips when checksum matches", async () => {
   const client = new FakePgClient();
   const checksum = "b".repeat(64);
-  client.seedVersion("001_a.sql", checksum);
+  client.seedVersion("t_test_api", "001_a.sql", checksum);
   const factory = () => client;
   const result = await executePooledMigrationPush({
     schema: "t_test_api",
@@ -88,7 +102,7 @@ test("executePooledMigrationPush applies when version missing", async () => {
 
 test("executePooledMigrationPush rejects checksum conflict", async () => {
   const client = new FakePgClient();
-  client.seedVersion("003_c.sql", "a".repeat(64));
+  client.seedVersion("t_test_api", "003_c.sql", "a".repeat(64));
   const factory = () => client;
   await assert.rejects(
     () =>
@@ -105,4 +119,25 @@ test("executePooledMigrationPush rejects checksum conflict", async () => {
       }),
     /Migration checksum conflict/,
   );
+});
+
+test("same migration version is isolated per tenant_schema", async () => {
+  const client = new FakePgClient();
+  const checksumA = "a".repeat(64);
+  const checksumB = "b".repeat(64);
+  client.seedVersion("t_tenant_a_api", "001_init.sql", checksumA);
+  const factory = () => client;
+  const result = await executePooledMigrationPush({
+    schema: "t_tenant_b_api",
+    userSql: "SELECT 1;",
+    migration: {
+      version: "001_init.sql",
+      filename: "001_init.sql",
+      checksum: checksumB,
+    },
+    clientFactory: factory,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.skipped, false);
+  assert.ok(client.queries.some((q) => q.includes("INSERT INTO flux")));
 });

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
+import { tenantApiSchemaFromProjectId } from "@/src/lib/pooled-push-validators";
 import type { FluxMigrationRecord } from "@flux/core/sql-migrations";
 import {
   extractPooledPushBearer,
@@ -15,7 +16,7 @@ export type PooledMigrationsRouteDeps = {
     slug: string,
     hash: string,
   ) => Promise<PooledPushProjectRow | null>;
-  listAppliedMigrations: () => Promise<FluxMigrationRecord[]>;
+  listAppliedMigrations: (tenantSchema: string) => Promise<FluxMigrationRecord[]>;
 };
 
 function jsonError(message: string, status: number): Response {
@@ -79,8 +80,11 @@ export async function runPooledMigrationsGet(
   const roleCheck = validatePooledPushServiceRole(payload);
   if (!roleCheck.ok) return jsonError(roleCheck.error, 403);
 
+  const schemaRes = tenantApiSchemaFromProjectId(project.id);
+  if (!schemaRes.ok) return jsonError(schemaRes.error, 500);
+
   try {
-    const applied = await deps.listAppliedMigrations();
+    const applied = await deps.listAppliedMigrations(schemaRes.schema);
     return Response.json(
       { applied },
       { headers: { "Cache-Control": "private, no-store" } },

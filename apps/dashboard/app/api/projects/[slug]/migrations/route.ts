@@ -31,6 +31,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   return runPooledMigrationsGet(req, ctx, {
     initSystemDb,
     loadProjectForPush,
-    listAppliedMigrations: listPooledAppliedMigrations,
+    listAppliedMigrations: (tenantSchema) =>
+      listPooledAppliedMigrations({ tenantSchema }),
   });
 }

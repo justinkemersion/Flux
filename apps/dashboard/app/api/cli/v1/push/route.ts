@@ -4,7 +4,10 @@ import { projects } from "@/src/db/schema";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
-import type { MigrationPushMeta } from "@flux/core/sql-migrations";
+import {
+  normalizePushSql,
+  type MigrationPushMeta,
+} from "@flux/core/sql-migrations";
 import {
   parseMigrationPushMeta,
   pooledPushEffectiveSqlBytes,
@@ -24,15 +27,6 @@ function isValidHash(h: string): boolean {
   return (
     h.length === FLUX_PROJECT_HASH_HEX_LEN && /^[a-f0-9]+$/u.test(h)
   );
-}
-
-/**
- * Cross-version compatibility shim for SQL dumps produced by newer pg_dump
- * clients (e.g. PG17) and replayed against older targets (e.g. PG16).
- */
-function normalizeSqlForTarget(sql: string): string {
-  // PG16 and older do not recognize this GUC; harmless to drop from dumps.
-  return sql.replace(/^\s*SET\s+transaction_timeout\s*=\s*[^;]+;\s*$/gimu, "");
 }
 
 /**
@@ -74,7 +68,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const slug = (body as { slug: string }).slug.trim();
   const hash = (body as { hash: string }).hash.trim().toLowerCase();
-  const sql = normalizeSqlForTarget((body as { sql: string }).sql);
+  const sql = normalizePushSql((body as { sql: string }).sql);
   let migration: MigrationPushMeta | undefined;
   if ("migration" in body && (body as { migration: unknown }).migration != null) {
     const parsed = parseMigrationPushMeta(
@@ -91,10 +85,6 @@ export async function POST(req: Request): Promise<Response> {
       400,
     );
   }
-  if (pooledPushEffectiveSqlBytes(sql, migration) > MAX_SQL_BYTES) {
-    return jsonError("sql exceeds maximum size", 413);
-  }
-
   const owned = await db
     .select({
       id: projects.id,
@@ -123,6 +113,10 @@ export async function POST(req: Request): Promise<Response> {
     apiSchemaName: row.apiSchemaName,
     apiSchemaStrategy: row.apiSchemaStrategy as "legacy_api" | "tenant_schema" | null,
   });
+
+  if (pooledPushEffectiveSqlBytes(sql, migration, apiSchema) > MAX_SQL_BYTES) {
+    return jsonError("sql exceeds maximum size", 413);
+  }
 
   const pm = getProjectManager();
   try {

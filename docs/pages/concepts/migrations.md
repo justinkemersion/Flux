@@ -24,7 +24,7 @@ On **v2 shared**, tables for your API must live in the tenant schema (e.g. `t_<s
 
 Target the project explicitly (slug and 7-character hash from **`flux list`**, or the same fields in **`flux.json`**).
 
-**Directory mode** applies an ordered set of `.sql` files and records each success in a tenant-local ledger table (`flux.flux_migrations` in the reserved **`flux`** schema—not exposed via PostgREST). **Single-file mode** runs raw SQL without ledger entries (backward compatible).
+**Directory mode** applies an ordered set of `.sql` files and records each success in a tenant-local ledger table (`flux.flux_migrations` in the reserved **`flux`** schema—not exposed via PostgREST). On **v2_shared**, the ledger is keyed by **`(tenant_schema, version)`** so pooled tenants do not share migration rows. **Single-file mode** runs raw SQL without ledger entries (backward compatible).
 
 **Do not edit a migration after it has been applied. Create a new migration instead.** Flux compares checksums on every directory push; changed files raise a clear conflict instead of silently re-running SQL.
 

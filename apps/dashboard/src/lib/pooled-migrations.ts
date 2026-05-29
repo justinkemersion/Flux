@@ -1,8 +1,9 @@
 import {
+  buildFluxMigrationsLedgerEnsureSql,
   buildMigrationPushSql,
-  FLUX_MIGRATIONS_DDL,
-  LIST_FLUX_MIGRATIONS_SQL,
+  listFluxMigrationsSql,
   migrationConflictMessage,
+  normalizePushSql,
   type FluxMigrationRecord,
   type MigrationPushMeta,
   resolveMigrationLedgerAction,
@@ -41,14 +42,15 @@ function rowToRecord(row: Record<string, unknown>): FluxMigrationRecord {
   };
 }
 
-export async function listPooledAppliedMigrations(input?: {
+export async function listPooledAppliedMigrations(input: {
+  tenantSchema: string;
   clientFactory?: PushPgClientFactory;
 }): Promise<FluxMigrationRecord[]> {
-  const factory = input?.clientFactory ?? defaultClientFactory;
+  const factory = input.clientFactory ?? defaultClientFactory;
   const client = factory();
   try {
     await client.connect();
-    const res = await client.query(LIST_FLUX_MIGRATIONS_SQL);
+    const res = await client.query(listFluxMigrationsSql(input.tenantSchema));
     const rows = (res as { rows?: Record<string, unknown>[] }).rows ?? [];
     return rows.map(rowToRecord);
   } catch (err) {
@@ -88,10 +90,10 @@ export async function executePooledMigrationPush(
       await client.query(
         `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
       );
-      await client.query(FLUX_MIGRATIONS_DDL);
+      await client.query(buildFluxMigrationsLedgerEnsureSql(input.schema));
 
       const lookup = await client.query(
-        selectMigrationChecksumSql(input.migration.version),
+        selectMigrationChecksumSql(input.migration.version, input.schema),
       );
       const rows = (lookup as { rows?: { checksum: string }[] }).rows ?? [];
       const existing = rows[0]?.checksum
@@ -113,7 +115,8 @@ export async function executePooledMigrationPush(
       }
 
       const wrapped = buildMigrationPushSql({
-        userSql: input.userSql,
+        tenantSchema: input.schema,
+        userSql: normalizePushSql(input.userSql),
         migration: input.migration,
       });
       await client.query(wrapped);

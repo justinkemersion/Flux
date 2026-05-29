@@ -81,10 +81,12 @@ export function parsePooledPushJsonBody(input: unknown):
 export function pooledPushEffectiveSqlBytes(
   sql: string,
   migration?: MigrationPushMeta,
+  tenantSchema?: string,
 ): number {
   if (!migration) return Buffer.byteLength(sql, "utf8");
+  const schema = tenantSchema ?? "t_000000000000_api";
   return Buffer.byteLength(
-    buildMigrationPushSql({ userSql: sql, migration }),
+    buildMigrationPushSql({ tenantSchema: schema, userSql: sql, migration }),
     "utf8",
   );
 }
@@ -93,13 +95,14 @@ export function validatePooledPushSqlPayload(
   sql: string,
   maxBytes: number,
   migration?: MigrationPushMeta,
+  tenantSchema?: string,
 ):
   | { ok: true }
   | { ok: false; error: string; status: 400 | 413 } {
   if (sql.length === 0) {
     return { ok: false, error: "sql is empty", status: 400 };
   }
-  if (pooledPushEffectiveSqlBytes(sql, migration) > maxBytes) {
+  if (pooledPushEffectiveSqlBytes(sql, migration, tenantSchema) > maxBytes) {
     return { ok: false, error: "sql exceeds maximum size", status: 413 };
   }
   return { ok: true };

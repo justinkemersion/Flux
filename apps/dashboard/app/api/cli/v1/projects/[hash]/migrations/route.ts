@@ -1,5 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
+import {
+  FLUX_PROJECT_HASH_HEX_LEN,
+  resolveTenantApiSchemaName,
+} from "@flux/core";
 import { projects } from "@/src/db/schema";
 import {
   authenticateCliApiKey,
@@ -46,7 +49,13 @@ export async function GET(_req: Request, context: Ctx): Promise<Response> {
   }
 
   const [row] = await db
-    .select({ slug: projects.slug, mode: projects.mode })
+    .select({
+      id: projects.id,
+      slug: projects.slug,
+      mode: projects.mode,
+      apiSchemaName: projects.apiSchemaName,
+      apiSchemaStrategy: projects.apiSchemaStrategy,
+    })
     .from(projects)
     .where(and(eq(projects.userId, auth.userId), eq(projects.hash, hash)))
     .limit(1);
@@ -55,9 +64,19 @@ export async function GET(_req: Request, context: Ctx): Promise<Response> {
     return jsonError("Project not found for this API key", 404);
   }
 
+  const tenantSchema = resolveTenantApiSchemaName({
+    id: row.id,
+    mode: row.mode,
+    apiSchemaName: row.apiSchemaName,
+    apiSchemaStrategy: row.apiSchemaStrategy as
+      | "legacy_api"
+      | "tenant_schema"
+      | null,
+  });
+
   try {
     if (row.mode === "v2_shared") {
-      const applied = await listPooledAppliedMigrations();
+      const applied = await listPooledAppliedMigrations({ tenantSchema });
       return Response.json(
         { applied },
         { headers: { "Cache-Control": "private, no-store" } },
@@ -65,7 +84,11 @@ export async function GET(_req: Request, context: Ctx): Promise<Response> {
     }
 
     const pm = getProjectManager();
-    const applied = await pm.listAppliedSqlMigrations(row.slug, hash);
+    const applied = await pm.listAppliedSqlMigrations(
+      row.slug,
+      hash,
+      tenantSchema,
+    );
     return Response.json(
       { applied },
       { headers: { "Cache-Control": "private, no-store" } },

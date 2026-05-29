@@ -26,6 +26,10 @@ export {
   queryPostgresMajorVersion,
   sanitizePlainSqlDumpForPostgresMajor,
 } from "./import-dump.ts";
+export {
+  FLUX_PUSH_SQL_TARGET_MAJOR,
+  normalizePushSql,
+} from "./sql-migrations.ts";
 export { queryPsqlJsonRows, queryPsqlScalar } from "./postgres-internal-exec.ts";
 export {
   API_SCHEMA_PRIVILEGES_SQL,

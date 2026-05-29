@@ -10,8 +10,10 @@ import {
   migrationChecksum,
   migrationConflictMessage,
   migrationPlanTimeline,
+  normalizePushSql,
   planMigrations,
   resolveMigrationLedgerAction,
+  selectMigrationChecksumSql,
   sqlLiteral,
 } from "./sql-migrations.ts";
 
@@ -21,6 +23,19 @@ test("migrationChecksum is stable sha256 hex", () => {
   assert.equal(a, b);
   assert.match(a, /^[a-f0-9]{64}$/u);
   assert.notEqual(migrationChecksum("select 2;"), a);
+});
+
+test("migrationChecksum ignores PG17 transaction_timeout line", () => {
+  const withTimeout = "SET transaction_timeout = 0;\nSELECT 1;\n";
+  const without = "SELECT 1;\n";
+  assert.equal(migrationChecksum(withTimeout), migrationChecksum(without));
+  assert.equal(normalizePushSql(withTimeout).trim(), "SELECT 1;");
+});
+
+test("selectMigrationChecksumSql scopes by tenant_schema", () => {
+  const sql = selectMigrationChecksumSql("001_a.sql", "t_abc_api");
+  assert.match(sql, /tenant_schema = 't_abc_api'/);
+  assert.match(sql, /version = '001_a\.sql'/);
 });
 
 test("sqlLiteral escapes single quotes", () => {
@@ -130,6 +145,7 @@ test("migrationConflictMessage is direct and names both checksums", () => {
 
 test("buildMigrationPushSql includes DDL, user sql, insert", () => {
   const sql = buildMigrationPushSql({
+    tenantSchema: "t_5ecfa3ab72d1_api",
     userSql: "CREATE TABLE foo (id int);",
     migration: {
       version: "001_init.sql",
@@ -139,8 +155,10 @@ test("buildMigrationPushSql includes DDL, user sql, insert", () => {
   });
   assert.match(sql, /CREATE SCHEMA IF NOT EXISTS flux/);
   assert.match(sql, /flux\.flux_migrations/);
+  assert.match(sql, /tenant_schema/);
   assert.match(sql, /CREATE TABLE foo/);
   assert.match(sql, /INSERT INTO flux\.flux_migrations/);
+  assert.match(sql, /'t_5ecfa3ab72d1_api'/);
   assert.match(sql, /'001_init\.sql'/);
   assert.match(sql, /'abc123'/);
 });

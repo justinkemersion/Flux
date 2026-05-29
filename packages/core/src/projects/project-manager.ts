@@ -18,13 +18,15 @@ import {
   type ImportSqlFileOptions,
 } from "../import-dump.ts";
 import {
+  buildFluxMigrationsLedgerEnsureSql,
   buildMigrationPushSql,
-  FLUX_MIGRATIONS_DDL,
-  LIST_FLUX_MIGRATIONS_SQL,
+  listFluxMigrationsSql,
   migrationConflictMessage,
+  normalizePushSql,
   type FluxMigrationRecord,
   type MigrationPushMeta,
   resolveMigrationLedgerAction,
+  selectMigrationChecksumSql,
   sqlLiteral,
 } from "../sql-migrations.ts";
 import {
@@ -1666,12 +1668,13 @@ export class ProjectManager {
   async listAppliedSqlMigrations(
     projectName: string,
     hash: string,
+    tenantSchema: string,
   ): Promise<FluxMigrationRecord[]> {
     try {
       const rows = await this.queryTenantJsonRows(
         projectName,
         hash,
-        LIST_FLUX_MIGRATIONS_SQL,
+        listFluxMigrationsSql(tenantSchema),
       );
       return rows.map((row) => {
         const r = row as Record<string, unknown>;
@@ -1718,14 +1721,16 @@ export class ProjectManager {
     }
 
     let pathList = "api, public";
+    let tenantSchema = LEGACY_FLUX_API_SCHEMA;
     if (options?.searchPathSchemas && options.searchPathSchemas.length > 0) {
       for (const s of options.searchPathSchemas) {
         assertFluxApiSchemaIdentifier(s);
       }
+      tenantSchema = options.searchPathSchemas[0]!;
       pathList = options.searchPathSchemas.join(", ");
     }
 
-    let userSql = sql;
+    let userSql = normalizePushSql(sql);
     let skipped = false;
     const migration = options?.migration;
     if (migration) {
@@ -1733,10 +1738,13 @@ export class ProjectManager {
         this.ctx.docker,
         creds.containerId,
         creds.password,
-        FLUX_MIGRATIONS_DDL,
+        buildFluxMigrationsLedgerEnsureSql(tenantSchema),
         POSTGRES_USER,
       );
-      const lookupSql = `SELECT checksum FROM flux.flux_migrations WHERE version = ${sqlLiteral(migration.version)} LIMIT 1`;
+      const lookupSql = selectMigrationChecksumSql(
+        migration.version,
+        tenantSchema,
+      );
       let existingChecksum: string | undefined;
       try {
         const scalar = await queryPsqlScalar(
@@ -1762,7 +1770,11 @@ export class ProjectManager {
       if (action === "skip") {
         skipped = true;
       } else {
-        userSql = buildMigrationPushSql({ userSql: sql, migration });
+        userSql = buildMigrationPushSql({
+          tenantSchema,
+          userSql,
+          migration,
+        });
       }
     }
 

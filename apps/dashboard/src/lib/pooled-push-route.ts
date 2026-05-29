@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import type { ExecutePushInput } from "@/src/lib/pooled-push";
+import { normalizePushSql } from "@flux/core/sql-migrations";
 import type { ExecuteMigrationPushInput } from "@/src/lib/pooled-migrations";
 import {
   POOLED_PUSH_MAX_SQL_BYTES,
@@ -88,18 +89,14 @@ export async function runPooledPushPost(
   if (!parsedBody.ok) {
     return jsonError(parsedBody.error, 400);
   }
-  const { hash, sql, migration } = parsedBody;
+  const { hash, migration } = parsedBody;
+  const sql = normalizePushSql(parsedBody.sql);
 
   if (!isValidFluxProjectHash(hash)) {
     return jsonError(
       `hash must be a ${String(FLUX_PROJECT_HASH_HEX_LEN)}-char lowercase hex id`,
       400,
     );
-  }
-  const maxSql = deps.maxSqlBytes ?? POOLED_PUSH_MAX_SQL_BYTES;
-  const sqlCheck = validatePooledPushSqlPayload(sql, maxSql, migration);
-  if (!sqlCheck.ok) {
-    return jsonError(sqlCheck.error, sqlCheck.status);
   }
 
   await deps.initSystemDb();
@@ -143,6 +140,12 @@ export async function runPooledPushPost(
     return jsonError(schemaRes.error, 500);
   }
   const { schema } = schemaRes;
+
+  const maxSql = deps.maxSqlBytes ?? POOLED_PUSH_MAX_SQL_BYTES;
+  const sqlCheck = validatePooledPushSqlPayload(sql, maxSql, migration, schema);
+  if (!sqlCheck.ok) {
+    return jsonError(sqlCheck.error, sqlCheck.status);
+  }
 
   try {
     if (migration) {
