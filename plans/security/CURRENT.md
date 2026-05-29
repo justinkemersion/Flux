@@ -5,8 +5,9 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Pass 2 complete** — pick next work from Deferred or new audit |
+| **Active phase** | **Pass 3** — system-db bootstrap hardening (audit #9) |
 | **Pass 1** | **Complete** (code + docs; deploy/e2e on server may still be pending) |
+| **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Last updated** | 2026-05-29 |
 
 ---
@@ -42,9 +43,21 @@
 
 ---
 
-## Deferred (not Pass 2 unless you reprioritize)
+## Pass 3 — active (audit #9)
 
-- [ ] System-db destructive bootstrap hardening (audit #9)
+**Goal:** Catalog bootstrap stays additive on restart; legacy DROP cutovers require operator opt-in and a ledger row.
+
+| Item | Status | Notes |
+|------|--------|--------|
+| Gate Auth.js UUID → text cutover | Done | `FLUX_SYSTEM_DB_ALLOW_DESTRUCTIVE_CUTOVER`; `flux_system_cutovers` ledger |
+| Gate pre-hash `projects` drop | Done | Same flag + ledger |
+| Env/docs | Done | `apps/dashboard/.env.example`, README ownership map |
+
+---
+
+## Deferred
+
+- [x] System-db destructive bootstrap hardening (audit #9) — Pass 3
 - [ ] Large-file splits (audit #10)
 - [ ] Fleet JWT “deep smoke” (authenticated probe / E2E green)
 - [ ] Optional: catalog `jwt_secret` pre-check before mesh probe

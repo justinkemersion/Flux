@@ -94,7 +94,7 @@ Do **not** mint project JWTs from fleet monitoring in Pass 1; that is a later â€
 ## Explicitly out of Pass 1
 
 - Risk-register **destructive-operation guardrails** (Pass 2)
-- System-db destructive bootstrap hardening (#9)
+- ~~System-db destructive bootstrap hardening (#9)~~ â€” **Pass 3** (gated cutovers + ledger)
 - Large-file splits (#10)
 
 ---
