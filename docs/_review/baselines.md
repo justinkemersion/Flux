@@ -30,6 +30,33 @@ Keep entries short. If a single entry needs more than a screen, it probably want
 
 ---
 
+## 2026-05-29 — Pass 1 security / contract (Codex → Cursor)
+
+**Context.** First **code** security pass from an external audit (findings #1–#8). Split into Pass 1A (gateway/runtime), 1A½ (mesh copy), 1B (migration ledger + SQL normalize), 1C (docs + catalog). Full commit list, smoke commands, and Pass 2 scope: [`plans/security/pass-1-summary.md`](../../plans/security/pass-1-summary.md).
+
+### Decisions of record
+
+| Topic | Decision |
+|-------|----------|
+| v2 inbound auth | **Reject** missing/invalid project Bearer at gateway (401); no anonymous pool JWT on hot path |
+| Mesh “healthy” | **401 = edge reachable** for v2 probes; UI **Edge reachable** — not JWT/RLS/grant proof |
+| Pooled migration ledger | **`(tenant_schema, version)`**; legacy global rows **fail closed** |
+| Hash uniqueness | **`unique (userId, hash)`**; allocate per user, not per slug |
+| v2 app JWT / GRANT docs | Examples use **`t_<shortId>_role`** (matches gateway mint), not `authenticated` |
+
+### Smoke (local, 2026-05-29)
+
+- `pnpm check:architecture` — pass (line-count warnings only)
+- `pnpm --filter @flux/core exec tsc --noEmit` + `pnpm --filter dashboard exec tsc --noEmit` — pass
+- `pnpm test` — pass (core, cli, gateway, engine-v2, migrate, dashboard)
+- `bin/e2e-v2-shared-smoke.sh` — **not run** here (requires `FLUX_SMOKE_KNOWN_HOST` + live gateway); run on deployed stack before production sign-off
+
+### Next pass
+
+**Pass 2:** destructive-operation guardrails — backup trust gates on migrate, nuke (dashboard parity), project delete, factory reset. See pass-1-summary.md § Pass 2.
+
+---
+
 ## 2026-05-08 — inaugural governance pass
 
 **Context.** First time the documentation review system was applied to the corpus. Triggered by a deliberate review of `docs/pages/` and `docs/_contract/` against the reader-audiences and IA contracts. Produced [`reports/2026-05-08-initial-review.md`](reports/2026-05-08-initial-review.md).
