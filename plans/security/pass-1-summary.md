@@ -4,6 +4,7 @@
 **Audit source:** Codex security review (findings #1–#8, “Do now”)  
 **Execution model:** Small passes, one commit (or tight pair) per pass for bisect.
 
+**Live tracker (start here each session):** [`CURRENT.md`](CURRENT.md)  
 This file is the **repeatable baseline** for the Codex → Cursor audit loop. Pair it with [`docs/_review/baselines.md`](../../docs/_review/baselines.md) (institutional memory entry).
 
 ---

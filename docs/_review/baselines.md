@@ -53,7 +53,7 @@ Keep entries short. If a single entry needs more than a screen, it probably want
 
 ### Next pass
 
-**Pass 2:** destructive-operation guardrails — backup trust gates on migrate, nuke (dashboard parity), project delete, factory reset. See pass-1-summary.md § Pass 2.
+**Pass 2:** destructive-operation guardrails — backup trust gates on migrate, nuke (dashboard parity), project delete, factory reset. Track checkboxes in [`plans/security/CURRENT.md`](../../plans/security/CURRENT.md); detail in pass-1-summary.md § Pass 2.
 
 ---
 

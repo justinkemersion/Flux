@@ -24,3 +24,8 @@ It allows users to create "projects". Each project dynamically spins up an isola
 - Use ES Modules (`import`/`export`).
 - Strict TypeScript (`"strict": true` in tsconfig).
 - Keep functions small and single-purpose.
+
+## Security pass queue (Codex audit)
+**Active:** Pass 2 — destructive-operation backup gates. Pass 1 is complete.
+Before substantial work, read **`plans/security/CURRENT.md`** and confirm with the user if the task is not Pass 2.
+Tracker: `plans/security/README.md` · Detail: `plans/security/pass-1-summary.md`.
