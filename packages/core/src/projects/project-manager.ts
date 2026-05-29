@@ -1721,7 +1721,7 @@ export class ProjectManager {
     }
 
     let pathList = "api, public";
-    let tenantSchema = LEGACY_FLUX_API_SCHEMA;
+    let tenantSchema: string = LEGACY_FLUX_API_SCHEMA;
     if (options?.searchPathSchemas && options.searchPathSchemas.length > 0) {
       for (const s of options.searchPathSchemas) {
         assertFluxApiSchemaIdentifier(s);
