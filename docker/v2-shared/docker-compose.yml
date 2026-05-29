@@ -43,7 +43,7 @@ services:
     # Host-run dashboard dev cannot resolve Docker DNS names like flux-postgres-v2.
     # Expose Postgres to localhost for FLUX_SHARED_POSTGRES_URL in .env.local.
     ports:
-      - "15433:5432"
+      - "127.0.0.1:15433:5432"
     healthcheck:
       test:
         [
@@ -56,8 +56,8 @@ services:
     # flux-v2-shared: private network for inter-service comms within this stack.
     # flux-network: shared external network required so flux-web (dashboard) can
     #   reach flux-postgres-v2 via FLUX_SHARED_POSTGRES_URL for engine-v2 DDL
-    #   bootstrapping.  postgres-v2 has no Traefik labels and no published ports,
-    #   so it is not reachable from outside the Docker host.
+    #   bootstrapping.  postgres-v2 has no Traefik labels; 127.0.0.1:15433 is
+    #   localhost-only for host-run dashboard dev (not exposed on all interfaces).
     networks:
       - flux-v2-shared
       - flux-network
