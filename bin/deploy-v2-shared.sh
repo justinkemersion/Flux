@@ -181,9 +181,20 @@ END
 SELECT format('ALTER ROLE authenticator LOGIN PASSWORD %L', :'pgrst_db_password') \gexec
 ALTER ROLE anon NOLOGIN;
 GRANT anon TO authenticator;
+
+CREATE SCHEMA IF NOT EXISTS auth;
+
+CREATE OR REPLACE FUNCTION auth.uid() RETURNS text
+LANGUAGE sql
+STABLE
+AS \$flux\$
+  SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::text;
+\$flux\$;
+
+GRANT USAGE ON SCHEMA auth TO anon, authenticated, authenticator;
 GLOBAL_BOOTSTRAP_SQL
   then
-    echo "  global bootstrap: OK (authenticator + anon)"
+    echo "  global bootstrap: OK (authenticator + anon + auth.uid)"
   else
     echo "  ERROR: global bootstrap failed; PostgREST may not be able to SET ROLE anon." >&2
     exit 1

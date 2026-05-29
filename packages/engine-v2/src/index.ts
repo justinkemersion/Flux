@@ -9,6 +9,7 @@ import {
   defaultTenantApiSchemaFromProjectId,
   defaultTenantRoleFromProjectId,
   deriveTenantSchemaShortId,
+  FLUX_AUTH_SCHEMA_AND_UID_SQL,
 } from "@flux/core";
 
 const { Client } = pg;
@@ -154,6 +155,7 @@ BEGIN
 END
 $flux$;
 GRANT USAGE ON SCHEMA ${schema} TO ${role};
+GRANT USAGE ON SCHEMA auth TO ${role};
 -- Pool PostgREST roles need schema access: anon (unauthenticated) and
 -- authenticator (login role that may SET ROLE before a tenant context).
 GRANT USAGE ON SCHEMA ${schema} TO ${anon};
@@ -175,16 +177,22 @@ SELECT pg_notify('pgrst', 'reload config');
 }
 
 /**
- * SQL that installs the two PostgREST server-side hooks into the shared
- * cluster's public schema.  Must be executed once at cluster initialisation
+ * Cluster-global `auth.uid()` for Supabase-style RLS (PostgREST JWT `sub` → text).
+ * Idempotent; run once per shared cluster before tenant provisioning.
+ */
+export function buildGlobalAuthCompatSql(): string {
+  return FLUX_AUTH_SCHEMA_AND_UID_SQL;
+}
+
+/**
+ * SQL that installs PostgREST server-side hooks into the shared cluster's
+ * public schema.  Must be executed once at cluster initialisation
  * (and is safe to re-run — all statements use CREATE OR REPLACE).
  *
  * flux_postgrest_config  — PostgREST pre-config hook.
- *   Dynamically builds the db-schemas list by querying pg_namespace for all
- *   tenant schemas matching the t_<12-hex>_api pattern (same naming as
- *   `defaultTenantApiSchemaFromProjectId` in `@flux/core`).  PostgREST calls
- *   this function on every "reload config" notification, so new tenants become
- *   visible without restarting the PostgREST container.
+ *   Pins `pgrst.db_schemas` to `public` only (architecture invariant #6).
+ *   Tenant table access uses JWT role + `flux_set_tenant_context` search_path
+ *   and gateway Accept-Profile / Content-Profile headers — not schema enumeration.
  *
  * flux_set_tenant_context — PostgREST pre-request hook.
  *   Reads the JWT role claim embedded by the gateway, derives the tenant
@@ -353,12 +361,12 @@ export async function bootstrapSharedCluster(): Promise<void> {
     "FLUX_V2_ROLE_STATEMENT_TIMEOUT_MS",
     DEFAULT_STATEMENT_TIMEOUT_MS,
   );
-  const sql = buildClusterBootstrapSql(statementTimeoutMs);
   try {
-    await executeBootstrapSql(sql);
+    await executeBootstrapSql(buildGlobalAuthCompatSql());
+    await executeBootstrapSql(buildClusterBootstrapSql(statementTimeoutMs));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to bootstrap shared cluster hooks: ${message}`);
+    throw new Error(`Failed to bootstrap shared cluster: ${message}`);
   }
 }
 

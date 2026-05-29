@@ -14,5 +14,5 @@ AS $flux$
   SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::text;
 $flux$;
 
-GRANT USAGE ON SCHEMA auth TO anon, authenticated;
+GRANT USAGE ON SCHEMA auth TO anon, authenticated, authenticator;
 `.trim();

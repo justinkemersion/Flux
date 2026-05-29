@@ -4,6 +4,7 @@ import {
   TenantShortIdCollisionError,
   buildClusterBootstrapSql,
   buildDeprovisionSql,
+  buildGlobalAuthCompatSql,
   buildTenantBootstrapSql,
   deriveTenantIdentity,
 } from "./index.ts";
@@ -29,6 +30,7 @@ test("buildTenantBootstrapSql is idempotent-shaped and quotes identifiers", () =
   assert.match(sql, /COMMENT ON SCHEMA "t_aaaaaaaabbbb_api" IS 'tenant:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'/);
   assert.match(sql, /CREATE ROLE "t_aaaaaaaabbbb_role"/);
   assert.match(sql, /GRANT USAGE ON SCHEMA "t_aaaaaaaabbbb_api" TO "t_aaaaaaaabbbb_role"/);
+  assert.match(sql, /GRANT USAGE ON SCHEMA auth TO "t_aaaaaaaabbbb_role"/);
   assert.match(sql, /pg_notify\('pgrst', 'reload config'\)/);
   assert.match(sql, /CONNECTION LIMIT 25/);
 });
@@ -44,6 +46,13 @@ test("buildTenantBootstrapSql respects FLUX_V2_ROLE_CONNECTION_LIMIT", () => {
     if (prev === undefined) delete process.env.FLUX_V2_ROLE_CONNECTION_LIMIT;
     else process.env.FLUX_V2_ROLE_CONNECTION_LIMIT = prev;
   }
+});
+
+test("buildGlobalAuthCompatSql installs auth.uid", () => {
+  const sql = buildGlobalAuthCompatSql();
+  assert.match(sql, /CREATE SCHEMA IF NOT EXISTS auth/);
+  assert.match(sql, /auth\.uid\(\)/);
+  assert.match(sql, /GRANT USAGE ON SCHEMA auth TO anon, authenticated, authenticator/);
 });
 
 test("buildClusterBootstrapSql wires db_schemas and tenant context hook", () => {
