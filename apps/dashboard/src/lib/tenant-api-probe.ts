@@ -18,6 +18,9 @@ const DEFAULT_GATEWAY_PROBE_URL = "http://flux-node-gateway:4000";
  * Without this, `fetch("https://api…")` from inside `flux-web` often fails in production
  * (TLS / wildcard depth for extra labels, split-horizon DNS, or hairpin NAT) even when
  * Traefik and the gateway are healthy.
+ *
+ * v2_shared probes intentionally treat HTTP 401 (missing project Bearer) as success —
+ * the gateway resolved the tenant and enforced auth; see {@link isTenantProbeSuccess}.
  */
 function tenantProbeGatewayBases(): string[] {
   const configured = process.env.FLUX_TENANT_PROBE_GATEWAY_URL?.trim();
@@ -37,13 +40,32 @@ function tenantProbeGatewayBases(): string[] {
   return bases;
 }
 
-function isProbeSuccessStatus(code: number): boolean {
-  return code >= 200 && code < 400;
+/**
+ * 401 body when the v2 gateway resolved the tenant but no project Bearer was sent.
+ * Keep aligned with `packages/gateway/src/inbound-project-auth.ts`.
+ */
+export const V2_GATEWAY_AUTH_REQUIRED_ERROR = "authorization required";
+
+/**
+ * Fleet / lifecycle probes treat HTTP status as reachability, not full API auth.
+ * v2_shared: 401 on tenant routes means the gateway resolved the host and enforced
+ * Pass 1A auth — healthy for mesh status. v1 and unresolved hosts stay strict.
+ */
+export function isTenantProbeSuccess(
+  statusCode: number,
+  mode: FluxCatalogProjectMode,
+): boolean {
+  if (statusCode >= 200 && statusCode < 400) {
+    return true;
+  }
+  if (mode === "v2_shared" && statusCode === 401) {
+    return true;
+  }
+  return false;
 }
 
 /**
- * Returns true if the tenant PostgREST edge responds with a 2xx/3xx (same semantics as
- * the previous `fetch` probe: success = reachable and not 4xx/5xx from our perspective).
+ * Returns true when the tenant API edge is reachable (2xx/3xx, or v2 gateway 401 auth gate).
  */
 export async function probeTenantApiUrl(
   slug: string,
@@ -54,15 +76,18 @@ export async function probeTenantApiUrl(
   const publicUrl = fluxApiUrlForCatalog(slug, hash, isProduction, mode);
   const tenantUrl = new URL(publicUrl);
   for (const via of tenantProbeGatewayBases()) {
-    if (await probeThroughGateway(tenantUrl, via)) {
+    if (await probeThroughGateway(tenantUrl, via, mode)) {
       return true;
     }
   }
   // Final fallback: probe the public URL directly.
-  return probeWithFetch(publicUrl);
+  return probeWithFetch(publicUrl, mode);
 }
 
-async function probeWithFetch(url: string): Promise<boolean> {
+async function probeWithFetch(
+  url: string,
+  mode: FluxCatalogProjectMode,
+): Promise<boolean> {
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -70,7 +95,7 @@ async function probeWithFetch(url: string): Promise<boolean> {
       redirect: "follow",
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-    return isProbeSuccessStatus(res.status);
+    return isTenantProbeSuccess(res.status, mode);
   } catch {
     return false;
   }
@@ -79,6 +104,7 @@ async function probeWithFetch(url: string): Promise<boolean> {
 function probeThroughGateway(
   tenantUrl: URL,
   gatewayBaseRaw: string,
+  mode: FluxCatalogProjectMode,
 ): Promise<boolean> {
   let gatewayBase: URL;
   try {
@@ -111,7 +137,7 @@ function probeThroughGateway(
       (res) => {
         const code = res.statusCode ?? 0;
         res.resume();
-        resolve(isProbeSuccessStatus(code));
+        resolve(isTenantProbeSuccess(code, mode));
       },
     );
     req.on("error", () => {
