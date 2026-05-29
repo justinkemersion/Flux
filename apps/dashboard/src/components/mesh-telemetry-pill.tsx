@@ -2,7 +2,9 @@ import type { FluxProjectSummary } from "@flux/core/standalone";
 import {
   type FleetTelemetryLevel,
   deriveTelemetryDisplay,
+  FLEET_MESH_EDGE_REACHABLE_TITLE,
   fleetTelemetryLabel,
+  fleetTelemetryMeshSubLabel,
 } from "@/src/lib/fleet-telemetry-display";
 
 const borderBase = "border";
@@ -51,11 +53,15 @@ export function MeshTelemetryPill({
     createdAt,
     stackStatus,
   });
+  const title =
+    level === "operational"
+      ? FLEET_MESH_EDGE_REACHABLE_TITLE
+      : "PostgREST mesh (catalog + Docker; 2m default tick)";
 
   return (
     <span
       className={`inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${wrap[level]}`}
-      title="PostgREST mesh (catalog + Docker; 2m default tick)"
+      title={title}
     >
       <span
         className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot[level]}`}
@@ -63,6 +69,12 @@ export function MeshTelemetryPill({
       />
       <span className={`min-w-0 font-medium ${text[level]}`}>
         {humanTelemetryLabel(level, fleetTelemetryLabel(level))}
+        {level === "operational" ? (
+          <span className="font-normal opacity-80">
+            {" "}
+            · {fleetTelemetryMeshSubLabel(level)}
+          </span>
+        ) : null}
       </span>
     </span>
   );

@@ -7,6 +7,8 @@ import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import {
   deriveTelemetryDisplay,
+  FLEET_MESH_EDGE_REACHABLE_TITLE,
+  fleetTelemetryMeshSubLabel,
 } from "@/src/lib/fleet-telemetry-display";
 import { projectApiInterface } from "@/src/lib/routing-identity";
 import {
@@ -60,32 +62,21 @@ function StatusTag({
         : m === "standby"
           ? "bg-zinc-600"
           : "bg-red-500";
+  const meshTitle = m === "operational" ? FLEET_MESH_EDGE_REACHABLE_TITLE : undefined;
   return (
-    <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-900/70 px-2.5 py-1 text-xs text-zinc-300">
+    <span
+      className="inline-flex max-w-full items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-900/70 px-2.5 py-1 text-xs text-zinc-300"
+      title={meshTitle}
+    >
       <span
         className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`}
         aria-hidden
       />
       <span className="font-medium text-zinc-200">{fleetStatusLabel(displayStatus)}</span>
       <span className="text-zinc-500">•</span>
-      <span className="text-zinc-400">{meshLabel(m)}</span>
+      <span className="text-zinc-400">{fleetTelemetryMeshSubLabel(m)}</span>
     </span>
   );
-}
-
-function meshLabel(level: ReturnType<typeof deriveTelemetryDisplay>): string {
-  switch (level) {
-    case "operational":
-      return "Healthy";
-    case "initializing":
-      return "Starting";
-    case "standby":
-      return "Standby";
-    case "offline":
-      return "Unavailable";
-    default:
-      return "Status";
-  }
 }
 
 const easeOut = [0.22, 1, 0.36, 1] as const;
