@@ -1721,13 +1721,15 @@ export class ProjectManager {
     }
 
     let pathList = "api, public";
-    let tenantSchema: string = LEGACY_FLUX_API_SCHEMA;
+    let tenantSchema: string;
     if (options?.searchPathSchemas && options.searchPathSchemas.length > 0) {
       for (const s of options.searchPathSchemas) {
         assertFluxApiSchemaIdentifier(s);
       }
       tenantSchema = options.searchPathSchemas[0]!;
       pathList = options.searchPathSchemas.join(", ");
+    } else {
+      tenantSchema = LEGACY_FLUX_API_SCHEMA;
     }
 
     let userSql = normalizePushSql(sql);
