@@ -44,12 +44,12 @@ Add the claims Flux expects:
 
 ```json
 {
-  "role": "authenticated",
+  "role": "t_5ecfa3ab72d1_role",
   "sub": "{{user.id}}"
 }
 ```
 
-`role` selects the Postgres role PostgREST connects as. `sub` is whatever Clerk subject the application treats as the user identity—`user.id` is the most stable choice.
+`role` must be the per-tenant Postgres role for your project (v2_shared: **`t_<shortId>_role`**, same short id as `t_<shortId>_api`). `sub` is whatever Clerk subject the application treats as the user identity—`user.id` is the most stable choice.
 
 After saving the template, copy its **Signing key**. This is the symmetric secret used for HS256-style signing—not the Clerk *publishable* key.
 
@@ -120,8 +120,8 @@ create policy posts_owner_write
   on t_5ecfa3ab72d1_api.posts for insert
   with check (user_id = auth.uid());
 
-grant usage on schema t_5ecfa3ab72d1_api to authenticated;
-grant select, insert, update, delete on table t_5ecfa3ab72d1_api.posts to authenticated;
+grant usage on schema t_5ecfa3ab72d1_api to t_5ecfa3ab72d1_role;
+grant select, insert, update, delete on table t_5ecfa3ab72d1_api.posts to t_5ecfa3ab72d1_role;
 ```
 
 Push it:
@@ -162,7 +162,7 @@ as $flux$
 $flux$;
 
 revoke all on function t_5ecfa3ab72d1_api.ensure_user_profile() from public;
-grant execute on function t_5ecfa3ab72d1_api.ensure_user_profile() to authenticated;
+grant execute on function t_5ecfa3ab72d1_api.ensure_user_profile() to t_5ecfa3ab72d1_role;
 ```
 
 The application calls it once after sign-in:

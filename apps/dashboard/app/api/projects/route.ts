@@ -5,7 +5,6 @@ import {
   fluxApiUrlForSlug,
   fluxApiUrlForV2Shared,
   fluxV1TenantSchemaEnabled,
-  generateProjectHash,
   slugifyProjectName,
 } from "@flux/core";
 import { getDb, initSystemDb } from "@/src/lib/db";
@@ -14,6 +13,7 @@ import { getProjectManager } from "@/src/lib/flux";
 import {
   dispatchProvisionProject,
 } from "@/src/lib/provisioning-engine";
+import { allocateUniqueProjectHash } from "@/src/lib/cli-project-provision";
 import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
@@ -25,7 +25,6 @@ const HOBBY_LIMIT_ERROR =
   "Project limit reached. Please upgrade to Pro.";
 const PRO_LIMIT_ERROR =
   "Project limit reached (10 projects on Pro).";
-const HASH_ALLOC_ATTEMPTS = 32;
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
@@ -62,22 +61,6 @@ function describeError(err: unknown): string {
   }
   if (typeof e?.message === "string") return e.message;
   return String(err);
-}
-
-async function allocateUniqueProjectHash(
-  db: ReturnType<typeof getDb>,
-  slug: string,
-): Promise<string | null> {
-  for (let i = 0; i < HASH_ALLOC_ATTEMPTS; i++) {
-    const hash = generateProjectHash();
-    const clash = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.slug, slug), eq(projects.hash, hash)))
-      .limit(1);
-    if (clash.length === 0) return hash;
-  }
-  return null;
 }
 
 export async function GET(): Promise<Response> {
@@ -290,7 +273,7 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(modePolicy.message, 403);
   }
 
-  const projectHash = await allocateUniqueProjectHash(db, slug);
+  const projectHash = await allocateUniqueProjectHash(db, session.user.id);
   if (projectHash === null) {
     return jsonError(
       "Could not allocate a unique project hash; retry the request.",

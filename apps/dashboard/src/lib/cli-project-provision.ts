@@ -70,14 +70,14 @@ export function describeProvisionError(err: unknown): string {
 
 export async function allocateUniqueProjectHash(
   db: ReturnType<typeof getDb>,
-  slug: string,
+  userId: string,
 ): Promise<string | null> {
   for (let i = 0; i < HASH_ALLOC_ATTEMPTS; i++) {
     const hash = generateProjectHash();
     const clash = await db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.slug, slug), eq(projects.hash, hash)))
+      .where(and(eq(projects.userId, userId), eq(projects.hash, hash)))
       .limit(1);
     if (clash.length === 0) return hash;
   }
@@ -204,7 +204,7 @@ export async function provisionProjectForUser(input: {
   stripSupabaseRestPrefix?: boolean;
   isProduction: boolean;
 }): Promise<ProvisionInsertResult> {
-  const projectHash = await allocateUniqueProjectHash(input.db, input.slug);
+  const projectHash = await allocateUniqueProjectHash(input.db, input.userId);
   if (projectHash === null) {
     return {
       ok: false,

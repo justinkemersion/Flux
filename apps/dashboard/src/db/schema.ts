@@ -122,7 +122,10 @@ export const projects = pgTable(
     /** `legacy_api` | `tenant_schema` for v1_dedicated; null for v2 or implicit legacy. */
     apiSchemaStrategy: text("api_schema_strategy"),
   },
-  (t) => [uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug)],
+  (t) => [
+    uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug),
+    uniqueIndex("projects_user_hash_uniq").on(t.userId, t.hash),
+  ],
 );
 
 /** Sampled mesh probe results (fleet monitor; last N per project in UI). */

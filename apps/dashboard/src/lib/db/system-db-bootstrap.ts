@@ -117,6 +117,7 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
       last_accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE UNIQUE INDEX IF NOT EXISTS projects_user_slug_uniq ON projects ("userId", slug);
+    CREATE UNIQUE INDEX IF NOT EXISTS projects_user_hash_uniq ON projects ("userId", hash);
   `);
 
   await pool.query(`

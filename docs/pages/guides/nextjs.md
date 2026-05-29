@@ -124,8 +124,8 @@ create table if not exists t_5ecfa3ab72d1_api.notes (
   created_at timestamptz not null default now()
 );
 
-grant usage on schema t_5ecfa3ab72d1_api to authenticated;
-grant select, insert, update, delete on table t_5ecfa3ab72d1_api.notes to authenticated;
+grant usage on schema t_5ecfa3ab72d1_api to t_5ecfa3ab72d1_role;
+grant select, insert, update, delete on table t_5ecfa3ab72d1_api.notes to t_5ecfa3ab72d1_role;
 ```
 
 Push it with the Flux CLI:
@@ -143,7 +143,7 @@ After the push, PostgREST reloads its schema cache. The `/api/health` route shou
 | Symptom | Likely cause |
 |---------|--------------|
 | `404` from `/notes` | Wrong host, or the table lives in `public` instead of `t_<shortId>_api` |
-| `42501` / `permission denied for schema` | Missing `GRANT USAGE ON SCHEMA … TO authenticated` |
+| `42501` / `permission denied for schema` | Missing `GRANT USAGE ON SCHEMA … TO t_<shortId>_role` |
 | `401` once `Authorization` is added | Token signed with a different secret than the project expects |
 | Stale results between requests | `fetch` cache not disabled (use `cache: "no-store"`) |
 | TLS error from Node | Private CA not trusted in the runtime; see [Production hardening](/docs/guides/production-hardening) |

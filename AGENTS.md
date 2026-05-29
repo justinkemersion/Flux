@@ -53,7 +53,7 @@ Omitting these when `db-schemas` lists multiple schemas (or default is not where
 
 ## 4) JWT for PostgREST (HS256)
 
-- Same secret the platform uses for the tenant: mint HS256 JWTs that PostgREST accepts (`PGRST_JWT_SECRET` / dashboard “gateway” secret). Typical claims: **`role: "authenticated"`** (or what your policies target) and a stable **`sub`** for per-row RLS.
+- Same secret the platform uses for the tenant: mint HS256 JWTs that PostgREST accepts (`PGRST_JWT_SECRET` / dashboard “gateway” secret). On **v2_shared**, the `role` claim must be the per-tenant DB role **`t_<shortId>_role`** (same short id as `t_<shortId>_api`), plus a stable **`sub`** for per-row RLS. v1 dedicated stacks may still use **`authenticated`**.
 - **`sub`** must match **`user_id`** column type and policy predicates (Flux examples often use **`text`** ids, e.g. OAuth `providerAccountId`).
 
 ---
@@ -63,11 +63,11 @@ Omitting these when `db-schemas` lists multiple schemas (or default is not where
 Policies filter rows **after** the DB role is allowed to touch the table. Without:
 
 ```sql
-GRANT USAGE ON SCHEMA t_<shortId>_api TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE t_<shortId>_api.<table> TO authenticated;
+GRANT USAGE ON SCHEMA t_<shortId>_api TO t_<shortId>_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE t_<shortId>_api.<table> TO t_<shortId>_role;
 ```
 
-(and similarly for other roles your JWT uses), PostgREST returns **403** / **`42501`**, not an empty array.
+(Grant to the same role your JWT `role` claim uses — on v2_shared that is **`t_<shortId>_role`**, not `authenticated`.) Without grants, PostgREST returns **403** / **`42501`**, not an empty array.
 
 ---
 

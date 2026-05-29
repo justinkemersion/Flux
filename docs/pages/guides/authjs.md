@@ -85,7 +85,8 @@ import { SignJWT } from "jose";
 const secret = new TextEncoder().encode(process.env.FLUX_JWT_SECRET);
 
 export async function mintFluxToken(sub: string): Promise<string> {
-  return await new SignJWT({ role: "authenticated", sub })
+  // v2_shared: use t_<shortId>_role (same short id as your tenant API schema).
+  return await new SignJWT({ role: "t_5ecfa3ab72d1_role", sub })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("5m")
@@ -155,8 +156,8 @@ create policy notes_owner_delete
   on t_5ecfa3ab72d1_api.notes for delete
   using (owner_id = auth.uid());
 
-grant usage on schema t_5ecfa3ab72d1_api to authenticated;
-grant select, insert, update, delete on table t_5ecfa3ab72d1_api.notes to authenticated;
+grant usage on schema t_5ecfa3ab72d1_api to t_5ecfa3ab72d1_role;
+grant select, insert, update, delete on table t_5ecfa3ab72d1_api.notes to t_5ecfa3ab72d1_role;
 ```
 
 Push it:
