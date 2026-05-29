@@ -14,5 +14,13 @@ AS $flux$
   SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::text;
 $flux$;
 
-GRANT USAGE ON SCHEMA auth TO anon, authenticated, authenticator;
+GRANT USAGE ON SCHEMA auth TO anon, authenticator;
+
+DO $flux$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
+    GRANT USAGE ON SCHEMA auth TO authenticated;
+  END IF;
+END
+$flux$;
 `.trim();

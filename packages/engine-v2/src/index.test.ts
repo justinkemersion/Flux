@@ -52,7 +52,7 @@ test("buildGlobalAuthCompatSql installs auth.uid", () => {
   const sql = buildGlobalAuthCompatSql();
   assert.match(sql, /CREATE SCHEMA IF NOT EXISTS auth/);
   assert.match(sql, /auth\.uid\(\)/);
-  assert.match(sql, /GRANT USAGE ON SCHEMA auth TO anon, authenticated, authenticator/);
+  assert.match(sql, /GRANT USAGE ON SCHEMA auth TO anon, authenticator/);
 });
 
 test("buildClusterBootstrapSql pins public db_schemas and tenant context hook", () => {

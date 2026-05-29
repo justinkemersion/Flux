@@ -191,7 +191,7 @@ AS \$flux\$
   SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::text;
 \$flux\$;
 
-GRANT USAGE ON SCHEMA auth TO anon, authenticated, authenticator;
+GRANT USAGE ON SCHEMA auth TO anon, authenticator;
 GLOBAL_BOOTSTRAP_SQL
   then
     echo "  global bootstrap: OK (authenticator + anon + auth.uid)"
