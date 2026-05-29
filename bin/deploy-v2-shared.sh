@@ -218,6 +218,7 @@ else
   _pg_db="${SHARED_POSTGRES_DB:-postgres}"
   # Execute idempotent (CREATE OR REPLACE) SQL inside the already-running postgres
   # container.  This avoids any dependency on a Node/TypeScript runtime on the host.
+  # Canonical SQL: packages/engine-v2 buildClusterBootstrapSql() — keep in sync.
   if docker exec -i "$PG_CONTAINER" \
       psql -U "$_pg_user" -d "$_pg_db" -v ON_ERROR_STOP=1 -q <<BOOTSTRAP_SQL
 CREATE OR REPLACE FUNCTION public.flux_postgrest_config()
@@ -226,18 +227,7 @@ CREATE OR REPLACE FUNCTION public.flux_postgrest_config()
   SECURITY DEFINER
   SET search_path = public
 AS \$\$
-  SELECT set_config(
-    'pgrst.db_schemas',
-    coalesce(
-      (
-        SELECT string_agg(nspname, ',' ORDER BY nspname)
-        FROM   pg_catalog.pg_namespace
-        WHERE  nspname ~ '^t_[0-9a-f]{12}_api\$'
-      ),
-      'public'
-    ),
-    true
-  );
+  SELECT set_config('pgrst.db_schemas', 'public', true);
 \$\$;
 
 CREATE OR REPLACE FUNCTION public.flux_set_tenant_context()

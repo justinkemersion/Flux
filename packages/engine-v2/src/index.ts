@@ -209,18 +209,7 @@ CREATE OR REPLACE FUNCTION public.flux_postgrest_config()
   SECURITY DEFINER
   SET search_path = public
 AS $$
-  SELECT set_config(
-    'pgrst.db_schemas',
-    coalesce(
-      (
-        SELECT string_agg(nspname, ',' ORDER BY nspname)
-        FROM   pg_catalog.pg_namespace
-        WHERE  nspname ~ '^t_[0-9a-f]{12}_api$'
-      ),
-      'public'
-    ),
-    true
-  );
+  SELECT set_config('pgrst.db_schemas', 'public', true);
 $$;
 
 CREATE OR REPLACE FUNCTION public.flux_set_tenant_context()

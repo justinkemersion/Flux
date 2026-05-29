@@ -97,10 +97,8 @@ services:
       pgbouncer:
         condition: service_started
     environment:
-      # Dynamic schema list — populated at runtime by flux_postgrest_config().
-      # PGRST_DB_SCHEMAS is intentionally left unset here; the pre-config hook
-      # queries pg_namespace for all t_*_api schemas on every "reload config"
-      # notification so new tenants become visible without restarting PostgREST.
+      # db-schemas stays public-only (architecture invariant #6). Tenant access uses
+      # flux_set_tenant_context (search_path) plus gateway Accept-Profile headers.
       PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public}
       PGRST_DB_ANON_ROLE: ${PGRST_DB_ANON_ROLE:-authenticator}
       # PostgREST connects directly to Postgres (not through PgBouncer) so that
@@ -112,7 +110,7 @@ services:
       PGRST_DB_URI: postgres://${PGRST_DB_USER:-authenticator}:${PGRST_DB_PASSWORD:?set PGRST_DB_PASSWORD}@${PGRST_DB_HOST:-postgres-v2}:${PGRST_DB_PORT:-5432}/${PGRST_DB_NAME:-postgres}
       # Handshake: same secret material as gateway FLUX_GATEWAY_JWT_SECRET.
       PGRST_JWT_SECRET: ${FLUX_GATEWAY_JWT_SECRET:?set FLUX_GATEWAY_JWT_SECRET}
-      # Pre-config hook: dynamically builds db-schemas from pg_namespace on reload.
+      # Pre-config hook: pins pgrst.db_schemas to public (see flux_postgrest_config).
       # Installed by bootstrapSharedCluster() (run once via deploy-v2-shared.sh).
       PGRST_DB_PRE_CONFIG: ${PGRST_DB_PRE_CONFIG:-public.flux_postgrest_config}
       # Pre-request hook: sets SET LOCAL search_path + statement_timeout per

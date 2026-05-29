@@ -234,8 +234,12 @@ test("buildClusterBootstrapSql installs both PostgREST hook functions", () => {
     "cluster bootstrap must use CREATE OR REPLACE for idempotency",
   );
   assert.ok(
-    sql.includes("pgrst.db_schemas"),
-    "pre-config hook must set pgrst.db_schemas",
+    sql.includes("set_config('pgrst.db_schemas', 'public', true)"),
+    "pre-config hook must pin pgrst.db_schemas to public only (invariant #6)",
+  );
+  assert.ok(
+    !sql.includes("string_agg"),
+    "pre-config hook must not enumerate tenant schemas in pgrst.db_schemas",
   );
   assert.ok(
     sql.includes("SET LOCAL search_path"),
