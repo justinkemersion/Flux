@@ -3,7 +3,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
-import { probeTenantApiUrl } from "@/src/lib/tenant-api-probe";
+import { probeV2SharedCatalogProject } from "@/src/lib/tenant-api-probe";
 
 export type ProjectPowerAction = "start" | "stop";
 
@@ -20,12 +20,12 @@ async function applyProjectPowerForRow(
   if (project.mode === "v2_shared") {
     const now = new Date();
     if (action === "start") {
-      const ok = await probeTenantApiUrl(
-        project.slug,
-        project.hash,
+      const ok = await probeV2SharedCatalogProject({
+        slug: project.slug,
+        hash: project.hash,
         isProduction,
-        "v2_shared",
-      );
+        jwtSecret: project.jwtSecret,
+      });
       await db
         .update(projects)
         .set({

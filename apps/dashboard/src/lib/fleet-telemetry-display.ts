@@ -77,13 +77,13 @@ export function deriveTelemetryDisplay(
   return "offline";
 }
 
-/** Tooltip when mesh telemetry is operational (v2 edge probe; not full API auth). */
+/** Tooltip when mesh telemetry is operational (v2 deep probe with catalog jwt_secret). */
 export const FLEET_MESH_EDGE_REACHABLE_TITLE =
-  "Gateway resolved this project and reached the pooled API path. This does not verify app JWTs, grants, or RLS.";
+  "Gateway accepted a short-lived fleet probe JWT and reached PostgREST. Does not verify your app grants or RLS policies.";
 
 /** Secondary mesh label shown next to stack status when edge is reachable. */
 export function fleetTelemetryMeshSubLabel(level: FleetTelemetryLevel): string {
-  if (level === "operational") return "Edge reachable";
+  if (level === "operational") return "API reachable";
   if (level === "initializing") return "Starting";
   if (level === "standby") return "Standby";
   return "Unavailable";

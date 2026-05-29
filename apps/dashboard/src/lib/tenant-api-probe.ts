@@ -2,9 +2,19 @@ import {
   type FluxCatalogProjectMode,
   fluxApiUrlForCatalog,
 } from "@flux/core";
+import { SignJWT } from "jose";
 import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
+
+export type TenantApiProbeOptions = {
+  bearerToken?: string;
+  /** When true, only 2xx/3xx count (used for v2 fleet JWT deep probe). */
+  requireAuthenticatedSuccess?: boolean;
+};
+
+const FLEET_PROBE_JWT_SUB = "flux-fleet-probe";
+const FLEET_PROBE_JWT_TTL = "5m";
 
 const PROBE_TIMEOUT_MS = 5_000;
 const DEFAULT_GATEWAY_PROBE_URL = "http://flux-node-gateway:4000";
@@ -19,8 +29,8 @@ const DEFAULT_GATEWAY_PROBE_URL = "http://flux-node-gateway:4000";
  * (TLS / wildcard depth for extra labels, split-horizon DNS, or hairpin NAT) even when
  * Traefik and the gateway are healthy.
  *
- * v2_shared probes intentionally treat HTTP 401 (missing project Bearer) as success —
- * the gateway resolved the tenant and enforced auth; see {@link isTenantProbeSuccess}.
+ * v2_shared shallow probes (see {@link tenantProbeShallowAllowed}) treat HTTP 401 as success.
+ * Default fleet/catalog probes use {@link probeV2SharedCatalogProject} (JWT + 2xx).
  */
 function tenantProbeGatewayBases(): string[] {
   const configured = process.env.FLUX_TENANT_PROBE_GATEWAY_URL?.trim();
@@ -54,14 +64,66 @@ export const V2_GATEWAY_AUTH_REQUIRED_ERROR = "authorization required";
 export function isTenantProbeSuccess(
   statusCode: number,
   mode: FluxCatalogProjectMode,
+  options?: { requireAuthenticatedSuccess?: boolean },
 ): boolean {
   if (statusCode >= 200 && statusCode < 400) {
     return true;
+  }
+  if (options?.requireAuthenticatedSuccess) {
+    return false;
   }
   if (mode === "v2_shared" && statusCode === 401) {
     return true;
   }
   return false;
+}
+
+/** Restore Pass 1A mesh semantics (401 without Bearer = healthy). Off by default. */
+export function tenantProbeShallowAllowed(): boolean {
+  const v = process.env.FLUX_TENANT_PROBE_SHALLOW?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/** Short-lived HS256 project JWT for fleet/catalog deep probes (not for apps). */
+export async function mintFleetProbeProjectJwt(jwtSecret: string): Promise<string> {
+  const secret = jwtSecret.trim();
+  return new SignJWT({ sub: FLEET_PROBE_JWT_SUB, role: "authenticated" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(FLEET_PROBE_JWT_TTL)
+    .sign(new TextEncoder().encode(secret));
+}
+
+/**
+ * v2_shared catalog probe: requires `jwt_secret`, then gateway + PostgREST with a minted JWT.
+ * Returns false when secret is missing (no 401-as-healthy fallback unless shallow mode).
+ */
+export async function probeV2SharedCatalogProject(options: {
+  slug: string;
+  hash: string;
+  isProduction: boolean;
+  jwtSecret: string | null | undefined;
+}): Promise<boolean> {
+  const secret = options.jwtSecret?.trim();
+  if (!secret) {
+    return false;
+  }
+  if (tenantProbeShallowAllowed()) {
+    return probeTenantApiUrl(
+      options.slug,
+      options.hash,
+      options.isProduction,
+      "v2_shared",
+    );
+  }
+  const bearer = await mintFleetProbeProjectJwt(secret);
+  return probeTenantApiUrl(
+    options.slug,
+    options.hash,
+    options.isProduction,
+    "v2_shared",
+    { bearerToken: bearer, requireAuthenticatedSuccess: true },
+  );
 }
 
 /**
@@ -72,30 +134,39 @@ export async function probeTenantApiUrl(
   hash: string,
   isProduction: boolean,
   mode: FluxCatalogProjectMode,
+  probeOptions?: TenantApiProbeOptions,
 ): Promise<boolean> {
   const publicUrl = fluxApiUrlForCatalog(slug, hash, isProduction, mode);
   const tenantUrl = new URL(publicUrl);
   for (const via of tenantProbeGatewayBases()) {
-    if (await probeThroughGateway(tenantUrl, via, mode)) {
+    if (await probeThroughGateway(tenantUrl, via, mode, probeOptions)) {
       return true;
     }
   }
   // Final fallback: probe the public URL directly.
-  return probeWithFetch(publicUrl, mode);
+  return probeWithFetch(publicUrl, mode, probeOptions);
 }
 
 async function probeWithFetch(
   url: string,
   mode: FluxCatalogProjectMode,
+  probeOptions?: TenantApiProbeOptions,
 ): Promise<boolean> {
   try {
+    const headers: Record<string, string> = {};
+    if (probeOptions?.bearerToken) {
+      headers.authorization = `Bearer ${probeOptions.bearerToken}`;
+    }
     const res = await fetch(url, {
       method: "GET",
       cache: "no-store",
       redirect: "follow",
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      headers,
     });
-    return isTenantProbeSuccess(res.status, mode);
+    return isTenantProbeSuccess(res.status, mode, {
+      requireAuthenticatedSuccess: probeOptions?.requireAuthenticatedSuccess,
+    });
   } catch {
     return false;
   }
@@ -105,6 +176,7 @@ function probeThroughGateway(
   tenantUrl: URL,
   gatewayBaseRaw: string,
   mode: FluxCatalogProjectMode,
+  probeOptions?: TenantApiProbeOptions,
 ): Promise<boolean> {
   let gatewayBase: URL;
   try {
@@ -132,12 +204,19 @@ function probeThroughGateway(
         timeout: PROBE_TIMEOUT_MS,
         headers: {
           host: hostHeader,
+          ...(probeOptions?.bearerToken
+            ? { authorization: `Bearer ${probeOptions.bearerToken}` }
+            : {}),
         },
       },
       (res) => {
         const code = res.statusCode ?? 0;
         res.resume();
-        resolve(isTenantProbeSuccess(code, mode));
+        resolve(
+          isTenantProbeSuccess(code, mode, {
+            requireAuthenticatedSuccess: probeOptions?.requireAuthenticatedSuccess,
+          }),
+        );
       },
     );
     req.on("error", () => {

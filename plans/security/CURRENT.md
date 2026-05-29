@@ -5,9 +5,10 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Pass 3** — system-db bootstrap hardening (audit #9) |
+| **Active phase** | **Pass 4** — fleet JWT deep probe (complete pending commit) |
 | **Pass 1** | **Complete** (code + docs; deploy/e2e on server may still be pending) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
+| **Pass 3** | **Complete** (system-db cutover gating) |
 | **Last updated** | 2026-05-29 |
 
 ---
@@ -43,7 +44,7 @@
 
 ---
 
-## Pass 3 — active (audit #9)
+## Pass 3 — done (audit #9)
 
 **Goal:** Catalog bootstrap stays additive on restart; legacy DROP cutovers require operator opt-in and a ledger row.
 
@@ -55,12 +56,22 @@
 
 ---
 
+## Pass 4 — done (fleet deep probe)
+
+**Goal:** v2 fleet/catalog health requires `jwt_secret` and a minted project JWT reaching PostgREST (2xx), not unauthenticated 401.
+
+| Item | Status | Notes |
+|------|--------|--------|
+| `probeV2SharedCatalogProject` | Done | Mints fleet probe JWT; 2xx required |
+| `jwt_secret` pre-check | Done | Missing secret → `error` (no 401-as-healthy) |
+| Shallow fallback | Done | `FLUX_TENANT_PROBE_SHALLOW=1` restores Pass 1A 401 semantics |
+| UI copy | Done | “API reachable” + updated tooltip |
+
+---
+
 ## Deferred
 
-- [x] System-db destructive bootstrap hardening (audit #9) — Pass 3
 - [ ] Large-file splits (audit #10)
-- [ ] Fleet JWT “deep smoke” (authenticated probe / E2E green)
-- [ ] Optional: catalog `jwt_secret` pre-check before mesh probe
 
 ---
 

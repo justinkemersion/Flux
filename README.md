@@ -117,7 +117,7 @@ Treat it as an operator-level source of truth.
 
 Fleet monitor and v2 “start” power actions probe each tenant by HTTP. By default the code uses the public URL from `fluxApiUrlForSlug` / `fluxApiUrlForCatalog` (canonical: `https://api--<slug>--<hash>.<domain>`). **Inside the `flux-web` container** that `fetch` often fails even when the tenant is healthy: Traefik / ACME may not cover the public name, or internal DNS may not resolve it the same way as a browser on the internet.
 
-**Recommended in production:** set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` (both `flux-web` and `flux-node-gateway` are on `flux-network`). Probes then call that internal base URL and send `Host: api--<slug>--<hash>.<domain>` so the Node gateway routes exactly like a real client, without TLS to the public name. See `apps/dashboard/src/lib/tenant-api-probe.ts`.
+**Recommended in production:** set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` (both `flux-web` and `flux-node-gateway` are on `flux-network`). Probes then call that internal base URL and send `Host: api--<slug>--<hash>.<domain>` so the Node gateway routes exactly like a real client, without TLS to the public name. v2 fleet health mints a short-lived project JWT (`jwt_secret` required); see `apps/dashboard/src/lib/tenant-api-probe.ts`.
 
 ### JWT and schema isolation handshake
 
@@ -255,6 +255,7 @@ pnpm --filter dashboard test
 | gateway `health` fails with reset | process crashed before listener stabilized | same logs + `docker inspect ... State` |
 | v2 provision fails in dashboard | `FLUX_SHARED_POSTGRES_URL` DNS/network mismatch | verify `flux-web` attached to `flux-v2-shared` and URL host |
 | v2 mesh shows **Partial** / **Offline** but curl to tenant works | public `https://` probe from `flux-web` fails (TLS / DNS) | set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` and recreate `flux-web` |
+| v2 mesh **Offline** after Pass 4 deploy | catalog `jwt_secret` null or JWT probe not 2xx | run **Repair** on the project; optional `FLUX_TENANT_PROBE_SHALLOW=1` for legacy 401-only probes |
 | `flux backup create` → `EACCES` on `/srv/flux` | control plane runs as non-root `nextjs`; default backup dirs were not writable | redeploy `flux-web` with `docker/web/flux-web-entrypoint.sh` + compose volumes (see `docker/web/docker-compose.yml`), or set `FLUX_BACKUPS_LOCAL_DIR` / `FLUX_BACKUPS_OFFSITE_DIR` to writable paths |
 | `flux-web` logs `EACCES` on `/var/run/docker.sock` | entrypoint dropped to `nextjs` without the host `docker` GID (e.g. old `su-exec` behavior) | rebuild `flux-web` with `setpriv` entrypoint + `FLUX_DOCKER_SUPPLEMENTARY_GID` / `DOCKER_GID` in `docker/web/docker-compose.yml` (see `.env.example`) |
 | PostgREST returns wrong schema data | missing profile headers / hook misconfig | gateway proxy headers + `PGRST_DB_PRE_REQUEST` |

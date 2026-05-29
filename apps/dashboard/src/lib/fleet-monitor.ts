@@ -3,7 +3,10 @@ import { projectHeartbeatLog, projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import type { FluxCatalogProjectMode } from "@flux/core";
-import { probeTenantApiUrl } from "@/src/lib/tenant-api-probe";
+import {
+  probeTenantApiUrl,
+  probeV2SharedCatalogProject,
+} from "@/src/lib/tenant-api-probe";
 
 function catalogProbeMode(
   mode: "v1_dedicated" | "v2_shared" | null | undefined,
@@ -100,6 +103,7 @@ export async function probeSingleProject(projectId: string): Promise<void> {
       slug: projects.slug,
       hash: projects.hash,
       mode: projects.mode,
+      jwtSecret: projects.jwtSecret,
     })
     .from(projects)
     .where(eq(projects.id, projectId))
@@ -112,12 +116,12 @@ export async function probeSingleProject(projectId: string): Promise<void> {
   const now = new Date();
 
   if (row.mode === "v2_shared") {
-    const ok = await probeTenantApiUrl(
-      row.slug,
-      row.hash,
-      isProd,
-      "v2_shared",
-    );
+    const ok = await probeV2SharedCatalogProject({
+      slug: row.slug,
+      hash: row.hash,
+      isProduction: isProd,
+      jwtSecret: row.jwtSecret,
+    });
     const status = ok ? "running" : "error";
     await db
       .update(projects)
@@ -179,6 +183,7 @@ export async function runFleetMonitorTick(): Promise<void> {
       slug: projects.slug,
       hash: projects.hash,
       mode: projects.mode,
+      jwtSecret: projects.jwtSecret,
     })
     .from(projects);
   if (rows.length > 0) {
@@ -202,12 +207,12 @@ export async function runFleetMonitorTick(): Promise<void> {
     await Promise.all(
       rows.map(async (row) => {
         if (row.mode === "v2_shared") {
-          const ok = await probeTenantApiUrl(
-            row.slug,
-            row.hash,
-            isProd,
-            "v2_shared",
-          );
+          const ok = await probeV2SharedCatalogProject({
+            slug: row.slug,
+            hash: row.hash,
+            isProduction: isProd,
+            jwtSecret: row.jwtSecret,
+          });
           const status = ok ? "running" : "error";
           await db
             .update(projects)
