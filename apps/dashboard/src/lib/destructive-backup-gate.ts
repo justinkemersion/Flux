@@ -12,6 +12,22 @@ import {
 
 export const DESTRUCTIVE_BACKUP_BLOCKED_STATUS = 412;
 
+/** Thrown when the newest backup is not restore-verified (same bar as `flux nuke`). */
+export class DestructiveBackupBlockedError extends Error {
+  override readonly name = "DestructiveBackupBlockedError";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "DestructiveBackupBlockedError";
+  }
+}
+
+export function isDestructiveBackupBlockedError(
+  err: unknown,
+): err is DestructiveBackupBlockedError {
+  return err instanceof DestructiveBackupBlockedError;
+}
+
 export function backupRowToTrustInput(row: BackupRow): BackupTrustInput {
   const kind =
     row.kind === "tenant_export" || row.kind === "project_db"
@@ -53,7 +69,9 @@ export async function assertDestructiveBackupAllowed(
     return classification;
   }
   if (!classification.allowsDestructiveWithoutOverride) {
-    throw new Error(destructiveBackupCheckMessage(classification));
+    throw new DestructiveBackupBlockedError(
+      destructiveBackupCheckMessage(classification),
+    );
   }
   return classification;
 }
@@ -62,4 +80,14 @@ export function destructiveBackupBlockedResponse(message: string): Response {
   return Response.json({ error: message }, {
     status: DESTRUCTIVE_BACKUP_BLOCKED_STATUS,
   });
+}
+
+/** Map only backup-policy blocks to 412; rethrow other errors. */
+export function destructiveBackupGateOrThrow(
+  err: unknown,
+): Response | null {
+  if (isDestructiveBackupBlockedError(err)) {
+    return destructiveBackupBlockedResponse(err.message);
+  }
+  return null;
 }

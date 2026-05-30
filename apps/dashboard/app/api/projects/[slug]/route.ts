@@ -13,9 +13,8 @@ import {
 } from "@/src/lib/gateway-cache";
 import {
   assertDestructiveBackupAllowed,
-  destructiveBackupBlockedResponse,
-  parseSkipBackupCheckParam,
 } from "@/src/lib/destructive-backup-gate";
+import { runDashboardProjectDelete } from "@/src/lib/destructive-project-routes";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
 export const runtime = "nodejs";
@@ -249,64 +248,65 @@ export async function DELETE(
   req: NextRequest,
   ctx: Ctx,
 ): Promise<Response> {
-  const session = await auth();
-  if (!session?.user?.id) return jsonError("Unauthorized", 401);
-
-  const { slug } = await ctx.params;
-  const skipBackupCheck = parseSkipBackupCheckParam(
-    req.nextUrl.searchParams.get("skipBackupCheck"),
-  );
-
-  await initSystemDb();
-  const db = getDb();
-  const project = await resolveOwnedProject(slug, session.user.id);
-  if (!project) return jsonError("Project not found", 404);
-
-  try {
-    await assertDestructiveBackupAllowed(project.id, { skipBackupCheck });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return destructiveBackupBlockedResponse(msg);
-  }
-
-  // 1. Collect all custom-domain hostnames before deleting anything.
-  //    We need them for cache eviction; the cascade-delete will remove the rows.
-  const projectDomains = await db
-    .select({ hostname: domains.hostname })
-    .from(domains)
-    .where(eq(domains.projectId, project.id));
-  const isProduction = process.env.NODE_ENV === "production";
-  const defaultApiHosts =
-    project.mode === "v2_shared"
-      ? v2SharedGatewayCacheHostnames(slug, project.hash, isProduction)
-      : [new URL(fluxApiUrlForSlug(slug, project.hash, isProduction)).hostname];
-  const hostnames = [
-    ...new Set([
-      ...projectDomains.map((d) => d.hostname),
-      ...defaultApiHosts,
-    ]),
-  ];
-
-  try {
-    // 2. Evict gateway hostname caches (fail-open) to prevent zombie routing.
-    await evictHostnames(hostnames);
-
-    if (project.mode === "v2_shared") {
-      // 3a. v2: drop the tenant's Postgres schema + role from the shared cluster.
-      await deprovisionProject(project.id);
-    } else {
-      // 3b. v1: remove dedicated Docker containers and volume.
+  return runDashboardProjectDelete(req, ctx, {
+    initSystemDb,
+    auth: async () => {
+      const session = await auth();
+      return session?.user?.id ? { userId: session.user.id } : null;
+    },
+    resolveOwnedProject: async (slug, userId) => {
+      const row = await resolveOwnedProject(slug, userId);
+      if (!row) return null;
+      return {
+        id: row.id,
+        slug: row.slug,
+        hash: row.hash,
+        name: row.name,
+        mode: row.mode,
+      };
+    },
+    assertDestructiveBackupAllowed,
+    listProjectHostnames: async (project) => {
+      const db = getDb();
+      const projectDomains = await db
+        .select({ hostname: domains.hostname })
+        .from(domains)
+        .where(eq(domains.projectId, project.id));
+      const isProduction = process.env.NODE_ENV === "production";
+      const defaultApiHosts =
+        project.mode === "v2_shared"
+          ? v2SharedGatewayCacheHostnames(
+              project.slug,
+              project.hash,
+              isProduction,
+            )
+          : [
+              new URL(
+                fluxApiUrlForSlug(project.slug, project.hash, isProduction),
+              ).hostname,
+            ];
+      return [
+        ...new Set([
+          ...projectDomains.map((d) => d.hostname),
+          ...defaultApiHosts,
+        ]),
+      ];
+    },
+    evictHostnames,
+    deleteProjectInfrastructure: async (project) => {
+      if (project.mode === "v2_shared") {
+        await deprovisionProject(project.id);
+        return;
+      }
       const pm = getProjectManager();
-      await pm.nukeProject(slug, {
+      await pm.nukeProject(project.slug, {
         acknowledgeDataLoss: true,
         hash: project.hash,
       });
-    }
-
-    // 4. Delete the catalog row (cascade-removes domains, heartbeat_log, etc.).
-    await db.delete(projects).where(eq(projects.id, project.id));
-    return Response.json({ ok: true });
-  } catch (err: unknown) {
-    return jsonError(err instanceof Error ? err.message : String(err), 500);
-  }
+    },
+    deleteCatalogRow: async (projectId) => {
+      const db = getDb();
+      await db.delete(projects).where(eq(projects.id, projectId));
+    },
+  });
 }

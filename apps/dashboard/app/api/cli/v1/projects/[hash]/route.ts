@@ -2,7 +2,6 @@ import { and, eq } from "drizzle-orm";
 import {
   FLUX_PROJECT_HASH_HEX_LEN,
   resolveTenantApiSchemaName,
-  slugifyProjectName,
 } from "@flux/core";
 import { projects } from "@/src/db/schema";
 import {
@@ -10,11 +9,8 @@ import {
   extractBearerToken,
 } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
-import {
-  assertDestructiveBackupAllowed,
-  destructiveBackupBlockedResponse,
-  parseSkipBackupCheckParam,
-} from "@/src/lib/destructive-backup-gate";
+import { assertDestructiveBackupAllowed } from "@/src/lib/destructive-backup-gate";
+import { runCliProjectDelete } from "@/src/lib/destructive-project-routes";
 import { getProjectManager } from "@/src/lib/flux";
 
 export const runtime = "nodejs";
@@ -102,98 +98,39 @@ export async function DELETE(
   req: Request,
   context: Ctx,
 ): Promise<Response> {
-  await initSystemDb();
-  const db = getDb();
-  const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
-  }
-
-  const { hash: paramHash } = await context.params;
-  const hash = (paramHash ?? "").trim().toLowerCase();
-  if (!isValidHash(hash)) {
-    return jsonError(
-      `hash in path must be a ${String(FLUX_PROJECT_HASH_HEX_LEN)}-char hex id`,
-      400,
-    );
-  }
-
-  const u = new URL(req.url);
-  const force =
-    u.searchParams.get("force") === "1" || u.searchParams.get("force") === "true";
-  const forceSlugParam = (u.searchParams.get("slug") ?? "").trim();
-  const skipBackupCheck = parseSkipBackupCheckParam(
-    u.searchParams.get("skipBackupCheck"),
-  );
-
-  const [row] = await db
-    .select()
-    .from(projects)
-    .where(
-      and(eq(projects.userId, auth.userId), eq(projects.hash, hash)),
-    )
-    .limit(1);
-
   const pm = getProjectManager();
-
-  if (row) {
-    try {
-      if (!skipBackupCheck) {
-        try {
-          await assertDestructiveBackupAllowed(row.id);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return destructiveBackupBlockedResponse(msg);
-        }
-      }
-      const result = await pm.deleteProjectInfrastructure(row.slug, row.hash);
-      await db.delete(projects).where(eq(projects.id, row.id));
-      return Response.json({
-        ok: true,
-        mode: "catalog" as const,
+  return runCliProjectDelete(req, context, {
+    initSystemDb,
+    authenticateCli: async (authorizationHeader) => {
+      const db = getDb();
+      const secret = extractBearerToken(authorizationHeader);
+      const auth = await authenticateCliApiKey(db, secret);
+      return auth ? { userId: auth.userId } : null;
+    },
+    findOwnedProjectByHash: async (userId, hash) => {
+      const db = getDb();
+      const [row] = await db
+        .select()
+        .from(projects)
+        .where(and(eq(projects.userId, userId), eq(projects.hash, hash)))
+        .limit(1);
+      if (!row) return null;
+      return {
+        id: row.id,
+        slug: row.slug,
         hash: row.hash,
-        removed: result.removed,
-      });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return jsonError(msg, 500);
-    }
-  }
-
-  if (force) {
-    if (!forceSlugParam) {
-      return jsonError(
-        "No catalog row for this hash. Re-run with ?force=1&slug=<project-slug> (e.g. from flux.json) to remove orphaned containers and volume only.",
-        400,
-      );
-    }
-    let slug: string;
-    try {
-      slug = slugifyProjectName(forceSlugParam);
-    } catch (e: unknown) {
-      return jsonError(
-        e instanceof Error ? e.message : "Invalid slug query parameter",
-        400,
-      );
-    }
-    try {
-      const result = await pm.deleteProjectInfrastructure(slug, hash);
-      return Response.json({
-        ok: true,
-        mode: "orphan" as const,
-        hash,
-        slug,
-        removed: result.removed,
-      });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return jsonError(msg, 500);
-    }
-  }
-
-  return jsonError(
-    "No project in your catalog for this hash. If Docker resources remain without a row, use ?force=1&slug=<name>.",
-    404,
-  );
+        name: row.name,
+        mode: row.mode,
+      };
+    },
+    assertDestructiveBackupAllowed,
+    deleteProjectInfrastructure: async (slug, hash) =>
+      pm.deleteProjectInfrastructure(slug, hash),
+    deleteCatalogRow: async (projectId) => {
+      const db = getDb();
+      await db.delete(projects).where(eq(projects.id, projectId));
+    },
+    deleteOrphanInfrastructure: async (slug, hash) =>
+      pm.deleteProjectInfrastructure(slug, hash),
+  });
 }
