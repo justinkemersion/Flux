@@ -189,61 +189,70 @@ export function buildGlobalAuthCompatSql(): string {
  * public schema.  Must be executed once at cluster initialisation
  * (and is safe to re-run — all statements use CREATE OR REPLACE).
  *
- * flux_postgrest_config  — PostgREST pre-config hook.
- *   Pins `pgrst.db_schemas` to `public` only (architecture invariant #6).
- *   Tenant table access uses JWT role + `flux_set_tenant_context` search_path
- *   and gateway Accept-Profile / Content-Profile headers — not schema enumeration.
+ * flux_postgrest_config — PostgREST pre-config hook (runs on config reload).
+ *   Keeps `public` in the exposed schema list and adds every tenant API schema
+ *   matching `t_<12hex>_api` via pattern (not a static env list). Accept-Profile
+ *   then selects one schema per request without listing tenants in PGRST_DB_SCHEMAS.
  *
  * flux_set_tenant_context — PostgREST pre-request hook.
- *   Reads the JWT role claim embedded by the gateway, derives the tenant
- *   schema name, and issues SET LOCAL search_path + SET LOCAL statement_timeout.
- *   Using SET LOCAL (transaction-scoped) is the only correct approach in
- *   PgBouncer transaction-pooling mode — ALTER ROLE SET GUCs are only applied
- *   at session establishment, not when SET ROLE is called mid-session.
+ *   Reads PostgREST impersonation via `current_user` (after SET ROLE), derives
+ *   the tenant schema name, and applies transaction-scoped GUCs with set_config.
+ *   Do not use SET LOCAL inside PL/pgSQL here — it reverts when the function
+ *   returns, so the main PostgREST query would still see public-only search_path.
+ *   set_config(..., true) is transaction-scoped and survives the pre-request
+ *   call (PgBouncer transaction-pooling safe).
  */
 export function buildClusterBootstrapSql(statementTimeoutMs: number): string {
+  const timeoutLiteral = `${String(statementTimeoutMs)}ms`.replaceAll("'", "''");
   return `
 CREATE OR REPLACE FUNCTION public.flux_postgrest_config()
-  RETURNS void
-  LANGUAGE sql
-  SECURITY DEFINER
-  SET search_path = public
-AS $$
-  SELECT set_config('pgrst.db_schemas', 'public', true);
-$$;
-
-CREATE OR REPLACE FUNCTION public.flux_set_tenant_context()
   RETURNS void
   LANGUAGE plpgsql
   SECURITY DEFINER
   SET search_path = public
 AS $$
 DECLARE
-  _claims  json;
-  _role    text;
-  _schema  text;
+  _tenant_schemas text;
 BEGIN
-  BEGIN
-    _claims := current_setting('request.jwt.claims', true)::json;
-  EXCEPTION WHEN others THEN
-    RETURN;
-  END;
+  SELECT string_agg(nspname, ',' ORDER BY nspname)
+    INTO _tenant_schemas
+    FROM pg_catalog.pg_namespace
+   WHERE nspname ~ '^t_[0-9a-f]{12}_api$';
 
-  _role := _claims->>'role';
-  IF _role IS NULL OR _role NOT LIKE 't_%_role' THEN
+  PERFORM set_config(
+    'pgrst.db_schemas',
+    CASE
+      WHEN _tenant_schemas IS NULL OR _tenant_schemas = '' THEN 'public'
+      ELSE 'public,' || _tenant_schemas
+    END,
+    true
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.flux_set_tenant_context()
+  RETURNS void
+  LANGUAGE plpgsql
+  SECURITY INVOKER
+  SET search_path = public
+AS $$
+DECLARE
+  _role   text;
+  _schema text;
+BEGIN
+  _role := current_user;
+  IF _role IS NULL OR _role !~ '^t_[0-9a-f]{12}_role$' THEN
     RETURN;
   END IF;
 
-  -- Derive schema from role name (must match defaultTenantRoleFromProjectId /
-  -- defaultTenantApiSchemaFromProjectId in @flux/core).
   _schema := substring(_role FROM '^t_[0-9a-f]{12}') || '_api';
 
-  -- SET LOCAL is transaction-scoped and works correctly in PgBouncer
-  -- transaction-pooling mode (unlike ALTER ROLE SET, which is session-only).
-  EXECUTE format('SET LOCAL search_path = %I', _schema);
-  EXECUTE format('SET LOCAL statement_timeout = %L', '${String(statementTimeoutMs)}ms');
+  PERFORM set_config('search_path', _schema, true);
+  PERFORM set_config('statement_timeout', '${timeoutLiteral}', true);
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION public.flux_set_tenant_context() TO PUBLIC;
 `.trim();
 }
 

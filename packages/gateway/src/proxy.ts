@@ -1,7 +1,10 @@
 import type { Context } from "hono";
 import { Agent, fetch } from "undici";
 import { env } from "./env.ts";
-import { defaultTenantRoleFromProjectId } from "@flux/core/api-schema-strategy";
+import {
+  defaultTenantApiSchemaFromProjectId,
+  defaultTenantRoleFromProjectId,
+} from "@flux/core/api-schema-strategy";
 import type { TenantResolution } from "./types.ts";
 
 /**
@@ -69,10 +72,10 @@ export async function proxyRequest(
   reqHeaders.set("authorization", `Bearer ${jwt}`);
   reqHeaders.set("x-forwarded-host", url.hostname);
   reqHeaders.set("x-tenant-id", tenant.tenantId);
-  // PostgREST v12 profile headers must name a schema listed in pgrst.db_schemas.
-  // The shared cluster pins that list to `public` only (see flux_postgrest_config);
-  // tenant table access uses the bridge JWT role + flux_set_tenant_context search_path.
-  const postgrestProfile = "public";
+  // PostgREST v12 profile headers select the tenant schema from pgrst.db_schemas
+  // (populated at reload by flux_postgrest_config). search_path is reinforced by
+  // flux_set_tenant_context in the pre-request hook.
+  const postgrestProfile = defaultTenantApiSchemaFromProjectId(tenant.tenantId);
   reqHeaders.set("accept-profile", postgrestProfile);
   reqHeaders.set("content-profile", postgrestProfile);
 

@@ -234,19 +234,15 @@ test("buildClusterBootstrapSql installs both PostgREST hook functions", () => {
     "cluster bootstrap must use CREATE OR REPLACE for idempotency",
   );
   assert.ok(
-    sql.includes("set_config('pgrst.db_schemas', 'public', true)"),
-    "pre-config hook must pin pgrst.db_schemas to public only (invariant #6)",
+    sql.includes("string_agg(nspname"),
+    "pre-config hook must expose tenant API schemas by pattern on reload",
   );
   assert.ok(
-    !sql.includes("string_agg"),
-    "pre-config hook must not enumerate tenant schemas in pgrst.db_schemas",
+    sql.includes("set_config('search_path', _schema, true)"),
+    "pre-request hook must set transaction-scoped search_path via set_config",
   );
   assert.ok(
-    sql.includes("SET LOCAL search_path"),
-    "pre-request hook must use SET LOCAL for PgBouncer transaction-mode compatibility",
-  );
-  assert.ok(
-    sql.includes("SET LOCAL statement_timeout"),
+    sql.includes("set_config('statement_timeout'"),
     "pre-request hook must enforce statement_timeout per transaction",
   );
 });

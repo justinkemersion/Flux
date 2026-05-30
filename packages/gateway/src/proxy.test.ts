@@ -1,3 +1,4 @@
+import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -71,7 +72,7 @@ test("proxy forwards internal auth token and POST body", async () => {
     jwtSecret: null,
     migrationStatus: null as string | null,
   };
-  const expectedProfile = "public";
+  const expectedProfile = defaultTenantApiSchemaFromProjectId(tenant.tenantId);
 
   try {
     const internalToken = "internal-bridge-token";

@@ -58,11 +58,15 @@ test("buildGlobalAuthCompatSql installs auth.uid", () => {
 test("buildClusterBootstrapSql pins public db_schemas and tenant context hook", () => {
   const sql = buildClusterBootstrapSql(20_000);
   assert.match(sql, /flux_postgrest_config/);
-  assert.match(sql, /set_config\('pgrst\.db_schemas', 'public', true\)/);
-  assert.doesNotMatch(sql, /string_agg/);
-  assert.doesNotMatch(sql, /\^t_\[0-9a-f\]\{12\}_api\$/);
+  assert.match(sql, /string_agg\(nspname/);
+  assert.match(sql, /\^t_\[0-9a-f\]\{12\}_api\$/);
+  assert.match(sql, /'public,' \|\| _tenant_schemas/);
   assert.match(sql, /flux_set_tenant_context/);
-  assert.match(sql, /SET LOCAL search_path/);
+  assert.match(sql, /_role := current_user/);
+  assert.match(sql, /SECURITY INVOKER/);
+  assert.doesNotMatch(sql, /request\.jwt\.claims/);
+  assert.match(sql, /set_config\('search_path', _schema, true\)/);
+  assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.flux_set_tenant_context\(\) TO PUBLIC/);
   assert.match(sql, /20000ms/);
 });
 

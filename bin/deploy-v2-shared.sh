@@ -223,41 +223,52 @@ else
       psql -U "$_pg_user" -d "$_pg_db" -v ON_ERROR_STOP=1 -q <<BOOTSTRAP_SQL
 CREATE OR REPLACE FUNCTION public.flux_postgrest_config()
   RETURNS void
-  LANGUAGE sql
-  SECURITY DEFINER
-  SET search_path = public
-AS \$\$
-  SELECT set_config('pgrst.db_schemas', 'public', true);
-\$\$;
-
-CREATE OR REPLACE FUNCTION public.flux_set_tenant_context()
-  RETURNS void
   LANGUAGE plpgsql
   SECURITY DEFINER
   SET search_path = public
 AS \$\$
 DECLARE
-  _claims  json;
-  _role    text;
-  _schema  text;
+  _tenant_schemas text;
 BEGIN
-  BEGIN
-    _claims := current_setting('request.jwt.claims', true)::json;
-  EXCEPTION WHEN others THEN
-    RETURN;
-  END;
+  SELECT string_agg(nspname, ',' ORDER BY nspname)
+    INTO _tenant_schemas
+    FROM pg_catalog.pg_namespace
+   WHERE nspname ~ '^t_[0-9a-f]{12}_api$';
 
-  _role := _claims->>'role';
-  IF _role IS NULL OR _role NOT LIKE 't_%_role' THEN
+  PERFORM set_config(
+    'pgrst.db_schemas',
+    CASE
+      WHEN _tenant_schemas IS NULL OR _tenant_schemas = '' THEN 'public'
+      ELSE 'public,' || _tenant_schemas
+    END,
+    true
+  );
+END;
+\$\$;
+
+CREATE OR REPLACE FUNCTION public.flux_set_tenant_context()
+  RETURNS void
+  LANGUAGE plpgsql
+  SECURITY INVOKER
+  SET search_path = public
+AS \$\$
+DECLARE
+  _role   text;
+  _schema text;
+BEGIN
+  _role := current_user;
+  IF _role IS NULL OR _role !~ '^t_[0-9a-f]{12}_role$' THEN
     RETURN;
   END IF;
 
   _schema := substring(_role FROM '^t_[0-9a-f]{12}') || '_api';
 
-  EXECUTE format('SET LOCAL search_path = %I', _schema);
-  EXECUTE format('SET LOCAL statement_timeout = %L', '${_stmt_timeout_ms}ms');
+  PERFORM set_config('search_path', _schema, true);
+  PERFORM set_config('statement_timeout', '${_stmt_timeout_ms}ms', true);
 END;
 \$\$;
+
+GRANT EXECUTE ON FUNCTION public.flux_set_tenant_context() TO PUBLIC;
 BOOTSTRAP_SQL
   then
     echo "  cluster bootstrap: OK"
