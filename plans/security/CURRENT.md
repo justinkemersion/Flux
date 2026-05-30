@@ -9,7 +9,7 @@
 | **Pass 1** | **Complete** (code + docs; server e2e smoke verified 2026-05-29) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
-| **Last updated** | 2026-05-29 (Pass 5b `project-manager` split) |
+| **Last updated** | 2026-05-30 (Pass 2 smoke script + v2 handshake docs) |
 
 ---
 
@@ -39,6 +39,8 @@
 | Dashboard migrate UI | N/A | No destructive dashboard route (CLI only) |
 
 **Shared primitive:** `@flux/core/backup-trust` (`classifyBackupTrust`, `allowsDestructiveWithoutOverride`).
+
+**Operator smoke:** `./bin/pass2-destructive-gate-smoke.sh` (unit tests always; live 412 probes when `FLUX_API_TOKEN` + `FLUX_PASS2_SMOKE_*` set). Never completes destructive ops on live.
 
 **Suggested commits:** one per surface (or CLI vs dashboard split) for bisect.
 
@@ -116,7 +118,9 @@ When the agent is about to start substantial work, it should ask:
 
 ```bash
 pnpm check:architecture && pnpm typecheck && pnpm test
-# Live: FLUX_SMOKE_BEARER="$(FLUX_SMOKE_PROJECT_SLUG=… FLUX_SMOKE_PROJECT_HASH=… ./bin/mint-smoke-bearer.sh)"
+# Pass 2 gate (unit + optional live 412 probes):
+#   FLUX_API_TOKEN=… FLUX_PASS2_SMOKE_SLUG=… FLUX_PASS2_SMOKE_HASH=… ./bin/pass2-destructive-gate-smoke.sh
+# Live v2: FLUX_SMOKE_BEARER="$(FLUX_SMOKE_PROJECT_SLUG=… FLUX_SMOKE_PROJECT_HASH=… ./bin/mint-smoke-bearer.sh)"
 #       FLUX_SMOKE_KNOWN_HOST=api--<slug>--<hash>.<domain> ./bin/e2e-v2-shared-smoke.sh
 ```
 

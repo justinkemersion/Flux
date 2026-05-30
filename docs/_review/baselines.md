@@ -30,6 +30,22 @@ Keep entries short. If a single entry needs more than a screen, it probably want
 
 ---
 
+## 2026-05-30 — v2 tenant routing fix + Pass 2 operator smoke
+
+**Context.** Live table reads on pooled tenants failed (`public.moods` / PGRST106) after Pass 1 pinned static `PGRST_DB_SCHEMAS=public`. Fixed PostgREST hooks (`set_config` pre-request, pattern-based pre-config) and restored gateway tenant `Accept-Profile`. Added `./bin/pass2-destructive-gate-smoke.sh` for Pass 2 gate verification.
+
+### Decisions of record
+
+| Topic | Decision |
+|-------|----------|
+| Pre-request search_path | `set_config(..., true)` + `SECURITY INVOKER` — not `SET LOCAL` inside PL/pgSQL |
+| Tenant schema exposure | `flux_postgrest_config` adds `t_<12hex>_api` by pattern on reload; static env stays `public` only |
+| Pass 2 live smoke | CLI DELETE/migrate must return **412** on projects without restorable backup; script never completes destructive ops |
+
+**Commits:** `7679213` (hooks + gateway profiles). Docs/sync: handshake README, `pass2-destructive-gate-smoke.sh`.
+
+---
+
 ## 2026-05-29 — Pass 1 security / contract (Codex → Cursor)
 
 **Context.** First **code** security pass from an external audit (findings #1–#8). Split into Pass 1A (gateway/runtime), 1A½ (mesh copy), 1B (migration ledger + SQL normalize), 1C (docs + catalog). Full commit list, smoke commands, and Pass 2 scope: [`plans/security/pass-1-summary.md`](../../plans/security/pass-1-summary.md).

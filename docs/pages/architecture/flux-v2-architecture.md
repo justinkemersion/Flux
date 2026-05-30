@@ -72,7 +72,9 @@ Flux gateway
   ↓ private network only
 PostgREST pool
   ├─ verifies the bridge JWT against PGRST_JWT_SECRET
-  └─ SET ROLE <role from the bridge JWT> on the connection
+  ├─ SET ROLE t_<shortid>_role on the connection
+  ├─ pre-config (reload): exposes public + t_<shortid>_api schemas in pgrst.db_schemas
+  └─ pre-request: set_config search_path → t_<shortid>_api
   ↓
 PgBouncer (transaction pooling)
   ↓
@@ -357,7 +359,7 @@ These rules are unconditional. The Flux team treats violations as blocking revie
 | 3 | The **gateway is the only issuer of bridge JWTs** for tenant API traffic. |
 | 4 | **PostgREST is not publicly reachable.** Only the gateway has a network path to it. |
 | 5 | **Redis is never authoritative.** It is cache and best-effort telemetry. Wiping Redis must not affect data correctness. |
-| 6 | **Per-tenant schemas are never enumerated in `PGRST_DB_SCHEMAS`.** Access is controlled by role grants, `search_path`, and JWT `role`. Listing tenant schemas there widens introspection surface and makes isolation depend on JWT claims alone. |
+| 6 | **Tenant schemas are not listed in the static `PGRST_DB_SCHEMAS` env.** The pre-config hook adds `t_<12hex>_api` schemas by pattern on reload; per-request access uses `Accept-Profile`, bridge JWT role, and `flux_set_tenant_context` (`set_config` search_path). |
 
 ### What Flux deliberately does not do
 

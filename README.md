@@ -122,15 +122,21 @@ Fleet monitor and v2 “start” power actions probe each tenant by HTTP. By def
 ### JWT and schema isolation handshake
 
 1. Gateway resolves request host to `tenant_id`.
-2. Gateway signs short-lived HS256 JWT with `FLUX_GATEWAY_JWT_SECRET`.
-3. PostgREST verifies the same secret via `PGRST_JWT_SECRET`.
-4. Gateway injects:
-   - `Authorization: Bearer <jwt>`
-   - `Accept-Profile: t_<shortid>_api`
-   - `Content-Profile: t_<shortid>_api`
-5. PostgREST pre-request hook (`public.flux_set_tenant_context`) applies:
-   - `SET LOCAL search_path = t_<shortid>_api`
-   - `SET LOCAL statement_timeout = ...`
+2. Gateway verifies the client's project Bearer JWT (HS256 with per-project `jwt_secret`).
+3. Gateway mints a short-lived bridge JWT (HS256 with `FLUX_GATEWAY_JWT_SECRET` / `PGRST_JWT_SECRET`) carrying `role: t_<shortid>_role` and stable `sub`.
+4. Gateway injects on the upstream PostgREST request:
+   - `Authorization: Bearer <bridge JWT>`
+   - `Accept-Profile: t_<shortid>_api` (GET/HEAD)
+   - `Content-Profile: t_<shortid>_api` (POST/PATCH/PUT/DELETE)
+5. PostgREST **pre-config** hook (`public.flux_postgrest_config`, runs on config reload):
+   - Sets `pgrst.db_schemas` to `public` plus every existing `t_<12hex>_api` schema (pattern match — not a static `PGRST_DB_SCHEMAS` tenant list).
+   - After provisioning a new tenant, emit `pg_notify('pgrst', 'reload config')` and `pg_notify('pgrst', 'reload schema')`.
+6. PostgREST **pre-request** hook (`public.flux_set_tenant_context`, per request after SET ROLE):
+   - Derives the tenant schema from `current_user` (`t_<shortid>_role`).
+   - Applies transaction-scoped GUCs via `set_config(..., true)` for `search_path` and `statement_timeout`.
+   - Do **not** use `SET LOCAL` inside this PL/pgSQL function — it reverts when the function returns, so the main query would still hit `public`.
+
+**Fleet probes:** `GET /` with a minted project JWT and tenant `Accept-Profile` returns OpenAPI for that schema; table reads use the same profile headers (e.g. `GET /your_table`).
 
 ### Provision/delete lifecycle (v2)
 

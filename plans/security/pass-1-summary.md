@@ -124,6 +124,8 @@ Reuse @flux/core/backup-trust; mirror flux nuke --skip-backup-check UX.
 One commit per surface if possible. Run smoke from pass-1-summary.md.
 ```
 
+**Pass 2 smoke (2026-05-30):** `./bin/pass2-destructive-gate-smoke.sh` — route unit tests + optional live CLI 412 probes (`FLUX_API_TOKEN`, `FLUX_PASS2_SMOKE_SLUG`, `FLUX_PASS2_SMOKE_HASH`).
+
 ---
 
 ## How to re-run this audit loop

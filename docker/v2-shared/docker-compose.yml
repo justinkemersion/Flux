@@ -97,8 +97,9 @@ services:
       pgbouncer:
         condition: service_started
     environment:
-      # db-schemas stays public-only (architecture invariant #6). Tenant access uses
-      # flux_set_tenant_context (search_path) plus gateway Accept-Profile headers.
+      # Static env lists public only; flux_postgrest_config adds t_<12hex>_api
+      # schemas by pattern on reload. Tenant routing uses gateway Accept-Profile
+      # plus flux_set_tenant_context (set_config search_path per request).
       PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public}
       PGRST_DB_ANON_ROLE: ${PGRST_DB_ANON_ROLE:-authenticator}
       # PostgREST connects directly to Postgres (not through PgBouncer) so that
@@ -110,12 +111,11 @@ services:
       PGRST_DB_URI: postgres://${PGRST_DB_USER:-authenticator}:${PGRST_DB_PASSWORD:?set PGRST_DB_PASSWORD}@${PGRST_DB_HOST:-postgres-v2}:${PGRST_DB_PORT:-5432}/${PGRST_DB_NAME:-postgres}
       # Handshake: same secret material as gateway FLUX_GATEWAY_JWT_SECRET.
       PGRST_JWT_SECRET: ${FLUX_GATEWAY_JWT_SECRET:?set FLUX_GATEWAY_JWT_SECRET}
-      # Pre-config hook: pins pgrst.db_schemas to public (see flux_postgrest_config).
+      # Pre-config hook: flux_postgrest_config (pattern-based tenant schemas on reload).
       # Installed by bootstrapSharedCluster() (run once via deploy-v2-shared.sh).
       PGRST_DB_PRE_CONFIG: ${PGRST_DB_PRE_CONFIG:-public.flux_postgrest_config}
-      # Pre-request hook: sets SET LOCAL search_path + statement_timeout per
-      # transaction using the JWT role claim.  Works correctly in PgBouncer
-      # transaction-pooling mode (ALTER ROLE SET is a session-only mechanism).
+      # Pre-request hook: flux_set_tenant_context (set_config search_path + timeout).
+      # SECURITY INVOKER; runs after PostgREST SET ROLE from the bridge JWT.
       PGRST_DB_PRE_REQUEST: ${PGRST_DB_PRE_REQUEST:-public.flux_set_tenant_context}
       PGRST_DB_CHANNEL_ENABLED: "true"
       PGRST_DB_POOL: ${PGRST_DB_POOL:-100}
