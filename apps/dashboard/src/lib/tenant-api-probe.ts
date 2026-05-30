@@ -11,6 +11,8 @@ export type TenantApiProbeOptions = {
   bearerToken?: string;
   /** When true, only 2xx/3xx count (used for v2 fleet JWT deep probe). */
   requireAuthenticatedSuccess?: boolean;
+  /** PostgREST OpenAPI root expects a JSON-family Accept header. */
+  accept?: string;
 };
 
 const FLEET_PROBE_JWT_SUB = "flux-fleet-probe";
@@ -122,7 +124,11 @@ export async function probeV2SharedCatalogProject(options: {
     options.hash,
     options.isProduction,
     "v2_shared",
-    { bearerToken: bearer, requireAuthenticatedSuccess: true },
+    {
+      bearerToken: bearer,
+      requireAuthenticatedSuccess: true,
+      accept: "application/json",
+    },
   );
 }
 
@@ -156,6 +162,9 @@ async function probeWithFetch(
     const headers: Record<string, string> = {};
     if (probeOptions?.bearerToken) {
       headers.authorization = `Bearer ${probeOptions.bearerToken}`;
+    }
+    if (probeOptions?.accept) {
+      headers.accept = probeOptions.accept;
     }
     const res = await fetch(url, {
       method: "GET",
@@ -207,6 +216,7 @@ function probeThroughGateway(
           ...(probeOptions?.bearerToken
             ? { authorization: `Bearer ${probeOptions.bearerToken}` }
             : {}),
+          ...(probeOptions?.accept ? { accept: probeOptions.accept } : {}),
         },
       },
       (res) => {

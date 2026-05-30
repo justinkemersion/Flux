@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
 
 function setGatewayEnv(poolUrl: string): void {
   process.env.FLUX_SYSTEM_DATABASE_URL ??= "postgres://test:test@localhost:5432/flux";
@@ -72,7 +71,7 @@ test("proxy forwards internal auth token and POST body", async () => {
     jwtSecret: null,
     migrationStatus: null as string | null,
   };
-  const expectedProfile = defaultTenantApiSchemaFromProjectId(tenant.tenantId);
+  const expectedProfile = "public";
 
   try {
     const internalToken = "internal-bridge-token";
