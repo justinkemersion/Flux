@@ -30,7 +30,7 @@ function toMs(
 /**
  * **Standby** — `healthStatus === 'stopped'` (catalog) or Docker stack **stopped** (powered down).
  * **Initializing** — no heartbeat yet, project **&lt; 5m** old (grace: no probe result ≠ failure).
- * **Offline (red)** — `healthStatus === 'error'`, or heartbeat **&gt; 5m** old, or no heartbeat and project
+ * **Offline (red)** — `healthStatus === 'error'` or `'incomplete'`, or heartbeat **&gt; 5m** old, or no heartbeat and project
  * is **not** in the grace window (and not standby).
  * **Online** (display label) — `healthStatus === 'running'` and last heartbeat **≤ 5m**.
  */
@@ -60,7 +60,7 @@ export function deriveTelemetryDisplay(
 
   const age = now - hbMs;
 
-  if (healthStatus === "error") {
+  if (healthStatus === "error" || healthStatus === "incomplete") {
     return "offline";
   }
   if (age > FIVE_MIN_MS) {
@@ -76,6 +76,10 @@ export function deriveTelemetryDisplay(
   }
   return "offline";
 }
+
+/** Tooltip when v2 catalog row is incomplete (missing jwt_secret). */
+export const FLEET_MESH_INCOMPLETE_JWT_TITLE =
+  "Project jwt_secret is missing — run Repair in the dashboard to allocate credentials and reprovision the tenant.";
 
 /** Tooltip when mesh telemetry is operational (v2 deep probe with catalog jwt_secret). */
 export const FLEET_MESH_EDGE_REACHABLE_TITLE =

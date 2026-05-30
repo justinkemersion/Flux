@@ -14,6 +14,25 @@ function catalogProbeMode(
   return mode === "v2_shared" ? "v2_shared" : "v1_dedicated";
 }
 
+export type V2SharedFleetHealthStatus = "running" | "error" | "incomplete";
+
+/**
+ * Fleet pre-check for v2_shared rows. Missing `jwt_secret` is `incomplete` (not a probe failure).
+ * Returns `null` when a probe should run; otherwise the catalog health_status to persist.
+ */
+export function resolveV2SharedFleetHealthStatus(input: {
+  jwtSecret: string | null | undefined;
+  probeOk?: boolean;
+}): V2SharedFleetHealthStatus | null {
+  if (!input.jwtSecret?.trim()) {
+    return "incomplete";
+  }
+  if (input.probeOk === undefined) {
+    return null;
+  }
+  return input.probeOk ? "running" : "error";
+}
+
 const INTERVAL_MS = 2 * 60 * 1000;
 /** ~1 in 20 ticks (≈40 min at 2m interval) — limit write lock / churn on `project_heartbeat_log`. */
 const PRUNE_PROBABILITY = 0.05;
@@ -207,13 +226,35 @@ export async function runFleetMonitorTick(): Promise<void> {
     await Promise.all(
       rows.map(async (row) => {
         if (row.mode === "v2_shared") {
+          const preCheck = resolveV2SharedFleetHealthStatus({
+            jwtSecret: row.jwtSecret,
+          });
+          if (preCheck != null) {
+            const status = preCheck;
+            await db
+              .update(projects)
+              .set({
+                healthStatus: status,
+                lastHeartbeatAt: now,
+              })
+              .where(eq(projects.id, row.id));
+            await db.insert(projectHeartbeatLog).values({
+              projectId: row.id,
+              recordedAt: now,
+              healthStatus: status,
+            });
+            return;
+          }
           const ok = await probeV2SharedCatalogProject({
             slug: row.slug,
             hash: row.hash,
             isProduction: isProd,
             jwtSecret: row.jwtSecret,
           });
-          const status = ok ? "running" : "error";
+          const status = resolveV2SharedFleetHealthStatus({
+            jwtSecret: row.jwtSecret,
+            probeOk: ok,
+          })!;
           await db
             .update(projects)
             .set({

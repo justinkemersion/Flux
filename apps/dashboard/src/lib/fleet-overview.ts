@@ -15,7 +15,7 @@ export function projectHealthBucket(p: {
   status: string;
   healthStatus: string | null;
 }): "running" | "degraded" | "error" {
-  if (p.healthStatus === "error") return "error";
+  if (p.healthStatus === "error" || p.healthStatus === "incomplete") return "error";
   if (p.status === "missing" || p.status === "corrupted") {
     return "error";
   }

@@ -3,6 +3,7 @@ import {
   type FleetTelemetryLevel,
   deriveTelemetryDisplay,
   FLEET_MESH_EDGE_REACHABLE_TITLE,
+  FLEET_MESH_INCOMPLETE_JWT_TITLE,
   fleetTelemetryLabel,
   fleetTelemetryMeshSubLabel,
 } from "@/src/lib/fleet-telemetry-display";
@@ -54,9 +55,11 @@ export function MeshTelemetryPill({
     stackStatus,
   });
   const title =
-    level === "operational"
-      ? FLEET_MESH_EDGE_REACHABLE_TITLE
-      : "PostgREST mesh (catalog + Docker; 2m default tick)";
+    healthStatus === "incomplete"
+      ? FLEET_MESH_INCOMPLETE_JWT_TITLE
+      : level === "operational"
+        ? FLEET_MESH_EDGE_REACHABLE_TITLE
+        : "PostgREST mesh (catalog + Docker; 2m default tick)";
 
   return (
     <span

@@ -54,6 +54,18 @@ test("probeV2SharedCatalogProject fails closed without jwt_secret", async () => 
   }
 });
 
+test("fleet pre-check classifies missing jwt_secret as incomplete before HTTP probe", async () => {
+  const { resolveV2SharedFleetHealthStatus } = await import("./fleet-monitor.ts");
+  assert.equal(resolveV2SharedFleetHealthStatus({ jwtSecret: null }), "incomplete");
+  assert.equal(
+    resolveV2SharedFleetHealthStatus({
+      jwtSecret: "secret",
+      probeOk: false,
+    }),
+    "error",
+  );
+});
+
 test("mintFleetProbeProjectJwt returns a non-empty JWT", async () => {
   const token = await mintFleetProbeProjectJwt(
     "project-secret-for-tests-32-characters",

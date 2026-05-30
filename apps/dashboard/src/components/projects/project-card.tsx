@@ -574,7 +574,8 @@ export function ProjectCard({
             <>
               {currentStatus === "missing" ||
               currentStatus === "corrupted" ||
-              (isV2Shared && p.healthStatus === "error") ? (
+              (isV2Shared &&
+                (p.healthStatus === "error" || p.healthStatus === "incomplete")) ? (
                 <button
                   type="button"
                   onClick={() => void runRepair()}
