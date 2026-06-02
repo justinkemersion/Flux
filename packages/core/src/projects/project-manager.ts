@@ -6,6 +6,7 @@ import type {
   FluxMigrationRecord,
   MigrationPushMeta,
 } from "../sql-migrations.ts";
+import type { RepeatablePushMeta } from "../sql-repeatable-scripts.ts";
 import {
   assertFluxDockerEngineReachableOrThrow,
   resolveProjectManagerDocker,
@@ -250,8 +251,9 @@ export class ProjectManager {
     options?: {
       searchPathSchemas?: readonly string[];
       migration?: MigrationPushMeta;
+      repeatable?: RepeatablePushMeta;
     },
-  ): Promise<{ skipped: boolean }> {
+  ): Promise<{ skipped: boolean; previousChecksum?: string }> {
     return pushSqlFromCli(this.ctx, projectName, hash, sql, options);
   }
 

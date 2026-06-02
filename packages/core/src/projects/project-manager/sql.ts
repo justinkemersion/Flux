@@ -31,6 +31,13 @@ import {
   resolveMigrationLedgerAction,
   selectMigrationChecksumSql,
 } from "../../sql-migrations.ts";
+import {
+  buildRepeatableLedgerEnsureSql,
+  buildRepeatablePushSql,
+  resolveRepeatableLedgerAction,
+  selectRepeatableChecksumSql,
+  type RepeatablePushMeta,
+} from "../../sql-repeatable-scripts.ts";
 import { POSTGRES_USER } from "../../docker/docker-constants.ts";
 import { postgrestContainerName } from "../../docker/docker-names.ts";
 import type { FluxCoreContext } from "../../runtime/context.ts";
@@ -133,8 +140,9 @@ export async function pushSqlFromCli(
   options?: {
     searchPathSchemas?: readonly string[];
     migration?: MigrationPushMeta;
+    repeatable?: RepeatablePushMeta;
   },
-): Promise<{ skipped: boolean }> {
+): Promise<{ skipped: boolean; previousChecksum?: string }> {
   const creds = await resolveRunningPostgresCredentials(ctx, projectName, hash);
   const secret =
     process.env.FLUX_PROJECT_PASSWORD_SECRET?.trim() ||
@@ -166,7 +174,12 @@ export async function pushSqlFromCli(
 
   let userSql = normalizePushSql(sql);
   let skipped = false;
+  let previousChecksum: string | undefined;
   const migration = options?.migration;
+  const repeatable = options?.repeatable;
+  if (migration && repeatable) {
+    throw new Error("Provide only one of migration or repeatable metadata");
+  }
   if (migration) {
     await runPsqlSqlInsideContainer(
       ctx.docker,
@@ -210,6 +223,51 @@ export async function pushSqlFromCli(
         migration,
       });
     }
+  } else if (repeatable) {
+    await runPsqlSqlInsideContainer(
+      ctx.docker,
+      creds.containerId,
+      creds.password,
+      buildRepeatableLedgerEnsureSql(tenantSchema),
+      POSTGRES_USER,
+    );
+    const lookupSql = selectRepeatableChecksumSql(
+      repeatable.scriptId,
+      tenantSchema,
+    );
+    let existingChecksum: string | undefined;
+    try {
+      const scalar = await queryPsqlScalar(
+        ctx.docker,
+        creds.containerId,
+        creds.password,
+        lookupSql,
+        POSTGRES_USER,
+      );
+      existingChecksum = scalar.length > 0 ? scalar : undefined;
+    } catch {
+      existingChecksum = undefined;
+    }
+    const action = resolveRepeatableLedgerAction(
+      existingChecksum ? { checksum: existingChecksum } : undefined,
+      repeatable,
+      repeatable.force === true,
+    );
+    if (action === "skip") {
+      skipped = true;
+    } else {
+      if (
+        existingChecksum &&
+        existingChecksum !== repeatable.checksum
+      ) {
+        previousChecksum = existingChecksum;
+      }
+      userSql = buildRepeatablePushSql({
+        tenantSchema,
+        userSql,
+        meta: repeatable,
+      });
+    }
   }
 
   if (!skipped) {
@@ -227,11 +285,13 @@ export async function pushSqlFromCli(
       await ctx.docker.getContainer(apiName).kill({ signal: "SIGUSR1" });
     } catch (err: unknown) {
       const code = getDockerEngineHttpStatus(err);
-      if (code === 404 || code === 409) return { skipped };
+      if (code === 404 || code === 409) {
+        return { skipped, ...(previousChecksum ? { previousChecksum } : {}) };
+      }
       throw err;
     }
   }
-  return { skipped };
+  return { skipped, ...(previousChecksum ? { previousChecksum } : {}) };
 }
 
 /**

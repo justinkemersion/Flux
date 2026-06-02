@@ -6,6 +6,7 @@ import {
   isValidFluxProjectHash,
   parseMigrationPushMeta,
   parsePooledPushJsonBody,
+  parseRepeatablePushMeta,
   tenantApiSchemaFromProjectId,
   validatePooledPushServiceRole,
   validatePooledPushSqlPayload,
@@ -55,6 +56,45 @@ test("parseMigrationPushMeta validates checksum shape", () => {
     checksum: "a".repeat(64),
   });
   assert.equal(ok.ok, true);
+});
+
+test("parseRepeatablePushMeta validates fields and force flag", () => {
+  const bad = parseRepeatablePushMeta({
+    scriptId: "",
+    filename: "a.sql",
+    checksum: "a".repeat(64),
+  });
+  assert.equal(bad.ok, false);
+
+  const ok = parseRepeatablePushMeta({
+    scriptId: "flux/scripts/a.sql",
+    filename: "a.sql",
+    checksum: "b".repeat(64),
+    force: true,
+  });
+  assert.equal(ok.ok, true);
+  if (ok.ok) assert.equal(ok.repeatable.force, true);
+});
+
+test("parsePooledPushJsonBody rejects migration and repeatable together", () => {
+  const bad = parsePooledPushJsonBody({
+    hash: "abcdef0",
+    sql: "select 1",
+    migration: {
+      version: "a.sql",
+      filename: "a.sql",
+      checksum: "a".repeat(64),
+    },
+    repeatable: {
+      scriptId: "flux/a.sql",
+      filename: "a.sql",
+      checksum: "b".repeat(64),
+    },
+  });
+  assert.equal(bad.ok, false);
+  if (bad.ok === false) {
+    assert.match(bad.error, /only one of migration or repeatable/);
+  }
 });
 
 test("validatePooledPushSqlPayload rejects empty and oversized sql", () => {

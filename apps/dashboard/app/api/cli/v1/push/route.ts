@@ -8,12 +8,17 @@ import {
   normalizePushSql,
   type MigrationPushMeta,
 } from "@flux/core/sql-migrations";
+import type { RepeatablePushMeta } from "@flux/core/sql-repeatable-scripts";
 import {
   parseMigrationPushMeta,
+  parseRepeatablePushMeta,
   pooledPushEffectiveSqlBytes,
 } from "@/src/lib/pooled-push-validators";
 import { executePooledPush } from "@/src/lib/pooled-push";
-import { executePooledMigrationPush } from "@/src/lib/pooled-migrations";
+import {
+  executePooledMigrationPush,
+  executePooledRepeatablePush,
+} from "@/src/lib/pooled-migrations";
 
 export const runtime = "nodejs";
 
@@ -70,12 +75,23 @@ export async function POST(req: Request): Promise<Response> {
   const hash = (body as { hash: string }).hash.trim().toLowerCase();
   const sql = normalizePushSql((body as { sql: string }).sql);
   let migration: MigrationPushMeta | undefined;
+  let repeatable: RepeatablePushMeta | undefined;
   if ("migration" in body && (body as { migration: unknown }).migration != null) {
     const parsed = parseMigrationPushMeta(
       (body as { migration: unknown }).migration,
     );
     if (!parsed.ok) return jsonError(parsed.error, 400);
     migration = parsed.migration;
+  }
+  if ("repeatable" in body && (body as { repeatable: unknown }).repeatable != null) {
+    if (migration) {
+      return jsonError("Provide only one of migration or repeatable metadata", 400);
+    }
+    const parsed = parseRepeatablePushMeta(
+      (body as { repeatable: unknown }).repeatable,
+    );
+    if (!parsed.ok) return jsonError(parsed.error, 400);
+    repeatable = parsed.repeatable;
   }
 
   if (!slug) return jsonError("slug is required", 400);
@@ -114,7 +130,7 @@ export async function POST(req: Request): Promise<Response> {
     apiSchemaStrategy: row.apiSchemaStrategy as "legacy_api" | "tenant_schema" | null,
   });
 
-  if (pooledPushEffectiveSqlBytes(sql, migration, apiSchema) > MAX_SQL_BYTES) {
+  if (pooledPushEffectiveSqlBytes(sql, migration, apiSchema, repeatable) > MAX_SQL_BYTES) {
     return jsonError("sql exceeds maximum size", 413);
   }
 
@@ -135,10 +151,30 @@ export async function POST(req: Request): Promise<Response> {
             sequencesMoved: 0,
             viewsMoved: 0,
           } as const,
-          { headers: { "Cache-Control": "private, no-store" } },
-        );
-      }
-      await executePooledPush({ schema: apiSchema, sql });
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
+    if (repeatable) {
+      const result = await executePooledRepeatablePush({
+        schema: apiSchema,
+        userSql: sql,
+        repeatable,
+      });
+      return Response.json(
+        {
+          ok: true,
+          skipped: result.skipped,
+          ...(result.previousChecksum
+            ? { previousChecksum: result.previousChecksum }
+            : {}),
+          tablesMoved: 0,
+          sequencesMoved: 0,
+          viewsMoved: 0,
+        } as const,
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
+    await executePooledPush({ schema: apiSchema, sql });
       return Response.json(
         {
           ok: true,
@@ -153,12 +189,16 @@ export async function POST(req: Request): Promise<Response> {
     const pushResult = await pm.pushSqlFromCli(slug, hash, sql, {
       searchPathSchemas: [apiSchema, "public"],
       ...(migration ? { migration } : {}),
+      ...(repeatable ? { repeatable } : {}),
     });
-    if (migration) {
+    if (migration || repeatable) {
       return Response.json(
         {
           ok: true,
           skipped: pushResult.skipped,
+          ...(pushResult.previousChecksum
+            ? { previousChecksum: pushResult.previousChecksum }
+            : {}),
           tablesMoved: 0,
           sequencesMoved: 0,
           viewsMoved: 0,

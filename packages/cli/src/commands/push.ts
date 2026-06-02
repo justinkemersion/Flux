@@ -1,14 +1,25 @@
 import { access, readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { LEGACY_FLUX_API_SCHEMA } from "@flux/core";
 import {
   listMigrationSqlFiles,
   loadLocalMigrations,
+  migrationChecksum,
   migrationConflictMessage,
   migrationPlanTimeline,
   planMigrations,
   type MigrationPushMeta,
 } from "@flux/core/sql-migrations";
+import {
+  defaultRepeatableScriptId,
+  repeatableAppliedMessage,
+  repeatableChangedReapplyMessage,
+  repeatableForceApplyMessage,
+  repeatableApplyingMessage,
+  repeatableUnchangedSkipMessage,
+  type RepeatablePushMeta,
+  versionedMigrationConflictMessage,
+} from "@flux/core/sql-repeatable-scripts";
 import type { ImportSqlFileResult } from "@flux/core/standalone";
 import chalk from "chalk";
 import ora from "ora";
@@ -29,6 +40,11 @@ import {
   printMigrationPlanSummary,
   printSingleFilePushPreview,
 } from "../lib/migrations-output";
+import {
+  assertDirectoryPushScriptMode,
+  assertForceRequiresRepeatable,
+  resolvePushScriptMode,
+} from "../lib/push-script-mode";
 import { resolveHash, resolveProjectSlug } from "../project-resolve";
 
 export { mintServiceRoleJwt } from "../lib/migrations-remote";
@@ -41,6 +57,9 @@ export type CmdPushOptions = {
   disableApiRls: boolean;
   hash?: string;
   pushMode: MigrationPushMode;
+  explicitScriptMode?: string;
+  force?: boolean;
+  scriptId?: string;
 };
 
 export type PushTarget =
@@ -99,6 +118,26 @@ export async function cmdPush(
   const client = getApiClient();
   const metadata = await client.getProjectMetadata(hash);
 
+  if (target.kind === "directory") {
+    if (options.force) {
+      throw new Error("--force requires --mode repeatable on a single SQL file.");
+    }
+    if (options.explicitScriptMode?.trim()) {
+      assertDirectoryPushScriptMode(
+        resolvePushScriptMode({
+          explicitMode: options.explicitScriptMode,
+          resolvedFilePath: target.path,
+        }),
+      );
+    }
+  } else if (options.explicitScriptMode || options.force || options.scriptId) {
+    const scriptMode = resolvePushScriptMode({
+      explicitMode: options.explicitScriptMode,
+      resolvedFilePath: target.path,
+    });
+    assertForceRequiresRepeatable(options.force === true, scriptMode);
+  }
+
   if (target.kind === "file" && options.pushMode !== "apply") {
     const schemaHint =
       metadata.mode === "v1_dedicated"
@@ -152,35 +191,133 @@ export async function cmdPush(
   }
 
   const file = target.path;
+  const scriptMode = resolvePushScriptMode({
+    explicitMode: options.explicitScriptMode,
+    resolvedFilePath: file,
+  });
+  assertForceRequiresRepeatable(options.force === true, scriptMode);
+
   const schemaHint =
     metadata.mode === "v1_dedicated"
       ? `${metadata.mode}, schema ${metadata.apiSchema ?? LEGACY_FLUX_API_SCHEMA}`
       : metadata.mode;
-  console.log(
-    chalk.blue(
-      `Applying ${chalk.bold(file)} to project ${chalk.bold(slug)} (${chalk.dim(schemaHint)})…`,
-    ),
-  );
 
-  if (metadata.mode === "v2_shared") {
-    if (options.supabaseCompat || options.disableApiRls) {
-      console.log(
-        chalk.dim(
-          "  --supabase-compat / --disable-api-rls have no effect on pooled (v2_shared) projects; ignoring.",
-        ),
-      );
+  if (scriptMode === "raw") {
+    console.log(
+      chalk.blue(
+        `Applying ${chalk.bold(file)} to project ${chalk.bold(slug)} (${chalk.dim(schemaHint)})…`,
+      ),
+    );
+    if (metadata.mode === "v2_shared") {
+      if (options.supabaseCompat || options.disableApiRls) {
+        console.log(
+          chalk.dim(
+            "  --supabase-compat / --disable-api-rls have no effect on pooled (v2_shared) projects; ignoring.",
+          ),
+        );
+      }
+      await pushSqlV2Raw({ slug, hash, sqlPath: file });
+    } else {
+      await pushSqlV1({
+        slug,
+        hash,
+        sqlPath: file,
+        options,
+      });
     }
-    await pushSqlV2({ slug, hash, sqlPath: file });
     console.log(chalk.green("✓"), chalk.white("SQL applied successfully."));
     return;
   }
 
-  await pushSqlV1({
+  const raw = await readFile(file, "utf8");
+  const filename = basename(file);
+
+  if (scriptMode === "versioned") {
+    const checksum = migrationChecksum(raw);
+    const migration: MigrationPushMeta = {
+      version: filename,
+      filename,
+      checksum,
+    };
+    console.log(
+      chalk.blue(
+        `Applying ${chalk.bold(filename)} to project ${chalk.bold(slug)} (${chalk.dim(schemaHint)})…`,
+      ),
+    );
+    try {
+      const skipped = await pushMigrationFile({
+        slug,
+        hash,
+        mode: metadata.mode,
+        content: raw,
+        migration,
+        options,
+      });
+      if (skipped) {
+        console.log(
+          chalk.green("✓"),
+          chalk.white(`${filename} already applied`),
+        );
+      } else {
+        console.log(chalk.green("✓"), chalk.white(`${filename} applied`));
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/checksum conflict|different checksum/i.test(msg)) {
+        const match = /Applied checksum: ([a-f0-9]{64})/u.exec(msg);
+        throw new Error(
+          versionedMigrationConflictMessage(migration, match?.[1] ?? "?", checksum),
+        );
+      }
+      throw err;
+    }
+    return;
+  }
+
+  const scriptId =
+    options.scriptId?.trim() ||
+    defaultRepeatableScriptId(file, process.cwd());
+  const checksum = migrationChecksum(raw);
+  const repeatable: RepeatablePushMeta = {
+    scriptId,
+    filename,
+    checksum,
+    ...(options.force ? { force: true } : {}),
+  };
+
+  if (options.force) {
+    console.log(chalk.blue(repeatableForceApplyMessage(scriptId)));
+  } else {
+    console.log(chalk.blue(repeatableApplyingMessage(scriptId)));
+  }
+
+  const result = await pushRepeatableFile({
     slug,
     hash,
-    sqlPath: file,
+    mode: metadata.mode,
+    content: raw,
+    repeatable,
     options,
   });
+
+  if (result.skipped) {
+    console.log(chalk.dim(repeatableUnchangedSkipMessage(scriptId)));
+    return;
+  }
+
+  if (result.previousChecksum) {
+    console.log(
+      chalk.blue(
+        repeatableChangedReapplyMessage(
+          scriptId,
+          result.previousChecksum,
+          checksum,
+        ),
+      ),
+    );
+  }
+
+  console.log(chalk.green(repeatableAppliedMessage(scriptId, checksum)));
 }
 
 async function cmdPushMigrationsDir(input: {
@@ -319,6 +456,40 @@ async function pushMigrationFile(input: {
   return result.skipped === true;
 }
 
+async function pushRepeatableFile(input: {
+  slug: string;
+  hash: string;
+  mode: string;
+  content: string;
+  repeatable: RepeatablePushMeta;
+  options: CmdPushOptions;
+}): Promise<{ skipped: boolean; previousChecksum?: string }> {
+  if (Buffer.byteLength(input.content, "utf8") > MAX_SQL_BYTES) {
+    throw new Error(
+      `${input.repeatable.filename} is larger than 4 MiB (server limit for flux push).`,
+    );
+  }
+  if (input.mode === "v2_shared") {
+    return pushSqlV2Push({
+      slug: input.slug,
+      hash: input.hash,
+      sql: input.content,
+      repeatable: input.repeatable,
+    });
+  }
+  const client = getApiClient();
+  const result = await client.pushSql({
+    slug: input.slug,
+    hash: input.hash,
+    sql: input.content,
+    repeatable: input.repeatable,
+  });
+  return {
+    skipped: result.skipped === true,
+    ...(result.previousChecksum ? { previousChecksum: result.previousChecksum } : {}),
+  };
+}
+
 async function pushSqlV1(input: {
   slug: string;
   hash: string;
@@ -375,25 +546,28 @@ async function pushSqlV1(input: {
   }
 }
 
-async function pushSqlV2(input: {
+async function pushSqlV2Raw(input: {
   slug: string;
   hash: string;
   sqlPath: string;
 }): Promise<void> {
   const sql = await readFile(input.sqlPath, "utf8");
-  await pushSqlV2Migration({
+  await pushSqlV2Push({
     slug: input.slug,
     hash: input.hash,
     sql,
   });
 }
 
-async function pushSqlV2Migration(input: {
+type PushSqlV2Result = { skipped: boolean; previousChecksum?: string };
+
+async function pushSqlV2Push(input: {
   slug: string;
   hash: string;
   sql: string;
   migration?: MigrationPushMeta;
-}): Promise<boolean> {
+  repeatable?: RepeatablePushMeta;
+}): Promise<PushSqlV2Result> {
   const fileStat = Buffer.byteLength(input.sql, "utf8");
   if (fileStat > MAX_SQL_BYTES) {
     throw new Error(
@@ -411,7 +585,11 @@ async function pushSqlV2Migration(input: {
   );
 
   const spinner = ora(
-    input.migration ? `Applying ${input.migration.filename}…` : "Applying SQL via Dashboard…",
+    input.repeatable
+      ? `Applying ${input.repeatable.scriptId}…`
+      : input.migration
+        ? `Applying ${input.migration.filename}…`
+        : "Applying SQL via Dashboard…",
   ).start();
   let res: Response;
   try {
@@ -426,6 +604,7 @@ async function pushSqlV2Migration(input: {
         hash: input.hash,
         sql: input.sql,
         ...(input.migration ? { migration: input.migration } : {}),
+        ...(input.repeatable ? { repeatable: input.repeatable } : {}),
       }),
     });
   } finally {
@@ -445,14 +624,31 @@ async function pushSqlV2Migration(input: {
   if (!res.ok) {
     throw new Error(formatV2ServerError(res.status, body));
   }
-  if (
+  const skipped =
     body &&
     typeof body === "object" &&
     "skipped" in body &&
-    (body as { skipped: unknown }).skipped === true
-  ) {
-    return true;
-  }
-  return false;
+    (body as { skipped: unknown }).skipped === true;
+  const previousChecksum =
+    body &&
+    typeof body === "object" &&
+    "previousChecksum" in body &&
+    typeof (body as { previousChecksum?: unknown }).previousChecksum === "string"
+      ? (body as { previousChecksum: string }).previousChecksum
+      : undefined;
+  return {
+    skipped: skipped === true,
+    ...(previousChecksum ? { previousChecksum } : {}),
+  };
+}
+
+async function pushSqlV2Migration(input: {
+  slug: string;
+  hash: string;
+  sql: string;
+  migration: MigrationPushMeta;
+}): Promise<boolean> {
+  const result = await pushSqlV2Push(input);
+  return result.skipped;
 }
 

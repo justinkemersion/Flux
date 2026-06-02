@@ -9,6 +9,13 @@ import {
   resolveMigrationLedgerAction,
   selectMigrationChecksumSql,
 } from "@flux/core/sql-migrations";
+import {
+  buildRepeatableLedgerEnsureSql,
+  buildRepeatablePushSql,
+  resolveRepeatableLedgerAction,
+  selectRepeatableChecksumSql,
+  type RepeatablePushMeta,
+} from "@flux/core/sql-repeatable-scripts";
 import type { PushPgClient, PushPgClientFactory } from "@/src/lib/pooled-push";
 import { quoteIdent, PUSH_TIMEOUT_MS } from "@/src/lib/pooled-push";
 import pg from "pg";
@@ -123,6 +130,105 @@ export async function executePooledMigrationPush(
       await client.query("NOTIFY pgrst, 'reload schema';");
       await client.query("COMMIT");
       return { skipped: false as const };
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // ignore
+      }
+      throw err;
+    } finally {
+      await client.end().catch(() => undefined);
+    }
+  })();
+
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `SQL push exceeded ${String(timeoutMs / 1000)}s timeout`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export type ExecuteRepeatablePushInput = {
+  schema: string;
+  userSql: string;
+  repeatable: RepeatablePushMeta;
+  clientFactory?: PushPgClientFactory;
+  timeoutMs?: number;
+};
+
+export type ExecuteRepeatablePushResult = {
+  skipped: boolean;
+  previousChecksum?: string;
+};
+
+/**
+ * Repeatable-mode pooled push: ledger in `flux.flux_repeatable_scripts`, user SQL under tenant search_path.
+ */
+export async function executePooledRepeatablePush(
+  input: ExecuteRepeatablePushInput,
+): Promise<ExecuteRepeatablePushResult> {
+  const factory = input.clientFactory ?? defaultClientFactory;
+  const timeoutMs = input.timeoutMs ?? PUSH_TIMEOUT_MS;
+  const client = factory();
+  let timer: NodeJS.Timeout | undefined;
+
+  const work = (async () => {
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL statement_timeout = '30s'");
+      await client.query(
+        `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
+      );
+      await client.query(buildRepeatableLedgerEnsureSql(input.schema));
+
+      const lookup = await client.query(
+        selectRepeatableChecksumSql(input.repeatable.scriptId, input.schema),
+      );
+      const rows = (lookup as { rows?: { checksum: string }[] }).rows ?? [];
+      const existing = rows[0]?.checksum
+        ? { checksum: rows[0].checksum }
+        : undefined;
+      const action = resolveRepeatableLedgerAction(
+        existing,
+        input.repeatable,
+        input.repeatable.force === true,
+      );
+
+      if (action === "skip") {
+        await client.query("COMMIT");
+        return { skipped: true as const };
+      }
+
+      const previousChecksum = existing?.checksum;
+      const wrapped = buildRepeatablePushSql({
+        tenantSchema: input.schema,
+        userSql: normalizePushSql(input.userSql),
+        meta: input.repeatable,
+      });
+      await client.query(wrapped);
+      await client.query("NOTIFY pgrst, 'reload schema';");
+      await client.query("COMMIT");
+      return {
+        skipped: false as const,
+        ...(previousChecksum && previousChecksum !== input.repeatable.checksum
+          ? { previousChecksum }
+          : {}),
+      };
     } catch (err) {
       try {
         await client.query("ROLLBACK");

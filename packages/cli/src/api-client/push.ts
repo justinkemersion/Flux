@@ -1,5 +1,6 @@
 import type { ImportSqlFileResult } from "@flux/core/standalone";
 import type { MigrationPushMeta } from "@flux/core/sql-migrations";
+import type { RepeatablePushMeta } from "@flux/core/sql-repeatable-scripts";
 import { readFile, stat } from "node:fs/promises";
 import type { ApiClientContext } from "./context";
 import {
@@ -8,7 +9,10 @@ import {
 } from "./json-response";
 import { pushSqlResponseSchema } from "./schemas";
 
-export type PushSqlResult = ImportSqlFileResult & { skipped?: boolean };
+export type PushSqlResult = ImportSqlFileResult & {
+  skipped?: boolean;
+  previousChecksum?: string;
+};
 
 export async function pushSql(
   ctx: ApiClientContext,
@@ -17,6 +21,7 @@ export async function pushSql(
     hash: string;
     sql: string;
     migration?: MigrationPushMeta;
+    repeatable?: RepeatablePushMeta;
   },
 ): Promise<PushSqlResult> {
   const token = ctx.tokenOrThrow();
@@ -33,6 +38,7 @@ export async function pushSql(
       hash: input.hash.trim().toLowerCase(),
       sql: input.sql,
       ...(input.migration ? { migration: input.migration } : {}),
+      ...(input.repeatable ? { repeatable: input.repeatable } : {}),
     }),
   });
   if (res.status === 401) {
@@ -59,6 +65,14 @@ export async function pushSql(
     ...(("skipped" in (raw as object) &&
       typeof (raw as { skipped?: unknown }).skipped === "boolean")
       ? { skipped: (raw as { skipped: boolean }).skipped }
+      : {}),
+    ...(("previousChecksum" in (raw as object) &&
+      typeof (raw as { previousChecksum?: unknown }).previousChecksum ===
+        "string")
+      ? {
+          previousChecksum: (raw as { previousChecksum: string })
+            .previousChecksum,
+        }
       : {}),
   };
 }

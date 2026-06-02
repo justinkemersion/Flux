@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { PushPgClient } from "./pooled-push";
-import { executePooledMigrationPush } from "./pooled-migrations";
+import { executePooledMigrationPush, executePooledRepeatablePush } from "./pooled-migrations";
 
 type Row = Record<string, unknown>;
 
 class FakePgClient implements PushPgClient {
   queries: string[] = [];
   private ledger = new Map<string, Map<string, string>>();
+  private repeatableLedger = new Map<string, Map<string, string>>();
 
   seedVersion(tenantSchema: string, version: string, checksum: string): void {
     let byVersion = this.ledger.get(tenantSchema);
@@ -16,6 +17,19 @@ class FakePgClient implements PushPgClient {
       this.ledger.set(tenantSchema, byVersion);
     }
     byVersion.set(version, checksum);
+  }
+
+  seedRepeatable(
+    tenantSchema: string,
+    scriptId: string,
+    checksum: string,
+  ): void {
+    let byScript = this.repeatableLedger.get(tenantSchema);
+    if (!byScript) {
+      byScript = new Map();
+      this.repeatableLedger.set(tenantSchema, byScript);
+    }
+    byScript.set(scriptId, checksum);
   }
 
   async connect(): Promise<void> {
@@ -27,15 +41,22 @@ class FakePgClient implements PushPgClient {
     const trimmed = sql.trim();
     if (trimmed.startsWith("SELECT checksum")) {
       const schemaMatch = /tenant_schema = '((?:[^']|'')*)'/u.exec(trimmed);
-      const versionMatch = /version = '((?:[^']|'')*)'/u.exec(trimmed);
       const tenantSchema = schemaMatch
         ? schemaMatch[1]!.replaceAll("''", "'")
         : "";
-      const version = versionMatch
-        ? versionMatch[1]!.replaceAll("''", "'")
-        : "";
-      const checksum = this.ledger.get(tenantSchema)?.get(version);
-      return { rows: checksum ? [{ checksum }] : [] };
+      const versionMatch = /version = '((?:[^']|'')*)'/u.exec(trimmed);
+      if (versionMatch) {
+        const version = versionMatch[1]!.replaceAll("''", "'");
+        const checksum = this.ledger.get(tenantSchema)?.get(version);
+        return { rows: checksum ? [{ checksum }] : [] };
+      }
+      const scriptMatch = /script_id = '((?:[^']|'')*)'/u.exec(trimmed);
+      if (scriptMatch) {
+        const scriptId = scriptMatch[1]!.replaceAll("''", "'");
+        const checksum = this.repeatableLedger.get(tenantSchema)?.get(scriptId);
+        return { rows: checksum ? [{ checksum }] : [] };
+      }
+      return { rows: [] };
     }
     if (trimmed.startsWith("SELECT version")) {
       const schemaMatch = /tenant_schema = '((?:[^']|'')*)'/u.exec(trimmed);
@@ -140,4 +161,111 @@ test("same migration version is isolated per tenant_schema", async () => {
   });
   assert.equal(result.skipped, false);
   assert.ok(client.queries.some((q) => q.includes("INSERT INTO flux")));
+});
+
+test("executePooledRepeatablePush skips when checksum matches", async () => {
+  const client = new FakePgClient();
+  const checksum = "e".repeat(64);
+  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", checksum);
+  const factory = () => client;
+  const result = await executePooledRepeatablePush({
+    schema: "t_test_api",
+    userSql: "SELECT 1;",
+    repeatable: {
+      scriptId: "flux/scripts/seed.sql",
+      filename: "seed.sql",
+      checksum,
+    },
+    clientFactory: factory,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.skipped, true);
+  assert.ok(
+    !client.queries.some(
+      (q) => q.includes("flux_repeatable_scripts") && q.includes(", 1, now()"),
+    ),
+  );
+});
+
+test("executePooledRepeatablePush applies with run_count on first insert", async () => {
+  const client = new FakePgClient();
+  const checksum = "f".repeat(64);
+  const factory = () => client;
+  const result = await executePooledRepeatablePush({
+    schema: "t_test_api",
+    userSql: "SELECT 2;",
+    repeatable: {
+      scriptId: "flux/scripts/new.sql",
+      filename: "new.sql",
+      checksum,
+    },
+    clientFactory: factory,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.skipped, false);
+  assert.ok(client.queries.some((q) => q.includes(", 1, now()")));
+});
+
+test("executePooledRepeatablePush force applies unchanged checksum", async () => {
+  const client = new FakePgClient();
+  const checksum = "0".repeat(64);
+  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", checksum);
+  const factory = () => client;
+  const result = await executePooledRepeatablePush({
+    schema: "t_test_api",
+    userSql: "SELECT 3;",
+    repeatable: {
+      scriptId: "flux/scripts/seed.sql",
+      filename: "seed.sql",
+      checksum,
+      force: true,
+    },
+    clientFactory: factory,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.skipped, false);
+  assert.ok(client.queries.some((q) => q.includes("flux_repeatable_scripts")));
+});
+
+test("executePooledRepeatablePush returns previousChecksum when content changed", async () => {
+  const client = new FakePgClient();
+  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", "a".repeat(64));
+  const factory = () => client;
+  const result = await executePooledRepeatablePush({
+    schema: "t_test_api",
+    userSql: "SELECT 4;",
+    repeatable: {
+      scriptId: "flux/scripts/seed.sql",
+      filename: "seed.sql",
+      checksum: "b".repeat(64),
+    },
+    clientFactory: factory,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.skipped, false);
+  assert.equal(result.previousChecksum, "a".repeat(64));
+});
+
+test("executePooledRepeatablePush uses same transactional envelope as migrations", async () => {
+  const client = new FakePgClient();
+  const checksum = "1".repeat(64);
+  const factory = () => client;
+  await executePooledRepeatablePush({
+    schema: "t_test_api",
+    userSql: "SELECT 5;",
+    repeatable: {
+      scriptId: "flux/scripts/x.sql",
+      filename: "x.sql",
+      checksum,
+    },
+    clientFactory: factory,
+    timeoutMs: 5000,
+  });
+  assert.ok(client.queries[0]?.includes("BEGIN"));
+  assert.ok(
+    client.queries.some((q) =>
+      q.includes("SET LOCAL search_path TO \"t_test_api\", public"),
+    ),
+  );
+  assert.ok(client.queries.some((q) => q.includes("NOTIFY pgrst")));
 });

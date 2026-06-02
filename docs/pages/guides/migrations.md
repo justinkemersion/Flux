@@ -56,13 +56,44 @@ Done. 1 applied, 1 skipped.
 
 Lines are always shown in **filename order** (the migration timeline), not grouped by status.
 
-### Single-file push (unchanged)
+### Versioned migrations
+
+Versioned migrations are immutable schema changes. They run once and are recorded in the migration ledger. If a previously applied migration changes checksum, Flux refuses to run it again.
+
+Directory pushes are always versioned. Single files under **`migrations/`** or **`flux/migrations/`** default to versioned mode as well.
 
 ```bash
-flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
+flux push migrations/0001_profiles.sql
+flux push migrations/0001_profiles.sql --mode versioned
 ```
 
-Single-file pushes do **not** write to the migration ledger—use directory mode when you want Flux to own ordering and idempotency.
+### Repeatable scripts
+
+Repeatable scripts are for desired-state or idempotent SQL such as views, functions, reference data, and public demo seeds. Flux records their checksum in **`flux.flux_repeatable_scripts`** and re-runs them when the checksum changes. Use **`--force`** to run an unchanged repeatable script again.
+
+Repeatable scripts use the same project credentials, tenant schema search path, transaction handling, and auth model as normal migrations. Flux does not bypass destructive-operation backup gates on push—follow [Backups workflow](/docs/guides/backups) before irreversible SQL.
+
+```bash
+flux push flux/scripts/seed_demo_users.sql --mode repeatable
+flux push flux/scripts/seed_demo_users.sql --mode repeatable --force
+```
+
+By default, repeatable **`script_id`** is the repo-relative path (e.g. `flux/scripts/seed_demo_users.sql`). Override with **`--id`** when you need a stable identity independent of path.
+
+### Single-file push modes
+
+| Mode | When | Ledger |
+|------|------|--------|
+| **raw** (default outside `migrations/`) | Ad-hoc SQL, always re-executes | None |
+| **versioned** (default under `migrations/`) | One-time schema migrations | `flux.flux_migrations` |
+| **repeatable** (`--mode repeatable`) | Idempotent desired-state scripts | `flux.flux_repeatable_scripts` |
+
+```bash
+flux push flux-init.sql                      # raw (default)
+flux push flux-init.sql --mode raw           # explicit raw
+flux push migrations/0001_moods.sql          # versioned (default under migrations/)
+flux push db/seed.sql --mode repeatable --force
+```
 
 ### Plan, dry run, and ledger
 

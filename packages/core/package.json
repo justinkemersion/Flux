@@ -10,7 +10,8 @@
     "./api-schema-strategy": "./src/api-schema-strategy.ts",
     "./migration-status": "./src/migration-status.ts",
     "./backup-trust": "./src/backup-trust.ts",
-    "./sql-migrations": "./src/sql-migrations.ts"
+    "./sql-migrations": "./src/sql-migrations.ts",
+    "./sql-repeatable-scripts": "./src/sql-repeatable-scripts.ts"
   },
   "scripts": {
     "test": "tsx --test \"src/**/*.test.ts\""

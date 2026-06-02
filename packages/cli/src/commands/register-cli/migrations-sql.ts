@@ -13,7 +13,7 @@ export function registerMigrationsSqlCommands(program: Command): void {
   const push = program
     .command("push")
     .description(
-      "Apply SQL to a project. Directory: lexicographic *.sql with flux.flux_migrations ledger. File: raw SQL, no ledger.",
+      "Apply SQL to a project. Directory: versioned migrations (flux.flux_migrations). Single file: raw (default outside migrations/), versioned (under migrations/), or repeatable (--mode).",
     )
     .argument(
       "[target]",
@@ -47,6 +47,19 @@ export function registerMigrationsSqlCommands(program: Command): void {
       "--dry-run",
       "Directory: validate plan, conflicts, and 4 MiB per pending file; file: size check + preview. Incompatible with --plan",
       false,
+    )
+    .option(
+      "--mode <mode>",
+      "Single file: raw | versioned | repeatable (default inferred from path)",
+    )
+    .option(
+      "--force",
+      "With --mode repeatable: run even when checksum is unchanged",
+      false,
+    )
+    .option(
+      "--id <scriptId>",
+      "With --mode repeatable: stable script identity (default: repo-relative path)",
     );
 
   push.addHelpText(
@@ -55,6 +68,7 @@ export function registerMigrationsSqlCommands(program: Command): void {
 Examples:
   $ flux push migrations/ --plan
   $ flux push migrations/ --dry-run
+  $ flux push flux/scripts/seed.sql --mode repeatable --force
   $ flux migrations list
 `,
   );
@@ -69,6 +83,9 @@ Examples:
         hash?: string;
         plan?: boolean;
         dryRun?: boolean;
+        mode?: string;
+        force?: boolean;
+        id?: string;
       }>();
       if (opts.plan && opts.dryRun) {
         throw new Error("Use only one of --plan or --dry-run.");
@@ -87,6 +104,9 @@ Examples:
           disableApiRls: opts.disableApiRls === true,
           pushMode,
           ...(opts.hash ? { hash: opts.hash } : {}),
+          ...(opts.mode ? { explicitScriptMode: opts.mode } : {}),
+          ...(opts.force ? { force: true } : {}),
+          ...(opts.id ? { scriptId: opts.id } : {}),
         },
         flux,
       );

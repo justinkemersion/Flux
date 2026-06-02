@@ -26,7 +26,7 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux init` | Link or create a project from repo-root `flux.json` (Foundry placeholder hash) |
 | `flux create` | Provision a project |
 | `flux list` | Show projects and Service URLs |
-| `flux push` | Apply a `.sql` file or ordered **`migrations/`** directory—**`--plan`** / **`--dry-run`** preview directory pushes; pass **`--project`** / **`--hash`** (or **`flux.json`**) |
+| `flux push` | Apply a `.sql` file or ordered **`migrations/`** directory—**`--mode raw|versioned|repeatable`**, **`--force`** (repeatable), **`--plan`** / **`--dry-run`** preview directory pushes; pass **`--project`** / **`--hash`** (or **`flux.json`**) |
 | `flux migrations list` | Show **`flux.flux_migrations`** ledger (remote state, not local files). **`flux migrations`** ≠ **`flux migrate`** (engine conversion) |
 | `flux project credentials` | Print connection material: **v1 dedicated** → Postgres URI plus anon/service JWT keys; **v2_shared** → gateway JWT secret and a short note (no per-tenant Postgres URI). Pass **`[slug]`** and **`--hash`** like other project commands (or use **`flux.json`**) |
 | `flux dump` | Export schema/data (see flags locally) |

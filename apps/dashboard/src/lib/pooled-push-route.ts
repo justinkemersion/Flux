@@ -3,7 +3,7 @@ import { jwtVerify } from "jose";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import type { ExecutePushInput } from "@/src/lib/pooled-push";
 import { normalizePushSql } from "@flux/core/sql-migrations";
-import type { ExecuteMigrationPushInput } from "@/src/lib/pooled-migrations";
+import type { ExecuteMigrationPushInput, ExecuteRepeatablePushInput } from "@/src/lib/pooled-migrations";
 import {
   POOLED_PUSH_MAX_SQL_BYTES,
   extractPooledPushBearer,
@@ -30,6 +30,9 @@ export type PooledPushRouteDeps = {
   executePooledMigrationPush?: (
     input: ExecuteMigrationPushInput,
   ) => Promise<{ skipped: boolean }>;
+  executePooledRepeatablePush?: (
+    input: ExecuteRepeatablePushInput,
+  ) => Promise<{ skipped: boolean; previousChecksum?: string }>;
   /** Defaults to {@link POOLED_PUSH_MAX_SQL_BYTES}; tests may lower for SQL size cases. */
   maxSqlBytes?: number;
 };
@@ -89,7 +92,7 @@ export async function runPooledPushPost(
   if (!parsedBody.ok) {
     return jsonError(parsedBody.error, 400);
   }
-  const { hash, migration } = parsedBody;
+  const { hash, migration, repeatable } = parsedBody;
   const sql = normalizePushSql(parsedBody.sql);
 
   if (!isValidFluxProjectHash(hash)) {
@@ -142,7 +145,13 @@ export async function runPooledPushPost(
   const { schema } = schemaRes;
 
   const maxSql = deps.maxSqlBytes ?? POOLED_PUSH_MAX_SQL_BYTES;
-  const sqlCheck = validatePooledPushSqlPayload(sql, maxSql, migration, schema);
+  const sqlCheck = validatePooledPushSqlPayload(
+    sql,
+    maxSql,
+    migration,
+    schema,
+    repeatable,
+  );
   if (!sqlCheck.ok) {
     return jsonError(sqlCheck.error, sqlCheck.status);
   }
@@ -161,6 +170,29 @@ export async function runPooledPushPost(
       });
       return Response.json(
         { ok: true, schema, skipped: result.skipped },
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
+    if (repeatable) {
+      const runRepeatable =
+        deps.executePooledRepeatablePush ??
+        (async () => {
+          throw new Error("Repeatable push is not configured");
+        });
+      const result = await runRepeatable({
+        schema,
+        userSql: sql,
+        repeatable,
+      });
+      return Response.json(
+        {
+          ok: true,
+          schema,
+          skipped: result.skipped,
+          ...(result.previousChecksum
+            ? { previousChecksum: result.previousChecksum }
+            : {}),
+        },
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
