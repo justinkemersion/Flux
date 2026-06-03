@@ -11,7 +11,8 @@
     "./migration-status": "./src/migration-status.ts",
     "./backup-trust": "./src/backup-trust.ts",
     "./sql-migrations": "./src/sql-migrations.ts",
-    "./sql-repeatable-scripts": "./src/sql-repeatable-scripts.ts"
+    "./sql-repeatable-scripts": "./src/sql-repeatable-scripts.ts",
+    "./test/sql-assertions": "./src/test/sql-assertions.ts"
   },
   "scripts": {
     "test": "tsx --test \"src/**/*.test.ts\""

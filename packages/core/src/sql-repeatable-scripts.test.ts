@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import {
+  buildRepeatableLedgerEnsureSql,
   buildRepeatablePushSql,
   defaultRepeatableScriptId,
   inferDefaultSingleFilePushMode,
@@ -9,6 +10,7 @@ import {
   resolveRepeatableLedgerAction,
   selectRepeatableChecksumSql,
 } from "./sql-repeatable-scripts.ts";
+import { assertNoDoubleStatementTerminator } from "./test/sql-assertions.ts";
 
 test("parsePushScriptMode accepts raw, versioned, repeatable", () => {
   assert.equal(parsePushScriptMode("raw"), "raw");
@@ -49,6 +51,13 @@ test("buildRepeatablePushSql sets run_count=1 on insert and increments on confli
   });
   assert.match(sql, /run_count, last_applied_at\)\s*VALUES\s*\([^)]*, 1, now\(\)\)/s);
   assert.match(sql, /run_count = flux\.flux_repeatable_scripts\.run_count \+ 1/);
+  assertNoDoubleStatementTerminator(sql);
+});
+
+test("buildRepeatableLedgerEnsureSql has no double statement terminators", () => {
+  const sql = buildRepeatableLedgerEnsureSql("t_abc_api");
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS flux\.flux_repeatable_scripts/);
+  assertNoDoubleStatementTerminator(sql);
 });
 
 test("selectRepeatableChecksumSql and buildRepeatablePushSql escape quotes via sqlLiteral", () => {
@@ -66,6 +75,7 @@ test("selectRepeatableChecksumSql and buildRepeatablePushSql escape quotes via s
   });
   assert.match(wrapped, /'flux\/it''s\.sql'/);
   assert.match(wrapped, /'it''s\.sql'/);
+  assertNoDoubleStatementTerminator(wrapped);
 });
 
 test("defaultRepeatableScriptId uses normalized relative path", () => {

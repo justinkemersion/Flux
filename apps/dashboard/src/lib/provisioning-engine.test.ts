@@ -6,7 +6,10 @@ import {
   deriveTenantIdentity,
   buildTenantBootstrapSql,
   buildClusterBootstrapSql,
+  buildGlobalAuthCompatSql,
+  buildDeprovisionSql,
 } from "@flux/engine-v2";
+import { assertNoDoubleStatementTerminator } from "@flux/core/test/sql-assertions";
 
 test("dispatchProvisionProject routes v1_dedicated through ProjectManager", async () => {
   let called = false;
@@ -210,6 +213,7 @@ test("buildTenantBootstrapSql contains idempotency guards", () => {
     /GRANT SELECT ON ALL TABLES IN SCHEMA [^\n;]+ TO "anon"/u,
     "pool: anon gets SELECT on all existing tables (guest / marketplace read)",
   );
+  assertNoDoubleStatementTerminator(sql);
 });
 
 // ---------------------------------------------------------------------------
@@ -245,6 +249,19 @@ test("buildClusterBootstrapSql installs both PostgREST hook functions", () => {
     sql.includes("set_config('statement_timeout'"),
     "pre-request hook must enforce statement_timeout per transaction",
   );
+  assertNoDoubleStatementTerminator(sql);
+});
+
+test("buildGlobalAuthCompatSql has no double statement terminators", () => {
+  assertNoDoubleStatementTerminator(buildGlobalAuthCompatSql());
+});
+
+test("buildDeprovisionSql has no double statement terminators", () => {
+  const identity = deriveTenantIdentity("550e8400-e29b-41d4-a716-446655440000");
+  const sql = buildDeprovisionSql(identity);
+  assert.match(sql, /DROP SCHEMA IF EXISTS/);
+  assert.match(sql, /DO \$flux_drop\$/);
+  assertNoDoubleStatementTerminator(sql);
 });
 
 // ---------------------------------------------------------------------------

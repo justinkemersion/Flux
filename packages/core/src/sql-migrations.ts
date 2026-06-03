@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { sanitizePlainSqlDumpForPostgresMajor } from "./import-dump.ts";
+import { embedSqlStatement } from "./sql-compose.ts";
 
 /** Shared pool / push sanitization target (PG16-compatible). */
 export const FLUX_PUSH_SQL_TARGET_MAJOR = 16;
@@ -18,7 +19,10 @@ export function normalizePushSql(
   return sanitizePlainSqlDumpForPostgresMajor(sql, targetMajor);
 }
 
-/** Ledger DDL — lives in `flux` schema (not exposed via PostgREST tenant db-schemas). */
+/**
+ * Ledger DDL — lives in `flux` schema (not exposed via PostgREST tenant db-schemas).
+ * `_STATEMENT`-class constant: complete executable statement including trailing `;`.
+ */
 export const FLUX_MIGRATIONS_TABLE_DDL = `
 CREATE TABLE IF NOT EXISTS flux.flux_migrations (
   tenant_schema text NOT NULL,
@@ -47,7 +51,7 @@ BEGIN
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'flux' AND table_name = 'flux_migrations'
   ) THEN
-    ${FLUX_MIGRATIONS_TABLE_DDL};
+    ${embedSqlStatement(FLUX_MIGRATIONS_TABLE_DDL)}
     RETURN;
   END IF;
 
@@ -66,7 +70,7 @@ BEGIN
         row_count;
     END IF;
     DROP TABLE flux.flux_migrations;
-    ${FLUX_MIGRATIONS_TABLE_DDL};
+    ${embedSqlStatement(FLUX_MIGRATIONS_TABLE_DDL)}
   END IF;
 END $$;
 `.trim();

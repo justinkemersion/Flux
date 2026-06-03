@@ -12,7 +12,7 @@
     "docker:compose:traefik:down": "docker compose -f docker/traefik/docker-compose.yml down",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm --filter @flux/core exec tsc --noEmit && pnpm --filter dashboard exec tsc --noEmit",
-    "check:architecture": "tsx scripts/check-architecture.ts",
+    "check:architecture": "tsx scripts/check-architecture.ts && tsx scripts/check-sql-composition.ts",
     "perf:gateway:matrix": "bash perf/k6/run-matrix.sh",
     "perf:gateway:warm": "k6 run perf/k6/scenarios/warm-steady.js",
     "perf:gateway:overload": "k6 run perf/k6/scenarios/overload.js",

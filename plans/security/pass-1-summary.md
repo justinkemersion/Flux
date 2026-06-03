@@ -68,6 +68,20 @@ export FLUX_SMOKE_BEARER="$(FLUX_SMOKE_PROJECT_SLUG=<slug> FLUX_SMOKE_PROJECT_HA
 2. `./bin/deploy-gateway.sh`
 3. `./bin/deploy-web.sh` — set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env`
 
+**Fresh-project migration push smoke** (catches first-time ledger ensure bugs; use after deploy or migration SQL changes):
+
+```bash
+# v2_shared — empty flux.flux_migrations ledger
+flux create sql-smoke-v2
+flux push flux/migrations/ --project sql-smoke-v2
+flux migrations list --project sql-smoke-v2
+
+# v1_dedicated — when stack supports it
+flux create sql-smoke-v1
+flux push flux/migrations/ --project sql-smoke-v1
+flux migrations list --project sql-smoke-v1
+```
+
 ---
 
 ## Probe semantics (frozen for Pass 1)

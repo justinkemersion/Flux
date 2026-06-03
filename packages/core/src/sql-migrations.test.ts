@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildFluxMigrationsLedgerEnsureSql,
   buildMigrationPushSql,
   listMigrationSqlFiles,
   loadLocalMigrations,
@@ -16,6 +17,7 @@ import {
   selectMigrationChecksumSql,
   sqlLiteral,
 } from "./sql-migrations.ts";
+import { assertNoDoubleStatementTerminator } from "./test/sql-assertions.ts";
 
 test("migrationChecksum is stable sha256 hex", () => {
   const a = migrationChecksum("select 1;\n");
@@ -161,6 +163,14 @@ test("buildMigrationPushSql includes DDL, user sql, insert", () => {
   assert.match(sql, /'t_5ecfa3ab72d1_api'/);
   assert.match(sql, /'001_init\.sql'/);
   assert.match(sql, /'abc123'/);
+  assertNoDoubleStatementTerminator(sql);
+});
+
+test("buildFluxMigrationsLedgerEnsureSql has no double statement terminators", () => {
+  const sql = buildFluxMigrationsLedgerEnsureSql("t_5ecfa3ab72d1_api");
+  assert.match(sql, /DO \$\$/);
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS flux\.flux_migrations/);
+  assertNoDoubleStatementTerminator(sql);
 });
 
 test("listMigrationSqlFiles sorts lexicographically", async () => {

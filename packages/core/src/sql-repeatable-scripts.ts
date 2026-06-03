@@ -1,8 +1,12 @@
 import { relative, resolve } from "node:path";
 
 import { normalizePushSql, sqlLiteral } from "./sql-migrations.ts";
+import { embedSqlStatement } from "./sql-compose.ts";
 
-/** Repeatable-script ledger DDL — lives in `flux` schema (not exposed via PostgREST). */
+/**
+ * Repeatable-script ledger DDL — lives in `flux` schema (not exposed via PostgREST).
+ * `_STATEMENT`-class constant: complete executable statement including trailing `;`.
+ */
 export const FLUX_REPEATABLE_SCRIPTS_TABLE_DDL = `
 CREATE TABLE IF NOT EXISTS flux.flux_repeatable_scripts (
   tenant_schema text NOT NULL,
@@ -19,7 +23,7 @@ CREATE TABLE IF NOT EXISTS flux.flux_repeatable_scripts (
 export function buildRepeatableLedgerEnsureSql(_tenantSchema: string): string {
   return `
 CREATE SCHEMA IF NOT EXISTS flux;
-${FLUX_REPEATABLE_SCRIPTS_TABLE_DDL};
+${embedSqlStatement(FLUX_REPEATABLE_SCRIPTS_TABLE_DDL)}
 `.trim();
 }
 
