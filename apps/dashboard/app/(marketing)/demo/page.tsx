@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { isDemoEnabled } from "@/src/lib/demo-auth";
-import { enterDemoSession } from "./actions";
 import { DemoUnavailable } from "./demo-unavailable";
 
 export const metadata: Metadata = {
@@ -9,9 +9,9 @@ export const metadata: Metadata = {
     "Enter a read-only Flux demo session to explore the control plane with seeded projects.",
 };
 
-export default async function DemoPage() {
+export default function DemoPage() {
   if (!isDemoEnabled()) {
     return <DemoUnavailable />;
   }
-  await enterDemoSession();
+  redirect("/api/demo/enter");
 }
