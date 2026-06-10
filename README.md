@@ -225,6 +225,32 @@ Other top-level trees often live alongside it and are **not** this repo, for exa
 
 If your host uses a different path, set **`FLUX_REMOTE_REPO_ROOT`** / **`APP_DIR`** to the real checkout before env sync or deploy.
 
+### Launch flux-web from your laptop
+
+Use **`bin/launch-web.sh`** for the full dashboard release loop: preflight → commit/push → optional env sync → remote pull → **`bin/deploy-web.sh`**.
+
+```bash
+# Typical landing-page / dashboard release
+./bin/launch-web.sh --commit "feat: apps-first landing page" --tag web-2026.06.10
+
+# Preview the plan without pushing or SSH
+./bin/launch-web.sh --dry-run --commit "feat: ..."
+
+# Push env changes before deploy (whitelisted paths in bin/sync-env-remote.sh)
+./bin/launch-web.sh --sync-env-apply --commit "chore: rotate activity secret"
+
+# Remote-only (already pushed; matches legacy packages/cli/deploy-flux-web.sh)
+./bin/launch-web.sh --remote-only
+```
+
+**Defaults:** `root@178.104.205.138`, remote checkout `/srv/platform/flux`, branch `main`. Override with `FLUX_LAUNCH_REMOTE`, `FLUX_LAUNCH_APP_DIR`, `FLUX_LAUNCH_BRANCH` (or legacy `REMOTE` / `APP_DIR` / `BRANCH`).
+
+**Preflight** runs `pnpm typecheck` and `pnpm --filter dashboard run build` unless you pass `--skip-checks` or `--remote-only`.
+
+**Env sync** is off by default. Pass `--sync-env` (dry-run) or `--sync-env-apply` to rsync `docker/web/.env`, `packages/gateway/.env`, and `docker/v2-shared/.env`.
+
+For a full stack deploy on the server (v2 + gateway + web), use **`bin/deploy-all.sh`** instead — `launch-web.sh` only cycles **`flux-web`**.
+
 ### Canonical order
 
 Run in this order on the server:

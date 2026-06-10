@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { MarketingLanding } from "./marketing-landing";
 
 export const metadata: Metadata = {
-  title: "Flux — PostgreSQL, ready to use",
+  title: "Flux — Apps first. Infrastructure underneath.",
   description:
-    "SQL migrations, REST APIs, and JWT-aware access without building the infrastructure yourself. Migration-first workflow, shared or dedicated infrastructure.",
+    "Flux powers a growing set of useful tools: ledgers, inbox maintenance, home catalogs, brewing records, language systems, and other durable software.",
 };
 
 export default function Home() {

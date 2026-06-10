@@ -1,28 +1,11 @@
 #!/bin/bash
-# One-shot deploy for the Flux dashboard (flux-web) at https://flux.vsl-base.com.
-# Assumes the remote already has Traefik (flux-gateway) on `flux-network` and
-# /srv/platform/flux/docker/web/.env populated (see docker/web/.env.example).
+# Remote-only flux-web deploy (legacy entrypoint).
+# Prefer the full workflow: ../../bin/launch-web.sh --commit "..." from your laptop.
+#
+# Equivalent to: bin/launch-web.sh --remote-only [--force-sync]
 set -euo pipefail
 
-REMOTE=${REMOTE:-root@178.104.205.138}
-APP_DIR=${APP_DIR:-/srv/platform/flux}
-BRANCH=${BRANCH:-main}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-echo "Syncing repo on $REMOTE ($APP_DIR @ origin/$BRANCH)..."
-# The -A flag explicitly enables SSH Agent Forwarding so git can pull
-ssh -A "$REMOTE" "cd $APP_DIR && git fetch --all --prune && git reset --hard origin/$BRANCH"
-
-echo "Checking server-side .env..."
-ssh -A "$REMOTE" "test -f $APP_DIR/docker/web/.env" || {
-  echo "ERROR: $APP_DIR/docker/web/.env missing on $REMOTE."
-  echo "       Create it from docker/web/.env.example before deploying."
-  exit 1
-}
-
-echo "Building and starting flux-web (bin/deploy-web.sh)..."
-ssh -A "$REMOTE" "cd $APP_DIR && bash bin/deploy-web.sh"
-
-echo
-echo "Deployed."
-echo "  URL:  https://flux.vsl-base.com"
-echo "  Logs: ssh $REMOTE 'docker logs -f flux-web'"
+exec bash "$REPO_ROOT/bin/launch-web.sh" --remote-only --force-sync "$@"
