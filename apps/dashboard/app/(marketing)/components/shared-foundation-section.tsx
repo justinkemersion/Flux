@@ -3,36 +3,40 @@ import { cardClass, sectionLabelClass, sectionTitleClass } from "./landing-ui";
 const features = [
   {
     title: "Postgres by default",
-    body: "Schema-first apps with migrations and durable storage.",
+    body: "Every app starts with durable relational storage.",
+  },
+  {
+    title: "Migrations that travel",
+    body: "Plain SQL workflows for creating and evolving app schemas.",
+  },
+  {
+    title: "Restore-verified backups",
+    body: "Backups are treated as useful only after they can be restored.",
   },
   {
     title: "JWT-aware APIs",
-    body: "Apps can expose clean APIs without rebuilding the same foundation.",
+    body: "PostgREST-style APIs without hand-written CRUD servers.",
   },
   {
-    title: "Demo mode",
-    body: "Public visitors can explore curated fake data safely.",
-  },
-  {
-    title: "Owned directly",
-    body: "Built to be hosted, backed up, and maintained without platform theater.",
+    title: "Demo-safe accounts",
+    body: "Expose real interfaces with seeded data and locked-down permissions.",
   },
   {
     title: "Dedicated or shared",
-    body: "Start small, move to dedicated infrastructure when the app grows.",
+    body: "Start pooled, move dedicated when the app needs its own house.",
   },
 ] as const;
 
-export function InfrastructureSection() {
+export function SharedFoundationSection() {
   return (
     <section
-      id="platform"
-      aria-labelledby="platform-heading"
+      id="foundation"
+      aria-labelledby="foundation-heading"
       className="scroll-mt-24 text-left"
     >
       <p className={sectionLabelClass}>The foundation</p>
-      <h2 id="platform-heading" className={sectionTitleClass}>
-        What every Flux app gets
+      <h2 id="foundation-heading" className={sectionTitleClass}>
+        One foundation. Many small apps.
       </h2>
       <ul className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
         {features.map((f) => (

@@ -37,7 +37,7 @@ export function AppShowcase() {
     <section id="apps" aria-labelledby="apps-heading" className="scroll-mt-24 text-left">
       <p className={sectionLabelClass}>Built with Flux</p>
       <h2 id="apps-heading" className={sectionTitleClass}>
-        Useful apps, running today.
+        Built on the same foundation.
       </h2>
       <ul className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
         {SHOWCASE_APPS.map((app) => (

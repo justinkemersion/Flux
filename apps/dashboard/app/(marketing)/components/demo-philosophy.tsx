@@ -1,4 +1,6 @@
-import { sectionLabelClass, sectionTitleClass } from "./landing-ui";
+import Link from "next/link";
+import { FLUX_DEMO_HREF, SHOWCASE_DEMO_APPS } from "../data/landing-links";
+import { primaryCtaClass, sectionLabelClass, sectionTitleClass } from "./landing-ui";
 
 const notes = [
   "Seeded data only",
@@ -15,8 +17,14 @@ export function DemoPhilosophy() {
       </h2>
       <p className="mt-4 max-w-2xl text-sm leading-relaxed text-zinc-400">
         Flux apps can expose a curated demo account with fake data, constrained actions, and no
-        private secrets. The point is to let people understand the product by using it.
+        private secrets. The point is to let people understand the product by using it — including
+        the Flux control plane itself and the demo-ready apps in the showcase above.
       </p>
+      <div className="mt-8">
+        <Link href={FLUX_DEMO_HREF} className={primaryCtaClass}>
+          Try Flux Demo
+        </Link>
+      </div>
       <ul className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
         {notes.map((note) => (
           <li
@@ -27,6 +35,22 @@ export function DemoPhilosophy() {
           </li>
         ))}
       </ul>
+      <p className="mt-6 text-sm text-zinc-500">
+        Example demo-ready apps:{" "}
+        {SHOWCASE_DEMO_APPS.map((app, i) => (
+          <span key={app.href}>
+            {i > 0 ? " · " : null}
+            <a
+              href={app.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-400 underline-offset-4 hover:text-zinc-200 hover:underline"
+            >
+              {app.name}
+            </a>
+          </span>
+        ))}
+      </p>
     </section>
   );
 }

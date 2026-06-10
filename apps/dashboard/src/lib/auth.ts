@@ -2,6 +2,7 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import type { Adapter } from "next-auth/adapters";
 import NextAuth from "next-auth";
 import type { DefaultSession, NextAuthConfig } from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
 import {
   accounts,
@@ -39,7 +40,11 @@ function withCoercedAccountTimestamps(adapter: Adapter): Adapter {
 
 declare module "next-auth" {
   interface Session {
-    user: { id: string; githubLogin?: string | null } & DefaultSession["user"];
+    user: {
+      id: string;
+      githubLogin?: string | null;
+      isDemo?: boolean;
+    } & DefaultSession["user"];
   }
 }
 
@@ -59,6 +64,38 @@ function coreAuthConfig(): Omit<NextAuthConfig, "adapter"> {
         clientSecret:
           process.env.AUTH_GITHUB_SECRET ?? process.env.GITHUB_SECRET,
       }),
+      Credentials({
+        id: "flux-demo",
+        name: "Flux Demo",
+        credentials: {
+          key: { type: "password" },
+        },
+        async authorize(credentials) {
+          const { isDemoEnabled, demoUserId } = await import("./demo-auth");
+          if (!isDemoEnabled()) return null;
+          const expected = process.env.FLUX_DEMO_INTERNAL_KEY?.trim();
+          if (!expected || credentials?.key !== expected) return null;
+          const userId = demoUserId();
+          if (!userId) return null;
+
+          const { initSystemDb, getDb } = await import("./db");
+          const { eq } = await import("drizzle-orm");
+          await initSystemDb();
+          const db = getDb();
+          const [user] = await db
+            .select()
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+          if (!user) return null;
+
+          return {
+            id: user.id,
+            name: user.name ?? "Flux Demo",
+            email: user.email ?? undefined,
+          };
+        },
+      }),
     ],
     callbacks: {
       authorized({ auth, request }) {
@@ -70,6 +107,9 @@ function coreAuthConfig(): Omit<NextAuthConfig, "adapter"> {
       },
       async jwt({ token, user, account, profile }) {
         if (user?.id) token.id = user.id;
+        if (account?.provider === "flux-demo") {
+          (token as { isDemo?: boolean }).isDemo = true;
+        }
         if (
           account?.provider === "github" &&
           profile &&
@@ -83,6 +123,7 @@ function coreAuthConfig(): Omit<NextAuthConfig, "adapter"> {
       async session({ session, token }) {
         const id = (token.id as string | undefined) ?? token.sub;
         if (id) session.user.id = id;
+        if ((token as { isDemo?: boolean }).isDemo) session.user.isDemo = true;
         if (token.githubLogin != null) {
           session.user.githubLogin = token.githubLogin as string;
         }

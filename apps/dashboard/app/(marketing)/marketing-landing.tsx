@@ -1,9 +1,10 @@
 import { AppShowcase } from "./components/app-showcase";
 import { BuildSection } from "./components/build-section";
 import { DemoPhilosophy } from "./components/demo-philosophy";
+import { FoundrySection } from "./components/foundry-section";
 import { Hero } from "./components/hero";
-import { InfrastructureSection } from "./components/infrastructure-section";
-import { PlatformComparison } from "./components/platform-comparison";
+import { LandingFooter } from "./components/landing-footer";
+import { SharedFoundationSection } from "./components/shared-foundation-section";
 
 export function MarketingLanding() {
   return (
@@ -13,17 +14,18 @@ export function MarketingLanding() {
         <AppShowcase />
       </div>
       <div className="mt-24 sm:mt-32">
-        <PlatformComparison />
-      </div>
-      <div className="mt-24 sm:mt-32">
-        <InfrastructureSection />
-      </div>
-      <div className="mt-24 sm:mt-32">
         <DemoPhilosophy />
+      </div>
+      <div className="mt-24 sm:mt-32">
+        <SharedFoundationSection />
+      </div>
+      <div className="mt-24 sm:mt-32">
+        <FoundrySection />
       </div>
       <div className="mt-24 sm:mt-32">
         <BuildSection />
       </div>
+      <LandingFooter />
     </main>
   );
 }

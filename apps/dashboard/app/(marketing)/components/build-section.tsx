@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { GetStartedButton } from "./get-started-button";
-import { secondaryCtaClass, sectionLabelClass, sectionTitleClass } from "./landing-ui";
+import { sectionLabelClass, sectionTitleClass } from "./landing-ui";
 
 const lines = [
   "$ curl -sL https://flux.vsl-base.com/install | bash",
@@ -26,11 +25,8 @@ export function BuildSection() {
           ))}
         </code>
       </pre>
-      <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
+      <div className="mt-8">
         <GetStartedButton />
-        <Link href="/docs/introduction/what-is-flux" className={secondaryCtaClass}>
-          View Architecture
-        </Link>
       </div>
     </section>
   );

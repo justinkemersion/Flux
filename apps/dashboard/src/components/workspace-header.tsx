@@ -31,7 +31,8 @@ export function WorkspaceHeader() {
   if (pathname === "/projects") {
     return null;
   }
-  const isLanding = pathname === "/";
+  const isLanding =
+    pathname === "/" || pathname === "/why-flux" || pathname === "/demo";
   const contentMaxClassName = isLanding
     ? "max-w-5xl"
     : pathname.startsWith("/settings")
