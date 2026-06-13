@@ -19,6 +19,18 @@ export const sectionTitleClass =
 export const cardClass =
   "flex h-full flex-col rounded-md border border-zinc-800 bg-zinc-950/80 p-5 transition-colors duration-200 hover:border-zinc-700 hover:bg-zinc-900/30 md:p-6";
 
+/** Larger variant for spotlight / featured cards. */
+export const spotlightCardClass =
+  "flex h-full flex-col rounded-md border border-zinc-700/70 bg-zinc-900/40 p-6 transition-colors duration-200 hover:border-zinc-600 hover:bg-zinc-900/60 md:p-7";
+
+/** Inline stack/technology chip (e.g. "Auth", "Postgres", "Demo Mode"). */
+export const stackChipClass =
+  "inline-flex items-center rounded border border-zinc-800 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-zinc-500";
+
+/** Quiet factual metric line beneath a spotlight card headline. */
+export const metricLineClass =
+  "font-mono text-[10px] tracking-[0.08em] text-zinc-500";
+
 const pillBase =
   "inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em]";
 
