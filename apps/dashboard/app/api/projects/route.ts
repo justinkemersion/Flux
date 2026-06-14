@@ -13,18 +13,16 @@ import { getProjectManager } from "@/src/lib/flux";
 import {
   dispatchProvisionProject,
 } from "@/src/lib/provisioning-engine";
-import { allocateUniqueProjectHash } from "@/src/lib/cli-project-provision";
+import { resolveCliRoleForUser } from "@/src/lib/cli-admin";
+import {
+  allocateUniqueProjectHash,
+  assertWithinProjectLimit,
+  loadUserUnlimitedProjects,
+} from "@/src/lib/cli-project-provision";
 import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
 export const runtime = "nodejs";
-
-const HOBBY_PROJECT_LIMIT = 2;
-const PRO_PROJECT_LIMIT = 10;
-const HOBBY_LIMIT_ERROR =
-  "Project limit reached. Please upgrade to Pro.";
-const PRO_LIMIT_ERROR =
-  "Project limit reached (10 projects on Pro).";
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
@@ -73,12 +71,18 @@ export async function GET(): Promise<Response> {
     const pm = getProjectManager();
 
     const [userRow] = await db
-      .select({ plan: users.plan })
+      .select({ plan: users.plan, email: users.email, name: users.name })
       .from(users)
       .where(eq(users.id, session.user.id));
 
     const plan: "hobby" | "pro" =
       userRow?.plan === "pro" ? "pro" : "hobby";
+    const unlimitedProjects =
+      resolveCliRoleForUser({
+        userId: session.user.id,
+        email: userRow?.email,
+        name: userRow?.name,
+      }) === "admin";
 
     const userProjects = await db
       .select()
@@ -162,7 +166,7 @@ export async function GET(): Promise<Response> {
       };
     });
 
-    return Response.json({ projects: projectsPayload, plan });
+    return Response.json({ projects: projectsPayload, plan, unlimitedProjects });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[flux] GET /api/projects failed:", err);
@@ -258,11 +262,10 @@ export async function POST(req: Request): Promise<Response> {
   const plan: "hobby" | "pro" =
     userRow?.plan === "pro" ? "pro" : "hobby";
 
-  if (plan === "hobby" && projectCount >= HOBBY_PROJECT_LIMIT) {
-    return jsonError(HOBBY_LIMIT_ERROR, 403);
-  }
-  if (plan === "pro" && projectCount >= PRO_PROJECT_LIMIT) {
-    return jsonError(PRO_LIMIT_ERROR, 403);
+  const unlimited = await loadUserUnlimitedProjects(db, session.user.id);
+  const limitCheck = assertWithinProjectLimit(plan, projectCount, { unlimited });
+  if (!limitCheck.ok) {
+    return jsonError(limitCheck.message, 403);
   }
 
   const modePolicy = resolveCreateModeForPlan({

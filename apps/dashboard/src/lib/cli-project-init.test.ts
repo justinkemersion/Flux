@@ -40,3 +40,12 @@ test("assertWithinProjectLimit blocks hobby at cap", () => {
   const result = assertWithinProjectLimit("hobby", 2);
   assert.equal(result.ok, false);
 });
+
+test("assertWithinProjectLimit allows unlimited admin bypass", () => {
+  assert.deepEqual(assertWithinProjectLimit("hobby", 99, { unlimited: true }), {
+    ok: true,
+  });
+  assert.deepEqual(assertWithinProjectLimit("pro", 99, { unlimited: true }), {
+    ok: true,
+  });
+});

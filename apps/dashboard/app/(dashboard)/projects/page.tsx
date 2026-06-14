@@ -53,6 +53,7 @@ export default function ProjectsPage() {
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<"hobby" | "pro" | null>(null);
+  const [unlimitedProjects, setUnlimitedProjects] = useState(false);
   const [detailSlug, setDetailSlug] = useState<string | null>(null);
   const [v2GettingStartedProject, setV2GettingStartedProject] = useState<{
     apiUrl: string;
@@ -98,6 +99,7 @@ export default function ProjectsPage() {
       const data = payload as {
         projects: ProjectRow[];
         plan?: "hobby" | "pro";
+        unlimitedProjects?: boolean;
       };
       const orderedProjects = [...data.projects].sort((a, b) => {
         const ta = new Date(a.createdAt).getTime();
@@ -120,6 +122,7 @@ export default function ProjectsPage() {
         });
       });
       setUserPlan(data.plan === "pro" ? "pro" : "hobby");
+      setUnlimitedProjects(data.unlimitedProjects === true);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -510,7 +513,7 @@ export default function ProjectsPage() {
                 Provisions Postgres and PostgREST (this may take a minute).
               </p>
 
-              {createLimitBanner === "hobby" ? (
+              {createLimitBanner === "hobby" && !unlimitedProjects ? (
                 <div
                   className="mt-5 flex flex-col gap-3 rounded-md border border-zinc-800 bg-zinc-900/40 p-4"
                   role="alert"
@@ -550,7 +553,7 @@ export default function ProjectsPage() {
                 </div>
               ) : null}
 
-              {createLimitBanner === "pro" ? (
+              {createLimitBanner === "pro" && !unlimitedProjects ? (
                 <div
                   className="mt-5 flex items-start gap-3 rounded-md border border-zinc-800 bg-zinc-900/40 p-4"
                   role="alert"

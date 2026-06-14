@@ -13,6 +13,7 @@ import { getProjectManager } from "@/src/lib/flux";
 import { probeSingleProject } from "@/src/lib/fleet-monitor";
 import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
 import { resolveCreateModeForPlan, type UserPlan } from "@/src/lib/cli-mode-policy";
+import { resolveCliRoleForUser } from "@/src/lib/cli-admin";
 
 export const HOBBY_PROJECT_LIMIT = 2;
 export const PRO_PROJECT_LIMIT = 10;
@@ -127,10 +128,31 @@ export async function countUserProjects(
   return n;
 }
 
+export async function loadUserUnlimitedProjects(
+  db: ReturnType<typeof getDb>,
+  userId: string,
+): Promise<boolean> {
+  const [userRow] = await db
+    .select({ email: users.email, name: users.name })
+    .from(users)
+    .where(eq(users.id, userId));
+  return (
+    resolveCliRoleForUser({
+      userId,
+      email: userRow?.email,
+      name: userRow?.name,
+    }) === "admin"
+  );
+}
+
 export function assertWithinProjectLimit(
   plan: UserPlan,
   projectCount: number,
+  options?: { unlimited?: boolean },
 ): { ok: true } | { ok: false; message: string } {
+  if (options?.unlimited) {
+    return { ok: true };
+  }
   if (plan === "hobby" && projectCount >= HOBBY_PROJECT_LIMIT) {
     return { ok: false, message: HOBBY_LIMIT_ERROR };
   }

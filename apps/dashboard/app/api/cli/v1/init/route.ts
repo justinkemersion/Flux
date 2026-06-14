@@ -7,6 +7,7 @@ import {
   findCatalogRowBySlug,
   initialApiSchemaStrategy,
   loadUserPlan,
+  loadUserUnlimitedProjects,
   parseOptionalMode,
   parseOptionalStripSupabase,
   provisionProjectForUser,
@@ -90,7 +91,8 @@ export async function POST(req: Request): Promise<Response> {
 
   const plan = await loadUserPlan(db, auth.userId);
   const projectCount = await countUserProjects(db, auth.userId);
-  const limitCheck = assertWithinProjectLimit(plan, projectCount);
+  const unlimited = await loadUserUnlimitedProjects(db, auth.userId);
+  const limitCheck = assertWithinProjectLimit(plan, projectCount, { unlimited });
   if (!limitCheck.ok) {
     return jsonError(limitCheck.message, 403);
   }
