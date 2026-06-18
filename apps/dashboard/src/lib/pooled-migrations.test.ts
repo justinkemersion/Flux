@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { PushPgClient } from "./pooled-push";
-import { executePooledMigrationPush, executePooledRepeatablePush } from "./pooled-migrations";
+import {
+  executePooledMigrationPush,
+  executePooledRepeatablePush,
+  listPooledAppliedMigrations,
+} from "./pooled-migrations";
 
 type Row = Record<string, unknown>;
 
@@ -268,4 +272,24 @@ test("executePooledRepeatablePush uses same transactional envelope as migrations
     ),
   );
   assert.ok(client.queries.some((q) => q.includes("NOTIFY pgrst")));
+});
+
+test("listPooledAppliedMigrations ensures tenant-scoped ledger before listing", async () => {
+  const client = new FakePgClient();
+  const checksum = "d".repeat(64);
+  client.seedVersion("t_test_api", "001_a.sql", checksum);
+  const factory = () => client;
+  const applied = await listPooledAppliedMigrations({
+    tenantSchema: "t_test_api",
+    clientFactory: factory,
+  });
+  assert.equal(applied.length, 1);
+  assert.equal(applied[0]?.version, "001_a.sql");
+  assert.equal(applied[0]?.checksum, checksum);
+  const ensureIdx = client.queries.findIndex((q) =>
+    q.includes("flux.flux_migrations"),
+  );
+  const listIdx = client.queries.findIndex((q) => q.startsWith("SELECT version"));
+  assert.ok(ensureIdx >= 0, "ledger ensure should run");
+  assert.ok(listIdx > ensureIdx, "list should run after ledger ensure");
 });

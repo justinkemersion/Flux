@@ -57,6 +57,7 @@ export async function listPooledAppliedMigrations(input: {
   const client = factory();
   try {
     await client.connect();
+    await client.query(buildFluxMigrationsLedgerEnsureSql(input.tenantSchema));
     const res = await client.query(listFluxMigrationsSql(input.tenantSchema));
     const rows = (res as { rows?: Record<string, unknown>[] }).rows ?? [];
     return rows.map(rowToRecord);
