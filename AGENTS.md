@@ -100,3 +100,5 @@ If the public API endpoint presents a cert that Node does not trust (private CA,
 `apps/dashboard/AGENTS.md` covers dashboard-only agent rules. This root **`AGENTS.md`** is for **cross-repo** consumers and operators wiring **v2_shared** apps.
 
 If you fix a recurring footgun (URL printed wrong, missing profile in templates, etc.), update **this file** and the **quickstart** guide together so drift stays low.
+
+**Pooled migration ledger:** On shared Postgres, if directory **`flux push`** reports a legacy global **`flux.flux_migrations`** ledger with existing rows, run **`bin/migrate-pooled-ledger.sh --assign-legacy-to t_<shortId>_api`** on the Flux host (see root **README**). Do not auto-attribute legacy rows to the wrong tenant.

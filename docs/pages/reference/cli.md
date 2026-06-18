@@ -37,6 +37,8 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux backup verify` | Runs **`pg_restore`** in a disposable Postgres container on the control plane. The only step that promotes a backup to **Restorable**. Requires `docker-cli` in the `flux-web` image (self-hosted operators) |
 | `flux backup download` | Writes the custom-format archive to `-o <path>` (or shell redirect). Refuses binary output to a TTY |
 
+**Operators (v2_shared):** If directory **`flux push`** fails on a legacy global migration ledger, run **`bin/migrate-pooled-ledger.sh`** on the Flux host — see [Migrations workflow](/docs/guides/migrations) and the root README.
+
 ### Identifiers
 
 Codex / internal docs describe hashing:

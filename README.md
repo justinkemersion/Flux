@@ -27,6 +27,7 @@ The **control plane** (CLI + optional Next.js dashboard) provisions, tracks, and
 - [End-to-end validation](#end-to-end-validation)
 - [CLI reference](#cli-reference)
 - [Security and operations](#security-and-operations)
+  - [Pooled migration ledger upgrade](#pooled-migration-ledger-upgrade)
 - [AGENTS.md (v2_shared client apps)](#agentsmd-v2_shared-client-apps)
 - [Docs and guides](#docs-and-guides)
 - [Trajectory TODOs (internal)](#trajectory-todos-internal)
@@ -292,6 +293,7 @@ pnpm --filter dashboard test
 | `flux-web` logs `EACCES` on `/var/run/docker.sock` | entrypoint dropped to `nextjs` without the host `docker` GID (e.g. old `su-exec` behavior) | rebuild `flux-web` with `setpriv` entrypoint + `FLUX_DOCKER_SUPPLEMENTARY_GID` / `DOCKER_GID` in `docker/web/docker-compose.yml` (see `.env.example`) |
 | PostgREST returns wrong schema data | missing profile headers / hook misconfig | gateway proxy headers + `PGRST_DB_PRE_REQUEST` |
 | stale custom-domain routing | Redis cache not evicted | domain CRUD/delete path calls `evictHostname(s)` |
+| `flux push migrations/` fails: legacy global ledger has N row(s) | shared Postgres still has pre–Pass 1B `flux.flux_migrations` (version-only PK) with rows | `./bin/migrate-pooled-ledger.sh --assign-legacy-to t_<shortId>_api` on the Flux host (see [Pooled migration ledger](#pooled-migration-ledger-upgrade)) |
 
 ---
 
@@ -629,6 +631,29 @@ Read-only health pass for the Docker host (containers, schedulers, backups, disk
 **Smoke targets:** copy **`bin/ops-audit-smoke.projects.example`** → **`bin/ops-audit-smoke.projects`** (one `slug:hash[:mode]` per line), set **`FLUX_OPS_SMOKE_PROJECTS`**, or omit the file to probe every catalog project except `flux-system` / `static`.
 
 Nightly v1 backups stay **`restore=pending`** until you run **`flux backup verify`** — the deep audit reminds you; see [Backups](#backups) (restore-verified gate) above.
+
+### Pooled migration ledger upgrade
+
+On **v2_shared**, versioned migration history lives in **`flux.flux_migrations`** keyed by **`(tenant_schema, version)`** so tenants on the same Postgres cluster do not share ledger rows. Fleets provisioned before Pass 1B may still have a **legacy global ledger** (primary key on **`version` only**). Directory **`flux push`** lists that table before applying files; if legacy rows exist, Flux **fails closed** rather than guessing which tenant they belong to.
+
+| Ledger state | Operator action |
+|--------------|-----------------|
+| Table missing | None — first push creates tenant-scoped ledger |
+| Legacy table, **0 rows** | None — next directory push auto-upgrades |
+| Legacy table **with rows** | Run **`bin/migrate-pooled-ledger.sh`** with **`--assign-legacy-to`** set to the tenant those rows belong to |
+| Already tenant-scoped | Script exits OK |
+
+```bash
+# On the Flux host (repo at /srv/platform/flux), after deploy:
+./bin/migrate-pooled-ledger.sh --assign-legacy-to t_744b22df8382_api --dry-run
+./bin/migrate-pooled-ledger.sh --assign-legacy-to t_744b22df8382_api
+```
+
+The script uses **`FLUX_SHARED_POSTGRES_URL`** (or **`docker/web/.env`**) and prefers **`psql`** inside the **`flux-web`** container when it is running. **`--assign-legacy-to`** must match **`t_<shortId>_api`** for the project whose migrations were recorded in the legacy ledger—do not use it when rows might belong to multiple tenants.
+
+After the structural upgrade, migrations applied earlier via **single-file push** (before directory listing ran ledger ensure) may still be missing ledger rows. Run **`flux push migrations/ --plan`** per project; insert matching checksum rows manually only when SQL is already applied and push would otherwise re-run DDL.
+
+See also [`docs/pages/guides/migrations.md`](./docs/pages/guides/migrations.md) (operator subsection) and [`plans/security/pass-1-summary.md`](./plans/security/pass-1-summary.md).
 
 - **Secrets** — Postgres password and `PGRST_JWT_SECRET` are generated at provision time (unless overridden for JWT). Treat shell history and logs as sensitive.
 - **Dashboard projects** — `GET /api/projects` reads **`flux-system.projects`** first, then resolves Docker status with **`getProjectSummariesForSlugs`** (per-slug inspects, not a full container list). It does not return DB URIs or API keys; use `GET /api/projects/[slug]/credentials` to reveal them. **Repair** uses `POST /api/projects/[slug]/repair`. See **`docs/production-security-audit.md`**.

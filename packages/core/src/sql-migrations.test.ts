@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildFluxMigrationsLedgerEnsureSql,
+  buildPooledLedgerUpgradeSql,
   buildMigrationPushSql,
   listMigrationSqlFiles,
   loadLocalMigrations,
@@ -171,6 +172,21 @@ test("buildFluxMigrationsLedgerEnsureSql has no double statement terminators", (
   assert.match(sql, /DO \$\$/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS flux\.flux_migrations/);
   assertNoDoubleStatementTerminator(sql);
+});
+
+test("buildPooledLedgerUpgradeSql backfills legacy rows and replaces primary key", () => {
+  const sql = buildPooledLedgerUpgradeSql("t_744b22df8382_api");
+  assert.match(sql, /ADD COLUMN tenant_schema text/);
+  assert.match(sql, /SET tenant_schema = 't_744b22df8382_api'/);
+  assert.match(sql, /ALTER COLUMN tenant_schema SET NOT NULL/);
+  assert.match(sql, /DROP CONSTRAINT IF EXISTS flux_migrations_pkey/);
+  assert.match(sql, /PRIMARY KEY \(tenant_schema, version\)/);
+  assertNoDoubleStatementTerminator(sql);
+});
+
+test("buildFluxMigrationsLedgerEnsureSql error references operator script", () => {
+  const sql = buildFluxMigrationsLedgerEnsureSql("t_5ecfa3ab72d1_api");
+  assert.match(sql, /migrate-pooled-ledger\.sh/);
 });
 
 test("listMigrationSqlFiles sorts lexicographically", async () => {

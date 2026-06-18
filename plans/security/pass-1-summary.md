@@ -99,7 +99,7 @@ Do **not** mint project JWTs from fleet monitoring in Pass 1; that is a later �
 
 ## Operator notes
 
-- **Legacy pooled ledger:** If `flux.flux_migrations` has rows without `tenant_schema`, first migration push errors with an operator message — empty legacy table auto-upgrades.
+- **Legacy pooled ledger:** If `flux.flux_migrations` has rows without `tenant_schema`, directory **`flux push`** errors with an operator message. Empty legacy tables auto-upgrade on the next push. Non-empty legacy tables require **`bin/migrate-pooled-ledger.sh --assign-legacy-to t_<shortId>_api`** on the Flux host (see root **README** § Pooled migration ledger upgrade). After structural upgrade, reconcile missing ledger rows for migrations that were applied via single-file push before the ledger fix.
 - **System DB:** `projects_user_hash_uniq` is created on bootstrap (`CREATE UNIQUE INDEX IF NOT EXISTS`).
 - **Mesh copy:** Operational green ≠ app JWT/RLS verified.
 

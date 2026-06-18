@@ -113,6 +113,25 @@ flux migrations list              # show flux.flux_migrations for the project
 
 In CI, use non-interactive tokens, pinned **`FLUX_API_BASE`**, and either the same flags or a checked-in **`flux.json`** with **`slug`** + **`hash`** so pipelines do not drift.
 
+### Legacy pooled ledger (operators)
+
+On **v2_shared**, the migration ledger is **`flux.flux_migrations`** with primary key **`(tenant_schema, version)`**. Shared Postgres clusters that ran migrations before Pass 1B may still have a **legacy global ledger** ( **`version`** only). Directory **`flux push`** inspects that table before applying files.
+
+| State | What happens |
+|-------|----------------|
+| No ledger table | First push creates tenant-scoped ledger |
+| Legacy table, zero rows | Next directory push auto-upgrades |
+| Legacy table with rows | Push fails closed — run **`bin/migrate-pooled-ledger.sh`** on the Flux host |
+| Already tenant-scoped | No action |
+
+```bash
+# On the server (repo checkout, flux-web running):
+./bin/migrate-pooled-ledger.sh --assign-legacy-to t_<shortId>_api --dry-run
+./bin/migrate-pooled-ledger.sh --assign-legacy-to t_<shortId>_api
+```
+
+Use **`--assign-legacy-to`** only when **all** legacy rows belong to that tenant schema (from **`flux list`** / project catalog). After upgrade, run **`flux push migrations/ --plan`** per project; migrations applied earlier via single-file push may need ledger rows before directory push will skip them.
+
 ## Example
 
 Wrap breaking changes in transactions where appropriate; test dumps on a scratch project before production.

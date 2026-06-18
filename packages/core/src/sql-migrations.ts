@@ -66,13 +66,66 @@ BEGIN
     SELECT COUNT(*)::bigint INTO row_count FROM flux.flux_migrations;
     IF row_count > 0 THEN
       RAISE EXCEPTION
-        'flux.flux_migrations legacy global ledger has % row(s); tenant-scoped upgrade required (see Flux operator runbook)',
+        'flux.flux_migrations legacy global ledger has % row(s); tenant-scoped upgrade required — run bin/migrate-pooled-ledger.sh --assign-legacy-to <tenant_schema>',
         row_count;
     END IF;
     DROP TABLE flux.flux_migrations;
     ${embedSqlStatement(FLUX_MIGRATIONS_TABLE_DDL)}
   END IF;
 END $$;
+`.trim();
+}
+
+/**
+ * One-time operator upgrade for pooled fleets that still have a legacy global
+ * `flux.flux_migrations` ledger (version-only PK). All pre-existing rows are
+ * attributed to `assignLegacyTo` — use only when those rows belong to one tenant.
+ */
+export function buildPooledLedgerUpgradeSql(assignLegacyTo: string): string {
+  const ts = sqlLiteral(assignLegacyTo);
+  return `
+BEGIN;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'flux' AND table_name = 'flux_migrations'
+  ) THEN
+    RAISE EXCEPTION 'flux.flux_migrations does not exist; nothing to upgrade';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'flux'
+      AND table_name = 'flux_migrations'
+      AND column_name = 'tenant_schema'
+  ) THEN
+    ALTER TABLE flux.flux_migrations ADD COLUMN tenant_schema text;
+  END IF;
+END $$;
+
+UPDATE flux.flux_migrations
+SET tenant_schema = ${ts}
+WHERE tenant_schema IS NULL;
+
+DO $$
+DECLARE
+  orphan_count bigint;
+BEGIN
+  SELECT COUNT(*)::bigint INTO orphan_count
+  FROM flux.flux_migrations
+  WHERE tenant_schema IS NULL;
+  IF orphan_count > 0 THEN
+    RAISE EXCEPTION
+      'flux.flux_migrations still has % row(s) without tenant_schema after backfill',
+      orphan_count;
+  END IF;
+END $$;
+
+ALTER TABLE flux.flux_migrations ALTER COLUMN tenant_schema SET NOT NULL;
+ALTER TABLE flux.flux_migrations DROP CONSTRAINT IF EXISTS flux_migrations_pkey;
+ALTER TABLE flux.flux_migrations ADD PRIMARY KEY (tenant_schema, version);
+COMMIT;
 `.trim();
 }
 

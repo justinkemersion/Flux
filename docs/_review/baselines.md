@@ -30,6 +30,22 @@ Keep entries short. If a single entry needs more than a screen, it probably want
 
 ---
 
+## 2026-06-17 — Pooled migration ledger operator script
+
+**Context.** Directory **`flux push`** on shared Postgres failed when **`flux.flux_migrations`** still used the pre–Pass 1B global ledger (version-only PK) with existing rows. Listing applied migrations now runs ledger ensure first; non-empty legacy tables still fail closed. Added **`bin/migrate-pooled-ledger.sh`** and **`buildPooledLedgerUpgradeSql`** in **`@flux/core`**.
+
+### Decisions of record
+
+| Topic | Decision |
+|-------|----------|
+| Legacy row attribution | **Explicit** **`--assign-legacy-to`** — no auto-guess across tenants |
+| Empty legacy table | **Auto-upgrade** in **`buildFluxMigrationsLedgerEnsureSql`** (drop + recreate) |
+| Post-upgrade gaps | Operator reconciles ledger rows for SQL applied via single-file push before the listing fix |
+
+**Docs:** root **README** (failure triage + operator subsection), **`docs/pages/guides/migrations.md`**, **`plans/security/pass-1-summary.md`**.
+
+---
+
 ## 2026-05-30 — v2 tenant routing fix + Pass 2 operator smoke
 
 **Context.** Live table reads on pooled tenants failed (`public.moods` / PGRST106) after Pass 1 pinned static `PGRST_DB_SCHEMAS=public`. Fixed PostgREST hooks (`set_config` pre-request, pattern-based pre-config) and restored gateway tenant `Accept-Profile`. Added `./bin/pass2-destructive-gate-smoke.sh` for Pass 2 gate verification.

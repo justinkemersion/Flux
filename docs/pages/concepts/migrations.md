@@ -42,6 +42,8 @@ Author SQL idempotently where possible (`IF NOT EXISTS`, defensive guards). For 
 
 Use **`flux push migrations/ --plan`**, **`--dry-run`**, and **`flux migrations list`** to inspect pending work and the ledger before applying.
 
+**Operators (v2_shared):** If directory push fails because a **legacy global ledger** still has rows without **`tenant_schema`**, upgrade the shared table once with **`bin/migrate-pooled-ledger.sh --assign-legacy-to t_<shortId>_api`** on the Flux host. See [Guides: migrations](/docs/guides/migrations) (legacy pooled ledger) and the root README.
+
 ## Example
 
 ```sql
