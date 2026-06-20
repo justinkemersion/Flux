@@ -1,6 +1,7 @@
 import { type Command } from "commander";
 import { registerAuthCommands } from "./register-cli/auth";
 import { registerBackupCommands } from "./register-cli/backup";
+import { registerDbCommands } from "./register-cli/db";
 import { registerEnvCommands } from "./register-cli/env";
 import { registerInitCreateCommands } from "./register-cli/init-create";
 import { registerInspectCommands } from "./register-cli/inspect";
@@ -23,6 +24,7 @@ export function registerFluxCliCommands(program: Command): void {
   registerGauntletCommands(program);
   registerInspectCommands(program);
   registerBackupCommands(program);
+  registerDbCommands(program);
   registerLifecycleCommands(program);
   registerEnvCommands(program);
 }

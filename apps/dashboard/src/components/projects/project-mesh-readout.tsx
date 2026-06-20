@@ -36,7 +36,9 @@ export function ProjectMeshReadout({
 
       <section id={`database-${project.slug}`}>
         <ProjectExportControl
+          slug={project.slug}
           hash={project.hash}
+          projectId={project.id}
           mode={project.mode === "v2_shared" ? "v2_shared" : "v1_dedicated"}
         />
       </section>

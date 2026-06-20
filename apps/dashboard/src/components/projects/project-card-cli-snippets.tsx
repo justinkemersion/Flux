@@ -3,7 +3,7 @@
 import { Check, Clipboard } from "lucide-react";
 import { useState } from "react";
 
-function CliSnippetRow({ line }: { line: string }) {
+export function CliSnippetRow({ line }: { line: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copyLine(): Promise<void> {

@@ -1,5 +1,6 @@
 "use client";
 
+import { defaultTenantApiSchemaFromProjectId } from "@flux/core";
 import { backupFreshnessTierLabel } from "@flux/core/backup-policy";
 import {
   backupTrustTierLabelForKind,
@@ -19,10 +20,14 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { ProjectModalShell } from "@/src/components/projects/modal-shell";
+import { ProjectDbAccessPanel } from "@/src/components/projects/project-db-access-panel";
 import { useProjectBackupTrust } from "@/src/lib/project-backup-trust-client";
 
 type Props = {
+  slug: string;
   hash: string;
+  /** Catalog project UUID — used to derive pooled tenant schema for copy. */
+  projectId?: string;
   /** Used when no backup rows yet (correct pooled vs dedicated copy). */
   mode: "v1_dedicated" | "v2_shared";
 };
@@ -85,7 +90,7 @@ const modalSectionClass = "mt-6";
 /**
  * Project export controls for SQL dump streaming.
  */
-export function ProjectExportControl({ hash, mode }: Props) {
+export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [schemaOnly, setSchemaOnly] = useState(false);
   const [dataOnly, setDataOnly] = useState(false);
@@ -208,6 +213,11 @@ export function ProjectExportControl({ hash, mode }: Props) {
   useEffect(() => {
     if (backupFetchError) setBackupError(backupFetchError);
   }, [backupFetchError]);
+
+  const tenantSchema =
+    mode === "v2_shared" && projectId
+      ? defaultTenantApiSchemaFromProjectId(projectId)
+      : undefined;
 
   return (
     <>
@@ -541,6 +551,13 @@ export function ProjectExportControl({ hash, mode }: Props) {
             </button>
           </div>
         </section>
+
+        <ProjectDbAccessPanel
+          slug={slug}
+          hash={hash}
+          mode={mode}
+          tenantSchema={tenantSchema}
+        />
 
         <section
           className={`${modalSectionClass} border-t border-zinc-200/70 pt-5 dark:border-zinc-800/80`}

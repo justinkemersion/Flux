@@ -125,6 +125,21 @@ export {
   type FluxProjectManagerStackKind,
 } from "./projects/runtime-modes.ts";
 
+export {
+  redactDatabaseAccessPlan,
+  resolveDefaultSshTunnelConfig,
+  resolveProjectDatabaseAccess,
+  resolveSharedPostgresTunnelTarget,
+  type DatabaseAccessCapabilities,
+  type DatabaseAccessPlan,
+  type DatabaseAccessTransport,
+  type DatabaseAccessTunnelDefaults,
+  type DedicatedDatabaseAccessPlan,
+  type PooledDatabaseAccessPreviewPlan,
+  type ResolveProjectDatabaseAccessInput,
+  type ResolveProjectDatabaseAccessOptions,
+} from "./projects/database-access.ts";
+
 export type {
   InspectTenantSchemaOptions,
   InspectedColumn,

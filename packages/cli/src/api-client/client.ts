@@ -11,6 +11,7 @@ import type {
 import { resolveFluxApiToken } from "../config";
 import { HOSTED_FLUX_PUBLIC_API_BASE } from "../utils/env-file";
 import * as backups from "./backups";
+import * as dbAccess from "./db-access";
 import type { ApiClientContext } from "./context";
 import * as env from "./env";
 import * as logs from "./logs";
@@ -146,6 +147,18 @@ export class ApiClient {
   // ---------------------------------------------------------------------------
   getProjectCredentialsByHash(hash: string): Promise<ProjectCredentialsByHash> {
     return projects.getProjectCredentialsByHash(this.asContext(), hash);
+  }
+
+  getProjectDbAccessPlan(
+    hash: string,
+    options?: {
+      localPort?: number;
+      sshHost?: string;
+      sshUser?: string;
+      sshPort?: number;
+    },
+  ): Promise<import("@flux/core").DatabaseAccessPlan> {
+    return dbAccess.getProjectDbAccessPlan(this.asContext(), hash, options);
   }
 
   // ---------------------------------------------------------------------------
