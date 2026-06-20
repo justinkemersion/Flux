@@ -38,6 +38,9 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 
+# Local gauntlet / matrix run artifacts
+packages/cli/reports/
+
 # Perf results are generated artifacts; keep local by default.
 perf/results/**
 !perf/results/.gitkeep
