@@ -130,6 +130,8 @@ expect_http "GET db-access plan (v2)" GET \
   "${BASE}/api/cli/v1/projects/${HASH}/db-access" 200
 assert_json_field "v2 plan supported + temp creds capability" \
   "data.mode === 'v2_shared' && data.supported === true && data.capabilities.temporaryCredentials === true"
+assert_json_field "plan includes configured SSH tunnel host" \
+  "typeof data.tunnel?.sshHost === 'string' && data.tunnel.sshHost.length > 0"
 assert_json_field "plan JSON has no connection string secrets" \
   "!JSON.stringify(data).match(/postgresql:\\/\\//i)"
 
@@ -178,7 +180,6 @@ fi
 if [[ "${FLUX_DB_ACCESS_SMOKE_TUNNEL:-}" == "1" ]]; then
   echo ""
   echo "=== db-access smoke: tunnel print-config ==="
-  export FLUX_DB_TUNNEL_SSH_HOST="${FLUX_DB_TUNNEL_SSH_HOST:-178.104.205.138}"
   pnpm --filter @flux/cli exec tsx src/index.ts db tunnel "$SLUG" --hash "$HASH" --print-config >/tmp/db-access-smoke-tunnel.txt
   grep -q "Password:" /tmp/db-access-smoke-tunnel.txt
   grep -q "flux_temp_" /tmp/db-access-smoke-tunnel.txt
@@ -193,13 +194,11 @@ if [[ "${FLUX_DB_ACCESS_SMOKE_DUMP:-}" == "1" ]]; then
   echo "ok: pg_dump and pg_restore available ($(pg_dump --version | head -1))"
 
   echo ""
-  echo "=== db-access smoke: v2 schema-scoped dump ==="
-  export FLUX_DB_TUNNEL_SSH_HOST="${FLUX_DB_TUNNEL_SSH_HOST:-178.104.205.138}"
+  echo "=== db-access smoke: v2 schema-scoped dump (SSH host from API plan) ==="
   DUMP_OUT="/tmp/db-access-smoke-${SLUG}.dump"
   rm -f "$DUMP_OUT"
   pnpm --filter @flux/cli exec tsx src/index.ts db dump "$SLUG" --hash "$HASH" \
-    --output "$DUMP_OUT" --ssh-host "$FLUX_DB_TUNNEL_SSH_HOST" --strict-port --local-port 15440 \
-    --schema-only
+    --output "$DUMP_OUT" --strict-port --local-port 15440 --schema-only
   test -s "$DUMP_OUT"
   pg_restore -l "$DUMP_OUT" | grep -q "t_"
   echo "ok: flux db dump wrote schema-scoped archive"
