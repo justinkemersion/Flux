@@ -34,6 +34,7 @@ import {
   getPlatformBackupPolicy,
   isSchedulerExcludedProject,
 } from "@/src/lib/backup-platform-policy";
+import { logBackupScheduler } from "@/src/lib/backup-scheduler-log";
 
 export type BackupEngineMode = "v1_dedicated" | "v2_shared";
 
@@ -431,6 +432,9 @@ export async function replicateBackupOffsite(
       offsiteError: null,
     })
     .where(eq(projectBackups.id, backup.id));
+  logBackupScheduler(
+    `offsite replication complete backupId=${backup.id} provider=${upload.provider} bytes=${String(upload.sizeBytes)}`,
+  );
 }
 
 /**
@@ -917,15 +921,28 @@ export async function projectsDueForPlatformBackup(): Promise<
 export async function runPlatformBackupPipeline(
   project: PlatformBackupProjectRow,
 ): Promise<void> {
+  const label = `${project.slug}:${project.hash} (${project.mode})`;
+  logBackupScheduler(`pipeline start ${label}`);
   const backup = await createBackupForProject({
     projectId: project.id,
     slug: project.slug,
     hash: project.hash,
     mode: project.mode,
   });
+  logBackupScheduler(
+    `pipeline create complete ${label} backupId=${backup.id} sizeBytes=${String(backup.sizeBytes ?? 0)} offsite=${backup.offsiteStatus}`,
+  );
   await runBackupArtifactValidation(backup.id);
+  logBackupScheduler(`pipeline artifact validated ${label} backupId=${backup.id}`);
   await verifyBackupRestore(backup.id);
-  await sweepProjectBackupRetention(project);
+  logBackupScheduler(`pipeline restore verified ${label} backupId=${backup.id}`);
+  const retentionDeleted = await sweepProjectBackupRetention(project);
+  if (retentionDeleted > 0) {
+    logBackupScheduler(
+      `pipeline retention ${label} deleted ${String(retentionDeleted)} local restore-verified row(s)`,
+    );
+  }
+  logBackupScheduler(`pipeline complete ${label} backupId=${backup.id}`);
 }
 
 export async function sweepProjectBackupRetention(

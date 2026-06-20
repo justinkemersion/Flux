@@ -2,6 +2,10 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { resolvePlatformBackupSchedulerBatchSize } from "@flux/core/backup-policy";
 import { projectBackups } from "@/src/db/schema";
 import { getPlatformBackupPolicy } from "@/src/lib/backup-platform-policy";
+import {
+  logBackupScheduler,
+  logBackupSchedulerError,
+} from "@/src/lib/backup-scheduler-log";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import {
   isPlatformBackupFreshnessSchedulerFirstRun,
@@ -49,7 +53,10 @@ async function markFailed(
     .where(eq(projectBackups.id, backupId));
 }
 
-export async function processPendingReplicationAndRestore(): Promise<void> {
+export async function processPendingReplicationAndRestore(): Promise<{
+  offsiteProcessed: number;
+  validationProcessed: number;
+}> {
   const db = getDb();
   const pending = await db
     .select({
@@ -67,11 +74,18 @@ export async function processPendingReplicationAndRestore(): Promise<void> {
     )
     .orderBy(asc(projectBackups.createdAt))
     .limit(20);
+  if (pending.length > 0) {
+    logBackupScheduler(
+      `retry queue: ${String(pending.length)} backup(s) pending offsite replication`,
+    );
+  }
   for (const row of pending) {
     try {
       await replicateBackupOffsite(row.id);
+      logBackupScheduler(`offsite replication complete backupId=${row.id}`);
     } catch (err: unknown) {
       await markFailed(row.id, "offsite", err instanceof Error ? err.message : String(err));
+      logBackupSchedulerError(`offsite replication failed backupId=${row.id}`, err);
     }
   }
   const validationPending = await db
@@ -88,18 +102,30 @@ export async function processPendingReplicationAndRestore(): Promise<void> {
     )
     .orderBy(asc(projectBackups.createdAt))
     .limit(20);
+  if (validationPending.length > 0) {
+    logBackupScheduler(
+      `retry queue: ${String(validationPending.length)} backup(s) pending artifact validation`,
+    );
+  }
   for (const row of validationPending) {
     try {
       await runBackupArtifactValidation(row.id);
+      logBackupScheduler(`artifact validation complete backupId=${row.id}`);
     } catch (err: unknown) {
       await markFailed(row.id, "validation", err instanceof Error ? err.message : String(err));
+      logBackupSchedulerError(`artifact validation failed backupId=${row.id}`, err);
     }
   }
+  return {
+    offsiteProcessed: pending.length,
+    validationProcessed: validationPending.length,
+  };
 }
 
 export async function runBackupSchedulerTick(): Promise<void> {
+  const tickStarted = Date.now();
   await initSystemDb();
-  await processPendingReplicationAndRestore();
+  const retry = await processPendingReplicationAndRestore();
 
   const policy = getPlatformBackupPolicy();
   const isFirstRun = await isPlatformBackupFreshnessSchedulerFirstRun();
@@ -112,47 +138,70 @@ export async function runBackupSchedulerTick(): Promise<void> {
   });
   const batch = due.slice(0, batchSize);
 
+  logBackupScheduler(
+    isFirstRun
+      ? `tick start (bootstrap) due=${String(due.length)} batch=${String(batch.length)} maxBootstrap=${String(policy.bootstrapMaxPipelinesOnFirstRun)}`
+      : `tick start (steady) due=${String(due.length)} batch=${String(batch.length)} maxPerTick=${String(policy.maxPipelinesPerTick)}`,
+  );
+  if (batch.length > 0) {
+    logBackupScheduler(
+      `pipeline queue: ${batch.map((p) => `${p.slug}:${p.hash}`).join(", ")}`,
+    );
+  } else if (due.length === 0) {
+    logBackupScheduler("pipeline queue: empty (all projects platform-fresh or excluded)");
+  }
+
   if (isFirstRun) {
-    console.log(
-      `[flux] backup-scheduler: first run — running platform minimum backup freshness bootstrap (${String(batch.length)} pipeline(s), ${String(due.length)} due)`,
+    logBackupScheduler(
+      `first run — platform minimum backup freshness bootstrap (${String(batch.length)} pipeline(s), ${String(due.length)} due)`,
     );
   }
 
+  let pipelinesOk = 0;
+  let pipelinesFailed = 0;
   for (const project of batch) {
     try {
       await runPlatformBackupPipeline(project);
+      pipelinesOk += 1;
     } catch (err: unknown) {
-      console.error(
-        `[flux] backup-scheduler: platform freshness pipeline failed ${project.slug}:${project.hash}`,
-        err instanceof Error ? err.message : String(err),
+      pipelinesFailed += 1;
+      logBackupSchedulerError(
+        `platform freshness pipeline failed ${project.slug}:${project.hash}`,
+        err,
       );
     }
   }
 
+  let retentionDeleted = 0;
   try {
-    await sweepRetentionBatch(10);
+    retentionDeleted = await sweepRetentionBatch(10);
+    if (retentionDeleted > 0) {
+      logBackupScheduler(
+        `retention sweep deleted ${String(retentionDeleted)} restore-verified backup row(s)`,
+      );
+    }
   } catch (err: unknown) {
-    console.error(
-      "[flux] backup-scheduler: retention sweep failed",
-      err instanceof Error ? err.message : String(err),
-    );
+    logBackupSchedulerError("retention sweep failed", err);
   }
 
   await recordPlatformBackupFreshnessSchedulerExecution();
+
+  const elapsedSec = Math.round((Date.now() - tickStarted) / 1000);
+  logBackupScheduler(
+    `tick complete elapsed=${String(elapsedSec)}s pipelines ok=${String(pipelinesOk)} failed=${String(pipelinesFailed)} offsiteRetries=${String(retry.offsiteProcessed)} validationRetries=${String(retry.validationProcessed)} retentionDeleted=${String(retentionDeleted)}`,
+  );
 }
 
 export function startBackupScheduler(): void {
   if (started) return;
   started = true;
-  console.log(
-    "[flux] Backup scheduler starting (60m interval; immediate first tick).",
-  );
+  logBackupScheduler("starting (60m interval; immediate first tick)");
   void runBackupSchedulerTick().catch((err) => {
-    console.error("[flux] backup-scheduler initial tick failed:", err);
+    logBackupSchedulerError("initial tick failed", err);
   });
   setInterval(() => {
     void runBackupSchedulerTick().catch((err) => {
-      console.error("[flux] backup-scheduler tick failed:", err);
+      logBackupSchedulerError("tick failed", err);
     });
   }, INTERVAL_MS);
 }
