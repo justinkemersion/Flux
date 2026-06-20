@@ -86,6 +86,22 @@ export const pushSqlResponseSchema = z.object({
   viewsMoved: z.number(),
 });
 
+export const platformMinimumBackupFreshnessSchema = z.object({
+  effectivePolicy: z.object({
+    intervalDays: z.number(),
+    retentionCount: z.number(),
+    retentionDays: z.number(),
+  }),
+  freshness: z.object({
+    tier: z.enum(["fresh", "stale", "never_verified", "no_backups"]),
+    ageDays: z.number().nullable().optional(),
+    dueInDays: z.number().nullable().optional(),
+    latestRestoreVerifiedAt: z.string().nullable().optional(),
+    platformBackupCompliant: z.boolean(),
+    detail: z.string(),
+  }),
+});
+
 export const backupItemSchema = z.object({
   id: z.string(),
   kind: z.enum(["project_db", "tenant_export"]).optional(),
@@ -99,8 +115,20 @@ export const backupItemSchema = z.object({
   checksumSha256: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
   completedAt: z.string().nullable().optional(),
+  localArtifactStatus: z.enum(["present", "missing"]).optional(),
   offsiteStatus: z.string().nullable().optional(),
+  offsiteProvider: z.string().nullable().optional(),
+  offsiteBucket: z.string().nullable().optional(),
+  offsiteKey: z.string().nullable().optional(),
   offsiteCompletedAt: z.string().nullable().optional(),
+  offsiteSizeBytes: z.number().nullable().optional(),
+  offsiteEtag: z.string().nullable().optional(),
+  offsiteContentSha256: z.string().nullable().optional(),
+  offsiteError: z.string().nullable().optional(),
+  offsiteR2Status: z
+    .enum(["uploaded", "failed", "missing", "disabled"])
+    .optional(),
+  r2OffsiteEnabled: z.boolean().optional(),
   artifactValidationStatus: z.string().nullable().optional(),
   artifactValidationAt: z.string().nullable().optional(),
   artifactValidationError: z.string().nullable().optional(),
@@ -113,10 +141,12 @@ export const listBackupsResponseSchema = z.object({
   backups: z.array(backupItemSchema),
   backupVolumeAbsoluteRoot: z.string().optional(),
   reconciledAt: z.string().optional(),
+  platformMinimumBackupFreshness: platformMinimumBackupFreshnessSchema.optional(),
 });
 
 export const createBackupResponseSchema = z.object({
   backup: backupItemSchema,
+  platformMinimumBackupFreshness: platformMinimumBackupFreshnessSchema.optional(),
 });
 
 export const verifyBackupResponseSchema = z.object({
@@ -154,9 +184,17 @@ export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
 export type InitProjectResult = z.infer<typeof initProjectResponseSchema>;
 export type ProjectBackup = z.infer<typeof backupItemSchema>;
+export type PlatformMinimumBackupFreshness = z.infer<
+  typeof platformMinimumBackupFreshnessSchema
+>;
 export type ListProjectBackupsResult = {
   backups: ProjectBackup[];
   backupVolumeAbsoluteRoot?: string;
   reconciledAt?: string;
+  platformMinimumBackupFreshness?: PlatformMinimumBackupFreshness;
+};
+export type CreateProjectBackupResult = {
+  backup: ProjectBackup;
+  platformMinimumBackupFreshness?: PlatformMinimumBackupFreshness;
 };
 export type VerifyBackupResult = z.infer<typeof verifyBackupResponseSchema>;

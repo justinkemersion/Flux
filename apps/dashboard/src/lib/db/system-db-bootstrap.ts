@@ -162,6 +162,9 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS migration_status TEXT;
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS api_schema_name TEXT;
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS api_schema_strategy TEXT;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS backup_interval_days INTEGER;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS backup_retention_count INTEGER;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS backup_retention_days INTEGER;
   `);
 
   // New projects default to pooled Standard stack; existing rows keep prior mode.
@@ -226,6 +229,11 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
     ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_key TEXT;
     ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_completed_at TIMESTAMPTZ;
     ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_error TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_provider TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_bucket TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_size_bytes INTEGER;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_etag TEXT;
+    ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS offsite_content_sha256 TEXT;
     ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS artifact_validation_status TEXT;
     ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS artifact_validation_at TIMESTAMPTZ;
     ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS artifact_validation_error TEXT;
@@ -315,5 +323,13 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
     ALTER TABLE backup_locks ALTER COLUMN claimed_at SET DEFAULT NOW();
     ALTER TABLE backup_locks ALTER COLUMN claimed_at SET NOT NULL;
     ALTER TABLE backup_locks ALTER COLUMN expires_at SET NOT NULL;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS platform_scheduler_state (
+      scheduler_id TEXT PRIMARY KEY,
+      first_executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 }

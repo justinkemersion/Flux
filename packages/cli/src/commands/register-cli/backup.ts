@@ -10,7 +10,10 @@ import { cliActionWithFlux, HASH_FLAG_DESC } from "./shared";
 export function registerBackupCommands(program: Command): void {
   const backupCmd = program
     .command("backup")
-    .description("Create, list, and download project backups (v1 full DB or v2 tenant export)");
+    .description(
+      "Create, list, and download project backups (v1 full DB or v2 tenant export). " +
+        "TODO: flux backup pull --latest / verify --source r2 for offsite-only recovery.",
+    );
 
   const backupCreateCmd = backupCmd
     .command("create")

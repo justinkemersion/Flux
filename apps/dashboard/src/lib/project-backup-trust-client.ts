@@ -15,18 +15,62 @@ export type ProjectBackupRow = {
   status: string;
   sizeBytes?: number | null;
   createdAt?: string | null;
+  primaryArtifactAbsolutePath?: string | null;
+  localArtifactStatus?: "present" | "missing";
   offsiteStatus?: string | null;
+  offsiteProvider?: string | null;
+  offsiteBucket?: string | null;
+  offsiteKey?: string | null;
+  offsiteCompletedAt?: string | null;
+  offsiteSizeBytes?: number | null;
+  offsiteEtag?: string | null;
+  offsiteContentSha256?: string | null;
+  offsiteError?: string | null;
+  offsiteR2Status?: "uploaded" | "failed" | "missing" | "disabled";
+  r2OffsiteEnabled?: boolean;
   artifactValidationStatus?: string | null;
   restoreVerificationStatus?: string | null;
 };
 
-export async function fetchProjectBackups(hash: string): Promise<ProjectBackupRow[]> {
+export type PlatformMinimumBackupFreshnessPayload = {
+  effectivePolicy: {
+    intervalDays: number;
+    retentionCount: number;
+    retentionDays: number;
+  };
+  freshness: {
+    tier: "fresh" | "stale" | "never_verified" | "no_backups";
+    ageDays?: number | null;
+    dueInDays?: number | null;
+    latestRestoreVerifiedAt?: string | null;
+    platformBackupCompliant: boolean;
+    detail: string;
+  };
+};
+
+export type ProjectBackupsFetchResult = {
+  backups: ProjectBackupRow[];
+  platformMinimumBackupFreshness?: PlatformMinimumBackupFreshnessPayload;
+};
+
+export async function fetchProjectBackups(
+  hash: string,
+): Promise<ProjectBackupsFetchResult> {
   const res = await fetch(`/api/cli/v1/projects/${encodeURIComponent(hash)}/backups`);
-  const body = (await res.json()) as { backups?: ProjectBackupRow[]; error?: string };
+  const body = (await res.json()) as {
+    backups?: ProjectBackupRow[];
+    platformMinimumBackupFreshness?: PlatformMinimumBackupFreshnessPayload;
+    error?: string;
+  };
   if (!res.ok) {
     throw new Error(body.error || `Request failed (${String(res.status)})`);
   }
-  return Array.isArray(body.backups) ? body.backups : [];
+  return {
+    backups: Array.isArray(body.backups) ? body.backups : [],
+    ...(body.platformMinimumBackupFreshness
+      ? { platformMinimumBackupFreshness: body.platformMinimumBackupFreshness }
+      : {}),
+  };
 }
 
 /** Short tooltip / aria text when destructive actions are blocked in the dashboard. */
@@ -54,6 +98,7 @@ export function useProjectBackupTrust(
   options?: { enabled?: boolean },
 ): {
   backups: ProjectBackupRow[];
+  platformMinimumBackupFreshness: PlatformMinimumBackupFreshnessPayload | null;
   trust: BackupTrustClassification;
   loading: boolean;
   error: string | null;
@@ -61,6 +106,8 @@ export function useProjectBackupTrust(
 } {
   const enabled = options?.enabled ?? true;
   const [backups, setBackups] = useState<ProjectBackupRow[]>([]);
+  const [platformMinimumBackupFreshness, setPlatformMinimumBackupFreshness] =
+    useState<PlatformMinimumBackupFreshnessPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,7 +121,11 @@ export function useProjectBackupTrust(
     setLoading(true);
     setError(null);
     try {
-      setBackups(await fetchProjectBackups(hash));
+      const result = await fetchProjectBackups(hash);
+      setBackups(result.backups);
+      setPlatformMinimumBackupFreshness(
+        result.platformMinimumBackupFreshness ?? null,
+      );
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -87,5 +138,5 @@ export function useProjectBackupTrust(
     void refresh();
   }, [enabled, hash, refresh]);
 
-  return { backups, trust, loading, error, refresh };
+  return { backups, platformMinimumBackupFreshness, trust, loading, error, refresh };
 }

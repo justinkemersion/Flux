@@ -48,13 +48,19 @@ export async function listProjectBackups(
     ...(parsed.data.reconciledAt !== undefined
       ? { reconciledAt: parsed.data.reconciledAt }
       : {}),
+    ...(parsed.data.platformMinimumBackupFreshness !== undefined
+      ? {
+          platformMinimumBackupFreshness:
+            parsed.data.platformMinimumBackupFreshness,
+        }
+      : {}),
   };
 }
 
 export async function createProjectBackup(
   ctx: ApiClientContext,
   hash: string,
-): Promise<ProjectBackup> {
+): Promise<import("./schemas").CreateProjectBackupResult> {
   const token = ctx.tokenOrThrow();
   const h = hash.trim().toLowerCase();
   const url = `${ctx.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}/backups`;
@@ -78,7 +84,15 @@ export async function createProjectBackup(
   if (!parsed.success) {
     throw new Error("CLI backup create: response had unexpected shape.");
   }
-  return parsed.data.backup;
+  return {
+    backup: parsed.data.backup,
+    ...(parsed.data.platformMinimumBackupFreshness !== undefined
+      ? {
+          platformMinimumBackupFreshness:
+            parsed.data.platformMinimumBackupFreshness,
+        }
+      : {}),
+  };
 }
 
 export async function getProjectBackupStream(

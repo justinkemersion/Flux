@@ -1,5 +1,6 @@
 "use client";
 
+import { backupFreshnessTierLabel } from "@flux/core/backup-policy";
 import {
   backupTrustTierLabelForKind,
   BACKUP_TRUST_REMEDIATION_CLI,
@@ -91,6 +92,7 @@ export function ProjectExportControl({ hash, mode }: Props) {
   const [clean, setClean] = useState(false);
   const {
     backups,
+    platformMinimumBackupFreshness,
     trust: backupTrust,
     loading: backupsLoading,
     error: backupFetchError,
@@ -359,10 +361,58 @@ export function ProjectExportControl({ hash, mode }: Props) {
                   <dd className="font-mono text-zinc-600 dark:text-zinc-400">
                     {backups[0].createdAt ?? "—"}
                   </dd>
+                  {platformMinimumBackupFreshness ? (
+                    <>
+                      <dt className="font-medium text-zinc-600 dark:text-zinc-500">
+                        Platform minimum backup freshness
+                      </dt>
+                      <dd
+                        className={
+                          platformMinimumBackupFreshness.freshness
+                            .platformBackupCompliant
+                            ? "text-emerald-700 dark:text-emerald-400"
+                            : "text-amber-700 dark:text-amber-400"
+                        }
+                      >
+                        {backupFreshnessTierLabel(
+                          platformMinimumBackupFreshness.freshness.tier,
+                        )}
+                        {platformMinimumBackupFreshness.freshness
+                          .latestRestoreVerifiedAt
+                          ? ` (verified ${platformMinimumBackupFreshness.freshness.latestRestoreVerifiedAt})`
+                          : ""}
+                      </dd>
+                    </>
+                  ) : null}
                   <dt className="font-medium text-zinc-600 dark:text-zinc-500">
-                    Offsite copy
+                    Local artifact
                   </dt>
-                  <dd>{backups[0].offsiteStatus ?? "—"}</dd>
+                  <dd>
+                    {backups[0].localArtifactStatus === "present"
+                      ? `present${backups[0].sizeBytes != null ? ` (${String(backups[0].sizeBytes)} bytes)` : ""}`
+                      : "missing"}
+                  </dd>
+                  <dt className="font-medium text-zinc-600 dark:text-zinc-500">
+                    Restore verified
+                  </dt>
+                  <dd>
+                    {backups[0].restoreVerificationStatus === "restore_verified"
+                      ? "yes"
+                      : "no"}
+                  </dd>
+                  <dt className="font-medium text-zinc-600 dark:text-zinc-500">
+                    {backups[0].r2OffsiteEnabled ? "Offsite R2" : "Offsite copy"}
+                  </dt>
+                  <dd>
+                    {backups[0].r2OffsiteEnabled
+                      ? (backups[0].offsiteR2Status ?? "missing")
+                      : (backups[0].offsiteStatus ?? "—")}
+                    {backups[0].offsiteError ? (
+                      <span className="mt-0.5 block text-zinc-500 dark:text-zinc-500">
+                        {backups[0].offsiteError}
+                      </span>
+                    ) : null}
+                  </dd>
                 </dl>
               ) : null}
               {backupTierShowsFluxRemediationCli(backupTrust.tier) ? (

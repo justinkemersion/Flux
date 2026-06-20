@@ -308,6 +308,69 @@ audit_backup_catalog() {
       warn "$slug: offsite replication failed on latest backup"
     fi
   done <<<"$rows"
+
+  audit_platform_backup_freshness "$sys_db"
+}
+
+read_min_backup_interval_days() {
+  local env_file=""
+  if [[ -f "${FLUX_REMOTE_REPO_ROOT}/docker/web/.env" ]]; then
+    env_file="${FLUX_REMOTE_REPO_ROOT}/docker/web/.env"
+  elif [[ -f "${REPO_ROOT}/docker/web/.env" ]]; then
+    env_file="${REPO_ROOT}/docker/web/.env"
+  fi
+  local d="7"
+  if [[ -n "$env_file" ]]; then
+    d="$(grep -E '^\s*FLUX_MIN_BACKUP_INTERVAL_DAYS=' "$env_file" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"' " | tr -d ' ' || true)"
+  fi
+  [[ -z "$d" || ! "$d" =~ ^[0-9]+$ ]] && d="7"
+  echo "$d"
+}
+
+audit_platform_backup_freshness() {
+  local sys_db="$1"
+  section "Platform minimum backup freshness"
+  local interval_days
+  interval_days="$(read_min_backup_interval_days)"
+  echo "  interval_days=$interval_days (restore-verified age threshold)"
+
+  local freshness_rows
+  freshness_rows="$(docker exec "$sys_db" psql -U postgres -d postgres -tA -F '|' -c "
+    SELECT p.slug, p.mode,
+      lv.restore_verification_at::date,
+      CASE
+        WHEN lv.restore_verification_at IS NULL THEN NULL
+        ELSE (CURRENT_DATE - lv.restore_verification_at::date)
+      END AS age_days
+    FROM projects p
+    LEFT JOIN LATERAL (
+      SELECT b.restore_verification_at
+      FROM project_backups b
+      WHERE b.project_id = p.id
+        AND b.status = 'complete'
+        AND b.restore_verification_status = 'restore_verified'
+        AND b.restore_verification_at IS NOT NULL
+      ORDER BY b.restore_verification_at DESC
+      LIMIT 1
+    ) lv ON true
+    WHERE p.slug NOT IN ('flux-system', 'static')
+    ORDER BY p.slug;
+  " 2>/dev/null || true)"
+  if [[ -z "$freshness_rows" ]]; then
+    warn "could not read restore-verified freshness from $sys_db"
+    return
+  fi
+  while IFS='|' read -r slug mode verified_date age_days; do
+    [[ -z "$slug" ]] && continue
+    if [[ -z "$verified_date" || "$verified_date" == "" ]]; then
+      warn "$slug ($mode): no restore-verified backup — platform minimum backup freshness not met"
+      continue
+    fi
+    echo "  $slug ($mode) newest_verified=$verified_date age_days=${age_days:-?}"
+    if [[ -n "${age_days:-}" && "$age_days" =~ ^[0-9]+$ && "$age_days" -gt "$interval_days" ]]; then
+      warn "$slug: restore-verified backup is ${age_days}d old (platform minimum: ${interval_days}d)"
+    fi
+  done <<<"$freshness_rows"
 }
 
 read_flux_domain() {

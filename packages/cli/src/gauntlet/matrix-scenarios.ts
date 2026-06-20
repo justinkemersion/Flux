@@ -355,7 +355,8 @@ export async function scenarioBackupGateBlocksDestructive(
   });
 
   await ctx.runStage("backup_create_unverified", async () => {
-    const backup = await client.createProjectBackup(project.hash);
+    const created = await client.createProjectBackup(project.hash);
+    const backup = created.backup;
     ctx.artifacts.backupId = backup.id;
     ctx.artifacts.backupStatus = backup.restoreVerificationStatus ?? "pending";
   });

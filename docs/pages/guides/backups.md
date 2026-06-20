@@ -43,6 +43,8 @@ flux backup create --project bloom-atelier --hash 0a1b2c3 \
 
 This is the single most useful one-liner before any destructive action.
 
+When the operator has enabled [R2 offsite replication](/docs/guides/production-hardening#cloudflare-r2-offsite-replication-optional), `flux backup create` also reports offsite upload status. Offsite storage is **not** a substitute for restore verification — always run `flux backup verify` before destructive work.
+
 ## 2) List backups
 
 ```bash
@@ -58,6 +60,8 @@ The output shows recent backups newest-first with their trust labels (per [the t
 - **No backups** — exactly what it says; create one.
 
 Pass `--verbose` for catalog timestamps, artifact paths, and the underlying tier names. Useful when a label looks wrong and you need to trace it.
+
+List output also includes **platform minimum backup freshness** when the control plane exposes it: whether the newest restore-verified backup is within the platform interval (default seven days). Overdue freshness is informational — destructive actions still use the restore-verified gate on the *latest* backup, not freshness alone.
 
 ## 3) Verify a backup
 

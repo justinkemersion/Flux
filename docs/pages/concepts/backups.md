@@ -77,14 +77,18 @@ By default, backups are written to a control-plane Docker volume. On hosted Flux
 
 Retention is tier-dependent. Free projects get a small handful of recent backups; paid tiers get longer retention windows. The exact policy lives on the project page in the dashboard, not in this document, because it is the part most likely to evolve.
 
+On self-hosted installs, the control plane also enforces a **platform minimum backup freshness** floor: the newest **restore-verified** backup must be within a configured age (default seven days). This is scheduler-driven visibility and hygiene — it does **not** add a new destructive-action block beyond the existing restore-verified gate.
+
 ## Scheduling
 
 | Engine | Automatic schedule | On-demand |
 |--------|---------------------|-----------|
-| **v1 dedicated** | Nightly (default) | Yes — `flux backup create` any time |
-| **v2 shared** | None today | Yes — `flux backup create` any time |
+| **v1 dedicated** | Hourly scheduler when restore-verified backup is older than the platform minimum (default 7 days) | Yes — `flux backup create` any time |
+| **v2 shared** | Same platform minimum freshness scheduler as v1 | Yes — `flux backup create` any time |
 
-The v2 shared scheduler is intentionally on-demand at this stage: a portable tenant export is a workflow trigger (before a migration, before a cutover), not background hygiene. v1 dedicated, where the backup is the project's full database, runs nightly because the operational expectation is closer to traditional Postgres backups.
+The scheduler runs create → artifact validation → restore verification → local retention sweep (restore-verified rows only). **`flux-system`**, the **`static`** showcase project, demo-owned projects (`FLUX_DEMO_USER_ID`), and optional `FLUX_MIN_BACKUP_EXCLUDE_*` lists are excluded.
+
+User-configurable project preferences (`backup_interval_days`, etc.) may **increase** frequency or retention but never go below the platform floor. Stale freshness shows in the dashboard and CLI; it does not return HTTP 412 on delete or migrate.
 
 ## Next steps
 

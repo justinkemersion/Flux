@@ -121,6 +121,10 @@ export const projects = pgTable(
     apiSchemaName: text("api_schema_name"),
     /** `legacy_api` | `tenant_schema` for v1_dedicated; null for v2 or implicit legacy. */
     apiSchemaStrategy: text("api_schema_strategy"),
+    /** Optional user backup prefs; platform minimum is enforced as a floor. */
+    backupIntervalDays: integer("backup_interval_days"),
+    backupRetentionCount: integer("backup_retention_count"),
+    backupRetentionDays: integer("backup_retention_days"),
   },
   (t) => [
     uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug),
@@ -201,8 +205,14 @@ export const projectBackups = pgTable(
     completedAt: timestamp("completed_at", { mode: "date" }),
     error: text("error"),
     offsiteStatus: text("offsite_status").notNull().default("pending"),
+    offsiteProvider: text("offsite_provider"),
+    offsiteBucket: text("offsite_bucket"),
     offsiteKey: text("offsite_key"),
     offsiteCompletedAt: timestamp("offsite_completed_at", { mode: "date" }),
+    offsiteSizeBytes: integer("offsite_size_bytes"),
+    offsiteEtag: text("offsite_etag"),
+    /** Copy of local checksum_sha256 when uploaded; enables offsite integrity checks. */
+    offsiteContentSha256: text("offsite_content_sha256"),
     offsiteError: text("offsite_error"),
     artifactValidationStatus: text("artifact_validation_status")
       .notNull()
@@ -245,3 +255,14 @@ export const backupLocks = pgTable(
   },
   (t) => [index("backup_locks_expires_idx").on(t.expiresAt)],
 );
+
+/** One row per control-plane scheduler; records first and last successful tick. */
+export const platformSchedulerState = pgTable("platform_scheduler_state", {
+  schedulerId: text("scheduler_id").primaryKey(),
+  firstExecutedAt: timestamp("first_executed_at", { mode: "date" })
+    .notNull()
+    .defaultNow(),
+  lastExecutedAt: timestamp("last_executed_at", { mode: "date" })
+    .notNull()
+    .defaultNow(),
+});

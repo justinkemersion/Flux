@@ -8,12 +8,34 @@ import { getBackupStorage } from "@/src/lib/backup-storage";
 import {
   absoluteBackupArtifactPath,
   createBackupForProject,
+  formatLocalArtifactStatus,
+  formatOffsiteR2StatusForRow,
+  getProjectBackupFreshness,
   listBackupsForProject,
   reconcileListedBackupArtifacts,
   type BackupRow,
+  type PlatformBackupProjectRow,
 } from "@/src/lib/project-backups";
+import { isR2OffsiteEnabled } from "@/src/lib/backup-storage";
+
+function serializePlatformFreshness(
+  freshness: Awaited<ReturnType<typeof getProjectBackupFreshness>>,
+) {
+  return {
+    effectivePolicy: freshness.effectivePolicy,
+    freshness: {
+      tier: freshness.freshness.tier,
+      ageDays: freshness.freshness.ageDays,
+      dueInDays: freshness.freshness.dueInDays,
+      latestRestoreVerifiedAt: freshness.freshness.latestRestoreVerifiedAt,
+      platformBackupCompliant: freshness.freshness.platformBackupCompliant,
+      detail: freshness.freshness.detail,
+    },
+  };
+}
 
 function serializeBackupForCli(row: BackupRow) {
+  const r2Enabled = isR2OffsiteEnabled();
   return {
     id: row.id,
     kind: row.kind,
@@ -27,8 +49,18 @@ function serializeBackupForCli(row: BackupRow) {
     checksumSha256: row.checksumSha256,
     createdAt: row.createdAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
+    localArtifactStatus: formatLocalArtifactStatus(row),
     offsiteStatus: row.offsiteStatus,
+    offsiteProvider: row.offsiteProvider,
+    offsiteBucket: row.offsiteBucket,
+    offsiteKey: row.offsiteKey,
     offsiteCompletedAt: row.offsiteCompletedAt?.toISOString() ?? null,
+    offsiteSizeBytes: row.offsiteSizeBytes,
+    offsiteEtag: row.offsiteEtag,
+    offsiteContentSha256: row.offsiteContentSha256,
+    offsiteError: row.offsiteError,
+    offsiteR2Status: formatOffsiteR2StatusForRow(row),
+    r2OffsiteEnabled: r2Enabled,
     artifactValidationStatus: row.artifactValidationStatus,
     artifactValidationAt: row.artifactValidationAt?.toISOString() ?? null,
     artifactValidationError: row.artifactValidationError,
@@ -57,7 +89,7 @@ async function resolveOwnedProject(
   req: Request,
   context: Ctx,
 ): Promise<
-  | { project: { id: string; slug: string; hash: string; mode: "v1_dedicated" | "v2_shared" } }
+  | { project: PlatformBackupProjectRow & { mode: "v1_dedicated" | "v2_shared" } }
   | { error: Response }
 > {
   await initSystemDb();
@@ -85,12 +117,21 @@ async function resolveOwnedProject(
       slug: projects.slug,
       hash: projects.hash,
       mode: projects.mode,
+      userId: projects.userId,
+      backupIntervalDays: projects.backupIntervalDays,
+      backupRetentionCount: projects.backupRetentionCount,
+      backupRetentionDays: projects.backupRetentionDays,
     })
     .from(projects)
     .where(and(eq(projects.userId, userId), eq(projects.hash, hash)))
     .limit(1);
   if (!project) return { error: jsonError("Project not found", 404) };
-  return { project };
+  return {
+    project: {
+      ...project,
+      mode: project.mode as "v1_dedicated" | "v2_shared",
+    },
+  };
 }
 
 export async function GET(req: Request, context: Ctx): Promise<Response> {
@@ -100,11 +141,15 @@ export async function GET(req: Request, context: Ctx): Promise<Response> {
   const rows = await listBackupsForProject(resolved.project.id);
   const reconciled = await reconcileListedBackupArtifacts(rows);
   const storage = getBackupStorage();
+  const platformFreshness = await getProjectBackupFreshness(resolved.project);
   return Response.json(
     {
       backups: reconciled.map(serializeBackupForCli),
       backupVolumeAbsoluteRoot: storage.absoluteLocalRoot(),
       reconciledAt: new Date().toISOString(),
+      platformMinimumBackupFreshness: serializePlatformFreshness(
+        platformFreshness,
+      ),
     },
     {
       headers: {
@@ -125,9 +170,13 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
       hash: resolved.project.hash,
       mode: resolved.project.mode,
     });
+    const platformFreshness = await getProjectBackupFreshness(resolved.project);
     return Response.json(
       {
         backup: serializeBackupForCli(backup),
+        platformMinimumBackupFreshness: serializePlatformFreshness(
+          platformFreshness,
+        ),
       },
       {
         headers: {

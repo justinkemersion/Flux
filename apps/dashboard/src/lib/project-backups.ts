@@ -1,22 +1,64 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, stat, unlink } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import {
+  selectRestoreVerifiedBackupsForRetention,
+  type BackupFreshnessClassification,
+  type EffectiveBackupPolicy,
+} from "@flux/core/backup-policy";
 import { buildBackupVerifyPreRestoreSql } from "@/src/lib/backup-verify-pre-restore-sql";
 import { probeBackupArtifactOnDisk } from "@/src/lib/backup-artifact-probe";
 import { backupLocks, projectBackups, projects } from "@/src/db/schema";
-import { getBackupStorage } from "@/src/lib/backup-storage";
+import {
+  getBackupStorage,
+  isR2OffsiteEnabled,
+  isR2OffsiteStrict,
+} from "@/src/lib/backup-storage";
 import { getDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import { getV2SharedTenantBackupStream } from "@/src/lib/tenant-backup-stream";
+import type { BackupKind } from "@flux/core/backup-trust";
+import {
+  buildOffsiteObjectKey,
+  formatOffsiteR2Status,
+  parseOffsiteStorageConfig,
+} from "@flux/core/offsite-storage";
+import {
+  classifyProjectBackupFreshness,
+  effectivePolicyForProjectRow,
+  getPlatformBackupPolicy,
+  isSchedulerExcludedProject,
+} from "@/src/lib/backup-platform-policy";
 
 export type BackupEngineMode = "v1_dedicated" | "v2_shared";
 
 export type BackupRow = typeof projectBackups.$inferSelect;
+
+export type LocalArtifactDisplayStatus = "present" | "missing";
+
+/** Operator-facing local artifact presence from catalog validation flags. */
+export function formatLocalArtifactStatus(row: Pick<
+  BackupRow,
+  "status" | "artifactValidationStatus"
+>): LocalArtifactDisplayStatus {
+  if (row.status !== "complete") return "missing";
+  if (row.artifactValidationStatus === "artifact_invalid") return "missing";
+  return "present";
+}
+
+export function formatOffsiteR2StatusForRow(
+  row: Pick<BackupRow, "offsiteStatus">,
+): ReturnType<typeof formatOffsiteR2Status> {
+  return formatOffsiteR2Status({
+    r2Enabled: isR2OffsiteEnabled(),
+    offsiteStatus: row.offsiteStatus,
+  });
+}
 const execFileAsync = promisify(execFile);
 
 /** Absolute primary artifact path on the API server (FLUX_BACKUPS_LOCAL_DIR layout). */
@@ -55,10 +97,6 @@ function rawSqlReturningRowCount(raw: unknown): number {
     }
   }
   return 0;
-}
-
-function startOfUtcDay(d = new Date()): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
 function lockExpiryFromNow(ttlMs: number): Date {
@@ -292,7 +330,8 @@ export async function createBackupForProject(input: {
     if (!completed) {
       throw new Error("Backup row missing after completion.");
     }
-    return completed;
+
+    return await replicateBackupOffsiteIfEligible(completed, input.hash);
   } catch (err: unknown) {
     const db = getDb();
     if (queuedId) {
@@ -307,30 +346,118 @@ export async function createBackupForProject(input: {
   }
 }
 
-export async function replicateBackupOffsite(backupId: string): Promise<void> {
+async function resolveOffsiteObjectKey(
+  backup: BackupRow,
+  projectHash: string,
+): Promise<string> {
+  const offsiteConfig = parseOffsiteStorageConfig();
+  if (offsiteConfig) {
+    return buildOffsiteObjectKey({
+      prefix: offsiteConfig.prefix,
+      kind: backup.kind as BackupKind,
+      projectHash,
+      tenantId: backup.projectId,
+      backupId: backup.id,
+    });
+  }
+  return `${backup.projectId}/${backup.id}.dump`;
+}
+
+async function loadBackupRow(backupId: string): Promise<BackupRow | null> {
   const db = getDb();
-  const storage = getBackupStorage();
-  const [backup] = await db
+  const [row] = await db
     .select()
     .from(projectBackups)
     .where(eq(projectBackups.id, backupId))
     .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Upload a complete local backup artifact to offsite storage when configured.
+ * Updates catalog offsite_* columns; does not affect restore verification.
+ */
+export async function replicateBackupOffsite(
+  backupId: string,
+  projectHash?: string,
+): Promise<void> {
+  const backup = await loadBackupRow(backupId);
   if (!backup) return;
   if (backup.status !== "complete") return;
   if (backup.offsiteStatus === "complete") return;
-  const offsiteKey = `${backup.projectId}/${backup.id}.dump`;
+
+  let hash = projectHash?.trim();
+  if (!hash) {
+    const db = getDb();
+    const [project] = await db
+      .select({ hash: projects.hash })
+      .from(projects)
+      .where(eq(projects.id, backup.projectId))
+      .limit(1);
+    hash = project?.hash;
+  }
+  if (!hash) {
+    throw new Error("Project hash required for offsite replication.");
+  }
+
+  const db = getDb();
+  const storage = getBackupStorage();
+  const offsiteKey = await resolveOffsiteObjectKey(backup, hash);
+
   await db
     .update(projectBackups)
     .set({ offsiteStatus: "running", offsiteError: null, offsiteKey })
     .where(eq(projectBackups.id, backup.id));
-  await storage.uploadOffsite(absoluteBackupArtifactPath(backup), offsiteKey);
+
+  const upload = await storage.uploadOffsite(
+    absoluteBackupArtifactPath(backup),
+    offsiteKey,
+    backup.checksumSha256,
+  );
+
+  const contentSha256 =
+    catalogSha256LooksValid(backup.checksumSha256) ? backup.checksumSha256!.trim().toLowerCase() : null;
+
   await db
     .update(projectBackups)
     .set({
       offsiteStatus: "complete",
+      offsiteProvider: upload.provider,
+      offsiteBucket: upload.bucket,
       offsiteCompletedAt: new Date(),
+      offsiteSizeBytes: upload.sizeBytes,
+      offsiteEtag: upload.etag ?? null,
+      offsiteContentSha256: contentSha256,
+      offsiteError: null,
     })
     .where(eq(projectBackups.id, backup.id));
+}
+
+/**
+ * Attempt immediate offsite replication after local backup creation.
+ * Non-strict: failures are recorded on the row; local backup remains complete.
+ * Strict (FLUX_R2_BACKUPS_STRICT): rethrows after marking offsite failed.
+ */
+async function replicateBackupOffsiteIfEligible(
+  backup: BackupRow,
+  projectHash: string,
+): Promise<BackupRow> {
+  try {
+    await replicateBackupOffsite(backup.id, projectHash);
+  } catch (err: unknown) {
+    const db = getDb();
+    const message = err instanceof Error ? err.message : String(err);
+    await db
+      .update(projectBackups)
+      .set({ offsiteStatus: "failed", offsiteError: message })
+      .where(eq(projectBackups.id, backup.id));
+    if (isR2OffsiteStrict()) {
+      throw new Error(`Offsite replication failed (strict mode): ${message}`);
+    }
+    console.error(`[flux] offsite replication failed for backup ${backup.id}:`, message);
+  }
+  const refreshed = await loadBackupRow(backup.id);
+  return refreshed ?? backup;
 }
 
 export async function runBackupArtifactValidation(backupId: string): Promise<void> {
@@ -679,6 +806,194 @@ export async function streamBackupFile(backupId: string): Promise<{
   return { backup, stream: createReadStream(artifactPath) };
 }
 
+export async function latestRestoreVerifiedBackup(
+  projectId: string,
+): Promise<BackupRow | null> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(projectBackups)
+    .where(
+      and(
+        eq(projectBackups.projectId, projectId),
+        eq(projectBackups.status, "complete"),
+        eq(projectBackups.restoreVerificationStatus, "restore_verified"),
+      ),
+    )
+    .orderBy(desc(projectBackups.restoreVerificationAt))
+    .limit(1);
+  return row ?? null;
+}
+
+export type PlatformBackupProjectRow = {
+  id: string;
+  slug: string;
+  hash: string;
+  userId: string;
+  mode: BackupEngineMode;
+  backupIntervalDays: number | null;
+  backupRetentionCount: number | null;
+  backupRetentionDays: number | null;
+};
+
+export async function getProjectBackupFreshness(
+  project: PlatformBackupProjectRow,
+): Promise<{
+  effectivePolicy: EffectiveBackupPolicy;
+  freshness: BackupFreshnessClassification;
+}> {
+  const db = getDb();
+  const effectivePolicy = effectivePolicyForProjectRow(project);
+  const verified = await latestRestoreVerifiedBackup(project.id);
+  const [anyRow] = await db
+    .select({ id: projectBackups.id })
+    .from(projectBackups)
+    .where(eq(projectBackups.projectId, project.id))
+    .limit(1);
+  const freshness = classifyProjectBackupFreshness({
+    latestRestoreVerifiedAt: verified?.restoreVerificationAt ?? null,
+    hasAnyBackups: Boolean(anyRow),
+    effectivePolicy,
+  });
+  return { effectivePolicy, freshness };
+}
+
+export async function projectsDueForPlatformBackup(): Promise<
+  PlatformBackupProjectRow[]
+> {
+  const db = getDb();
+  const policy = getPlatformBackupPolicy();
+  const rows = await db
+    .select({
+      id: projects.id,
+      slug: projects.slug,
+      hash: projects.hash,
+      userId: projects.userId,
+      mode: projects.mode,
+      backupIntervalDays: projects.backupIntervalDays,
+      backupRetentionCount: projects.backupRetentionCount,
+      backupRetentionDays: projects.backupRetentionDays,
+    })
+    .from(projects);
+
+  const due: PlatformBackupProjectRow[] = [];
+  for (const row of rows) {
+    if (
+      isSchedulerExcludedProject({ slug: row.slug, userId: row.userId })
+    ) {
+      continue;
+    }
+    const mode = row.mode as BackupEngineMode;
+    const effectivePolicy = effectivePolicyForProjectRow(row);
+    const verified = await latestRestoreVerifiedBackup(row.id);
+    const [anyRow] = await db
+      .select({ id: projectBackups.id })
+      .from(projectBackups)
+      .where(eq(projectBackups.projectId, row.id))
+      .limit(1);
+    const freshness = classifyProjectBackupFreshness({
+      latestRestoreVerifiedAt: verified?.restoreVerificationAt ?? null,
+      hasAnyBackups: Boolean(anyRow),
+      effectivePolicy,
+    });
+    if (!freshness.platformBackupCompliant) {
+      due.push({
+        id: row.id,
+        slug: row.slug,
+        hash: row.hash,
+        userId: row.userId,
+        mode,
+        backupIntervalDays: row.backupIntervalDays,
+        backupRetentionCount: row.backupRetentionCount,
+        backupRetentionDays: row.backupRetentionDays,
+      });
+    }
+  }
+
+  due.sort((a, b) => a.slug.localeCompare(b.slug));
+  return due;
+}
+
+export async function runPlatformBackupPipeline(
+  project: PlatformBackupProjectRow,
+): Promise<void> {
+  const backup = await createBackupForProject({
+    projectId: project.id,
+    slug: project.slug,
+    hash: project.hash,
+    mode: project.mode,
+  });
+  await runBackupArtifactValidation(backup.id);
+  await verifyBackupRestore(backup.id);
+  await sweepProjectBackupRetention(project);
+}
+
+export async function sweepProjectBackupRetention(
+  project: Pick<
+    PlatformBackupProjectRow,
+    | "id"
+    | "backupIntervalDays"
+    | "backupRetentionCount"
+    | "backupRetentionDays"
+  >,
+): Promise<number> {
+  const db = getDb();
+  const effectivePolicy = effectivePolicyForProjectRow(project);
+  const rows = await db
+    .select()
+    .from(projectBackups)
+    .where(eq(projectBackups.projectId, project.id))
+    .orderBy(desc(projectBackups.createdAt));
+
+  const deleteIds = selectRestoreVerifiedBackupsForRetention({
+    rows,
+    retentionCount: effectivePolicy.retentionCount,
+    retentionDays: effectivePolicy.retentionDays,
+  });
+
+  let deleted = 0;
+  for (const backupId of deleteIds) {
+    const row = rows.find((r) => r.id === backupId);
+    if (!row) continue;
+    const artifactPath = absoluteBackupArtifactPath(row);
+    try {
+      await unlink(artifactPath);
+    } catch {
+      // missing file is ok
+    }
+    await db.delete(projectBackups).where(eq(projectBackups.id, backupId));
+    deleted += 1;
+  }
+  return deleted;
+}
+
+export async function sweepRetentionBatch(limit = 10): Promise<number> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: projects.id,
+      slug: projects.slug,
+      userId: projects.userId,
+      backupIntervalDays: projects.backupIntervalDays,
+      backupRetentionCount: projects.backupRetentionCount,
+      backupRetentionDays: projects.backupRetentionDays,
+    })
+    .from(projects)
+    .limit(500);
+
+  let total = 0;
+  let processed = 0;
+  for (const row of rows) {
+    if (isSchedulerExcludedProject({ slug: row.slug, userId: row.userId })) {
+      continue;
+    }
+    total += await sweepProjectBackupRetention(row);
+    processed += 1;
+    if (processed >= limit) break;
+  }
+  return total;
+}
+
 export async function latestBackupForProject(projectId: string): Promise<BackupRow | null> {
   const db = getDb();
   const [row] = await db
@@ -690,27 +1005,4 @@ export async function latestBackupForProject(projectId: string): Promise<BackupR
   return row ?? null;
 }
 
-export async function eligibleV1ProjectsForNightly(): Promise<
-  Array<{ id: string; slug: string; hash: string }>
-> {
-  const db = getDb();
-  return db
-    .select({ id: projects.id, slug: projects.slug, hash: projects.hash })
-    .from(projects)
-    .where(eq(projects.mode, "v1_dedicated"));
-}
-
-export async function hasBackupToday(projectId: string): Promise<boolean> {
-  const db = getDb();
-  const [row] = await db
-    .select({ id: projectBackups.id })
-    .from(projectBackups)
-    .where(
-      and(
-        eq(projectBackups.projectId, projectId),
-        gte(projectBackups.createdAt, startOfUtcDay()),
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
-}
+export { getPlatformBackupPolicy, effectivePolicyForProjectRow };

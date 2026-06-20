@@ -283,7 +283,7 @@ export class ApiClient {
     return backups.listProjectBackups(this.asContext(), hash);
   }
 
-  createProjectBackup(hash: string): Promise<ProjectBackup> {
+  createProjectBackup(hash: string): Promise<import("./schemas").CreateProjectBackupResult> {
     return backups.createProjectBackup(this.asContext(), hash);
   }
 

@@ -1,12 +1,18 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { resolvePlatformBackupSchedulerBatchSize } from "@flux/core/backup-policy";
 import { projectBackups } from "@/src/db/schema";
+import { getPlatformBackupPolicy } from "@/src/lib/backup-platform-policy";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import {
-  createBackupForProject,
-  eligibleV1ProjectsForNightly,
-  hasBackupToday,
+  isPlatformBackupFreshnessSchedulerFirstRun,
+  recordPlatformBackupFreshnessSchedulerExecution,
+} from "@/src/lib/platform-scheduler-state";
+import {
+  projectsDueForPlatformBackup,
   replicateBackupOffsite,
   runBackupArtifactValidation,
+  runPlatformBackupPipeline,
+  sweepRetentionBatch,
 } from "@/src/lib/project-backups";
 
 const INTERVAL_MS = 60 * 60 * 1000;
@@ -43,7 +49,7 @@ async function markFailed(
     .where(eq(projectBackups.id, backupId));
 }
 
-async function processPendingReplicationAndRestore(): Promise<void> {
+export async function processPendingReplicationAndRestore(): Promise<void> {
   const db = getDb();
   const pending = await db
     .select({
@@ -93,44 +99,54 @@ async function processPendingReplicationAndRestore(): Promise<void> {
 
 export async function runBackupSchedulerTick(): Promise<void> {
   await initSystemDb();
-  const projects = await eligibleV1ProjectsForNightly();
-  for (const project of projects) {
+  await processPendingReplicationAndRestore();
+
+  const policy = getPlatformBackupPolicy();
+  const isFirstRun = await isPlatformBackupFreshnessSchedulerFirstRun();
+  const due = await projectsDueForPlatformBackup();
+  const batchSize = resolvePlatformBackupSchedulerBatchSize({
+    dueCount: due.length,
+    maxPipelinesPerTick: policy.maxPipelinesPerTick,
+    bootstrapMaxPipelinesOnFirstRun: policy.bootstrapMaxPipelinesOnFirstRun,
+    isFirstRun,
+  });
+  const batch = due.slice(0, batchSize);
+
+  if (isFirstRun) {
+    console.log(
+      `[flux] backup-scheduler: first run — running platform minimum backup freshness bootstrap (${String(batch.length)} pipeline(s), ${String(due.length)} due)`,
+    );
+  }
+
+  for (const project of batch) {
     try {
-      const exists = await hasBackupToday(project.id);
-      if (exists) continue;
-      const backup = await createBackupForProject({
-        projectId: project.id,
-        slug: project.slug,
-        hash: project.hash,
-        mode: "v1_dedicated",
-      });
-      try {
-        await replicateBackupOffsite(backup.id);
-      } catch (err: unknown) {
-        await markFailed(backup.id, "offsite", err instanceof Error ? err.message : String(err));
-      }
-      try {
-        await runBackupArtifactValidation(backup.id);
-      } catch (err: unknown) {
-        await markFailed(
-          backup.id,
-          "validation",
-          err instanceof Error ? err.message : String(err),
-        );
-      }
+      await runPlatformBackupPipeline(project);
     } catch (err: unknown) {
       console.error(
-        `[flux] backup-scheduler: failed project ${project.slug}:${project.hash}`,
-        err,
+        `[flux] backup-scheduler: platform freshness pipeline failed ${project.slug}:${project.hash}`,
+        err instanceof Error ? err.message : String(err),
       );
     }
   }
-  await processPendingReplicationAndRestore();
+
+  try {
+    await sweepRetentionBatch(10);
+  } catch (err: unknown) {
+    console.error(
+      "[flux] backup-scheduler: retention sweep failed",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  await recordPlatformBackupFreshnessSchedulerExecution();
 }
 
 export function startBackupScheduler(): void {
   if (started) return;
   started = true;
+  console.log(
+    "[flux] Backup scheduler starting (60m interval; immediate first tick).",
+  );
   void runBackupSchedulerTick().catch((err) => {
     console.error("[flux] backup-scheduler initial tick failed:", err);
   });

@@ -24,6 +24,7 @@ import { ProjectCardSettingsModal } from "@/src/components/projects/project-card
 import { ProjectCardV1LogsPanel } from "@/src/components/projects/project-card-v1-logs-panel";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
 import type { ProjectRow } from "@/src/components/projects/project-types";
+import { backupFreshnessTierLabel } from "@flux/core/backup-policy";
 import {
   destructiveActionBlockedTitle,
   useProjectBackupTrust,
@@ -109,6 +110,7 @@ export function ProjectCard({
 
   const {
     trust: backupTrust,
+    platformMinimumBackupFreshness,
     loading: backupTrustLoading,
     error: backupTrustError,
     refresh: refreshBackupTrust,
@@ -649,6 +651,19 @@ export function ProjectCard({
             </>
           }
         />
+
+        {platformMinimumBackupFreshness &&
+        !backupTrustLoading &&
+        !platformMinimumBackupFreshness.freshness.platformBackupCompliant ? (
+          <p
+            className="-mt-2 mb-3 text-xs text-amber-800 dark:text-amber-300/90"
+            role="status"
+          >
+            {backupFreshnessTierLabel(
+              platformMinimumBackupFreshness.freshness.tier,
+            )}
+          </p>
+        ) : null}
 
         {!meshReadoutCompanion || !isV2Shared ? (
           <ProjectCardConnectSection

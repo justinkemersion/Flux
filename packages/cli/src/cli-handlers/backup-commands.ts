@@ -6,6 +6,9 @@ import {
   backupTrustTierLabelForKind,
   classifyNewestBackup,
 } from "@flux/core/backup-trust";
+import {
+  backupFreshnessTierLabel,
+} from "@flux/core/backup-policy";
 import chalk from "chalk";
 import { getApiClient } from "../api-client";
 import { sectionBanner } from "../cli-layout";
@@ -29,6 +32,24 @@ function fmtArtifactRelPath(p: string | undefined): string {
   return `${s.slice(0, 18)}…${s.slice(-23)}`;
 }
 
+function printPlatformMinimumFreshness(
+  freshness:
+    | import("../api-client/schemas").PlatformMinimumBackupFreshness
+    | undefined,
+): void {
+  if (!freshness) return;
+  const tier = freshness.freshness.tier;
+  const label = backupFreshnessTierLabel(tier);
+  const line =
+    tier === "fresh"
+      ? chalk.green(label)
+      : tier === "stale"
+        ? chalk.yellow(label)
+        : chalk.dim(label);
+  console.log(line);
+  console.log(chalk.dim(`  ${freshness.freshness.detail}`));
+}
+
 export async function cmdBackupCreate(
   name: string | undefined,
   projectOpt: string | undefined,
@@ -40,13 +61,29 @@ export async function cmdBackupCreate(
   const hash = resolveHash(cliHash, flux);
   const client = getApiClient();
   console.log(chalk.blue(`Creating backup for ${chalk.bold(slug)}...`));
-  const backup = await client.createProjectBackup(hash);
+  const result = await client.createProjectBackup(hash);
+  const backup = result.backup;
   console.log(chalk.green("✓"), chalk.white("Backup complete."));
   console.log(
     chalk.dim(
       `  id=${backup.id} kind=${backup.kind ?? "project_db"} status=${backup.status} size=${fmtBytes(backup.sizeBytes ?? null)}`,
     ),
   );
+  if (backup.primaryArtifactAbsolutePath) {
+    console.log(chalk.dim(`  local=${backup.primaryArtifactAbsolutePath}`));
+  }
+  if (backup.r2OffsiteEnabled) {
+    const r2 = backup.offsiteR2Status ?? "missing";
+    const keyLine =
+      backup.offsiteKey && r2 === "uploaded"
+        ? ` key=${backup.offsiteKey}`
+        : "";
+    const errLine = backup.offsiteError ? ` (${backup.offsiteError})` : "";
+    console.log(chalk.dim(`  offsite R2=${r2}${keyLine}${errLine}`));
+  } else if (backup.offsiteStatus) {
+    console.log(chalk.dim(`  offsite copy=${backup.offsiteStatus}`));
+  }
+  printPlatformMinimumFreshness(result.platformMinimumBackupFreshness);
 }
 
 export async function cmdBackupList(
@@ -60,9 +97,11 @@ export async function cmdBackupList(
   resolveOptionalName(fromCli, flux, "positional [name] or -p, --project");
   const hash = resolveHash(cliHash, flux);
   const client = getApiClient();
-  const { backups, reconciledAt, backupVolumeAbsoluteRoot } =
+  const { backups, reconciledAt, backupVolumeAbsoluteRoot, platformMinimumBackupFreshness } =
     await client.listProjectBackups(hash);
   sectionBanner("Backups");
+  printPlatformMinimumFreshness(platformMinimumBackupFreshness);
+  console.log();
   const classification = classifyNewestBackup(backups);
   printBackupTrustSummary(classification, backups[0]?.kind);
   if (verbose) {
@@ -100,13 +139,14 @@ export async function cmdBackupList(
   if (verbose) {
     console.log(
       chalk.dim(
-        "  ID                                   KIND       STATUS     SIZE       CREATED                    VALIDATION        RESTORE_VERIFY   ARTIFACT_REL_PATH",
+        "  ID                                   KIND       STATUS     SIZE       CREATED                    OFFSITE_R2   VALIDATION        RESTORE_VERIFY   ARTIFACT_REL_PATH",
       ),
     );
     for (const row of backups) {
       const kindCell = (row.kind ?? "project_db").padEnd(10);
+      const offsiteCell = (row.offsiteR2Status ?? row.offsiteStatus ?? "-").padEnd(12);
       console.log(
-        `  ${chalk.cyan(row.id.padEnd(36))} ${kindCell} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending").padEnd(16)} ${fmtArtifactRelPath(row.primaryArtifactRelativePath)}`,
+        `  ${chalk.cyan(row.id.padEnd(36))} ${kindCell} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${offsiteCell} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending").padEnd(16)} ${fmtArtifactRelPath(row.primaryArtifactRelativePath)}`,
       );
     }
     return;

@@ -301,7 +301,8 @@ export async function stageBackupCreate(
 
   const project = requireProject(state);
   const client = getApiClient();
-  const backup = await client.createProjectBackup(project.hash);
+  const created = await client.createProjectBackup(project.hash);
+  const backup = created.backup;
   project.backupId = backup.id;
   const kind = backup.kind ?? (project.mode === "v2_shared" ? "tenant_export" : "project_db");
   stage.summary = `Backup created (${backup.id}, ${kind})`;

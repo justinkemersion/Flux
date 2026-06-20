@@ -10,6 +10,8 @@
     "./api-schema-strategy": "./src/api-schema-strategy.ts",
     "./migration-status": "./src/migration-status.ts",
     "./backup-trust": "./src/backup-trust.ts",
+    "./backup-policy": "./src/backup-policy.ts",
+    "./offsite-storage": "./src/offsite-storage/index.ts",
     "./sql-migrations": "./src/sql-migrations.ts",
     "./sql-repeatable-scripts": "./src/sql-repeatable-scripts.ts",
     "./schema-inspection": "./src/schema-inspection/index.ts",
@@ -23,6 +25,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.33.0",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.888.0",
     "dockerode": "^4.0.10",
     "dotenv": "^17.4.2",
     "jsonwebtoken": "^9.0.3",
