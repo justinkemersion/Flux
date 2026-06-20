@@ -16,6 +16,8 @@ test("buildBackupVerifyPreRestoreSql includes platform and tenant roles for tena
   assert.match(sql, /CREATE ROLE authenticator NOLOGIN NOINHERIT/u);
   assert.match(sql, /CREATE ROLE t_550e8400e29b_role NOLOGIN NOINHERIT/u);
   assert.match(sql, /GRANT anon, authenticated, service_role TO authenticator/u);
+  assert.match(sql, /CREATE SCHEMA IF NOT EXISTS auth/u);
+  assert.match(sql, /CREATE OR REPLACE FUNCTION auth\.uid\(\)/u);
   assertNoDoubleStatementTerminator(sql);
 });
 
@@ -25,5 +27,6 @@ test("buildBackupVerifyPreRestoreSql includes tenant role for project_db", () =>
     kind: "project_db",
   });
   assert.match(sql, /CREATE ROLE t_550e8400e29b_role NOLOGIN NOINHERIT/u);
+  assert.doesNotMatch(sql, /CREATE SCHEMA IF NOT EXISTS auth/u);
   assertNoDoubleStatementTerminator(sql);
 });

@@ -1,4 +1,4 @@
-import { defaultTenantRoleFromProjectId } from "@flux/core";
+import { defaultTenantRoleFromProjectId, FLUX_AUTH_SCHEMA_AND_UID_SQL } from "@flux/core";
 
 export type BackupVerifyPreRestoreKind = "project_db" | "tenant_export";
 
@@ -12,18 +12,25 @@ function createRoleStmt(roleName: string): string {
  *
  * `pg_dump --no-acl` strips GRANT but keeps `CREATE POLICY ... TO <role>`. v2 tenant
  * exports reference `t_<shortId>_role`; v1 / legacy dumps may reference `authenticated`.
+ *
+ * v2 tenant exports often use `DEFAULT auth.uid()` on columns; the disposable verify DB
+ * has no `auth` schema until we create the Flux auth compat stub first.
  */
 export function buildBackupVerifyPreRestoreSql(input: {
   projectId: string;
   kind: BackupVerifyPreRestoreKind;
 }): string {
   const tenantRole = defaultTenantRoleFromProjectId(input.projectId);
-  return [
+  const parts = [
     createRoleStmt("anon"),
     createRoleStmt("authenticated"),
     "DO $$ BEGIN CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS; EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
     createRoleStmt("authenticator"),
     createRoleStmt(tenantRole),
     "GRANT anon, authenticated, service_role TO authenticator;",
-  ].join(" ");
+  ];
+  if (input.kind === "tenant_export") {
+    parts.push(FLUX_AUTH_SCHEMA_AND_UID_SQL);
+  }
+  return parts.join(" ");
 }
