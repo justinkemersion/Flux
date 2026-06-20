@@ -332,4 +332,41 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
       last_executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_db_access_audit_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      event TEXT NOT NULL,
+      hash TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      access TEXT,
+      ttl_seconds INTEGER,
+      username TEXT,
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS project_db_access_audit_project_time_idx
+      ON project_db_access_audit_events (project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS project_db_access_audit_user_time_idx
+      ON project_db_access_audit_events (user_id, created_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_db_temp_credentials (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      access TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      dropped_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS project_db_temp_credentials_project_expires_idx
+      ON project_db_temp_credentials (project_id, expires_at DESC);
+    CREATE INDEX IF NOT EXISTS project_db_temp_credentials_username_idx
+      ON project_db_temp_credentials (username);
+  `);
 }

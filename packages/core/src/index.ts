@@ -135,10 +135,26 @@ export {
   type DatabaseAccessTransport,
   type DatabaseAccessTunnelDefaults,
   type DedicatedDatabaseAccessPlan,
+  type PooledDatabaseAccessPlan,
   type PooledDatabaseAccessPreviewPlan,
   type ResolveProjectDatabaseAccessInput,
   type ResolveProjectDatabaseAccessOptions,
 } from "./projects/database-access.ts";
+
+export {
+  assertPgRoleNameByteLength,
+  DB_ACCESS_TTL_DEFAULT_READONLY_SECONDS,
+  DB_ACCESS_TTL_DEFAULT_READWRITE_SECONDS,
+  DB_ACCESS_TTL_MAX_SECONDS,
+  dbAccessReadwriteEnabled,
+  fluxTempLoginRoleName,
+  fluxTenantGroupRoleName,
+  normalizeDbAccessTtlSeconds,
+  quotePgIdent,
+  sanitizeDbAccessHashSegment,
+  sanitizeDbAccessSuffixSegment,
+  type DbAccessLevel,
+} from "./projects/db-access-roles.ts";
 
 export type {
   InspectTenantSchemaOptions,

@@ -57,9 +57,9 @@ export function buildGuiConfigFields(
 
   return {
     ...base,
-    user: "temporary role created by `flux db tunnel` (Pass 2)",
+    user: "temporary project-scoped role from `flux db tunnel`",
     passwordBehavior:
-      "Scoped temporary credentials are coming in Pass 2. No pooled admin credentials are exposed.",
+      "Created when you run `flux db tunnel`. Flux never exposes pooled admin credentials.",
     searchPath: input.tenantSchema
       ? `${input.tenantSchema}, public`
       : "tenant schema, public",
@@ -69,9 +69,8 @@ export function buildGuiConfigFields(
 export function privateDbAccessIntro(mode: "v1_dedicated" | "v2_shared"): string {
   if (mode === "v2_shared") {
     return (
-      "Postgres is not exposed publicly. Pooled projects will use temporary project-scoped " +
-      "credentials through the Flux CLI in Pass 2. Until then, inspect the preview access plan " +
-      "with `flux db access-plan`."
+      "Postgres is not exposed publicly. Run `flux db tunnel` to open a local SSH tunnel and " +
+      "receive temporary project-scoped credentials for your tenant schema."
     );
   }
   return (

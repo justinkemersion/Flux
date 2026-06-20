@@ -1,8 +1,9 @@
 import type {
   DatabaseAccessPlan,
   DedicatedDatabaseAccessPlan,
-  PooledDatabaseAccessPreviewPlan,
+  PooledDatabaseAccessPlan,
 } from "@flux/core";
+import type { TemporaryDbCredential } from "../api-client/db-access";
 
 export function dbTunnelCommand(slug: string, hash: string): string {
   return `flux db tunnel ${slug} --hash ${hash}`;
@@ -62,15 +63,32 @@ export function buildGuiConfigFields(plan: DatabaseAccessPlan): GuiConfigFields 
 
   return {
     ...base,
-    user: "temporary role created by `flux db tunnel` (Pass 2)",
+    user: "temporary project-scoped role from `flux db tunnel`",
     passwordBehavior:
-      "Scoped temporary credentials are coming in Pass 2. No pooled admin credentials are exposed.",
+      "Created when you run `flux db tunnel` or `flux db gui-config --create-temp-credentials`. Never pooled admin credentials.",
     searchPath: plan.database.searchPath.join(", "),
   };
 }
 
 export function formatGuiConfigText(plan: DatabaseAccessPlan): string[] {
   const fields = buildGuiConfigFields(plan);
+  return renderGuiConfigLines(fields);
+}
+
+export function formatGuiConfigTextWithCredential(
+  plan: DatabaseAccessPlan,
+  credential: TemporaryDbCredential,
+): string[] {
+  const fields = buildGuiConfigFields(plan);
+  return renderGuiConfigLines({
+    ...fields,
+    user: credential.username,
+    passwordBehavior: credential.password,
+    searchPath: credential.searchPath.join(", "),
+  });
+}
+
+function renderGuiConfigLines(fields: GuiConfigFields): string[] {
   const lines = [
     `Connection Name: ${fields.connectionName}`,
     `Type: ${fields.type}`,
@@ -92,7 +110,7 @@ export function formatAccessPlanSummary(plan: DatabaseAccessPlan): string[] {
   if (plan.mode === "v1_dedicated") {
     return formatDedicatedAccessPlanSummary(plan);
   }
-  return formatPooledPreviewSummary(plan);
+  return formatPooledAccessPlanSummary(plan);
 }
 
 function formatDedicatedAccessPlanSummary(plan: DedicatedDatabaseAccessPlan): string[] {
@@ -104,17 +122,18 @@ function formatDedicatedAccessPlanSummary(plan: DedicatedDatabaseAccessPlan): st
     `Container: ${plan.database.containerName}`,
     `Local bind: ${plan.tunnel.recommendedLocalHost}:${String(plan.tunnel.recommendedLocalPort)}`,
     `SSH: ${plan.tunnel.sshUser}@${plan.tunnel.sshHost || "(configure FLUX_DB_TUNNEL_SSH_HOST)"}:${String(plan.tunnel.sshPort)}`,
-    `Capabilities: tunnel=${String(plan.capabilities.tunnel)} guiConfig=${String(plan.capabilities.guiConfig)}`,
+    `Capabilities: tunnel=${String(plan.capabilities.tunnel)} guiConfig=${String(plan.capabilities.guiConfig)} restore=${String(plan.capabilities.restore)}`,
   ];
 }
 
-function formatPooledPreviewSummary(plan: PooledDatabaseAccessPreviewPlan): string[] {
+function formatPooledAccessPlanSummary(plan: PooledDatabaseAccessPlan): string[] {
   return [
     `Mode: v2_shared (pooled)`,
     `Project: ${plan.projectName}`,
     `Schema: ${plan.tenantSchema}`,
-    `Supported: false (preview)`,
-    plan.previewMessage,
+    `Supported: true`,
+    `Local bind: ${plan.tunnel.recommendedLocalHost}:${String(plan.tunnel.recommendedLocalPort)}`,
+    `Capabilities: tunnel=${String(plan.capabilities.tunnel)} shell=${String(plan.capabilities.shell)} dump=${String(plan.capabilities.dump)} restore=${String(plan.capabilities.restore)}`,
     ...plan.securityNotes.map((note) => `Note: ${note}`),
   ];
 }

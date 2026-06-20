@@ -1,9 +1,14 @@
 import { type Command } from "commander";
 import {
   cmdDbAccessPlan,
+  cmdDbDump,
   cmdDbGuiConfig,
+  cmdDbRestore,
+  cmdDbShell,
   cmdDbTunnel,
   type DbAccessCommonOptions,
+  type DbDumpOptions,
+  type DbRestoreOptions,
 } from "../../commands/db-access";
 import { cliActionWithFlux, HASH_FLAG_DESC } from "./shared";
 
@@ -22,6 +27,10 @@ function collectDbAccessOptions(cmd: Command): DbAccessCommonOptions {
     printConfig?: boolean;
     json?: boolean;
     verbose?: boolean;
+    readonly?: boolean;
+    readwrite?: boolean;
+    ttl?: string;
+    createTempCredentials?: boolean;
   }>();
   const out: DbAccessCommonOptions = {};
   if (opts.project) out.project = opts.project;
@@ -35,8 +44,12 @@ function collectDbAccessOptions(cmd: Command): DbAccessCommonOptions {
   if (opts.printConfig === true) out.printConfig = true;
   if (opts.json === true) out.json = true;
   if (opts.verbose === true) out.verbose = true;
+  if (opts.readonly === true) out.readonly = true;
+  if (opts.readwrite === true) out.readwrite = true;
+  if (opts.createTempCredentials === true) out.createTempCredentials = true;
   if (opts.localPort) out.localPort = Number.parseInt(opts.localPort, 10);
   if (opts.sshPort) out.sshPort = Number.parseInt(opts.sshPort, 10);
+  if (opts.ttl) out.ttl = Number.parseInt(opts.ttl, 10);
   return out;
 }
 
@@ -54,6 +67,14 @@ function registerDbAccessFlags(cmd: Command): void {
     .option("--identity-file <path>", "SSH private key path")
     .option("--keepalive", "Enable SSH keepalive options", false)
     .option("--print-config", "Print GUI config without opening a tunnel", false)
+    .option("--readonly", "Request readonly temporary credentials (v2 default)", false)
+    .option("--readwrite", "Request read/write temporary credentials (v2, platform policy)", false)
+    .option("--ttl <seconds>", "Temporary credential lifetime (v2; default 1h ro / 30m rw)")
+    .option(
+      "--create-temp-credentials",
+      "Create and print v2 temporary credentials with gui-config",
+      false,
+    )
     .option("--json", "Machine-readable output", false)
     .option("--verbose", "Show diagnostics (secrets still redacted)", false);
 }
@@ -87,11 +108,77 @@ export function registerDbCommands(program: Command): void {
 
   const tunnelCmd = dbCmd
     .command("tunnel")
-    .description("Open a local SSH tunnel to the project database (v1 dedicated in Pass 1)");
+    .description("Open a local SSH tunnel to the project database");
   registerDbAccessFlags(tunnelCmd);
   tunnelCmd.action(
     cliActionWithFlux(async (flux, name: string | undefined) => {
       await cmdDbTunnel(name, collectDbAccessOptions(tunnelCmd), flux);
     }),
   );
+
+  const shellCmd = dbCmd
+    .command("shell")
+    .description("Open psql through a temporary SSH tunnel");
+  registerDbAccessFlags(shellCmd);
+  shellCmd.action(
+    cliActionWithFlux(async (flux, name: string | undefined) => {
+      await cmdDbShell(name, collectDbAccessOptions(shellCmd), flux);
+    }),
+  );
+
+  const dumpCmd = dbCmd
+    .command("dump")
+    .description("Write a schema-scoped pg_dump for v2_shared projects");
+  registerDbAccessFlags(dumpCmd);
+  dumpCmd
+    .option("--output <path>", "Output dump path")
+    .action(
+      cliActionWithFlux(async (flux, name: string | undefined) => {
+        const opts = collectDbAccessOptions(dumpCmd);
+        const dumpOpts = dumpCmd.opts<{ output?: string }>();
+        await cmdDbDump(
+          name,
+          { ...opts, ...(dumpOpts.output ? { output: dumpOpts.output } : {}) },
+          flux,
+        );
+      }),
+    );
+
+  const restoreCmd = dbCmd
+    .command("restore")
+    .description("Restore a v1 dedicated database dump (backup gate required)");
+  registerDbAccessFlags(restoreCmd);
+  restoreCmd
+    .requiredOption("--input <path>", "pg_restore-compatible dump file")
+    .option(
+      "--skip-backup-check",
+      "Override restore-verified backup requirement (dangerous)",
+      false,
+    )
+    .option(
+      "--yes-i-know-this-can-overwrite-data",
+      "Acknowledge destructive restore",
+      false,
+    )
+    .action(
+      cliActionWithFlux(async (flux, name: string | undefined) => {
+        const opts = collectDbAccessOptions(restoreCmd);
+        const restoreOpts = restoreCmd.opts<{
+          input?: string;
+          skipBackupCheck?: boolean;
+          yesIKnowThisCanOverwriteData?: boolean;
+        }>();
+        await cmdDbRestore(
+          name,
+          {
+            ...opts,
+            input: restoreOpts.input,
+            skipBackupCheck: restoreOpts.skipBackupCheck === true,
+            yesIKnowThisCanOverwriteData:
+              restoreOpts.yesIKnowThisCanOverwriteData === true,
+          },
+          flux,
+        );
+      }),
+    );
 }

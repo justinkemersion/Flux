@@ -30,7 +30,7 @@ test("getProjectDbAccessPlan returns redacted v1 plan for owner", async () => {
   assert.equal(result.plan.capabilities.tunnel, true);
 });
 
-test("getProjectDbAccessPlan returns v2 preview plan", async () => {
+test("getProjectDbAccessPlan returns v2 supported plan", async () => {
   const result = await getProjectDbAccessPlan(
     { hash: "ffca33f", actorUserId: "user-1" },
     {
@@ -41,8 +41,9 @@ test("getProjectDbAccessPlan returns v2 preview plan", async () => {
   if (!result.ok) return;
   assert.equal(result.plan.mode, "v2_shared");
   if (result.plan.mode !== "v2_shared") return;
-  assert.equal(result.plan.supported, false);
-  assert.equal(result.plan.capabilities.tunnel, false);
+  assert.equal(result.plan.supported, true);
+  assert.equal(result.plan.capabilities.tunnel, true);
+  assert.equal(result.plan.capabilities.temporaryCredentials, true);
 });
 
 test("getProjectDbAccessPlan blocks wrong user", async () => {

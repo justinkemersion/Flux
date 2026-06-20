@@ -20,6 +20,6 @@ test("dashboard v2 gui config includes search path and no secrets", () => {
     tenantSchema: "t_5ecfa3ab72d1_api",
   });
   assert.match(fields.searchPath ?? "", /t_5ecfa3ab72d1_api/);
-  assert.match(fields.passwordBehavior, /Pass 2/);
+  assert.match(fields.passwordBehavior, /flux db tunnel/);
   assert.doesNotMatch(JSON.stringify(fields), /postgresql:\/\//);
 });

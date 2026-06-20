@@ -256,6 +256,58 @@ export const backupLocks = pgTable(
   (t) => [index("backup_locks_expires_idx").on(t.expiresAt)],
 );
 
+/** Audit trail for private database access (metadata views, temp credential issuance). */
+export const projectDbAccessAuditEvents = pgTable(
+  "project_db_access_audit_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    hash: text("hash").notNull(),
+    mode: text("mode").notNull().$type<"v1_dedicated" | "v2_shared">(),
+    access: text("access").$type<"readonly" | "readwrite">(),
+    ttlSeconds: integer("ttl_seconds"),
+    username: text("username"),
+    expiresAt: timestamp("expires_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("project_db_access_audit_project_time_idx").on(t.projectId, t.createdAt),
+    index("project_db_access_audit_user_time_idx").on(t.userId, t.createdAt),
+  ],
+);
+
+/** Metadata for issued v2 temporary db access roles (no plaintext passwords). */
+export const projectDbTempCredentials = pgTable(
+  "project_db_temp_credentials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    username: text("username").notNull(),
+    access: text("access").notNull().$type<"readonly" | "readwrite">(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+    droppedAt: timestamp("dropped_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("project_db_temp_credentials_project_expires_idx").on(
+      t.projectId,
+      t.expiresAt,
+    ),
+    index("project_db_temp_credentials_username_idx").on(t.username),
+  ],
+);
+
 /** One row per control-plane scheduler; records first and last successful tick. */
 export const platformSchedulerState = pgTable("platform_scheduler_state", {
   schedulerId: text("scheduler_id").primaryKey(),

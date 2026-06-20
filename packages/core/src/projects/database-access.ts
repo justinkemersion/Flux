@@ -11,6 +11,7 @@ import {
   resolveTenantApiSchemaName,
   type ProjectApiSchemaInput,
 } from "../api-schema-strategy.ts";
+import { dbAccessReadwriteEnabled } from "./db-access-roles.ts";
 
 export type DatabaseAccessTransport = "ssh_tunnel";
 
@@ -55,10 +56,9 @@ export type DedicatedDatabaseAccessPlan = {
   capabilities: DatabaseAccessCapabilities;
 };
 
-export type PooledDatabaseAccessPreviewPlan = {
+export type PooledDatabaseAccessPlan = {
   mode: "v2_shared";
-  supported: false;
-  preview: true;
+  supported: true;
   projectName: string;
   projectHash: string;
   engine: "postgres";
@@ -76,14 +76,16 @@ export type PooledDatabaseAccessPreviewPlan = {
   tunnel: DatabaseAccessTunnelDefaults;
   credentialStrategy: "temporary_project_scoped_role";
   defaultAccess: "readonly";
-  previewMessage: string;
   securityNotes: readonly string[];
   capabilities: DatabaseAccessCapabilities;
 };
 
+/** @deprecated Pass 1 preview alias — use PooledDatabaseAccessPlan */
+export type PooledDatabaseAccessPreviewPlan = PooledDatabaseAccessPlan;
+
 export type DatabaseAccessPlan =
   | DedicatedDatabaseAccessPlan
-  | PooledDatabaseAccessPreviewPlan;
+  | PooledDatabaseAccessPlan;
 
 export type ResolveProjectDatabaseAccessInput = ProjectApiSchemaInput & {
   slug: string;
@@ -103,10 +105,6 @@ export type ResolveProjectDatabaseAccessOptions = {
 const DEFAULT_LOCAL_PORT = 15_432;
 const DEFAULT_SSH_PORT = 22;
 const DEFAULT_SSH_USER = "root";
-const V2_PREVIEW_MESSAGE =
-  "Scoped temporary database credentials for pooled projects are coming in the next release. " +
-  "Use `flux db access-plan` to inspect capabilities; tunnel and GUI access are not enabled yet.";
-
 const V2_SECURITY_NOTES = [
   "Schema grants and RLS enforce tenant isolation — search_path is a GUI convenience only.",
   "PostgreSQL may expose some catalog metadata to connected roles.",
@@ -238,8 +236,7 @@ export function resolveProjectDatabaseAccess(
     const poolTarget = resolveSharedPostgresTunnelTarget(options);
     return {
       mode: "v2_shared",
-      supported: false,
-      preview: true,
+      supported: true,
       projectName: slug,
       projectHash: hash,
       engine: "postgres",
@@ -259,17 +256,16 @@ export function resolveProjectDatabaseAccess(
       tunnel,
       credentialStrategy: "temporary_project_scoped_role",
       defaultAccess: "readonly",
-      previewMessage: V2_PREVIEW_MESSAGE,
       securityNotes: V2_SECURITY_NOTES,
       capabilities: {
-        tunnel: false,
+        tunnel: true,
         guiConfig: true,
-        shell: false,
-        dump: false,
+        shell: true,
+        dump: true,
         restore: false,
         readonly: true,
-        readwrite: false,
-        temporaryCredentials: false,
+        readwrite: dbAccessReadwriteEnabled(),
+        temporaryCredentials: true,
       },
     };
   }

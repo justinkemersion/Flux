@@ -161,6 +161,16 @@ export class ApiClient {
     return dbAccess.getProjectDbAccessPlan(this.asContext(), hash, options);
   }
 
+  createTemporaryProjectDbCredential(
+    hash: string,
+    options?: {
+      access?: import("@flux/core").DbAccessLevel;
+      ttlSeconds?: number;
+    },
+  ): Promise<dbAccess.TemporaryDbCredential> {
+    return dbAccess.createTemporaryProjectDbCredential(this.asContext(), hash, options);
+  }
+
   // ---------------------------------------------------------------------------
   // POST /api/cli/v1/push — body: { slug, hash, sql }
   // ---------------------------------------------------------------------------

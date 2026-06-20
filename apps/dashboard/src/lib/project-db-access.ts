@@ -118,7 +118,7 @@ export async function getProjectDbAccessPlan(
     hash: project.hash,
     slug: project.slug,
     mode: project.mode,
-    supported: plan.mode === "v1_dedicated" ? plan.supported : false,
+    supported: plan.supported,
   });
 
   return { ok: true, plan };

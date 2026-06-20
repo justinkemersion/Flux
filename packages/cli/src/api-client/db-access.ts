@@ -1,4 +1,7 @@
-import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
+import {
+  FLUX_PROJECT_HASH_HEX_LEN,
+  type DbAccessLevel,
+} from "@flux/core";
 import type { DatabaseAccessPlan } from "@flux/core";
 import { z } from "zod";
 import type { ApiClientContext } from "./context";
@@ -51,10 +54,9 @@ const dedicatedPlanSchema = z.object({
   capabilities: databaseAccessCapabilitiesSchema,
 });
 
-const pooledPreviewPlanSchema = z.object({
+const pooledPlanSchema = z.object({
   mode: z.literal("v2_shared"),
-  supported: z.literal(false),
-  preview: z.literal(true),
+  supported: z.literal(true),
   projectName: z.string(),
   projectHash: z.string(),
   engine: z.literal("postgres"),
@@ -72,15 +74,25 @@ const pooledPreviewPlanSchema = z.object({
   tunnel: tunnelDefaultsSchema,
   credentialStrategy: z.literal("temporary_project_scoped_role"),
   defaultAccess: z.literal("readonly"),
-  previewMessage: z.string(),
   securityNotes: z.array(z.string()),
   capabilities: databaseAccessCapabilitiesSchema,
 });
 
 export const databaseAccessPlanSchema = z.discriminatedUnion("mode", [
   dedicatedPlanSchema,
-  pooledPreviewPlanSchema,
+  pooledPlanSchema,
 ]);
+
+export const temporaryDbCredentialSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+  access: z.enum(["readonly", "readwrite"]),
+  expiresAt: z.string(),
+  tenantSchema: z.string(),
+  searchPath: z.array(z.string()),
+});
+
+export type TemporaryDbCredential = z.infer<typeof temporaryDbCredentialSchema>;
 
 export function parseDatabaseAccessPlan(raw: unknown): DatabaseAccessPlan {
   const parsed = databaseAccessPlanSchema.safeParse(raw);
@@ -90,6 +102,16 @@ export function parseDatabaseAccessPlan(raw: unknown): DatabaseAccessPlan {
     );
   }
   return parsed.data as DatabaseAccessPlan;
+}
+
+export function parseTemporaryDbCredential(raw: unknown): TemporaryDbCredential {
+  const parsed = temporaryDbCredentialSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      "CLI db-access: temporary credential response did not match expected shape.",
+    );
+  }
+  return parsed.data;
 }
 
 export async function getProjectDbAccessPlan(
@@ -139,4 +161,47 @@ export async function getProjectDbAccessPlan(
     throw new Error(errorMessageFromJsonBody(raw, res.status));
   }
   return parseDatabaseAccessPlan(raw);
+}
+
+export async function createTemporaryProjectDbCredential(
+  ctx: ApiClientContext,
+  hash: string,
+  options?: {
+    access?: DbAccessLevel;
+    ttlSeconds?: number;
+  },
+): Promise<TemporaryDbCredential> {
+  const token = ctx.tokenOrThrow();
+  const h = hash.trim().toLowerCase();
+  if (h.length !== FLUX_PROJECT_HASH_HEX_LEN || !/^[a-f0-9]+$/u.test(h)) {
+    throw new Error(
+      `Project hash must be a ${String(FLUX_PROJECT_HASH_HEX_LEN)}-character lowercase hex id.`,
+    );
+  }
+  const url = `${ctx.baseUrl}/cli/v1/projects/${encodeURIComponent(h)}/db-access/temporary-credential`;
+  const body: { access?: DbAccessLevel; ttlSeconds?: number } = {};
+  if (options?.access) body.access = options.access;
+  if (options?.ttlSeconds != null) body.ttlSeconds = options.ttlSeconds;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  const raw = parseJsonResponseBody(
+    text,
+    `CLI db-access: temporary credential response was not JSON (${res.status}).`,
+  );
+  if (res.status === 401) {
+    throw new Error("Invalid or expired API token. Run `flux login`.");
+  }
+  if (!res.ok) {
+    throw new Error(errorMessageFromJsonBody(raw, res.status));
+  }
+  return parseTemporaryDbCredential(raw);
 }

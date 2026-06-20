@@ -1,6 +1,6 @@
 "use client";
 
-import { defaultTenantApiSchemaFromProjectId } from "@flux/core";
+import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
 import { backupFreshnessTierLabel } from "@flux/core/backup-policy";
 import {
   backupTrustTierLabelForKind,

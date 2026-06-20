@@ -76,7 +76,7 @@ test("gui config for v1 points password to credentials command", () => {
   assert.match(rendered, /only works while `flux db tunnel`/);
 });
 
-test("gui config for v2 preview does not expose admin credentials", () => {
+test("gui config for v2 does not expose admin credentials", () => {
   const plan = resolveProjectDatabaseAccess({
     id: V1_PROJECT_ID,
     slug: "yeastcoast",
@@ -84,6 +84,7 @@ test("gui config for v2 preview does not expose admin credentials", () => {
     mode: "v2_shared",
   });
   const fields = buildGuiConfigFields(plan);
-  assert.match(fields.passwordBehavior, /Pass 2/);
+  assert.match(fields.passwordBehavior, /flux db tunnel/);
+  assert.doesNotMatch(fields.passwordBehavior, /postgresql:\/\//);
   assert.match(fields.searchPath ?? "", /t_5ecfa3ab72d1_api/);
 });

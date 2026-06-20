@@ -36,7 +36,7 @@ test("resolveProjectDatabaseAccess: v1 dedicated plan", () => {
   assert.equal(plan.capabilities.restore, false);
 });
 
-test("resolveProjectDatabaseAccess: v2 pooled preview plan", () => {
+test("resolveProjectDatabaseAccess: v2 pooled supported plan", () => {
   const plan = resolveProjectDatabaseAccess({
     id: V1_PROJECT_ID,
     slug: "yeastcoast",
@@ -46,13 +46,11 @@ test("resolveProjectDatabaseAccess: v2 pooled preview plan", () => {
 
   assert.equal(plan.mode, "v2_shared");
   if (plan.mode !== "v2_shared") return;
-  assert.equal(plan.supported, false);
-  assert.equal(plan.preview, true);
+  assert.equal(plan.supported, true);
   assert.equal(plan.tenantSchema, "t_5ecfa3ab72d1_api");
-  assert.equal(plan.capabilities.tunnel, false);
+  assert.equal(plan.capabilities.tunnel, true);
   assert.equal(plan.capabilities.restore, false);
-  assert.equal(plan.capabilities.temporaryCredentials, false);
-  assert.match(plan.previewMessage, /coming/i);
+  assert.equal(plan.capabilities.temporaryCredentials, true);
 });
 
 test("redactDatabaseAccessPlan returns clone without secret keys", () => {

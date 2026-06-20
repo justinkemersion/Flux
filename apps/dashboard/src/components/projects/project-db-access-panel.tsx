@@ -82,9 +82,9 @@ export function ProjectDbAccessPanel({ slug, hash, mode, tenantSchema }: Props) 
 
         {!v1 ? (
           <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
-            Pooled restore through the CLI is restricted. Pass 2 will add scoped
-            temporary credentials; restore into production pooled schemas stays
-            intentionally limited.
+            Pooled restore through the CLI is restricted. Use temporary
+            project-scoped credentials from `flux db tunnel`; restore into
+            production pooled schemas is not supported.
           </p>
         ) : null}
 
@@ -110,15 +110,15 @@ export function ProjectDbAccessPanel({ slug, hash, mode, tenantSchema }: Props) 
                   <li>Mode: dedicated</li>
                   <li>Internal DB host/container: flux-{hash}-{slug}-db</li>
                   <li>Internal port: 5432</li>
-                  <li>Restore support: enabled with guardrails (Pass 2 CLI)</li>
+                  <li>Restore support: `flux db restore` with backup gates</li>
                 </ul>
               ) : (
                 <ul className="space-y-1">
                   <li>Mode: pooled</li>
                   <li>Project schema: {tenantSchema ?? "t_<shortId>_api"}</li>
-                  <li>Access model: temporary project-scoped role (Pass 2)</li>
+                  <li>Access model: temporary project-scoped role</li>
                   <li>Default access: read-only</li>
-                  <li>Dump scope: schema only (Pass 2)</li>
+                  <li>Dump scope: tenant schema only</li>
                   <li>Restore support: restricted</li>
                 </ul>
               )}

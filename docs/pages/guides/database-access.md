@@ -18,47 +18,56 @@ Postgres stays private on the Flux platform. Project owners open a temporary loc
 - Tunnel target: the project's dedicated Postgres container.
 - GUI user: `postgres`.
 - Password: use `flux project credentials <project> --hash <hash>` (existing credentials flow).
-- Pass 1 ships `flux db tunnel`, `flux db gui-config`, and `flux db access-plan`.
+- CLI: `flux db tunnel`, `flux db gui-config`, `flux db access-plan`, and `flux db restore` (with backup gates).
 
-## v2 pooled behavior (Pass 1 preview)
+## v2 pooled behavior
 
 - Tunnel target: shared pool Postgres (internal Docker network only).
 - Scope: tenant schema only (`t_<shortId>_api`).
-- Pass 1 returns a preview access plan; scoped temporary credentials arrive in Pass 2.
+- Credentials: temporary project-scoped roles created by the control plane when you run `flux db tunnel` or `flux db gui-config --create-temp-credentials`.
+- Default access: read-only. Read/write requires platform policy (`FLUX_DB_ACCESS_ALLOW_READWRITE=1`).
 - Pooled admin credentials are never exposed for GUI access.
 
 ## Beekeeper / DBeaver / TablePlus setup
 
-1. Run `flux db tunnel <project> --hash <hash>` (v1 dedicated in Pass 1).
-2. Create a Postgres connection to `127.0.0.1` and the local port printed by the CLI (default `15432`).
-3. SSL: disabled over the tunnel.
-4. Keep the tunnel terminal open while the GUI session is active.
+1. Run `flux db tunnel <project> --hash <hash>`.
+2. Copy the username and one-time password printed in the GUI config block.
+3. Create a Postgres connection to `127.0.0.1` and the local port printed by the CLI (default `15432`).
+4. SSL: disabled over the tunnel.
+5. For pooled projects, set search path to your tenant schema (the CLI prints it).
+6. Keep the tunnel terminal open while the GUI session is active.
 
 ## psql setup
 
-Pass 2 will add `flux db shell`. Until then, open a v1 tunnel and run `psql` manually against localhost.
+Run `flux db shell <project> --hash <hash>`. The CLI opens the tunnel, creates temporary pooled credentials when needed, and launches `psql`.
 
 ## pg_dump examples
 
-Pass 2 will add `flux db dump`. v2 pooled dumps are always schema-scoped and never whole-pool dumps.
+```bash
+flux db dump myproject --hash abc1234 --output myproject.dump
+```
+
+v2 pooled dumps are always schema-scoped (`--schema=t_<shortId>_api --no-owner --no-acl`) and never whole-pool dumps.
 
 ## Restore warnings
 
-- v1 dedicated restore requires explicit destructive confirmation and backup trust gates.
-- v2 pooled restore into production schemas is restricted; restore into a scratch project first.
+- v1 dedicated restore: `flux db restore --input backup.dump --yes-i-know-this-can-overwrite-data` requires a restore-verified backup unless `--skip-backup-check` is explicitly passed.
+- v2 pooled restore into production schemas is refused. Restore into a scratch or dedicated project instead.
 
 ## Read-only vs read-write access
 
-Schema grants and RLS are the security boundary. `search_path` is a GUI convenience only.
+Schema grants and RLS are the security boundary. `search_path` is a GUI convenience only. PostgreSQL may expose some catalog metadata to connected roles.
+
+Pass `--readwrite` only when the platform enables it; default is `--readonly`.
 
 ## Temporary credentials
 
-Pass 2 adds temporary project-scoped roles for v2 pooled projects. Passwords are shown once and expire automatically.
+v2 pooled projects receive short-lived login roles (default TTL: 1 hour read-only, 30 minutes read/write; max 8 hours). Passwords are shown once, stored only in PostgreSQL until expiry, and audited without logging the secret.
 
 ## Troubleshooting
 
 - **SSH auth failed:** verify `FLUX_DB_TUNNEL_SSH_HOST`, your SSH key, and `DOCKER_HOST=ssh://…` if used.
 - **Local port in use:** omit `--strict-port` to auto-increment from `15432`, or pass `--local-port`.
 - **Docker permission denied / container not found:** the CLI resolver tries `getent hosts` then `docker inspect` on the SSH host.
-- **v2 pooled tunnel unavailable in Pass 1:** use `flux db access-plan` for the preview plan; temporary credentials are coming next.
-- **GUI connects but shows no tables (v2):** ensure search path includes your tenant schema once Pass 2 credentials ship.
+- **Read/write denied on pooled project:** the platform may disable read/write db access; use read-only or ask an operator about `FLUX_DB_ACCESS_ALLOW_READWRITE`.
+- **GUI connects but shows no tables (v2):** ensure search path includes your tenant schema and that you are using the temporary role from `flux db tunnel`, not pooled admin credentials.

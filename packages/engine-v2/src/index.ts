@@ -458,3 +458,11 @@ export class EngineV2 {
     return deprovisionProject(tenantId);
   }
 }
+
+export {
+  buildCleanupExpiredTempDbAccessRolesSql,
+  buildCreateTempDbAccessLoginRoleSql,
+  buildEnsureTenantDbAccessGroupRoleSql,
+  provisionTemporaryDbAccessCredential,
+  type DbAccessRoleContext,
+} from "./db-access.ts";
