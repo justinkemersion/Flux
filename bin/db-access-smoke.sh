@@ -42,24 +42,43 @@ expect_http() {
   local url=$3
   local expect=$4
   local body=${5:-}
+  local auth_mode=${6:-bearer}
 
   local code
   if [[ -n "$body" ]]; then
-    code="$(
-      curl -sS -o /tmp/db-access-smoke-body.json -w "%{http_code}" \
-        -X "$method" \
-        -H "Authorization: Bearer ${FLUX_API_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "$body" \
-        "$url" || echo "000"
-    )"
+    if [[ "$auth_mode" == "noauth" ]]; then
+      code="$(
+        curl -sS -o /tmp/db-access-smoke-body.json -w "%{http_code}" \
+          -X "$method" \
+          -H "Content-Type: application/json" \
+          -d "$body" \
+          "$url" || echo "000"
+      )"
+    else
+      code="$(
+        curl -sS -o /tmp/db-access-smoke-body.json -w "%{http_code}" \
+          -X "$method" \
+          -H "Authorization: Bearer ${FLUX_API_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "$body" \
+          "$url" || echo "000"
+      )"
+    fi
   else
-    code="$(
-      curl -sS -o /tmp/db-access-smoke-body.json -w "%{http_code}" \
-        -X "$method" \
-        -H "Authorization: Bearer ${FLUX_API_TOKEN}" \
-        "$url" || echo "000"
-    )"
+    if [[ "$auth_mode" == "noauth" ]]; then
+      code="$(
+        curl -sS -o /tmp/db-access-smoke-body.json -w "%{http_code}" \
+          -X "$method" \
+          "$url" || echo "000"
+      )"
+    else
+      code="$(
+        curl -sS -o /tmp/db-access-smoke-body.json -w "%{http_code}" \
+          -X "$method" \
+          -H "Authorization: Bearer ${FLUX_API_TOKEN}" \
+          "$url" || echo "000"
+      )"
+    fi
   fi
 
   if [[ "$code" != "$expect" ]]; then
@@ -122,17 +141,17 @@ expect_http "POST readwrite blocked when platform policy off" POST \
   '{"access":"readwrite","ttlSeconds":900}'
 
 expect_http "GET db-access unauthorized without token" GET \
-  "${BASE}/api/cli/v1/projects/${HASH}/db-access" 401
+  "${BASE}/api/cli/v1/projects/${HASH}/db-access" 401 "" "noauth"
 
 echo ""
 echo "=== db-access smoke: live CLI probes ==="
 export FLUX_API_BASE="${BASE}/api"
-pnpm run flux -- db access-plan "$SLUG" --hash "$HASH" >/tmp/db-access-smoke-cli-plan.txt
+pnpm --filter @flux/cli exec tsx src/index.ts db access-plan "$SLUG" --hash "$HASH" >/tmp/db-access-smoke-cli-plan.txt
 grep -q "v2_shared" /tmp/db-access-smoke-cli-plan.txt
 grep -q "Supported: true" /tmp/db-access-smoke-cli-plan.txt
 echo "ok: flux db access-plan"
 
-pnpm run flux -- db gui-config "$SLUG" --hash "$HASH" --create-temp-credentials --json >/tmp/db-access-smoke-cli-gui.json
+pnpm --filter @flux/cli exec tsx src/index.ts db gui-config "$SLUG" --hash "$HASH" --create-temp-credentials --json >/tmp/db-access-smoke-cli-gui.json
 node -e "
   const fs = require('node:fs');
   const data = JSON.parse(fs.readFileSync('/tmp/db-access-smoke-cli-gui.json', 'utf8'));
@@ -148,7 +167,7 @@ if [[ -n "${FLUX_DB_ACCESS_SMOKE_V1_HASH:-}" && -n "${FLUX_DB_ACCESS_SMOKE_V1_SL
     "${BASE}/api/cli/v1/projects/${V1_HASH}/db-access" 200
   assert_json_field "v1 plan tunnel capability" \
     "data.mode === 'v1_dedicated' && data.capabilities.tunnel === true"
-  pnpm run flux -- db access-plan "$V1_SLUG" --hash "$V1_HASH" >/tmp/db-access-smoke-v1-plan.txt
+  pnpm --filter @flux/cli exec tsx src/index.ts db access-plan "$V1_SLUG" --hash "$V1_HASH" >/tmp/db-access-smoke-v1-plan.txt
   grep -q "v1_dedicated" /tmp/db-access-smoke-v1-plan.txt
   echo "ok: v1 flux db access-plan"
 fi
@@ -157,7 +176,7 @@ if [[ "${FLUX_DB_ACCESS_SMOKE_TUNNEL:-}" == "1" ]]; then
   echo ""
   echo "=== db-access smoke: tunnel print-config ==="
   export FLUX_DB_TUNNEL_SSH_HOST="${FLUX_DB_TUNNEL_SSH_HOST:-178.104.205.138}"
-  pnpm run flux -- db tunnel "$SLUG" --hash "$HASH" --print-config >/tmp/db-access-smoke-tunnel.txt
+  pnpm --filter @flux/cli exec tsx src/index.ts db tunnel "$SLUG" --hash "$HASH" --print-config >/tmp/db-access-smoke-tunnel.txt
   grep -q "Password:" /tmp/db-access-smoke-tunnel.txt
   grep -q "flux_temp_" /tmp/db-access-smoke-tunnel.txt
   echo "ok: flux db tunnel --print-config"
