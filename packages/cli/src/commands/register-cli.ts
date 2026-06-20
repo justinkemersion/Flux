@@ -7,6 +7,7 @@ import { registerInspectCommands } from "./register-cli/inspect";
 import { registerLifecycleCommands } from "./register-cli/lifecycle";
 import { registerMigrationsSqlCommands } from "./register-cli/migrations-sql";
 import { registerPostgrestConfigCommands } from "./register-cli/postgrest-config";
+import { registerGauntletCommands } from "./register-cli/gauntlet";
 
 export function registerFluxCliCommands(program: Command): void {
   program
@@ -19,6 +20,7 @@ export function registerFluxCliCommands(program: Command): void {
   registerInitCreateCommands(program);
   registerMigrationsSqlCommands(program);
   registerPostgrestConfigCommands(program);
+  registerGauntletCommands(program);
   registerInspectCommands(program);
   registerBackupCommands(program);
   registerLifecycleCommands(program);

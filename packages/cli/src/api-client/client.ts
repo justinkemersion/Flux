@@ -2,6 +2,7 @@ import type {
   FluxMigrationRecord,
   MigrationPushMeta,
 } from "@flux/core/sql-migrations";
+import type { RepeatablePushMeta } from "@flux/core/sql-repeatable-scripts";
 import type {
   FluxProjectEnvEntry,
   FluxProjectSummary,
@@ -17,6 +18,8 @@ import * as migrate from "./migrate";
 import * as projects from "./projects";
 import * as migrations from "./migrations";
 import * as push from "./push";
+import * as schemaInspection from "./schema-inspection";
+import type { SchemaInspectionResult } from "@flux/core/schema-inspection";
 import type {
   CreateProjectMode,
   CreateProjectResult,
@@ -153,8 +156,16 @@ export class ApiClient {
     hash: string;
     sql: string;
     migration?: MigrationPushMeta;
+    repeatable?: RepeatablePushMeta;
   }): Promise<push.PushSqlResult> {
     return push.pushSql(this.asContext(), input);
+  }
+
+  schemaInspectProject(input: {
+    hash: string;
+    includeExactCounts?: boolean;
+  }): Promise<SchemaInspectionResult> {
+    return schemaInspection.schemaInspectProject(this.asContext(), input);
   }
 
   listAppliedMigrations(hash: string): Promise<FluxMigrationRecord[]> {
@@ -296,7 +307,7 @@ export class ApiClient {
   nukeProject(
     project: string,
     hash: string,
-    options?: { forceOrphan?: boolean },
+    options?: { forceOrphan?: boolean; skipBackupCheck?: boolean },
   ): Promise<{ mode: "catalog" | "orphan" }> {
     return projects.nukeProject(this.asContext(), project, hash, options);
   }

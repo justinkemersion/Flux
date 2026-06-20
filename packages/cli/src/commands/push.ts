@@ -125,14 +125,18 @@ export async function cmdPush(
     if (options.explicitScriptMode?.trim()) {
       assertDirectoryPushScriptMode(
         resolvePushScriptMode({
-          explicitMode: options.explicitScriptMode,
+          ...(options.explicitScriptMode !== undefined
+            ? { explicitMode: options.explicitScriptMode }
+            : {}),
           resolvedFilePath: target.path,
         }),
       );
     }
   } else if (options.explicitScriptMode || options.force || options.scriptId) {
     const scriptMode = resolvePushScriptMode({
-      explicitMode: options.explicitScriptMode,
+      ...(options.explicitScriptMode !== undefined
+        ? { explicitMode: options.explicitScriptMode }
+        : {}),
       resolvedFilePath: target.path,
     });
     assertForceRequiresRepeatable(options.force === true, scriptMode);
@@ -192,7 +196,9 @@ export async function cmdPush(
 
   const file = target.path;
   const scriptMode = resolvePushScriptMode({
-    explicitMode: options.explicitScriptMode,
+    ...(options.explicitScriptMode !== undefined
+      ? { explicitMode: options.explicitScriptMode }
+      : {}),
     resolvedFilePath: file,
   });
   assertForceRequiresRepeatable(options.force === true, scriptMode);

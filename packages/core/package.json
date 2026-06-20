@@ -12,6 +12,7 @@
     "./backup-trust": "./src/backup-trust.ts",
     "./sql-migrations": "./src/sql-migrations.ts",
     "./sql-repeatable-scripts": "./src/sql-repeatable-scripts.ts",
+    "./schema-inspection": "./src/schema-inspection/index.ts",
     "./test/sql-assertions": "./src/test/sql-assertions.ts"
   },
   "scripts": {

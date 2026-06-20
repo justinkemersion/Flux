@@ -1,0 +1,25 @@
+export type {
+  InspectTenantSchemaOptions,
+  InspectedColumn,
+  InspectedForeignKey,
+  InspectedGrant,
+  InspectedRelationship,
+  InspectedTable,
+  RawColumnRow,
+  RawForeignKeyRow,
+  RawGrantRow,
+  RawIndexRow,
+  RawPrimaryKeyRow,
+  RawTableMetaRow,
+  SchemaGraph,
+  SchemaGraphEdge,
+  SchemaGraphNode,
+  SchemaInspectionMode,
+  SchemaInspectionResult,
+  SchemaInspectionSummary,
+  SchemaWarning,
+  SchemaWarningCode,
+  SchemaWarningSeverity,
+} from "@flux/core/schema-inspection";
+
+export { SchemaInspectionUnsupportedError } from "@flux/core/schema-inspection";

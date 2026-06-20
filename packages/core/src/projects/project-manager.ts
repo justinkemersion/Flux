@@ -76,6 +76,11 @@ import {
   replaceTenantApiSchemaFromPlainSqlFile,
   resetTenantDatabaseForImport,
 } from "./project-manager/sql.ts";
+import { inspectTenantSchema as runInspectTenantSchema } from "../schema-inspection/inspect.ts";
+import type {
+  InspectTenantSchemaOptions,
+  SchemaInspectionResult,
+} from "../schema-inspection/types.ts";
 export { testDockerConnection } from "./project-manager/test-docker.ts";
 
 import type {
@@ -287,6 +292,12 @@ export class ProjectManager {
     selectSql: string,
   ): Promise<unknown[]> {
     return queryTenantJsonRows(this.ctx, projectName, hash, selectSql);
+  }
+
+  async inspectTenantSchema(
+    options: InspectTenantSchemaOptions,
+  ): Promise<SchemaInspectionResult> {
+    return runInspectTenantSchema(this.ctx, options);
   }
 
   async resetTenantDatabaseForImport(
