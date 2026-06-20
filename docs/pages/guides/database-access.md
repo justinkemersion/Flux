@@ -39,7 +39,7 @@ Postgres stays private on the Flux platform. Project owners open a temporary loc
 
 ## psql setup
 
-Run `flux db shell <project> --hash <hash>`. The CLI opens the tunnel, creates temporary pooled credentials when needed, and launches `psql`.
+Run `flux db shell <project> --hash <hash>`. The CLI opens the tunnel, creates temporary pooled credentials when needed, and launches `psql`. Pass `--command 'SELECT 1'` for a non-interactive smoke query.
 
 ## pg_dump examples
 

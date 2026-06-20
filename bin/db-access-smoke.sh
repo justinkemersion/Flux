@@ -19,6 +19,11 @@
 # Optional schema-scoped dump (requires local pg_dump + SSH):
 #   FLUX_DB_ACCESS_SMOKE_DUMP=1
 #
+# Optional non-interactive psql probe (requires local psql + SSH):
+#   FLUX_DB_ACCESS_SMOKE_SHELL=1
+#
+# Optional restore guardrail probes (never completes pg_restore on live):
+#   FLUX_DB_ACCESS_SMOKE_RESTORE_GATE=1
 # Example:
 #   FLUX_API_TOKEN=… FLUX_DB_ACCESS_SMOKE_SLUG=bloom-atelier FLUX_DB_ACCESS_SMOKE_HASH=61d9dff \
 #     ./bin/db-access-smoke.sh
@@ -111,6 +116,25 @@ assert_json_field() {
   echo "ok: $label"
 }
 
+expect_cli_fail() {
+  local label=$1
+  shift
+  local pattern=$1
+  shift
+  local output
+  if output="$("$@" 2>&1)"; then
+    echo "FAIL: $label — expected command to fail" >&2
+    echo "$output" >&2
+    return 1
+  fi
+  if ! grep -qi "$pattern" <<<"$output"; then
+    echo "FAIL: $label — output did not match /$pattern/i" >&2
+    echo "$output" >&2
+    return 1
+  fi
+  echo "ok: $label"
+}
+
 if [[ -z "${FLUX_API_TOKEN:-}" || -z "${FLUX_DB_ACCESS_SMOKE_HASH:-}" || -z "${FLUX_DB_ACCESS_SMOKE_SLUG:-}" ]]; then
   echo ""
   echo "skip: live db-access probes (set FLUX_API_TOKEN, FLUX_DB_ACCESS_SMOKE_SLUG, FLUX_DB_ACCESS_SMOKE_HASH)"
@@ -171,7 +195,7 @@ if [[ -n "${FLUX_DB_ACCESS_SMOKE_V1_HASH:-}" && -n "${FLUX_DB_ACCESS_SMOKE_V1_SL
   expect_http "GET v1 db-access plan" GET \
     "${BASE}/api/cli/v1/projects/${V1_HASH}/db-access" 200
   assert_json_field "v1 plan tunnel capability" \
-    "data.mode === 'v1_dedicated' && data.capabilities.tunnel === true"
+    "data.mode === 'v1_dedicated' && data.capabilities.tunnel === true && data.capabilities.shell === true && data.capabilities.restore === true"
   pnpm --filter @flux/cli exec tsx src/index.ts db access-plan "$V1_SLUG" --hash "$V1_HASH" >/tmp/db-access-smoke-v1-plan.txt
   grep -q "v1_dedicated" /tmp/db-access-smoke-v1-plan.txt
   echo "ok: v1 flux db access-plan"
@@ -203,6 +227,62 @@ if [[ "${FLUX_DB_ACCESS_SMOKE_DUMP:-}" == "1" ]]; then
   pg_restore -l "$DUMP_OUT" | grep -q "t_"
   echo "ok: flux db dump wrote schema-scoped archive"
   rm -f "$DUMP_OUT"
+fi
+
+if [[ "${FLUX_DB_ACCESS_SMOKE_SHELL:-}" == "1" ]]; then
+  echo ""
+  echo "=== db-access smoke: non-interactive psql ==="
+  command -v psql >/dev/null
+  echo "ok: psql available ($(psql --version | head -1))"
+
+  SHELL_OUT="/tmp/db-access-smoke-${SLUG}-shell.txt"
+  pnpm --filter @flux/cli exec tsx src/index.ts db shell "$SLUG" --hash "$HASH" \
+    --strict-port --local-port 15441 --command "SELECT current_user" >"$SHELL_OUT"
+  grep -q "flux_temp_" "$SHELL_OUT"
+  echo "ok: v2 flux db shell --command"
+
+  if [[ -n "${FLUX_DB_ACCESS_SMOKE_V1_HASH:-}" && -n "${FLUX_DB_ACCESS_SMOKE_V1_SLUG:-}" ]]; then
+    V1_HASH="${FLUX_DB_ACCESS_SMOKE_V1_HASH,,}"
+    V1_SLUG="${FLUX_DB_ACCESS_SMOKE_V1_SLUG}"
+    V1_SHELL_OUT="/tmp/db-access-smoke-${V1_SLUG}-shell.txt"
+    pnpm --filter @flux/cli exec tsx src/index.ts db shell "$V1_SLUG" --hash "$V1_HASH" \
+      --strict-port --local-port 15442 --command "SELECT 1 AS ok" >"$V1_SHELL_OUT"
+    grep -q "1" "$V1_SHELL_OUT"
+    echo "ok: v1 flux db shell --command"
+  fi
+fi
+
+if [[ "${FLUX_DB_ACCESS_SMOKE_RESTORE_GATE:-}" == "1" ]]; then
+  echo ""
+  echo "=== db-access smoke: restore guardrails (non-destructive) ==="
+  FAKE_DUMP="/tmp/db-access-smoke-restore-gate-${SLUG}.dump"
+  rm -f "$FAKE_DUMP"
+
+  expect_cli_fail "v2 restore refused" "not supported" \
+    pnpm --filter @flux/cli exec tsx src/index.ts db restore "$SLUG" --hash "$HASH" \
+      --input "$FAKE_DUMP" --yes-i-know-this-can-overwrite-data
+
+  if [[ -n "${FLUX_DB_ACCESS_SMOKE_V1_HASH:-}" && -n "${FLUX_DB_ACCESS_SMOKE_V1_SLUG:-}" ]]; then
+    V1_HASH="${FLUX_DB_ACCESS_SMOKE_V1_HASH,,}"
+    V1_SLUG="${FLUX_DB_ACCESS_SMOKE_V1_SLUG}"
+    expect_cli_fail "v1 restore requires acknowledgment" "overwrite" \
+      pnpm --filter @flux/cli exec tsx src/index.ts db restore "$V1_SLUG" --hash "$V1_HASH" \
+        --input "$FAKE_DUMP"
+
+    if pnpm --filter @flux/cli exec tsx src/index.ts db restore "$V1_SLUG" --hash "$V1_HASH" \
+      --input "$FAKE_DUMP" --yes-i-know-this-can-overwrite-data >/tmp/db-access-smoke-restore-gate.txt 2>&1; then
+      echo "FAIL: v1 restore must not succeed without a real dump and backup gate clearance" >&2
+      cat /tmp/db-access-smoke-restore-gate.txt >&2
+      exit 1
+    fi
+    if grep -qiE "restore-verified|restore verified|backup|Provide --input|pg_restore" /tmp/db-access-smoke-restore-gate.txt; then
+      echo "ok: v1 restore blocked before pg_restore"
+    else
+      echo "FAIL: v1 restore unexpected failure output" >&2
+      cat /tmp/db-access-smoke-restore-gate.txt >&2
+      exit 1
+    fi
+  fi
 fi
 
 echo ""

@@ -293,9 +293,9 @@ export function resolveProjectDatabaseAccess(
     capabilities: {
       tunnel: true,
       guiConfig: true,
-      shell: false,
+      shell: true,
       dump: false,
-      restore: false,
+      restore: true,
       readonly: true,
       readwrite: true,
       temporaryCredentials: false,

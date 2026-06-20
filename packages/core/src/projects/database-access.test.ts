@@ -33,7 +33,8 @@ test("resolveProjectDatabaseAccess: v1 dedicated plan", () => {
   assert.equal(plan.database.username, "postgres");
   assert.equal(plan.tunnel.recommendedLocalPort, 15432);
   assert.equal(plan.capabilities.tunnel, true);
-  assert.equal(plan.capabilities.restore, false);
+  assert.equal(plan.capabilities.shell, true);
+  assert.equal(plan.capabilities.restore, true);
 });
 
 test("resolveProjectDatabaseAccess: v2 pooled supported plan", () => {

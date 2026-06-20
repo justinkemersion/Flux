@@ -31,6 +31,7 @@ function collectDbAccessOptions(cmd: Command): DbAccessCommonOptions {
     readwrite?: boolean;
     ttl?: string;
     createTempCredentials?: boolean;
+    command?: string;
   }>();
   const out: DbAccessCommonOptions = {};
   if (opts.project) out.project = opts.project;
@@ -47,6 +48,7 @@ function collectDbAccessOptions(cmd: Command): DbAccessCommonOptions {
   if (opts.readonly === true) out.readonly = true;
   if (opts.readwrite === true) out.readwrite = true;
   if (opts.createTempCredentials === true) out.createTempCredentials = true;
+  if (opts.command) out.command = opts.command;
   if (opts.localPort) out.localPort = Number.parseInt(opts.localPort, 10);
   if (opts.sshPort) out.sshPort = Number.parseInt(opts.sshPort, 10);
   if (opts.ttl) out.ttl = Number.parseInt(opts.ttl, 10);
@@ -120,11 +122,25 @@ export function registerDbCommands(program: Command): void {
     .command("shell")
     .description("Open psql through a temporary SSH tunnel");
   registerDbAccessFlags(shellCmd);
-  shellCmd.action(
-    cliActionWithFlux(async (flux, name: string | undefined) => {
-      await cmdDbShell(name, collectDbAccessOptions(shellCmd), flux);
-    }),
-  );
+  shellCmd
+    .option(
+      "-c, --command <sql>",
+      "Run a single SQL statement and exit (non-interactive)",
+    )
+    .action(
+      cliActionWithFlux(async (flux, name: string | undefined) => {
+        const opts = collectDbAccessOptions(shellCmd);
+        const shellOpts = shellCmd.opts<{ command?: string }>();
+        await cmdDbShell(
+          name,
+          {
+            ...opts,
+            ...(shellOpts.command ? { command: shellOpts.command } : {}),
+          },
+          flux,
+        );
+      }),
+    );
 
   const dumpCmd = dbCmd
     .command("dump")

@@ -6,8 +6,11 @@ export function dbShellCommand(slug: string, hash: string): string {
   return `flux db shell ${slug} --hash ${hash}`;
 }
 
-export function dbDumpCommand(slug: string, hash: string): string {
-  return `flux db dump ${slug} --hash ${hash} --output ${slug}.dump`;
+export function dbDumpCommand(slug: string, hash: string, mode: "v1_dedicated" | "v2_shared"): string {
+  if (mode === "v2_shared") {
+    return `flux db dump ${slug} --hash ${hash} --schema-only --output ${slug}.schema.dump`;
+  }
+  return `flux backup create ${slug} --hash ${hash}`;
 }
 
 export function dbGuiConfigCommand(slug: string, hash: string): string {

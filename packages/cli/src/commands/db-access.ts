@@ -40,6 +40,8 @@ export type DbAccessCommonOptions = {
   readwrite?: boolean;
   ttl?: number;
   createTempCredentials?: boolean;
+  /** Non-interactive psql query (smoke/CI). Omit for interactive shell. */
+  command?: string;
 };
 
 export type DbDumpOptions = DbAccessCommonOptions & {
@@ -375,23 +377,24 @@ export async function cmdDbShell(
 
   const username =
     auth.mode === "v2_shared" ? auth.credential.username : auth.username;
-  const psql = spawn(
-    "psql",
-    [
-      "-h",
-      opened.localHost,
-      "-p",
-      String(opened.localPort),
-      "-U",
-      username,
-      "-d",
-      "postgres",
-    ],
-    {
-      stdio: "inherit",
-      env: buildPsqlEnv(auth),
-    },
-  );
+  const command = opts.command?.trim();
+  const psqlArgs = [
+    "-h",
+    opened.localHost,
+    "-p",
+    String(opened.localPort),
+    "-U",
+    username,
+    "-d",
+    "postgres",
+  ];
+  if (command) {
+    psqlArgs.push("-c", command);
+  }
+  const psql = spawn("psql", psqlArgs, {
+    stdio: command ? ["ignore", "pipe", "pipe"] : "inherit",
+    env: buildPsqlEnv(auth),
+  });
 
   await new Promise<void>((resolve, reject) => {
     const shutdown = (): void => {
@@ -401,6 +404,52 @@ export async function cmdDbShell(
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
     psql.once("error", reject);
+    if (command) {
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      psql.stdout?.on("data", (chunk: Buffer | string) => {
+        stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      psql.stderr?.on("data", (chunk: Buffer | string) => {
+        stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      psql.once("close", (code) => {
+        shutdown();
+        process.removeListener("SIGINT", shutdown);
+        process.removeListener("SIGTERM", shutdown);
+        if (code != null && code !== 0) {
+          const stderrText = Buffer.concat(stderrChunks).toString("utf8").trim();
+          reject(
+            new Error(
+              stderrText.length > 0
+                ? `psql failed (${String(code)}): ${stderrText.slice(0, 2000)}`
+                : `psql failed (exit ${String(code)}).`,
+            ),
+          );
+          return;
+        }
+        const stdoutText = Buffer.concat(stdoutChunks).toString("utf8").trim();
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              {
+                ok: true,
+                command,
+                stdout: stdoutText,
+                username,
+                localPort: opened.localPort,
+              },
+              null,
+              2,
+            ),
+          );
+        } else if (stdoutText.length > 0) {
+          console.log(stdoutText);
+        }
+        resolve();
+      });
+      return;
+    }
     psql.once("close", (code) => {
       shutdown();
       process.removeListener("SIGINT", shutdown);

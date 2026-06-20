@@ -53,7 +53,7 @@ export function ProjectDbAccessPanel({ slug, hash, mode, tenantSchema }: Props) 
           <div className="mt-3 flex flex-col gap-3">
             <CliSnippetRow line={dbTunnelCommand(slug, hash)} />
             <CliSnippetRow line={dbShellCommand(slug, hash)} />
-            <CliSnippetRow line={dbDumpCommand(slug, hash)} />
+            <CliSnippetRow line={dbDumpCommand(slug, hash, mode)} />
             <CliSnippetRow line={dbGuiConfigCommand(slug, hash)} />
           </div>
         </div>
