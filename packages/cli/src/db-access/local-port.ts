@@ -42,3 +42,35 @@ export async function resolveLocalTunnelPort(input: {
     `Could not find a free local port starting at ${String(input.requestedPort)} on ${input.host}.`,
   );
 }
+
+export async function waitForLocalPortAccepting(input: {
+  host: string;
+  port: number;
+  timeoutMs?: number;
+}): Promise<void> {
+  const timeoutMs = input.timeoutMs ?? 15_000;
+  const started = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const attempt = (): void => {
+      const socket = net.connect({ host: input.host, port: input.port });
+      socket.once("connect", () => {
+        socket.end();
+        resolve();
+      });
+      socket.once("error", () => {
+        socket.destroy();
+        if (Date.now() - started >= timeoutMs) {
+          reject(
+            new Error(
+              `Timed out waiting for SSH tunnel on ${input.host}:${String(input.port)}.`,
+            ),
+          );
+          return;
+        }
+        setTimeout(attempt, 200);
+      });
+    };
+    attempt();
+  });
+}

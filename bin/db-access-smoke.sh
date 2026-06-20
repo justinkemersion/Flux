@@ -16,6 +16,9 @@
 # Optional tunnel probe (requires SSH to FLUX_DB_TUNNEL_SSH_HOST or DOCKER_HOST=ssh://…):
 #   FLUX_DB_ACCESS_SMOKE_TUNNEL=1
 #
+# Optional schema-scoped dump (requires local pg_dump + SSH):
+#   FLUX_DB_ACCESS_SMOKE_DUMP=1
+#
 # Example:
 #   FLUX_API_TOKEN=… FLUX_DB_ACCESS_SMOKE_SLUG=bloom-atelier FLUX_DB_ACCESS_SMOKE_HASH=61d9dff \
 #     ./bin/db-access-smoke.sh
@@ -180,6 +183,27 @@ if [[ "${FLUX_DB_ACCESS_SMOKE_TUNNEL:-}" == "1" ]]; then
   grep -q "Password:" /tmp/db-access-smoke-tunnel.txt
   grep -q "flux_temp_" /tmp/db-access-smoke-tunnel.txt
   echo "ok: flux db tunnel --print-config"
+fi
+
+if [[ "${FLUX_DB_ACCESS_SMOKE_DUMP:-}" == "1" ]]; then
+  echo ""
+  echo "=== db-access smoke: pg_dump prerequisites ==="
+  command -v pg_dump >/dev/null
+  command -v pg_restore >/dev/null
+  echo "ok: pg_dump and pg_restore available ($(pg_dump --version | head -1))"
+
+  echo ""
+  echo "=== db-access smoke: v2 schema-scoped dump ==="
+  export FLUX_DB_TUNNEL_SSH_HOST="${FLUX_DB_TUNNEL_SSH_HOST:-178.104.205.138}"
+  DUMP_OUT="/tmp/db-access-smoke-${SLUG}.dump"
+  rm -f "$DUMP_OUT"
+  pnpm --filter @flux/cli exec tsx src/index.ts db dump "$SLUG" --hash "$HASH" \
+    --output "$DUMP_OUT" --ssh-host "$FLUX_DB_TUNNEL_SSH_HOST" --strict-port --local-port 15440 \
+    --schema-only
+  test -s "$DUMP_OUT"
+  pg_restore -l "$DUMP_OUT" | grep -q "t_"
+  echo "ok: flux db dump wrote schema-scoped archive"
+  rm -f "$DUMP_OUT"
 fi
 
 echo ""

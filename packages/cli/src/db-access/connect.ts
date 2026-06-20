@@ -3,6 +3,7 @@ import type { TemporaryDbCredential } from "../api-client/db-access";
 import {
   DEFAULT_DB_TUNNEL_LOCAL_PORT,
   resolveLocalTunnelPort,
+  waitForLocalPortAccepting,
 } from "./local-port";
 import {
   buildSshTunnelArgs,
@@ -105,6 +106,7 @@ export async function openDatabaseTunnel(
   });
 
   const child = openSshTunnel(sshArgs);
+  await waitForLocalPortAccepting({ host: localHost, port: localPort });
   return {
     localHost,
     localPort,
@@ -161,6 +163,7 @@ export function pgDumpTenantSchemaArgs(input: {
   localPort: number;
   username: string;
   tenantSchema: string;
+  schemaOnly?: boolean;
 }): string[] {
   return [
     "-h",
@@ -175,6 +178,7 @@ export function pgDumpTenantSchemaArgs(input: {
     input.tenantSchema,
     "--no-owner",
     "--no-acl",
+    ...(input.schemaOnly === true ? ["--schema-only"] : []),
     "--format",
     "custom",
   ];

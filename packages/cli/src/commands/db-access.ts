@@ -44,6 +44,7 @@ export type DbAccessCommonOptions = {
 
 export type DbDumpOptions = DbAccessCommonOptions & {
   output?: string;
+  schemaOnly?: boolean;
 };
 
 export type DbRestoreOptions = DbAccessCommonOptions & {
@@ -447,6 +448,7 @@ export async function cmdDbDump(
     localPort: opened.localPort,
     username: credential.username,
     tenantSchema: plan.tenantSchema,
+    ...(opts.schemaOnly === true ? { schemaOnly: true } : {}),
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -467,28 +469,43 @@ export async function cmdDbDump(
       reject(new Error("pg_dump: missing stdout pipe."));
       return;
     }
+
+    let stdoutDone = false;
+    let exitCode: number | null = null;
+
+    const finish = (): void => {
+      if (exitCode === null) return;
+      if (exitCode !== 0) {
+        if (!opened.child.killed) opened.child.kill("SIGTERM");
+        const stderrText = Buffer.concat(stderrChunks).toString("utf8").trim();
+        reject(
+          new Error(
+            stderrText.length > 0
+              ? `pg_dump failed (${String(exitCode)}): ${stderrText.slice(0, 2000)}`
+              : `pg_dump failed (exit ${String(exitCode)}).`,
+          ),
+        );
+        return;
+      }
+      if (!stdoutDone) return;
+      if (!opened.child.killed) opened.child.kill("SIGTERM");
+      resolve();
+    };
+
     pipeline(child.stdout, createWriteStream(outputPath))
       .then(() => {
-        child.once("close", (code) => {
-          if (!opened.child.killed) opened.child.kill("SIGTERM");
-          if (code !== 0) {
-            const stderrText = Buffer.concat(stderrChunks).toString("utf8").trim();
-            reject(
-              new Error(
-                stderrText.length > 0
-                  ? `pg_dump failed (${String(code)}): ${stderrText.slice(0, 2000)}`
-                  : `pg_dump failed (exit ${String(code)}).`,
-              ),
-            );
-            return;
-          }
-          resolve();
-        });
+        stdoutDone = true;
+        finish();
       })
       .catch((err) => {
         if (!opened.child.killed) opened.child.kill("SIGTERM");
         reject(err);
       });
+
+    child.once("close", (code) => {
+      exitCode = code;
+      finish();
+    });
   });
 
   if (opts.json) {

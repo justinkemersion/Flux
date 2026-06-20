@@ -84,6 +84,33 @@ export function buildSshTunnelArgs(input: {
   ];
 }
 
+function resolvePreferDockerNetwork(): string | undefined {
+  const explicit =
+    process.env.FLUX_DB_TUNNEL_PREFER_NETWORK?.trim() ||
+    process.env.FLUX_SHARED_POSTGRES_TUNNEL_DOCKER_NETWORK?.trim();
+  return explicit || undefined;
+}
+
+async function inspectContainerIpOnNetwork(
+  input: SshExecInput & { sshHost: string; sshUser: string },
+  containerName: string,
+  networkName: string,
+  spawnFn: typeof spawn,
+): Promise<string | null> {
+  const networkLiteral = networkName.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+  const inspect = await runSshCommand(
+    {
+      ...input,
+      remoteCommand:
+        `docker inspect -f "{{(index .NetworkSettings.Networks \\"${networkLiteral}\\").IPAddress}}" ${containerName}`,
+    },
+    spawnFn,
+  );
+  if (inspect.code !== 0) return null;
+  const ip = inspect.stdout.trim();
+  return /^\d+\.\d+\.\d+\.\d+$/u.test(ip) ? ip : null;
+}
+
 function parseIpFromGetentOutput(stdout: string): string | null {
   const line = stdout
     .split(/\r?\n/u)
@@ -248,12 +275,36 @@ export async function resolveRemoteTunnelTarget(input: {
     return { ok: true, remoteHost: unique[0]!, method: "docker_inspect" };
   }
   if (unique.length > 1) {
+    const networkCandidates = [
+      ...(resolvePreferDockerNetwork() ? [resolvePreferDockerNetwork()!] : []),
+      "flux-v2-shared",
+      "flux-network",
+    ];
+    const tried = new Set<string>();
+    for (const networkName of networkCandidates) {
+      if (tried.has(networkName)) continue;
+      tried.add(networkName);
+      const ip = await inspectContainerIpOnNetwork(
+        input,
+        containerName,
+        networkName,
+        spawnFn,
+      );
+      if (ip) {
+        return {
+          ok: true,
+          remoteHost: ip,
+          method: "docker_inspect",
+        };
+      }
+    }
     return {
       ok: false,
       reason: "multiple_ips",
       message:
         `Container "${containerName}" is attached to multiple Docker networks. ` +
-        "Resolve the project network manually or set an explicit tunnel target.",
+        "Set FLUX_DB_TUNNEL_PREFER_NETWORK or FLUX_SHARED_POSTGRES_TUNNEL_DOCKER_NETWORK, " +
+        "or FLUX_SHARED_POSTGRES_TUNNEL_HOST to a single reachable IP.",
       diagnostics: [...diagnostics, `IPs: ${unique.join(", ")}`],
     };
   }

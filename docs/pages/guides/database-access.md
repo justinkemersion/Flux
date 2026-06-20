@@ -47,6 +47,8 @@ Run `flux db shell <project> --hash <hash>`. The CLI opens the tunnel, creates t
 flux db dump myproject --hash abc1234 --output myproject.dump
 ```
 
+For temporary readonly credentials, full data dumps may fail on tables protected by row-level security. Use `--schema-only` for DDL-only exports, or `flux backup create` for a verified full tenant export.
+
 v2 pooled dumps are always schema-scoped (`--schema=t_<shortId>_api --no-owner --no-acl`) and never whole-pool dumps.
 
 ## Restore warnings

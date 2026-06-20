@@ -132,13 +132,22 @@ export function registerDbCommands(program: Command): void {
   registerDbAccessFlags(dumpCmd);
   dumpCmd
     .option("--output <path>", "Output dump path")
+    .option(
+      "--schema-only",
+      "Dump schema definitions only (avoids RLS-blocked table data with temporary readonly roles)",
+      false,
+    )
     .action(
       cliActionWithFlux(async (flux, name: string | undefined) => {
         const opts = collectDbAccessOptions(dumpCmd);
-        const dumpOpts = dumpCmd.opts<{ output?: string }>();
+        const dumpOpts = dumpCmd.opts<{ output?: string; schemaOnly?: boolean }>();
         await cmdDbDump(
           name,
-          { ...opts, ...(dumpOpts.output ? { output: dumpOpts.output } : {}) },
+          {
+            ...opts,
+            ...(dumpOpts.output ? { output: dumpOpts.output } : {}),
+            ...(dumpOpts.schemaOnly === true ? { schemaOnly: true } : {}),
+          },
           flux,
         );
       }),
