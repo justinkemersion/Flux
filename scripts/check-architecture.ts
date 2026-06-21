@@ -8,12 +8,15 @@
  *   3. New source files cannot be named utils.ts / helpers.ts / misc.ts / common.ts
  *      unless explicitly allowlisted.
  *   4. Source files over SOURCE_WARN_LINES emit a warning (not a failure).
+ *   5. Dashboard client bundle files may import @flux/core only via browser-safe subpaths
+ *      (never the root barrel — see docs/ARCHITECTURE-CONTRACT.md).
  *
  * Errors fail CI with exit code 1. Warnings print but do not fail.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, extname, join, relative, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const REPO_ROOT = process.cwd();
 
@@ -41,6 +44,25 @@ const JUNK_DRAWER_NAMES = new Set(["utils.ts", "helpers.ts", "misc.ts", "common.
  * Use repo-relative POSIX paths. Add a comment explaining why each entry stays.
  */
 const JUNK_DRAWER_ALLOWLIST = new Set<string>([]);
+
+/**
+ * @flux/core subpaths safe for Next.js client bundles (no dockerode / node:fs).
+ * Keep in sync with docs/ARCHITECTURE-CONTRACT.md and apps/dashboard/AGENTS.md.
+ */
+export const DASHBOARD_CLIENT_SAFE_CORE_SUBPATHS = new Set([
+  "api-schema-strategy",
+  "backup-policy",
+  "backup-trust",
+  "database-access-gui",
+  "standalone",
+]);
+
+/** Lib modules pulled into client graphs even without "use client". */
+const DASHBOARD_CLIENT_BOUNDARY_LIB_FILES = new Set([
+  "apps/dashboard/src/lib/project-db-access-copy.ts",
+]);
+
+const CORE_IMPORT_RE = /(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\sfrom\s+)?["']@flux\/core(?:\/([^"']+))?["']/g;
 
 const errors: string[] = [];
 const warnings: string[] = [];
@@ -166,24 +188,83 @@ function checkSourceTree(): void {
   }
 }
 
-checkCoreIndexIsReexportsOnly();
-checkCliIndexStaysThin();
-checkSourceTree();
-
-for (const w of warnings) {
-  console.warn(`warn: ${w}`);
-}
-for (const e of errors) {
-  console.error(`error: ${e}`);
+function isDashboardClientBoundaryFile(relPosix: string, content: string): boolean {
+  if (DASHBOARD_CLIENT_BOUNDARY_LIB_FILES.has(relPosix)) return true;
+  if (!relPosix.startsWith("apps/dashboard/")) return false;
+  return /["']use client["']/.test(content);
 }
 
-if (errors.length > 0) {
-  console.error(
-    `\nArchitecture check failed: ${errors.length} error(s), ${warnings.length} warning(s).`,
+/**
+ * Client components (and lib copy modules they import) must not import the @flux/core
+ * root barrel — it re-exports ProjectManager/dockerode and breaks next build.
+ */
+export function findDashboardClientCoreImportViolations(
+  relPosix: string,
+  content: string,
+): string[] {
+  if (!isDashboardClientBoundaryFile(relPosix, content)) return [];
+
+  const violations: string[] = [];
+  for (const match of content.matchAll(CORE_IMPORT_RE)) {
+    const subpath = match[1];
+    const specifier = subpath ? `@flux/core/${subpath}` : "@flux/core";
+    if (!subpath) {
+      violations.push(
+        `${relPosix}: client bundle must not import root ${specifier} — use a browser-safe subpath (see docs/ARCHITECTURE-CONTRACT.md).`,
+      );
+      continue;
+    }
+    if (!DASHBOARD_CLIENT_SAFE_CORE_SUBPATHS.has(subpath)) {
+      violations.push(
+        `${relPosix}: client bundle import ${specifier} is not allowlisted. ` +
+          `Add a browser-safe subpath export in @flux/core or move logic server-side.`,
+      );
+    }
+  }
+  return violations;
+}
+
+function checkDashboardClientCoreImports(): void {
+  const dashboardRoot = join(REPO_ROOT, "apps/dashboard");
+  for (const file of walkSourceFiles(dashboardRoot)) {
+    if (!SOURCE_EXTENSIONS.has(extname(file))) continue;
+    const rel = toPosix(relative(REPO_ROOT, file));
+    const content = readFileSync(file, "utf8");
+    for (const violation of findDashboardClientCoreImportViolations(rel, content)) {
+      errors.push(violation);
+    }
+  }
+}
+
+function runArchitectureChecks(): void {
+  checkCoreIndexIsReexportsOnly();
+  checkCliIndexStaysThin();
+  checkSourceTree();
+  checkDashboardClientCoreImports();
+
+  for (const w of warnings) {
+    console.warn(`warn: ${w}`);
+  }
+  for (const e of errors) {
+    console.error(`error: ${e}`);
+  }
+
+  if (errors.length > 0) {
+    console.error(
+      `\nArchitecture check failed: ${errors.length} error(s), ${warnings.length} warning(s).`,
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `Architecture check passed (${warnings.length} warning${warnings.length === 1 ? "" : "s"}).`,
   );
-  process.exit(1);
 }
 
-console.log(
-  `Architecture check passed (${warnings.length} warning${warnings.length === 1 ? "" : "s"}).`,
-);
+const isMain =
+  process.argv[1] != null &&
+  pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (isMain) {
+  runArchitectureChecks();
+}
