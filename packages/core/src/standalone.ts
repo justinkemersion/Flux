@@ -122,3 +122,32 @@ export {
   fluxApiUrlForV2Shared,
   type FluxCatalogProjectMode,
 } from "./tenant-catalog-urls.ts";
+
+export {
+  LEGACY_FLUX_API_SCHEMA,
+  resolveTenantApiSchemaName,
+  type ProjectApiSchemaInput,
+} from "./api-schema-strategy.ts";
+
+export {
+  dbAccessReadwriteEnabled,
+  fluxTempLoginRoleName,
+  fluxTenantGroupRoleName,
+  normalizeDbAccessTtlSeconds,
+  type DbAccessLevel,
+} from "./projects/db-access-roles.ts";
+
+export {
+  redactDatabaseAccessPlan,
+  resolveDefaultSshTunnelConfig,
+  resolveProjectDatabaseAccess,
+  resolveSharedPostgresTunnelTarget,
+  type DatabaseAccessCapabilities,
+  type DatabaseAccessPlan,
+  type DatabaseAccessTransport,
+  type DatabaseAccessTunnelDefaults,
+  type DedicatedDatabaseAccessPlan,
+  type PooledDatabaseAccessPlan,
+  type ResolveProjectDatabaseAccessInput,
+  type ResolveProjectDatabaseAccessOptions,
+} from "./projects/database-access.ts";

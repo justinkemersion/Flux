@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import chalk from "chalk";
-import type { DatabaseAccessPlan } from "@flux/core";
+import type { DatabaseAccessPlan } from "@flux/core/standalone";
 import { getApiClient } from "../api-client";
 import type { FluxJson } from "../flux-config";
 import { ensureRestoreVerifiedLatestBackup } from "../cli-handlers/backup-gate";

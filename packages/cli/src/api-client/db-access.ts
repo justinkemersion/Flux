@@ -1,8 +1,8 @@
 import {
   FLUX_PROJECT_HASH_HEX_LEN,
+  type DatabaseAccessPlan,
   type DbAccessLevel,
-} from "@flux/core";
-import type { DatabaseAccessPlan } from "@flux/core";
+} from "@flux/core/standalone";
 import { z } from "zod";
 import type { ApiClientContext } from "./context";
 import {

@@ -1,4 +1,4 @@
-import type { DatabaseAccessPlan, DbAccessLevel } from "@flux/core";
+import type { DatabaseAccessPlan, DbAccessLevel } from "@flux/core/standalone";
 import type { TemporaryDbCredential } from "../api-client/db-access";
 import {
   DEFAULT_DB_TUNNEL_LOCAL_PORT,

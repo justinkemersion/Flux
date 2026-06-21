@@ -1,6 +1,6 @@
 import { access, readFile, stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { LEGACY_FLUX_API_SCHEMA } from "@flux/core";
+import { LEGACY_FLUX_API_SCHEMA } from "@flux/core/api-schema-strategy";
 import {
   listMigrationSqlFiles,
   loadLocalMigrations,

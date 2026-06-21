@@ -51,6 +51,29 @@ Self-hosted: set `FLUX_API_BASE` to **your** dashboard API origin.
 flux login
 ```
 
+### Updating the CLI
+
+The installer downloads a bundled binary from **`GET /api/install/cli`**. Re-run the installer after platform releases that add commands:
+
+```bash
+curl -sL https://flux.vsl-base.com/install | bash
+flux db --help   # confirm new subcommands (e.g. db password)
+```
+
+If you develop Flux from a git checkout and **`flux`** is linked to **`packages/cli/dist/index.cjs`**, rebuild after pulling:
+
+```bash
+cd /path/to/flux
+git pull
+pnpm --filter @flux/cli run build
+```
+
+Until **`flux db password`** exists locally, v1 operators can paste the password with:
+
+```bash
+flux project credentials <slug> --hash <hash> --field postgres.password
+```
+
 ## Example
 
 ```bash

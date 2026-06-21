@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { LEGACY_FLUX_API_SCHEMA } from "@flux/core";
+import { LEGACY_FLUX_API_SCHEMA } from "@flux/core/api-schema-strategy";
 import { getApiClient } from "../api-client";
 import { sectionBanner } from "../cli-layout";
 import type { FluxJson } from "../flux-config";

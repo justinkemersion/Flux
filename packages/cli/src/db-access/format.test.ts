@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveProjectDatabaseAccess } from "@flux/core";
+import { resolveProjectDatabaseAccess } from "@flux/core/standalone";
 import {
   buildV1PostgresCredentialSectionLines,
   parsePostgresConnectionFields,

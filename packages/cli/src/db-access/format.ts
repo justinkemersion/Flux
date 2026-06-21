@@ -2,7 +2,7 @@ import type {
   DatabaseAccessPlan,
   DedicatedDatabaseAccessPlan,
   PooledDatabaseAccessPlan,
-} from "@flux/core";
+} from "@flux/core/standalone";
 import type { TemporaryDbCredential } from "../api-client/db-access";
 
 export function dbTunnelCommand(slug: string, hash: string): string {
