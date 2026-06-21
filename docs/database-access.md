@@ -46,8 +46,9 @@ Sync: `./bin/sync-env-remote.sh --apply` or `./bin/launch-web.sh --sync-env-appl
 flux db tunnel yeastcoast --hash ffca33f          # terminal 1 — keeps tunnel open
 flux db password yeastcoast --hash ffca33f      # terminal 2 — paste password
 
-# v2 pooled — password only when tunnel creates temp creds
+# v2 pooled — Beekeeper: use Database postgres, not the temp username
 flux db tunnel flux-app-foundry --hash 5774112
+# GUI block: Database: postgres · Tenant schema: t_…_api · SSH tunnel (GUI): off
 
 # Paste-friendly alternative (v1 only)
 flux project credentials yeastcoast --hash ffca33f --field postgres.password

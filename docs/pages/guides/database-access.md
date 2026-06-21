@@ -30,13 +30,41 @@ Postgres stays private on the Flux platform. Project owners open a temporary loc
 
 ## Beekeeper / DBeaver / TablePlus setup
 
+### v1 dedicated
+
 1. Run `flux db tunnel <project> --hash <hash>`.
-2. For **v1 dedicated**, reveal the Postgres password with `flux db password <project> --hash <hash>` and paste it into your SQL viewer.
-3. For **v2 pooled**, copy the username and one-time password printed in the GUI config block when the tunnel creates temporary credentials.
-4. Create a Postgres connection to `127.0.0.1` and the local port printed by the CLI (default `15432`).
-5. SSL: disabled over the tunnel.
-6. For pooled projects, set search path to your tenant schema (the CLI prints it).
-7. Keep the tunnel terminal open while the GUI session is active.
+2. Reveal the Postgres password with `flux db password <project> --hash <hash>` and paste it into your SQL viewer.
+3. Create a Postgres connection to `127.0.0.1` and the local port printed by the CLI (default `15432`).
+4. **User:** `postgres` · **Database:** `postgres` · **SSL:** disabled over the tunnel.
+5. **SSH tunnel in GUI:** off — Flux CLI already opened the SSH tunnel.
+6. Keep the tunnel terminal open while the GUI session is active.
+
+### v2 pooled (Beekeeper trap)
+
+Beekeeper Studio often defaults **Database** to the **username** when that field is empty. For v2 pooled projects the username is a temporary role like `flux_temp_ro_<hash>_<suffix>`, which is **not** a database name. You will see:
+
+`database "flux_temp_ro_…" does not exist`
+
+**Fix:** set **Database** to **`postgres`**. Tenant isolation comes from the temp role and tenant schema/search path, not a per-project database.
+
+1. Run `flux db tunnel <project> --hash <hash>`.
+2. Copy the username and one-time password from the CLI **GUI config** block.
+3. In Beekeeper (or DBeaver / TablePlus), create a Postgres connection:
+
+| Field | Value |
+|-------|--------|
+| Host | `127.0.0.1` |
+| Port | tunnel port from CLI (default `15432`) |
+| User | temp role from CLI |
+| Password | one-time temp password |
+| **Database** | **`postgres`** (not the username) |
+| SSL | off |
+| SSH tunnel in GUI | **off** |
+| Tenant schema / search path | printed by CLI (`t_<shortId>_api`, public) |
+
+The CLI prints an explicit warning: *Do not use the temp username as the database name. Use database postgres.*
+
+4. Keep the tunnel terminal open while the GUI session is active.
 
 ## Getting the password for your SQL viewer
 
@@ -100,3 +128,4 @@ v2 pooled projects receive short-lived login roles (default TTL: 1 hour read-onl
 - **Docker permission denied / container not found:** the CLI resolver tries `getent hosts` then `docker inspect` on the SSH host.
 - **Read/write denied on pooled project:** the platform may disable read/write db access; use read-only or ask an operator about `FLUX_DB_ACCESS_ALLOW_READWRITE`.
 - **GUI connects but shows no tables (v2):** ensure search path includes your tenant schema and that you are using the temporary role from `flux db tunnel`, not pooled admin credentials.
+- **Beekeeper: `database "flux_temp_ro_…" does not exist` (v2):** set **Database** to **`postgres`**, not the temp username. Leave **SSH tunnel in GUI** off — Flux CLI already forwards the port.

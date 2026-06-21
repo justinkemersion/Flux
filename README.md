@@ -633,7 +633,11 @@ Alternative structured reveal: **`flux project credentials <slug> --hash <hash>`
 #### v2 shared flow
 
 1. **`flux db tunnel <slug> --hash <hash>`** — creates a **temporary readonly login role**; GUI config shows username + **one-time password** (never pooled admin credentials).
-2. Set search path to **`t_<shortId>_api`** (printed by CLI).
+2. In **Beekeeper Studio** (or DBeaver / TablePlus), create a Postgres connection using the CLI GUI block:
+   - **Host:** `127.0.0.1` · **Port:** tunnel port · **User:** temp role · **Password:** one-time password
+   - **Database:** **`postgres`** — not the temp username (Beekeeper defaults Database to User if left blank → `database "flux_temp_ro_…" does not exist`)
+   - **SSL:** off · **SSH tunnel in GUI:** off (Flux CLI already opened the SSH tunnel)
+   - **Tenant schema / search path:** values printed by the CLI (`t_<shortId>_api`, public)
 3. **`flux db password`** **refuses** v2 — use tunnel temp creds instead.
 
 Read/write temp roles require platform policy **`FLUX_DB_ACCESS_ALLOW_READWRITE=1`** (default off).

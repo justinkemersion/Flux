@@ -9,6 +9,7 @@ import {
   dbGuiConfigCommand,
   dbShellCommand,
   dbTunnelCommand,
+  listDatabaseGuiConfigFields,
   privateDbAccessIntro,
 } from "@/src/lib/project-db-access-copy";
 
@@ -30,7 +31,8 @@ function CopyField({ label, value }: { label: string; value: string }) {
 
 export function ProjectDbAccessPanel({ slug, hash, mode, tenantSchema }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const gui = buildGuiConfigFields({ slug, hash, mode, tenantSchema });
+  const hints = buildGuiConfigFields({ slug, hash, mode, tenantSchema });
+  const guiFields = listDatabaseGuiConfigFields(hints);
   const v1 = mode === "v1_dedicated";
 
   return (
@@ -63,20 +65,12 @@ export function ProjectDbAccessPanel({ slug, hash, mode, tenantSchema }: Props) 
             GUI config
           </h4>
           <dl className="mt-3 space-y-2">
-            <CopyField label="Connection Name" value={gui.connectionName} />
-            <CopyField label="Type" value={gui.type} />
-            <CopyField label="Host" value={gui.host} />
-            <CopyField label="Port" value={String(gui.port)} />
-            <CopyField label="User" value={gui.user} />
-            <CopyField label="Password" value={gui.passwordBehavior} />
-            <CopyField label="Database" value={gui.database} />
-            <CopyField label="SSL" value={gui.sslMode} />
-            {gui.searchPath ? (
-              <CopyField label="Search path" value={gui.searchPath} />
-            ) : null}
+            {guiFields.map(({ label, value }, index) => (
+              <CopyField key={`${label}-${String(index)}`} label={label} value={value} />
+            ))}
           </dl>
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-500">
-            {gui.tunnelNote}
+            {hints.tunnelNote}
           </p>
         </div>
 

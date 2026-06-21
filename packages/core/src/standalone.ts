@@ -151,3 +151,20 @@ export {
   type ResolveProjectDatabaseAccessInput,
   type ResolveProjectDatabaseAccessOptions,
 } from "./projects/database-access.ts";
+
+export {
+  DATABASE_GUI_LABELS,
+  GUI_SSH_TUNNEL_OFF_VALUE,
+  V2_GUI_DATABASE_WARNING,
+  buildDashboardDatabaseGuiHints,
+  buildDatabaseGuiConnectionHints,
+  formatAccessPlanGuiSummary,
+  formatDatabaseGuiConfigLines,
+  listDatabaseGuiConfigFields,
+  toDatabaseGuiStructuredFields,
+  type BuildDatabaseGuiConnectionHintsOptions,
+  type DashboardDatabaseGuiInput,
+  type DatabaseGuiConfigField,
+  type DatabaseGuiConnectionHints,
+  type DatabaseGuiStructuredFields,
+} from "./projects/database-access-gui.ts";

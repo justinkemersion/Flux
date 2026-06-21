@@ -3,6 +3,14 @@ import type {
   DedicatedDatabaseAccessPlan,
   PooledDatabaseAccessPlan,
 } from "@flux/core/standalone";
+import {
+  buildDatabaseGuiConnectionHints,
+  formatAccessPlanGuiSummary,
+  formatDatabaseGuiConfigLines,
+  toDatabaseGuiStructuredFields,
+  type DatabaseGuiConnectionHints,
+  type DatabaseGuiStructuredFields,
+} from "@flux/core/standalone";
 import type { TemporaryDbCredential } from "../api-client/db-access";
 
 export function dbTunnelCommand(slug: string, hash: string): string {
@@ -40,88 +48,58 @@ export function formatV2DbPasswordRefusal(slug: string, hash: string): string {
   );
 }
 
-export type GuiConfigFields = {
-  connectionName: string;
-  type: "Postgres";
-  host: string;
-  port: number;
-  user: string;
+/** @deprecated Use buildDatabaseGuiConnectionHints from @flux/core */
+export type GuiConfigFields = DatabaseGuiConnectionHints & {
   passwordBehavior: string;
   database: string;
-  sslMode: string;
-  searchPath?: string;
-  tunnelNote: string;
 };
 
-export function buildGuiConfigFields(plan: DatabaseAccessPlan): GuiConfigFields {
-  const base = {
-    connectionName: `${plan.projectName} via Flux`,
-    type: "Postgres" as const,
-    host: plan.tunnel.recommendedLocalHost,
-    port: plan.tunnel.recommendedLocalPort,
-    database: "postgres",
-    sslMode: "disabled over tunnel",
-    tunnelNote: "This only works while `flux db tunnel` is running.",
-  };
+export function buildGuiConfigFields(plan: DatabaseAccessPlan): DatabaseGuiConnectionHints {
+  return buildDatabaseGuiConnectionHints(plan);
+}
 
-  if (plan.mode === "v1_dedicated") {
-    return {
-      ...base,
-      user: plan.database.username,
-      passwordBehavior: `run \`${dbPasswordCommand(plan.projectName, plan.projectHash)}\``,
-    };
-  }
-
-  return {
-    ...base,
-    user: "temporary project-scoped role from `flux db tunnel`",
-    passwordBehavior:
-      "Created when you run `flux db tunnel` or `flux db gui-config --create-temp-credentials`. Never pooled admin credentials.",
-    searchPath: plan.database.searchPath.join(", "),
-  };
+export function buildGuiStructuredFields(
+  plan: DatabaseAccessPlan,
+  credential?: TemporaryDbCredential,
+): DatabaseGuiStructuredFields {
+  return toDatabaseGuiStructuredFields(
+    credential
+      ? buildDatabaseGuiConnectionHints(plan, {
+          username: credential.username,
+          password: credential.password,
+          tenantSchema: credential.tenantSchema,
+          searchPath: credential.searchPath,
+        })
+      : buildDatabaseGuiConnectionHints(plan),
+  );
 }
 
 export function formatGuiConfigText(plan: DatabaseAccessPlan): string[] {
-  const fields = buildGuiConfigFields(plan);
-  return renderGuiConfigLines(fields);
+  return formatDatabaseGuiConfigLines(buildDatabaseGuiConnectionHints(plan));
 }
 
 export function formatGuiConfigTextWithCredential(
   plan: DatabaseAccessPlan,
   credential: TemporaryDbCredential,
 ): string[] {
-  const fields = buildGuiConfigFields(plan);
-  return renderGuiConfigLines({
-    ...fields,
-    user: credential.username,
-    passwordBehavior: credential.password,
-    searchPath: credential.searchPath.join(", "),
-  });
-}
-
-function renderGuiConfigLines(fields: GuiConfigFields): string[] {
-  const lines = [
-    `Connection Name: ${fields.connectionName}`,
-    `Type: ${fields.type}`,
-    `Host: ${fields.host}`,
-    `Port: ${String(fields.port)}`,
-    `User: ${fields.user}`,
-    `Password: ${fields.passwordBehavior}`,
-    `Database: ${fields.database}`,
-    `SSL: ${fields.sslMode}`,
-  ];
-  if (fields.searchPath) {
-    lines.push(`Search path: ${fields.searchPath}`);
-  }
-  lines.push("", fields.tunnelNote);
-  return lines;
+  return formatDatabaseGuiConfigLines(
+    buildDatabaseGuiConnectionHints(plan, {
+      username: credential.username,
+      password: credential.password,
+      tenantSchema: credential.tenantSchema,
+      searchPath: credential.searchPath,
+    }),
+  );
 }
 
 export function formatAccessPlanSummary(plan: DatabaseAccessPlan): string[] {
   if (plan.mode === "v1_dedicated") {
     return formatDedicatedAccessPlanSummary(plan);
   }
-  return formatPooledAccessPlanSummary(plan);
+  return [
+    ...formatPooledAccessPlanSummary(plan),
+    ...formatAccessPlanGuiSummary(plan),
+  ];
 }
 
 function formatDedicatedAccessPlanSummary(plan: DedicatedDatabaseAccessPlan): string[] {

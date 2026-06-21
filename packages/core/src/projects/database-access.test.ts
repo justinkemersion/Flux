@@ -49,6 +49,7 @@ test("resolveProjectDatabaseAccess: v2 pooled supported plan", () => {
   if (plan.mode !== "v2_shared") return;
   assert.equal(plan.supported, true);
   assert.equal(plan.tenantSchema, "t_5ecfa3ab72d1_api");
+  assert.equal(plan.database.databaseName, "postgres");
   assert.equal(plan.capabilities.tunnel, true);
   assert.equal(plan.capabilities.restore, false);
   assert.equal(plan.capabilities.temporaryCredentials, true);

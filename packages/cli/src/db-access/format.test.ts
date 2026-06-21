@@ -7,6 +7,7 @@ import {
 } from "../postgres-connection-fields";
 import {
   buildGuiConfigFields,
+  buildGuiStructuredFields,
   dbDumpCommand,
   dbGuiConfigCommand,
   dbPasswordCommand,
@@ -90,11 +91,12 @@ test("gui config for v1 points password to flux db password command", () => {
   });
   const fields = buildGuiConfigFields(plan);
   assert.equal(fields.user, "postgres");
-  assert.match(fields.passwordBehavior, /flux db password yeastcoast --hash ffca33f/);
+  assert.match(fields.passwordHint, /flux db password yeastcoast --hash ffca33f/);
   const rendered = formatGuiConfigText(plan).join("\n");
   assert.doesNotMatch(rendered, /postgres:\/\//);
   assert.doesNotMatch(rendered, /secret-pass/);
   assert.match(rendered, /Password: run `flux db password yeastcoast --hash ffca33f`/);
+  assert.match(rendered, /Database: postgres/);
   assert.match(rendered, /only works while `flux db tunnel`/);
 });
 
@@ -112,27 +114,43 @@ test("gui config for v2 does not expose admin credentials", () => {
     mode: "v2_shared",
   });
   const fields = buildGuiConfigFields(plan);
-  assert.match(fields.passwordBehavior, /flux db tunnel/);
-  assert.doesNotMatch(fields.passwordBehavior, /postgresql:\/\//);
+  assert.match(fields.passwordHint, /flux db tunnel/);
+  assert.doesNotMatch(fields.passwordHint, /postgresql:\/\//);
   assert.match(fields.searchPath ?? "", /t_5ecfa3ab72d1_api/);
+  assert.equal(fields.databaseName, "postgres");
 });
 
-test("gui config for v2 with temp credential shows one-time password only when created", () => {
+test("gui config for v2 with temp credential shows database postgres not username", () => {
   const plan = resolveProjectDatabaseAccess({
     id: V1_PROJECT_ID,
     slug: "flux-app-foundry",
     hash: "5774112",
     mode: "v2_shared",
   });
-  const rendered = formatGuiConfigTextWithCredential(plan, {
-    username: "flux_temp_abcd1234_ro",
+  const credential = {
+    username: "flux_temp_ro_5774112_8d1ce67a",
     password: "one-time-temp-pass",
-    access: "readonly",
+    access: "readonly" as const,
     expiresAt: "2026-06-20T12:00:00.000Z",
     tenantSchema: "t_c50731f62edd_api",
     searchPath: ["t_c50731f62edd_api", "public"],
-  }).join("\n");
+  };
+  const rendered = formatGuiConfigTextWithCredential(plan, credential).join("\n");
   assert.match(rendered, /Password: one-time-temp-pass/);
+  assert.match(rendered, /^Database: postgres$/m);
+  assert.match(rendered, /^Tenant schema: t_c50731f62edd_api$/m);
+  assert.match(rendered, /^Search path: t_c50731f62edd_api, public$/m);
+  assert.match(rendered, /^SSH tunnel \(GUI\): off —/m);
+  assert.match(
+    rendered,
+    /Do not use the temp username as the database name\. Use database postgres\./,
+  );
   assert.doesNotMatch(rendered, /postgresql:\/\//);
   assert.doesNotMatch(rendered, /SHARED_POSTGRES/);
+  assert.doesNotMatch(rendered, /^Database: flux_temp_ro_/m);
+
+  const structured = buildGuiStructuredFields(plan, credential);
+  assert.equal(structured.databaseName, "postgres");
+  assert.notEqual(structured.databaseName, structured.user);
+  assert.equal("database" in structured, false);
 });

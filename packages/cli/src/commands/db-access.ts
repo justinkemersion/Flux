@@ -20,6 +20,7 @@ import {
   formatGuiConfigText,
   formatGuiConfigTextWithCredential,
   formatV2DbPasswordRefusal,
+  buildGuiStructuredFields,
 } from "../db-access/format";
 import { parsePostgresConnectionFields } from "../postgres-connection-fields";
 import { resolveHash, resolveOptionalName } from "../project-resolve";
@@ -152,8 +153,9 @@ export async function cmdDbGuiConfig(
   if (plan.mode === "v2_shared" && opts.createTempCredentials === true) {
     const credential = await resolveV2Credential(hash, plan, opts);
     const lines = formatGuiConfigTextWithCredential(plan, credential);
+    const guiFields = buildGuiStructuredFields(plan, credential);
     if (opts.json) {
-      console.log(JSON.stringify({ plan, credential, guiConfig: lines }, null, 2));
+      console.log(JSON.stringify({ plan, credential, guiFields, guiConfig: lines }, null, 2));
       return;
     }
     sectionBanner("GUI configuration");
@@ -179,6 +181,7 @@ export async function cmdDbGuiConfig(
             supported: plan.supported,
             capabilities: plan.capabilities,
           },
+          guiFields: buildGuiStructuredFields(plan),
           guiConfig: formatGuiConfigText(plan),
         },
         null,
@@ -218,12 +221,17 @@ export async function cmdDbTunnel(
   }
 
   if (opts.printConfig) {
+    const guiFields =
+      auth?.mode === "v2_shared"
+        ? buildGuiStructuredFields(plan, auth.credential)
+        : buildGuiStructuredFields(plan);
     if (opts.json) {
       console.log(
         JSON.stringify(
           {
             plan,
             ...(auth?.mode === "v2_shared" ? { credential: auth.credential } : {}),
+            guiFields,
             guiConfig:
               auth?.mode === "v2_shared"
                 ? formatGuiConfigTextWithCredential(plan, auth.credential)
@@ -269,6 +277,10 @@ export async function cmdDbTunnel(
     auth?.mode === "v2_shared"
       ? formatGuiConfigTextWithCredential(opened.tunnelPlan, auth.credential)
       : formatGuiConfigText(opened.tunnelPlan);
+  const guiFields =
+    auth?.mode === "v2_shared"
+      ? buildGuiStructuredFields(opened.tunnelPlan, auth.credential)
+      : buildGuiStructuredFields(opened.tunnelPlan);
 
   if (opts.json) {
     console.log(
@@ -279,6 +291,7 @@ export async function cmdDbTunnel(
           resolutionMethod: opened.resolutionMethod,
           plan: opened.tunnelPlan,
           ...(auth ? { auth: { mode: auth.mode, username: auth.mode === "v2_shared" ? auth.credential.username : auth.username } } : {}),
+          guiFields,
           guiConfig: guiLines,
         },
         null,

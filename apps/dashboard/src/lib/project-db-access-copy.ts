@@ -24,50 +24,12 @@ export type DashboardDbAccessCopyInput = {
   tenantSchema?: string;
 };
 
-export type DashboardGuiConfigCopy = {
-  connectionName: string;
-  type: "Postgres";
-  host: string;
-  port: number;
-  user: string;
-  passwordBehavior: string;
-  database: string;
-  sslMode: string;
-  searchPath?: string;
-  tunnelNote: string;
-};
-
-export function buildGuiConfigFields(
-  input: DashboardDbAccessCopyInput,
-): DashboardGuiConfigCopy {
-  const base = {
-    connectionName: `${input.slug} via Flux`,
-    type: "Postgres" as const,
-    host: "127.0.0.1",
-    port: 15432,
-    database: "postgres",
-    sslMode: "disabled over tunnel",
-    tunnelNote: "This only works while `flux db tunnel` is running.",
-  };
-
-  if (input.mode === "v1_dedicated") {
-    return {
-      ...base,
-      user: "postgres",
-      passwordBehavior: `run \`flux db password ${input.slug} --hash ${input.hash}\``,
-    };
-  }
-
-  return {
-    ...base,
-    user: "temporary project-scoped role from `flux db tunnel`",
-    passwordBehavior:
-      "Created when you run `flux db tunnel`. Flux never exposes pooled admin credentials.",
-    searchPath: input.tenantSchema
-      ? `${input.tenantSchema}, public`
-      : "tenant schema, public",
-  };
-}
+export {
+  buildDashboardDatabaseGuiHints as buildGuiConfigFields,
+  listDatabaseGuiConfigFields,
+  type DatabaseGuiConfigField,
+  type DatabaseGuiConnectionHints,
+} from "@flux/core";
 
 export function privateDbAccessIntro(mode: "v1_dedicated" | "v2_shared"): string {
   if (mode === "v2_shared") {

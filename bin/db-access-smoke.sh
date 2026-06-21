@@ -36,6 +36,7 @@ cd "$ROOT"
 echo "=== db-access smoke: unit tests ==="
 pnpm --filter @flux/core exec tsx --test \
   src/projects/database-access.test.ts \
+  src/projects/database-access-gui.test.ts \
   src/projects/db-access-roles.test.ts
 pnpm --filter @flux/engine-v2 exec tsx --test src/db-access.test.ts
 pnpm --filter dashboard exec tsx --test \
@@ -154,6 +155,8 @@ expect_http "GET db-access plan (v2)" GET \
   "${BASE}/api/cli/v1/projects/${HASH}/db-access" 200
 assert_json_field "v2 plan supported + temp creds capability" \
   "data.mode === 'v2_shared' && data.supported === true && data.capabilities.temporaryCredentials === true"
+assert_json_field "v2 plan databaseName is postgres" \
+  "data.database?.databaseName === 'postgres'"
 assert_json_field "plan includes configured SSH tunnel host" \
   "typeof data.tunnel?.sshHost === 'string' && data.tunnel.sshHost.length > 0"
 assert_json_field "plan JSON has no connection string secrets" \
@@ -178,6 +181,8 @@ export FLUX_API_BASE="${BASE}/api"
 pnpm --filter @flux/cli exec tsx src/index.ts db access-plan "$SLUG" --hash "$HASH" >/tmp/db-access-smoke-cli-plan.txt
 grep -q "v2_shared" /tmp/db-access-smoke-cli-plan.txt
 grep -q "Supported: true" /tmp/db-access-smoke-cli-plan.txt
+grep -q "Database: postgres" /tmp/db-access-smoke-cli-plan.txt
+grep -q "Tenant schema:" /tmp/db-access-smoke-cli-plan.txt
 echo "ok: flux db access-plan"
 
 pnpm --filter @flux/cli exec tsx src/index.ts db gui-config "$SLUG" --hash "$HASH" --create-temp-credentials --json >/tmp/db-access-smoke-cli-gui.json
@@ -186,6 +191,13 @@ node -e "
   const data = JSON.parse(fs.readFileSync('/tmp/db-access-smoke-cli-gui.json', 'utf8'));
   if (!data.credential?.username || !data.credential?.password) process.exit(2);
   if (!JSON.stringify(data).includes(data.credential.password)) process.exit(3);
+  if (data.guiFields?.databaseName !== 'postgres') process.exit(4);
+  if (data.guiFields?.databaseName === data.guiFields?.user) process.exit(5);
+  if (!data.guiFields?.tenantSchema) process.exit(6);
+  if (data.guiFields?.guiSshTunnel !== 'off') process.exit(7);
+  const text = (data.guiConfig || []).join('\n');
+  if (!/^Database: postgres$/m.test(text)) process.exit(8);
+  if (!/Do not use the temp username as the database name/.test(text)) process.exit(9);
 "
 echo "ok: flux db gui-config --create-temp-credentials"
 
@@ -207,6 +219,10 @@ if [[ "${FLUX_DB_ACCESS_SMOKE_TUNNEL:-}" == "1" ]]; then
   pnpm --filter @flux/cli exec tsx src/index.ts db tunnel "$SLUG" --hash "$HASH" --print-config >/tmp/db-access-smoke-tunnel.txt
   grep -q "Password:" /tmp/db-access-smoke-tunnel.txt
   grep -q "flux_temp_" /tmp/db-access-smoke-tunnel.txt
+  grep -q "^Database: postgres$" /tmp/db-access-smoke-tunnel.txt
+  grep -q "^Tenant schema:" /tmp/db-access-smoke-tunnel.txt
+  grep -q "^SSH tunnel (GUI): off" /tmp/db-access-smoke-tunnel.txt
+  grep -q "Do not use the temp username as the database name" /tmp/db-access-smoke-tunnel.txt
   echo "ok: flux db tunnel --print-config"
 fi
 
