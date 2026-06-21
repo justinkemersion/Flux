@@ -6,10 +6,8 @@ import {
   waitForLocalPortAccepting,
 } from "./local-port";
 import {
-  buildSshTunnelArgs,
-  openSshTunnel,
-  resolveRemoteTunnelTarget,
-} from "./ssh-tunnel";
+  parsePostgresPasswordFromConnectionString,
+} from "../postgres-connection-fields";
 
 export type DbConnectionAuth =
   | {
@@ -118,15 +116,13 @@ export async function openDatabaseTunnel(
   };
 }
 
-export function parsePostgresPasswordFromConnectionString(
-  connectionString: string,
-): string {
-  const normalized = connectionString.startsWith("postgres://")
-    ? `postgresql://${connectionString.slice("postgres://".length)}`
-    : connectionString;
-  const url = new URL(normalized);
-  return decodeURIComponent(url.password);
-}
+import {
+  buildSshTunnelArgs,
+  openSshTunnel,
+  resolveRemoteTunnelTarget,
+} from "./ssh-tunnel";
+
+export { parsePostgresPasswordFromConnectionString };
 
 export function buildPsqlEnv(auth: DbConnectionAuth): NodeJS.ProcessEnv {
   const env = { ...process.env };

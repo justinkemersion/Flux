@@ -6,7 +6,7 @@ section: reference
 
 # CLI reference
 
-The **`flux`** CLI is the operator interface for provisioning, migrations, lifecycle, and dumps.
+The **`flux`** CLI is the operator interface for provisioning, migrations, lifecycle, backups, and private database access.
 
 ## What you will learn
 
@@ -26,16 +26,24 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux init` | Link or create a project from repo-root `flux.json` (Foundry placeholder hash) |
 | `flux create` | Provision a project |
 | `flux list` | Show projects and Service URLs |
-| `flux push` | Apply a `.sql` file or ordered **`migrations/`** directory—**`--mode raw|versioned|repeatable`**, **`--force`** (repeatable), **`--plan`** / **`--dry-run`** preview directory pushes; pass **`--project`** / **`--hash`** (or **`flux.json`**) |
+| `flux push` | Apply a `.sql` file or ordered **`migrations/`** directory—**`--mode raw\|versioned\|repeatable`**, **`--force`** (repeatable), **`--plan`** / **`--dry-run`** preview directory pushes; pass **`--project`** / **`--hash`** (or **`flux.json`**) |
 | `flux migrations list` | Show **`flux.flux_migrations`** ledger (remote state, not local files). **`flux migrations`** ≠ **`flux migrate`** (engine conversion) |
-| `flux project credentials` | Print connection material: **v1 dedicated** → Postgres URI plus anon/service JWT keys; **v2_shared** → gateway JWT secret and a short note (no per-tenant Postgres URI). Pass **`[slug]`** and **`--hash`** like other project commands (or use **`flux.json`**) |
-| `flux dump` | Export schema/data (see flags locally) |
+| `flux project credentials` | **v1 dedicated** → structured Postgres block (user, password, host, port, connection URL) plus anon/service JWT keys. **v2_shared** → gateway JWT secret and a short note. Use **`--field postgres.password`** (v1) for paste-friendly password-only output |
+| `flux db password` | **v1 dedicated** → print only the Postgres password. **v2_shared** → explains temporary tunnel credentials (never pooled admin secrets) |
+| `flux db tunnel` | Open local SSH tunnel; print GUI connection settings. **v1** → password via `flux db password`. **v2** → creates temporary scoped credentials when opening the tunnel |
+| `flux db shell` | `psql` through the tunnel; **`--command 'SELECT 1'`** for non-interactive queries |
+| `flux db dump` | **v2_shared** schema-scoped `pg_dump` via tunnel; use **`--schema-only`** with readonly temp roles when RLS blocks data |
+| `flux db restore` | **v1 dedicated** `pg_restore` via tunnel (restore-verified backup gate). **v2_shared** refused for production pooled schemas |
+| `flux db access-plan` / `flux db gui-config` | Redacted mode-aware metadata and copy-friendly GUI fields |
+| `flux dump` | Legacy project export (see flags locally; distinct from `flux db dump`) |
 | `flux migrate` | Orchestrate **v2_shared** → **v1_dedicated** via the control plane (see [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)) |
 | `flux logs` | Tail project logs when wired |
 | `flux backup create` | Both engines — control plane streams `pg_dump -Fc`. v1: full project DB. v2: tenant API schema (`--schema=t_<short>_api --no-owner --no-acl`). See [Backups workflow](/docs/guides/backups) |
 | `flux backup list` | Recent backups newest-first with trust labels (Restorable / Created, not restore-verified / Restore verification failed / etc.). Pass `--verbose` for catalog timestamps, artifact paths, and underlying tier names |
 | `flux backup verify` | Runs **`pg_restore`** in a disposable Postgres container on the control plane. The only step that promotes a backup to **Restorable**. Requires `docker-cli` in the `flux-web` image (self-hosted operators) |
 | `flux backup download` | Writes the custom-format archive to `-o <path>` (or shell redirect). Refuses binary output to a TTY |
+
+**Private database access:** [Private database access guide](/docs/guides/database-access) — SSH tunnels, Beekeeper/DBeaver setup, password handoff.
 
 **Operators (v2_shared):** If directory **`flux push`** fails on a legacy global migration ledger, run **`bin/migrate-pooled-ledger.sh`** on the Flux host — see [Migrations workflow](/docs/guides/migrations) and the root README.
 
@@ -71,7 +79,9 @@ flux push sql/migrations/ --plan
 flux --help
 flux push --help
 flux push db/migrations/0001_moods.sql --project percept --hash b915ec8
-flux project credentials percept --hash b915ec8   # v1: copy the Postgres line for psql
+flux db tunnel yeastcoast --hash ffca33f
+flux db password yeastcoast --hash ffca33f
+flux project credentials percept --hash b915ec8 --field postgres.password
 flux backup download -p percept --hash b915ec8 --latest -o ./percept.dump
 ```
 
@@ -79,6 +89,7 @@ Use your own **slug** and **hash** from **`flux list`** (example values above).
 
 ## Next steps
 
+- [Private database access](/docs/guides/database-access)
 - [Configuration](/docs/reference/config)
 - [Migrations workflow](/docs/guides/migrations)
 - [Backups workflow](/docs/guides/backups)

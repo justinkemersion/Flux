@@ -29,6 +29,17 @@ export function projectCredentialsCommand(slug: string, hash: string): string {
   return `flux project credentials ${slug} --hash ${hash}`;
 }
 
+export function dbPasswordCommand(slug: string, hash: string): string {
+  return `flux db password ${slug} --hash ${hash}`;
+}
+
+export function formatV2DbPasswordRefusal(slug: string, hash: string): string {
+  return (
+    "v2_shared projects use temporary scoped credentials.\n" +
+    `Run \`flux db tunnel ${slug} --hash ${hash}\` to create a temporary readonly credential.`
+  );
+}
+
 export type GuiConfigFields = {
   connectionName: string;
   type: "Postgres";
@@ -57,7 +68,7 @@ export function buildGuiConfigFields(plan: DatabaseAccessPlan): GuiConfigFields 
     return {
       ...base,
       user: plan.database.username,
-      passwordBehavior: projectCredentialsCommand(plan.projectName, plan.projectHash),
+      passwordBehavior: `run \`${dbPasswordCommand(plan.projectName, plan.projectHash)}\``,
     };
   }
 

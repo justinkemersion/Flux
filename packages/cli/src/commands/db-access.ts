@@ -19,7 +19,9 @@ import {
   formatAccessPlanSummary,
   formatGuiConfigText,
   formatGuiConfigTextWithCredential,
+  formatV2DbPasswordRefusal,
 } from "../db-access/format";
+import { parsePostgresConnectionFields } from "../postgres-connection-fields";
 import { resolveHash, resolveOptionalName } from "../project-resolve";
 
 export type DbAccessCommonOptions = {
@@ -644,4 +646,21 @@ export async function cmdDbRestore(
     return;
   }
   console.log(`${B}Restore completed from ${inputPath}`);
+}
+
+export async function cmdDbPassword(
+  name: string | undefined,
+  opts: Pick<DbAccessCommonOptions, "project" | "hash">,
+  flux: FluxJson | null,
+): Promise<void> {
+  const { slug, hash } = resolveSlugAndHash(name, opts, flux);
+  const client = getApiClient();
+  const creds = await client.getProjectCredentialsByHash(hash);
+
+  if (creds.mode === "v2_shared") {
+    throw new Error(formatV2DbPasswordRefusal(slug, hash));
+  }
+
+  const fields = parsePostgresConnectionFields(creds.postgresConnectionString);
+  console.log(fields.password);
 }

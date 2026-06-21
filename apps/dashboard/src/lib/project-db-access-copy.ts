@@ -54,7 +54,7 @@ export function buildGuiConfigFields(
     return {
       ...base,
       user: "postgres",
-      passwordBehavior: `run \`flux project credentials ${input.slug} --hash ${input.hash}\``,
+      passwordBehavior: `run \`flux db password ${input.slug} --hash ${input.hash}\``,
     };
   }
 

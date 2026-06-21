@@ -98,12 +98,18 @@ export function registerInitCreateCommands(program: Command): void {
       "[name]",
       "Project slug (default: \"slug\" in flux.json)",
     )
-    .option("--hash <hex>", HASH_FLAG_DESC);
+    .option("--hash <hex>", HASH_FLAG_DESC)
+    .option(
+      "--field <name>",
+      "Print a single credential field (v1 Postgres: postgres.user, postgres.password, postgres.database, postgres.host, postgres.port, postgres.url)",
+    );
 
   projectCredentialsCmd.action(
     cliActionWithFlux(async (flux, name: string | undefined) => {
-      const opts = projectCredentialsCmd.opts<{ hash?: string }>();
-      await cmdProjectCredentials(name, opts.hash, flux);
+      const opts = projectCredentialsCmd.opts<{ hash?: string; field?: string }>();
+      await cmdProjectCredentials(name, opts.hash, flux, {
+        ...(opts.field ? { field: opts.field } : {}),
+      });
     }),
   );
 }

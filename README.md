@@ -12,6 +12,7 @@ The **control plane** (CLI + optional Next.js dashboard) provisions, tracks, and
 ## Table of contents
 
 - [What ships in this repo](#what-ships-in-this-repo)
+  - [Platform capabilities (to date)](#platform-capabilities-to-date)
 - [Architecture at a glance](#architecture-at-a-glance)
 - [v2 shared data plane wiring (internal)](#v2-shared-data-plane-wiring-internal)
   - [Mode-split: dashboard behavior per mode](#mode-split-dashboard-behavior-per-mode)
@@ -26,6 +27,7 @@ The **control plane** (CLI + optional Next.js dashboard) provisions, tracks, and
 - [Quick start](#quick-start)
 - [End-to-end validation](#end-to-end-validation)
 - [CLI reference](#cli-reference)
+  - [Private database access](#private-database-access)
 - [Security and operations](#security-and-operations)
   - [Pooled migration ledger upgrade](#pooled-migration-ledger-upgrade)
 - [AGENTS.md (v2_shared client apps)](#agentsmd-v2_shared-client-apps)
@@ -40,11 +42,34 @@ The **control plane** (CLI + optional Next.js dashboard) provisions, tracks, and
 | Piece | Role |
 |-------|------|
 | **`@flux/core`** | Docker orchestration: networks, gateway, per-tenant Postgres + PostgREST, bootstrap SQL, **plain-SQL import** (Supabase-aware transforms, `public` → `api` move), JWT helpers, **environment updates** on the API container, Traefik label helpers. |
-| **`@flux/cli`** | Operator-facing `flux` commands (`create`, `push`, `db-reset`, `list`, `start`/`stop`, `nuke`, **`env`**, **`supabase-rest-path`**, …). |
+| **`@flux/cli`** | Operator-facing `flux` commands: provisioning, **`flux push`** / migrations ledger, lifecycle, backups + restore verify, **`flux db …`** private database access (SSH tunnels), env, gauntlet smoke, v2→v1 migrate. |
 | **`@flux/sdk`** | Small TypeScript client over PostgREST-style HTTP (table queries, anon key headers). |
-| **`apps/dashboard`** | Next.js **control-plane UI**: GitHub sign-in, project list/create, container lifecycle, JWT/Clerk-style secrets, **Stripe** checkout/webhook hooks, all backed by a **`flux-system`** database. |
+| **`@flux/engine-v2`** | Shared-cluster provisioning: tenant schema + role bootstrap, pooled push, temp DB access roles, deprovision. |
+| **`@flux/gateway`** | Edge gateway (`flux-node-gateway`): host routing, JWT mint, rate limits, proxy to PostgREST pool. |
+| **`apps/dashboard`** | Next.js **control-plane UI**: GitHub sign-in, project list/create, lifecycle, credentials, **Private Database Access** panel, backups + destructive gates, billing hooks, rendered docs at `/docs`, CLI Bearer API — all backed by **`flux-system`**. |
 
 Everything assumes **one Docker Engine** (local socket or `DOCKER_HOST`) and **pnpm** workspaces (**pnpm 10.x**, see root `packageManager`).
+
+### Platform capabilities (to date)
+
+Operator-oriented checklist of what Flux ships **today** (both engines unless noted):
+
+| Area | Capability |
+|------|------------|
+| **Provisioning** | `flux create` / dashboard create — **`v1_dedicated`** (per-tenant Postgres + PostgREST) or **`v2_shared`** (pooled schema + role). `flux init` links a Foundry repo. `flux list` prints slug, hash, mode, canonical Service URL. |
+| **SQL & migrations** | `flux push` — single `.sql` or ordered **`migrations/`** directory with **`--mode raw\|versioned\|repeatable`**, **`--plan`**, **`--dry-run`**. v2 ledger: **`flux.flux_migrations (tenant_schema, version)`**. `flux migrations list`. Supabase-compat transforms on import. |
+| **Engine conversion** | `flux migrate` — orchestrates **v2_shared → v1_dedicated** via control plane (destructive; restore-verified backup gate). |
+| **Backups** | `flux backup create \| list \| verify \| download` — v1 full project DB; v2 **tenant schema export** only. Optional R2 offsite (`FLUX_R2_BACKUPS_*`). Hourly minimum-backup scheduler (`FLUX_MIN_BACKUP_*`). |
+| **Destructive gates** | Restore-verified backup required before **`flux nuke`**, **`flux migrate`**, **`flux db-reset`**, **`flux db restore`**, dashboard **Delete** / **Factory reset** — unless explicit override (`--skip-backup-check` / `?skipBackupCheck=true`). Shared primitive: `@flux/core/backup-trust`. |
+| **Private DB access** | **`flux db tunnel \| shell \| dump \| restore \| password \| access-plan \| gui-config`** — Postgres stays off the public internet; SSH tunnel to Docker-internal host. v1: project **`postgres`** password. v2: **temporary scoped roles** (readonly default); pooled admin never exposed. See [Private database access](#private-database-access). |
+| **Lifecycle** | `flux start \| stop \| nuke`, dashboard start/stop/repair/delete, `flux reap` (idle stop via activity timestamps). |
+| **Tenant env** | `flux env set \| list` on PostgREST container (sensitive keys redacted in list). |
+| **Auth & API** | PostgREST JWT (`PGRST_JWT_SECRET` / gateway secret on v2). Gateway Bearer on v2 edge. RLS + **`GRANT`** per tenant role. Docs: [`AGENTS.md`](./AGENTS.md), `/docs/guides/nextjs`. |
+| **Observability** | `flux logs`, dashboard log stream (v1). Fleet monitor + deep v2 JWT probes. `bin/ops-audit.sh`. |
+| **Dashboard product** | GitHub OAuth, Stripe checkout hooks, project detail (mode-aware UI), backup trust UI, Private Database Access copy, interactive docs + Codex on `/docs`. |
+| **CLI control plane** | `flux login`, Bearer **`/api/cli/v1/*`** routes (push, credentials, db-access, backups, migrate, lifecycle). |
+
+Canonical user docs (rendered at **`https://flux.vsl-base.com/docs/`** when deployed): source lives in **`docs/pages/`** — e.g. [Private database access](./docs/pages/guides/database-access.md) → `/docs/guides/database-access`.
 
 **Typical versions in tree:** **Node.js** 20+ / **TypeScript** 5–6 (strict), **Next.js 16** + **React 19** (dashboard), **Auth.js** (`next-auth` v5 beta) with **Drizzle ORM** + **`pg`**, **Stripe** server SDK, **Commander** + **Chalk** (CLI), **dockerode** + **`pg`** + **jsonwebtoken** (`@flux/core`).
 
@@ -175,7 +200,10 @@ Every project row in `flux-system.projects` carries a `mode` column (`v1_dedicat
 | `GET /api/projects/[slug]/logs` | Docker `getTenantContainerLogs` | `200` JSON with explanatory hint string (no Docker call) |
 | `GET /api/projects/[slug]/logs/stream` | SSE stream from Docker container logs | SSE with single `data: {"error":"…"}` event, then closes |
 | `GET /api/cli/v1/logs` | SSE stream from Docker container logs | SSE with single `data: {"error":"…"}` event, then closes |
-| `GET /api/projects/[slug]/credentials` | Returns Postgres URI + anon/service JWTs from container env | `501` — no per-tenant container env to read |
+| `GET /api/projects/[slug]/credentials` | Returns Postgres URI + anon/service JWTs from container env | `501` — use CLI gateway JWT path instead |
+| `GET /api/cli/v1/projects/[hash]/credentials` | Postgres URI + anon/service JWTs from container env | Gateway JWT secret + note (no per-tenant Postgres URI) |
+| `GET /api/cli/v1/projects/[hash]/db-access` | Redacted access plan (tunnel target, capabilities, SSH defaults) | Supported plan + temp-credential capability |
+| `POST /api/cli/v1/projects/[hash]/db-access/temporary-credential` | — (v2 only route; v1 returns error) | Creates short-lived readonly login role; password returned once |
 | `GET /api/projects/[slug]/manifest` | Reads Postgres superuser password from container env | `{ apiUrl, postgresPassword: "", passwordSource: "unavailable" }` |
 | `DELETE /api/projects/[slug]` | `nukeProject` (Docker containers + volume) | `deprovisionProject` (drop shared-cluster schema + role) |
 
@@ -208,6 +236,7 @@ Maps `projects.health_status` to the frontend `ServerStatus` type used by both A
 | Load connection secrets | Shown (when stack healthy) | Hidden (`canRevealCredentials = false`) |
 | Container logs panel | Shown | Hidden |
 | Repair button | Shown when `missing` / `corrupted` | Shown when `healthStatus === "error"` |
+| Private Database Access panel | CLI copy + GUI field hints (v1 → `flux db password`) | Temp creds via `flux db tunnel`; pooled restore restricted |
 | Delete | "destroys all containers and volumes" copy | "removes shared-cluster tenant schema and role" copy |
 | "How to connect" description | Standard Postgres URI + anon/service JWT copy | Notes pooled project; instructs gateway JWT usage |
 
@@ -530,7 +559,125 @@ pnpm --filter dashboard lint
 
 ## CLI reference
 
-Implementation: **`packages/cli/src/index.ts`**. Orchestration: **`ProjectManager`** in **`@flux/core`**.
+Implementation: **`packages/cli/src/index.ts`**. Orchestration: **`ProjectManager`** in **`@flux/core`** (v1) and **`@flux/engine-v2`** (v2). **`flux --help`** and subcommand help are authoritative for flags on your installed build.
+
+### Control plane & provisioning
+
+| Command | Purpose |
+|---------|---------|
+| **`flux login`** / **`flux whoami`** | Store or verify Bearer token against **`FLUX_API_BASE`**. |
+| **`flux init`** | Link or create project from repo-root **`flux.json`** (Foundry hash placeholder). |
+| **`flux create <name>`** | Provision Postgres + PostgREST + Traefik labels (v1) or shared-cluster tenant (v2). |
+| **`flux list`** | Catalog projects: slug, hash, mode, Service URL. |
+
+### Migrations & SQL
+
+| Command | Purpose |
+|---------|---------|
+| **`flux push <path>`** | Apply `.sql` or ordered **`migrations/`** directory; **`--mode raw\|versioned\|repeatable`**, **`--plan`**, **`--dry-run`**. Reloads PostgREST after apply. |
+| **`flux migrations list`** | Show remote **`flux.flux_migrations`** ledger (not local files). |
+| **`flux migrate`** | **v2_shared → v1_dedicated** conversion (destructive; backup gate). |
+| **`flux db-reset -y`** | v1: drop/recreate **`public`** + **`auth`**, reapply bootstrap (backup gate). |
+
+### Lifecycle & env
+
+| Command | Purpose |
+|---------|---------|
+| **`flux start` / `stop` / `nuke`** | Tenant stack lifecycle. **`nuke`** is irreversible (backup gate). |
+| **`flux env set` / `list`** | Merge PostgREST container env; list redacts sensitive keys. |
+| **`flux supabase-rest-path`** | Toggle **`/rest/v1`** Traefik strip on v1 API container. |
+| **`flux reap --hours N`** | Stop idle projects (activity timestamps). |
+
+### Backups
+
+| Command | Purpose |
+|---------|---------|
+| **`flux backup create`** | v1: full DB dump. v2: tenant schema export (`t_<shortId>_api`). |
+| **`flux backup list`** | Trust labels (Restorable / not restore-verified / …). |
+| **`flux backup verify`** | Disposable Postgres **`pg_restore`** — promotes backup to **restorable**. |
+| **`flux backup download`** | Write custom-format archive to disk. |
+
+### Credentials
+
+| Command | Purpose |
+|---------|---------|
+| **`flux project credentials`** | v1: structured Postgres block (user, password, host, port, URL) + JWT keys. v2: gateway JWT secret + note. |
+| **`--field postgres.password`** | Paste-friendly: print **only** the v1 Postgres password (no labels). Also: **`postgres.user`**, **`postgres.host`**, **`postgres.port`**, **`postgres.database`**, **`postgres.url`**. |
+
+### Private database access
+
+Postgres is **never** published on the public internet. The CLI opens a **local SSH tunnel** (`127.0.0.1:15432` by default) to the Docker-internal database host. Implementation: **`packages/cli/src/commands/db-access.ts`**, **`packages/core/src/projects/database-access.ts`**, dashboard routes under **`/api/cli/v1/projects/[hash]/db-access`**.
+
+#### Server configuration
+
+Set on **`flux-web`** ( **`docker/web/.env`** ):
+
+```bash
+# Bastion for SSH -L forwards (returned in access plans as tunnel.sshHost)
+FLUX_DB_TUNNEL_SSH_HOST=178.104.205.138
+# Optional overrides:
+# FLUX_DB_TUNNEL_SSH_USER=root
+# FLUX_DB_TUNNEL_SSH_PORT=22
+```
+
+Sync env + redeploy: **`./bin/launch-web.sh --sync-env-apply`**. Operators need SSH key access to the bastion; the CLI uses **`BatchMode=yes`** (no password prompts).
+
+#### v1 dedicated flow
+
+1. **`flux db tunnel <slug> --hash <hash>`** — opens tunnel; GUI config prints **Host/Port/User** but **does not** print the password.
+2. **`flux db password <slug> --hash <hash>`** — prints **only** the Postgres password for Beekeeper/DBeaver paste.
+3. Connect GUI to **`127.0.0.1`**, tunnel port, user **`postgres`**, SSL off.
+
+Alternative structured reveal: **`flux project credentials <slug> --hash <hash>`** (full Postgres section + JWT keys).
+
+#### v2 shared flow
+
+1. **`flux db tunnel <slug> --hash <hash>`** — creates a **temporary readonly login role**; GUI config shows username + **one-time password** (never pooled admin credentials).
+2. Set search path to **`t_<shortId>_api`** (printed by CLI).
+3. **`flux db password`** **refuses** v2 — use tunnel temp creds instead.
+
+Read/write temp roles require platform policy **`FLUX_DB_ACCESS_ALLOW_READWRITE=1`** (default off).
+
+#### `flux db` commands
+
+| Command | v1 | v2 |
+|---------|----|----|
+| **`flux db access-plan`** | Dedicated container target, capabilities | Tenant schema, temp-credential capability |
+| **`flux db gui-config`** | Static GUI copy | Add **`--create-temp-credentials`** for live password |
+| **`flux db tunnel`** | Tunnel + GUI config | Tunnel + temp creds + one-time password in output |
+| **`flux db shell`** | **`psql`** via tunnel | Temp role + **`--command 'SELECT 1'`** for smoke |
+| **`flux db dump --schema-only`** | — (use **`flux backup create`**) | Schema-scoped **`pg_dump`** via tunnel; full data may fail on RLS |
+| **`flux db restore`** | **`pg_restore`** via tunnel (backup gate) | **Refused** for production pooled schemas |
+| **`flux db password`** | Raw Postgres password | Error with tunnel guidance |
+
+#### Password handoff UX (important)
+
+| Context | Behavior |
+|---------|----------|
+| **`flux db tunnel` (v1)** | GUI block says **`Password: run \`flux db password …\``** — no secret in tunnel output. |
+| **`flux db tunnel` (v2)** | One-time temp password shown when credentials are created. |
+| **`flux project credentials --field postgres.password`** | stdout = password only (scriptable). |
+| **Audit** | v2 temp credential issuance logged in **`project_db_access_audit_events`** (no plaintext password stored). |
+
+#### Operator smoke
+
+```bash
+# Unit tests always; live probes when token + project slug/hash set:
+FLUX_API_TOKEN=… \
+FLUX_DB_ACCESS_SMOKE_SLUG=flux-app-foundry FLUX_DB_ACCESS_SMOKE_HASH=5774112 \
+FLUX_DB_ACCESS_SMOKE_V1_SLUG=yeastcoast FLUX_DB_ACCESS_SMOKE_V1_HASH=ffca33f \
+FLUX_DB_ACCESS_SMOKE_TUNNEL=1 FLUX_DB_ACCESS_SMOKE_DUMP=1 \
+FLUX_DB_ACCESS_SMOKE_SHELL=1 FLUX_DB_ACCESS_SMOKE_RESTORE_GATE=1 \
+./bin/db-access-smoke.sh
+```
+
+Requires local **`psql`**, **`pg_dump`**, **`pg_restore`**, and SSH to **`FLUX_DB_TUNNEL_SSH_HOST`**.
+
+User-facing guide (dashboard): [**Private database access**](./docs/pages/guides/database-access.md) → `/docs/guides/database-access`.
+
+### Legacy local-Docker CLI table (v1-centric)
+
+These commands predate the Bearer control-plane API; many now have **`/api/cli/v1`** equivalents when **`flux login`** is configured:
 
 | Command | Purpose |
 |---------|---------|
@@ -567,7 +714,8 @@ When you just need a quick update, you have two safe paths:
 - **Tracked file path (recommended for repeatability):**
   - write SQL in a file, then run `flux push ./change.sql -p <slug> --hash <hash>`
 - **One-off terminal path (fast ad-hoc):**
-  - use `psql -c "<sql>"` with the connection string from `flux project credentials`
+  - **`flux db shell <slug> --hash <hash> -c "SELECT …"`** through the SSH tunnel, or
+  - **`flux db password <slug> --hash <hash>`** + local **`psql`** to **`127.0.0.1`** while **`flux db tunnel`** runs
 
 ### Backups
 
@@ -588,7 +736,7 @@ Backup trust model:
 
 #### Restore-verified gate (destructive actions)
 
-Flux refuses **project delete**, **factory reset**, **`flux nuke`**, **`flux migrate`** (non–dry-run), and **`flux db-reset`** unless the **newest** backup is **restore-verified** (complete row + `artifact_valid` + `restore_verified`, or a successful verify run). The control plane returns **HTTP 412** with remediation text when the gate blocks an API call.
+Flux refuses **project delete**, **factory reset**, **`flux nuke`**, **`flux migrate`** (non–dry-run), **`flux db-reset`**, and **`flux db restore`** unless the **newest** backup is **restore-verified** (complete row + `artifact_valid` + `restore_verified`, or a successful verify run). The control plane returns **HTTP 412** with remediation text when the gate blocks an API call.
 
 | Surface | Remediation in UI / CLI |
 |---------|-------------------------|
@@ -672,14 +820,26 @@ Root **[`AGENTS.md`](./AGENTS.md)** is the short operator/agent checklist for **
 
 ## Docs and guides
 
+Rendered on the dashboard at **`https://flux.vsl-base.com/docs/`** (source: **`docs/pages/`**, built into **`flux-web`** at deploy time).
+
+| Doc | Path on site | Source |
+|-----|----------------|--------|
+| **Private database access** | `/docs/guides/database-access` | [`docs/pages/guides/database-access.md`](./docs/pages/guides/database-access.md) |
+| **Backups workflow** | `/docs/guides/backups` | [`docs/pages/guides/backups.md`](./docs/pages/guides/backups.md) |
+| **Migrations** | `/docs/guides/migrations` | [`docs/pages/guides/migrations.md`](./docs/pages/guides/migrations.md) |
+| **Next.js + Flux** | `/docs/guides/nextjs` | [`docs/pages/guides/nextjs.md`](./docs/pages/guides/nextjs.md) |
+| **CLI reference** | `/docs/reference/cli` | [`docs/pages/reference/cli.md`](./docs/pages/reference/cli.md) |
+| **Flux v2 architecture** | `/docs/architecture/flux-v2-architecture` | [`docs/pages/architecture/flux-v2-architecture.md`](./docs/pages/architecture/flux-v2-architecture.md) |
+
+Developer stubs in repo root / `docs/` (not all rendered directly):
+
 - **`AGENTS.md`** (repo root) — v2_shared **client-app** pitfalls; keep in sync with [`docs/pages/guides/nextjs.md`](./docs/pages/guides/nextjs.md).
+- **`docs/database-access.md`** — operator/dev index for private DB access (points at canonical guide + README section).
 - **`docs/production-security-audit.md`** — Production security posture, pinned images, and credential API behavior.
 - **`docs/guides/postgresql-import-to-flux.md`** — Version mismatches, **`flux push`** flags, Supabase **`createClient`** **`db.schema: "api"`**, and operator hygiene for full dumps.  
 - **`docs/guides/flux-v1-dedicated-sql-workflows.md`** — Sarah-friendly quick SQL updates on v1 dedicated projects (`flux push` + direct `psql`).
 - **`docs/pages/guides/clerk.md`** — Aligning Clerk JWTs with PostgREST’s **`PGRST_JWT_SECRET`** and the dashboard. Renders at `/docs/guides/clerk`.
-- **`docs/pages/guides/nextjs.md`** — Copy/paste bootstrap for a brand-new Next.js app backed by a Flux pooled (`v2_shared`) project. Renders at `/docs/guides/nextjs`.
 - **`docs/pages/guides/authjs.md`** — Follow-on guide for Auth.js integration and user-scoped RLS (`auth.uid()` + `text` user ids). Renders at `/docs/guides/authjs`.
-- **`docs/pages/architecture/flux-v2-architecture.md`** — v2 invariants, threat model, tiering, and implementation red flags. Renders at `/docs/architecture/flux-v2-architecture` on the dashboard.
 - **`docs/UI-SCOPE-CONTRACT.md`** — CLI-first UI boundary, admission criteria, and scheduled scope revisit protocol.
 - **`docs/TRAJECTORY-TODO.md`** — internal execution roadmap and active priority backlog.
 

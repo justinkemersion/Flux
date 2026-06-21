@@ -2,11 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { resolveProjectDatabaseAccess } from "@flux/core";
 import {
+  buildV1PostgresCredentialSectionLines,
+  parsePostgresConnectionFields,
+} from "../postgres-connection-fields";
+import {
   buildGuiConfigFields,
   dbDumpCommand,
   dbGuiConfigCommand,
+  dbPasswordCommand,
   dbTunnelCommand,
   formatGuiConfigText,
+  formatGuiConfigTextWithCredential,
+  formatV2DbPasswordRefusal,
 } from "./format";
 import { buildSshTunnelArgs } from "./ssh-tunnel";
 
@@ -59,9 +66,22 @@ test("command rendering includes project slug and hash", () => {
     dbDumpCommand("yeastcoast", "ffca33f"),
     "flux db dump yeastcoast --hash ffca33f --output yeastcoast.dump",
   );
+  assert.equal(
+    dbPasswordCommand("yeastcoast", "ffca33f"),
+    "flux db password yeastcoast --hash ffca33f",
+  );
 });
 
-test("gui config for v1 points password to credentials command", () => {
+test("v1 credentials section includes a separate Password line", () => {
+  const fields = parsePostgresConnectionFields(
+    "postgresql://postgres:secret-pass@flux-ffca33f-yeastcoast-db:5432/postgres",
+  );
+  const section = buildV1PostgresCredentialSectionLines(fields).join("\n");
+  assert.match(section, /^Password:  secret-pass$/m);
+  assert.match(section, /^Host:      flux-ffca33f-yeastcoast-db$/m);
+});
+
+test("gui config for v1 points password to flux db password command", () => {
   const plan = resolveProjectDatabaseAccess({
     id: V1_PROJECT_ID,
     slug: "yeastcoast",
@@ -70,10 +90,18 @@ test("gui config for v1 points password to credentials command", () => {
   });
   const fields = buildGuiConfigFields(plan);
   assert.equal(fields.user, "postgres");
-  assert.match(fields.passwordBehavior, /flux project credentials/);
+  assert.match(fields.passwordBehavior, /flux db password yeastcoast --hash ffca33f/);
   const rendered = formatGuiConfigText(plan).join("\n");
   assert.doesNotMatch(rendered, /postgres:\/\//);
+  assert.doesNotMatch(rendered, /secret-pass/);
+  assert.match(rendered, /Password: run `flux db password yeastcoast --hash ffca33f`/);
   assert.match(rendered, /only works while `flux db tunnel`/);
+});
+
+test("flux db password refusal explains v2_shared temporary credentials", () => {
+  const message = formatV2DbPasswordRefusal("flux-app-foundry", "5774112");
+  assert.match(message, /v2_shared projects use temporary scoped credentials/);
+  assert.match(message, /flux db tunnel flux-app-foundry --hash 5774112/);
 });
 
 test("gui config for v2 does not expose admin credentials", () => {
@@ -87,4 +115,24 @@ test("gui config for v2 does not expose admin credentials", () => {
   assert.match(fields.passwordBehavior, /flux db tunnel/);
   assert.doesNotMatch(fields.passwordBehavior, /postgresql:\/\//);
   assert.match(fields.searchPath ?? "", /t_5ecfa3ab72d1_api/);
+});
+
+test("gui config for v2 with temp credential shows one-time password only when created", () => {
+  const plan = resolveProjectDatabaseAccess({
+    id: V1_PROJECT_ID,
+    slug: "flux-app-foundry",
+    hash: "5774112",
+    mode: "v2_shared",
+  });
+  const rendered = formatGuiConfigTextWithCredential(plan, {
+    username: "flux_temp_abcd1234_ro",
+    password: "one-time-temp-pass",
+    access: "readonly",
+    expiresAt: "2026-06-20T12:00:00.000Z",
+    tenantSchema: "t_c50731f62edd_api",
+    searchPath: ["t_c50731f62edd_api", "public"],
+  }).join("\n");
+  assert.match(rendered, /Password: one-time-temp-pass/);
+  assert.doesNotMatch(rendered, /postgresql:\/\//);
+  assert.doesNotMatch(rendered, /SHARED_POSTGRES/);
 });

@@ -3,6 +3,7 @@ import {
   cmdDbAccessPlan,
   cmdDbDump,
   cmdDbGuiConfig,
+  cmdDbPassword,
   cmdDbRestore,
   cmdDbShell,
   cmdDbTunnel,
@@ -105,6 +106,16 @@ export function registerDbCommands(program: Command): void {
   guiConfigCmd.action(
     cliActionWithFlux(async (flux, name: string | undefined) => {
       await cmdDbGuiConfig(name, collectDbAccessOptions(guiConfigCmd), flux);
+    }),
+  );
+
+  const passwordCmd = dbCmd
+    .command("password")
+    .description("Print the v1 dedicated Postgres password for GUI tools (paste-friendly)");
+  registerDbAccessFlags(passwordCmd);
+  passwordCmd.action(
+    cliActionWithFlux(async (flux, name: string | undefined) => {
+      await cmdDbPassword(name, collectDbAccessOptions(passwordCmd), flux);
     }),
   );
 

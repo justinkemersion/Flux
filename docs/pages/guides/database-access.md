@@ -17,7 +17,7 @@ Postgres stays private on the Flux platform. Project owners open a temporary loc
 
 - Tunnel target: the project's dedicated Postgres container.
 - GUI user: `postgres`.
-- Password: use `flux project credentials <project> --hash <hash>` (existing credentials flow).
+- Password: use `flux db password <project> --hash <hash>` or `flux project credentials … --field postgres.password` (v1 dedicated only).
 - CLI: `flux db tunnel`, `flux db gui-config`, `flux db access-plan`, and `flux db restore` (with backup gates).
 
 ## v2 pooled behavior
@@ -31,11 +31,38 @@ Postgres stays private on the Flux platform. Project owners open a temporary loc
 ## Beekeeper / DBeaver / TablePlus setup
 
 1. Run `flux db tunnel <project> --hash <hash>`.
-2. Copy the username and one-time password printed in the GUI config block.
-3. Create a Postgres connection to `127.0.0.1` and the local port printed by the CLI (default `15432`).
-4. SSL: disabled over the tunnel.
-5. For pooled projects, set search path to your tenant schema (the CLI prints it).
-6. Keep the tunnel terminal open while the GUI session is active.
+2. For **v1 dedicated**, reveal the Postgres password with `flux db password <project> --hash <hash>` and paste it into your SQL viewer.
+3. For **v2 pooled**, copy the username and one-time password printed in the GUI config block when the tunnel creates temporary credentials.
+4. Create a Postgres connection to `127.0.0.1` and the local port printed by the CLI (default `15432`).
+5. SSL: disabled over the tunnel.
+6. For pooled projects, set search path to your tenant schema (the CLI prints it).
+7. Keep the tunnel terminal open while the GUI session is active.
+
+## Getting the password for your SQL viewer
+
+`flux db tunnel` does not print long-lived passwords. Use an explicit reveal command instead:
+
+```bash
+flux db password yeastcoast --hash ffca33f
+```
+
+That prints only the Postgres password on stdout — suitable for pasting into Beekeeper, DBeaver, or TablePlus.
+
+Alternative field selector on the existing credentials command:
+
+```bash
+flux project credentials yeastcoast --hash ffca33f --field postgres.password
+```
+
+Structured v1 output (user, password, host, port, and connection URL) is available without `--field`:
+
+```bash
+flux project credentials yeastcoast --hash ffca33f
+```
+
+**v1 dedicated** uses the project Postgres password from the control plane.
+
+**v2 shared/pooled** never exposes pooled admin credentials. Run `flux db tunnel` to create a temporary scoped readonly role; the one-time password appears in the tunnel GUI config when credentials are created.
 
 ## psql setup
 
