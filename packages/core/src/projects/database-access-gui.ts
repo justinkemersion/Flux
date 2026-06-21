@@ -1,11 +1,10 @@
 /**
  * Canonical GUI connection hints for private database access (CLI + dashboard).
  * Labels and field order live here so clients cannot drift.
+ *
+ * Browser-safe: no imports from database-access.ts (Docker/control-plane).
  */
-import {
-  resolveProjectDatabaseAccess,
-  type DatabaseAccessPlan,
-} from "./database-access.ts";
+import type { DatabaseAccessPlan } from "./database-access.ts";
 
 export const DATABASE_GUI_LABELS = {
   connectionName: "Connection Name",
@@ -228,21 +227,33 @@ export type DashboardDatabaseGuiInput = {
 export function buildDashboardDatabaseGuiHints(
   input: DashboardDatabaseGuiInput,
 ): DatabaseGuiConnectionHints {
-  const plan = resolveProjectDatabaseAccess(
-    {
-      id: "00000000-0000-0000-0000-000000000000",
-      slug: input.slug,
-      hash: input.hash,
-      mode: input.mode,
-      ...(input.tenantSchema
-        ? {
-            apiSchemaName: input.tenantSchema,
-            apiSchemaStrategy: "tenant_schema" as const,
-          }
-        : {}),
-    },
-    { localPort: input.localPort ?? 15_432 },
-  );
+  const base = {
+    connectionName: `${input.slug} via Flux`,
+    type: "Postgres" as const,
+    host: "127.0.0.1" as const,
+    port: input.localPort ?? 15_432,
+    databaseName: "postgres",
+    sslMode: "disabled over tunnel",
+    guiSshTunnel: "off" as const,
+    guiSshTunnelNote: GUI_SSH_TUNNEL_OFF_VALUE,
+    tunnelNote: "This only works while `flux db tunnel` is running.",
+  };
 
-  return buildDatabaseGuiConnectionHints(plan);
+  if (input.mode === "v1_dedicated") {
+    return {
+      ...base,
+      user: "postgres",
+      passwordHint: dbPasswordCommandHint(input.slug, input.hash),
+    };
+  }
+
+  const tenantSchema = input.tenantSchema ?? "t_<shortId>_api";
+  return {
+    ...base,
+    user: "temporary project-scoped role from `flux db tunnel`",
+    passwordHint:
+      "Created when you run `flux db tunnel`. Flux never exposes pooled admin credentials.",
+    tenantSchema,
+    searchPath: `${tenantSchema}, public`,
+  };
 }

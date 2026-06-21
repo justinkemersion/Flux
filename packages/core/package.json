@@ -15,6 +15,7 @@
     "./sql-migrations": "./src/sql-migrations.ts",
     "./sql-repeatable-scripts": "./src/sql-repeatable-scripts.ts",
     "./schema-inspection": "./src/schema-inspection/index.ts",
+    "./database-access-gui": "./src/projects/database-access-gui.ts",
     "./test/sql-assertions": "./src/test/sql-assertions.ts"
   },
   "scripts": {

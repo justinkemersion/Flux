@@ -29,7 +29,7 @@ export {
   listDatabaseGuiConfigFields,
   type DatabaseGuiConfigField,
   type DatabaseGuiConnectionHints,
-} from "@flux/core";
+} from "@flux/core/database-access-gui";
 
 export function privateDbAccessIntro(mode: "v1_dedicated" | "v2_shared"): string {
   if (mode === "v2_shared") {

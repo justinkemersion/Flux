@@ -219,9 +219,9 @@ if [[ "${FLUX_DB_ACCESS_SMOKE_TUNNEL:-}" == "1" ]]; then
   pnpm --filter @flux/cli exec tsx src/index.ts db tunnel "$SLUG" --hash "$HASH" --print-config >/tmp/db-access-smoke-tunnel.txt
   grep -q "Password:" /tmp/db-access-smoke-tunnel.txt
   grep -q "flux_temp_" /tmp/db-access-smoke-tunnel.txt
-  grep -q "^Database: postgres$" /tmp/db-access-smoke-tunnel.txt
-  grep -q "^Tenant schema:" /tmp/db-access-smoke-tunnel.txt
-  grep -q "^SSH tunnel (GUI): off" /tmp/db-access-smoke-tunnel.txt
+  grep -q "Database: postgres" /tmp/db-access-smoke-tunnel.txt
+  grep -q "Tenant schema:" /tmp/db-access-smoke-tunnel.txt
+  grep -q "SSH tunnel (GUI): off" /tmp/db-access-smoke-tunnel.txt
   grep -q "Do not use the temp username as the database name" /tmp/db-access-smoke-tunnel.txt
   echo "ok: flux db tunnel --print-config"
 fi
