@@ -11,6 +11,13 @@ import {
   type DbDumpOptions,
   type DbRestoreOptions,
 } from "../../commands/db-access";
+import {
+  cmdDbInspect,
+  cmdDbTables,
+  cmdDbDescribe,
+  cmdDbCounts,
+  type DbInspectOptions,
+} from "../../commands/db-inspect";
 import { cliActionWithFlux, HASH_FLAG_DESC } from "./shared";
 
 function collectDbAccessOptions(cmd: Command): DbAccessCommonOptions {
@@ -217,4 +224,77 @@ export function registerDbCommands(program: Command): void {
         );
       }),
     );
+
+  // ---------------------------------------------------------------------------
+  // Read-only schema inspection commands (v1 + v2)
+  // ---------------------------------------------------------------------------
+
+  function registerInspectFlags(cmd: Command): void {
+    cmd
+      .option("-p, --project <name>", "Project slug (overrides positional if set)")
+      .option("--hash <hex>", HASH_FLAG_DESC);
+  }
+
+  function collectInspectOptions(cmd: Command): DbInspectOptions {
+    const opts = cmd.opts<{ project?: string; hash?: string; exact?: boolean }>();
+    const out: DbInspectOptions = {};
+    if (opts.project) out.project = opts.project;
+    if (opts.hash) out.hash = opts.hash;
+    if (opts.exact === true) out.exact = true;
+    return out;
+  }
+
+  const inspectCmd = dbCmd
+    .command("inspect")
+    .description(
+      "Project-level schema overview: mode, table count, row estimates, warnings",
+    )
+    .argument("[name]", 'Project slug (default: "slug" in flux.json)');
+  registerInspectFlags(inspectCmd);
+  inspectCmd.action(
+    cliActionWithFlux(async (flux, name: string | undefined) => {
+      await cmdDbInspect(name, collectInspectOptions(inspectCmd), flux);
+    }),
+  );
+
+  const tablesCmd = dbCmd
+    .command("tables")
+    .description("List tables with column count, row estimate, and RLS state")
+    .argument("[name]", 'Project slug (default: "slug" in flux.json)');
+  registerInspectFlags(tablesCmd);
+  tablesCmd.action(
+    cliActionWithFlux(async (flux, name: string | undefined) => {
+      await cmdDbTables(name, collectInspectOptions(tablesCmd), flux);
+    }),
+  );
+
+  const describeCmd = dbCmd
+    .command("describe")
+    .description("Show column details, primary key, and foreign keys for a table")
+    .argument("<table>", "Table name")
+    .argument("[name]", 'Project slug (default: "slug" in flux.json)');
+  registerInspectFlags(describeCmd);
+  describeCmd.action(
+    cliActionWithFlux(
+      async (flux, table: string, name: string | undefined) => {
+        await cmdDbDescribe(table, name, collectInspectOptions(describeCmd), flux);
+      },
+    ),
+  );
+
+  const countsCmd = dbCmd
+    .command("counts")
+    .description("Show row counts for all tables (approximate by default)")
+    .argument("[name]", 'Project slug (default: "slug" in flux.json)')
+    .option(
+      "--exact",
+      "Run exact count(*) — slower; only available for schemas with ≤5 tables",
+      false,
+    );
+  registerInspectFlags(countsCmd);
+  countsCmd.action(
+    cliActionWithFlux(async (flux, name: string | undefined) => {
+      await cmdDbCounts(name, collectInspectOptions(countsCmd), flux);
+    }),
+  );
 }
