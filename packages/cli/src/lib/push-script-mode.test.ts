@@ -28,6 +28,17 @@ test("resolvePushScriptMode infers versioned under migrations/", () => {
   );
 });
 
+test("resolvePushScriptMode infers versioned under sql/migrations/", () => {
+  const cwd = "/repo";
+  assert.equal(
+    resolvePushScriptMode({
+      resolvedFilePath: resolve(cwd, "sql/migrations/001.sql"),
+      cwd,
+    }),
+    "versioned",
+  );
+});
+
 test("resolvePushScriptMode infers raw outside migrations/", () => {
   const cwd = "/repo";
   assert.equal(

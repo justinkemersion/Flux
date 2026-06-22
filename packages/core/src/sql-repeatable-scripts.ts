@@ -159,9 +159,16 @@ export function defaultRepeatableScriptId(
 
 export type SingleFilePushScriptMode = "raw" | "versioned";
 
+/** Repo-relative prefixes where single-file push defaults to versioned (ledger). */
+export const VERSIONED_MIGRATION_PATH_PREFIXES = [
+  "migrations/",
+  "flux/migrations/",
+  "sql/migrations/",
+] as const;
+
 /**
  * Infers default push mode for a single SQL file when `--mode` is omitted.
- * Files under `migrations/` or `flux/migrations/` default to versioned; else raw.
+ * Files under {@link VERSIONED_MIGRATION_PATH_PREFIXES} default to versioned; else raw.
  */
 export function inferDefaultSingleFilePushMode(
   resolvedPath: string,
@@ -169,8 +176,7 @@ export function inferDefaultSingleFilePushMode(
 ): SingleFilePushScriptMode {
   const rel = defaultRepeatableScriptId(resolvedPath, cwd);
   if (
-    rel.startsWith("migrations/") ||
-    rel.startsWith("flux/migrations/")
+    VERSIONED_MIGRATION_PATH_PREFIXES.some((prefix) => rel.startsWith(prefix))
   ) {
     return "versioned";
   }

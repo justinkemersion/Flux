@@ -60,7 +60,7 @@ Lines are always shown in **filename order** (the migration timeline), not group
 
 Versioned migrations are immutable schema changes. They run once and are recorded in the migration ledger. If a previously applied migration changes checksum, Flux refuses to run it again.
 
-Directory pushes are always versioned. Single files under **`migrations/`** or **`flux/migrations/`** default to versioned mode as well.
+Directory pushes are always versioned. Single files under **`migrations/`**, **`flux/migrations/`**, or **`sql/migrations/`** default to versioned mode as well.
 
 ```bash
 flux push migrations/0001_profiles.sql
@@ -85,7 +85,7 @@ By default, repeatable **`script_id`** is the repo-relative path (e.g. `flux/scr
 | Mode | When | Ledger |
 |------|------|--------|
 | **raw** (default outside `migrations/`) | Ad-hoc SQL, always re-executes | None |
-| **versioned** (default under `migrations/`) | One-time schema migrations | `flux.flux_migrations` |
+| **versioned** (default under `migrations/`, `flux/migrations/`, `sql/migrations/`) | One-time schema migrations | `flux.flux_migrations` |
 | **repeatable** (`--mode repeatable`) | Idempotent desired-state scripts | `flux.flux_repeatable_scripts` |
 
 ```bash

@@ -95,6 +95,10 @@ test("inferDefaultSingleFilePushMode", () => {
     "versioned",
   );
   assert.equal(
+    inferDefaultSingleFilePushMode(resolve(cwd, "sql/migrations/001.sql"), cwd),
+    "versioned",
+  );
+  assert.equal(
     inferDefaultSingleFilePushMode(resolve(cwd, "flux/scripts/seed.sql"), cwd),
     "raw",
   );

@@ -26,7 +26,7 @@ Target the project explicitly (slug and 7-character hash from **`flux list`**, o
 
 **Directory mode** applies an ordered set of `.sql` files and records each success in a tenant-local ledger table (`flux.flux_migrations` in the reserved **`flux`** schema—not exposed via PostgREST). On **v2_shared**, the ledger is keyed by **`(tenant_schema, version)`** so pooled tenants do not share migration rows.
 
-**Single-file push** supports three modes: **raw** (no ledger; default outside `migrations/`), **versioned** (ledger in `flux.flux_migrations`; default under `migrations/`), and **repeatable** (ledger in `flux.flux_repeatable_scripts`; re-runs when checksum changes, or with `--force`).
+**Single-file push** supports three modes: **raw** (no ledger; default outside migration folders), **versioned** (ledger in `flux.flux_migrations`; default under `migrations/`, `flux/migrations/`, or `sql/migrations/`), and **repeatable** (ledger in `flux.flux_repeatable_scripts`; re-runs when checksum changes, or with `--force`).
 
 **Do not edit a versioned migration after it has been applied. Create a new migration instead.** Flux compares checksums on every versioned push; changed files raise a clear conflict instead of silently re-running SQL.
 
