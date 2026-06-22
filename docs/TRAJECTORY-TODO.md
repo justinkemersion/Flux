@@ -32,7 +32,7 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-04-28`
+- Last updated: `2026-06-21`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-v2-shared -> deploy-gateway -> deploy-web`
 
@@ -179,8 +179,31 @@ Not intended for public docs or marketing consumption.
 
 ---
 
+## Maker Platform Roadmap
+
+Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at a time with a full `pnpm check:architecture && typecheck && test` gate between each.
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| P0 | `done` | v2_shared schema inspection foundation |
+| P1 | `todo` | DB Inspection CLI (`flux db inspect\|tables\|describe\|counts`) |
+| P2 | `todo` | Dashboard Schema Explorer |
+| P3 | `todo` | Minimal Dashboard Data Preview (owner/admin, LIMIT 50) |
+| P4 | `todo` | Project Doctor (`flux doctor`) |
+| P5 | `todo` | Backup Visibility UX polish |
+| P6 | `todo` | Migration Plan/Diff Visibility |
+| P7 | `todo` | Activity Timeline |
+| P8 | `todo` | Project metadata foundation (description/brief) |
+| P9 | `todo` | Active/Dormant Lifecycle |
+| P10 | `todo` | Portfolio Dashboard |
+| P11 | `todo` | FLUX.md Project Brief |
+| P12 | `todo` | AI-assisted brief + summaries |
+
+---
+
 ## Recently completed
 
+- `done` — **Maker Platform Phase 0:** v2_shared schema inspection — `inspectTenantSchema` now accepts `mode` from options (defaults to `v1_dedicated` for backward compat); `createPooledTenantCatalogQueryFn` in `pooled-schema-inspection.ts` provides a read-only pooled query path via `FLUX_SHARED_POSTGRES_URL`; `POST schema-inspection` route now supports both v1 and v2 (was 501 for v2); 7 new unit tests in `inspect.test.ts`; 380 tests, 0 failures.
 - `done` — Introduced ordered orchestrator deploy script (`bin/deploy-all.sh`)
 - `done` — Added collision guard and ownership markers in engine-v2 provisioning
 - `done` — Added v2 rollback deprovision path to prevent orphan schema/role

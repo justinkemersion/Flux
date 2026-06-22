@@ -10,6 +10,7 @@ import {
 } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
+import { createPooledTenantCatalogQueryFn } from "@/src/lib/pooled-schema-inspection";
 
 export const runtime = "nodejs";
 
@@ -124,24 +125,6 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
     return jsonError("Project not found for this hash", 404);
   }
 
-  if (row.mode !== "v1_dedicated") {
-    logSchemaInspectionAudit({
-      userId: auth.userId,
-      hash,
-      slug: row.slug,
-      durationMs: Date.now() - started,
-      status: "unsupported",
-    });
-    return jsonError(
-      "Schema inspection is currently implemented for v1_dedicated only.",
-      501,
-      {
-        error: "schema_inspection_unsupported",
-        mode: row.mode,
-      },
-    );
-  }
-
   const apiSchema = resolveTenantApiSchemaName({
     id: row.id,
     mode: row.mode,
@@ -154,12 +137,21 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
 
   const pm = getProjectManager();
   try {
-    const result = await pm.inspectTenantSchema({
-      slug: row.slug,
-      hash,
-      apiSchema,
-      includeExactCounts,
-    });
+    const queryRows =
+      row.mode === "v2_shared"
+        ? createPooledTenantCatalogQueryFn(apiSchema)
+        : undefined;
+
+    const result = await pm.inspectTenantSchema(
+      {
+        slug: row.slug,
+        hash,
+        apiSchema,
+        mode: row.mode,
+        includeExactCounts,
+      },
+      queryRows,
+    );
     logSchemaInspectionAudit({
       userId: auth.userId,
       hash,

@@ -137,7 +137,7 @@ export async function inspectTenantSchema(
     const summary = buildSchemaInspectionSummary({ tables, relationships });
 
     const result: SchemaInspectionResult = {
-      mode: "v1_dedicated",
+      mode: options.mode ?? "v1_dedicated",
       project: {
         slug: options.slug,
         hash: options.hash,

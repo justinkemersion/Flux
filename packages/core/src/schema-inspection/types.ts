@@ -155,9 +155,7 @@ export class SchemaInspectionUnsupportedError extends Error {
   readonly mode: SchemaInspectionMode;
 
   constructor(mode: SchemaInspectionMode) {
-    super(
-      `Schema deep inspection is v1_dedicated only (got ${mode}). v2_shared remains parked.`,
-    );
+    super(`Schema inspection is not available for mode: ${mode}.`);
     this.name = "SchemaInspectionUnsupportedError";
     this.mode = mode;
   }
@@ -168,6 +166,11 @@ export interface InspectTenantSchemaOptions {
   hash: string;
   apiSchema: string;
   apiUrl?: string;
+  /**
+   * Engine mode for the result payload. Defaults to "v1_dedicated" when omitted
+   * so existing callers that do not pass a mode remain unaffected.
+   */
+  mode?: SchemaInspectionMode;
   /** Default false — exact count(*) only when explicitly enabled. */
   includeExactCounts?: boolean;
 }

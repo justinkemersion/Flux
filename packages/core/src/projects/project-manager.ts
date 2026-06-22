@@ -76,7 +76,10 @@ import {
   replaceTenantApiSchemaFromPlainSqlFile,
   resetTenantDatabaseForImport,
 } from "./project-manager/sql.ts";
-import { inspectTenantSchema as runInspectTenantSchema } from "../schema-inspection/inspect.ts";
+import {
+  inspectTenantSchema as runInspectTenantSchema,
+  type TenantCatalogQueryFn,
+} from "../schema-inspection/inspect.ts";
 import type {
   InspectTenantSchemaOptions,
   SchemaInspectionResult,
@@ -296,8 +299,9 @@ export class ProjectManager {
 
   async inspectTenantSchema(
     options: InspectTenantSchemaOptions,
+    queryRows?: TenantCatalogQueryFn,
   ): Promise<SchemaInspectionResult> {
-    return runInspectTenantSchema(this.ctx, options);
+    return runInspectTenantSchema(this.ctx, options, queryRows);
   }
 
   async resetTenantDatabaseForImport(
