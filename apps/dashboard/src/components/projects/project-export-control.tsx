@@ -22,6 +22,7 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { ProjectModalShell } from "@/src/components/projects/modal-shell";
 import { ProjectDbAccessPanel } from "@/src/components/projects/project-db-access-panel";
 import { useProjectBackupTrust } from "@/src/lib/project-backup-trust-client";
+import { ProjectSchemaExplorer } from "@/src/components/projects/project-schema-explorer";
 
 type Props = {
   slug: string;
@@ -561,6 +562,24 @@ export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
 
         <section
           className={`${modalSectionClass} border-t border-zinc-200/70 pt-5 dark:border-zinc-800/80`}
+          aria-labelledby="database-tools-schema-heading"
+        >
+          <h3
+            id="database-tools-schema-heading"
+            className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
+          >
+            Schema
+          </h3>
+          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+            Tables, columns, relationships, and RLS state.
+          </p>
+          <div className="mt-4">
+            <ProjectSchemaExplorer slug={slug} hash={hash} />
+          </div>
+        </section>
+
+        <section
+          className={`${modalSectionClass} border-t border-zinc-200/70 pt-5 dark:border-zinc-800/80`}
           aria-label="Coming soon database tools"
         >
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-500">
@@ -569,7 +588,6 @@ export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
           <ul className="mt-2 space-y-1.5 text-xs text-zinc-500 dark:text-zinc-500">
             <li>Import SQL dump</li>
             <li>Seed runner</li>
-            <li>Table browser</li>
           </ul>
         </section>
       </ProjectModalShell>
