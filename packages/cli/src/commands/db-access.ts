@@ -106,7 +106,7 @@ async function resolveV2Credential(
   });
 }
 
-async function resolveV1Auth(hash: string): Promise<DbConnectionAuth> {
+async function resolveV1Auth(hash: string): Promise<Extract<DbConnectionAuth, { mode: "v1_dedicated" }>> {
   const client = getApiClient();
   const creds = await client.getProjectCredentialsByHash(hash);
   if (creds.mode !== "v1_dedicated") {

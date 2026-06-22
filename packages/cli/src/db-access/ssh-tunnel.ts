@@ -92,7 +92,7 @@ function resolvePreferDockerNetwork(): string | undefined {
 }
 
 async function inspectContainerIpOnNetwork(
-  input: SshExecInput & { sshHost: string; sshUser: string },
+  input: Omit<SshExecInput, "remoteCommand"> & { sshHost: string; sshUser: string },
   containerName: string,
   networkName: string,
   spawnFn: typeof spawn,

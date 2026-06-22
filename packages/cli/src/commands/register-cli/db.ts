@@ -215,7 +215,7 @@ export function registerDbCommands(program: Command): void {
           name,
           {
             ...opts,
-            input: restoreOpts.input,
+            ...(restoreOpts.input !== undefined ? { input: restoreOpts.input } : {}),
             skipBackupCheck: restoreOpts.skipBackupCheck === true,
             yesIKnowThisCanOverwriteData:
               restoreOpts.yesIKnowThisCanOverwriteData === true,
