@@ -158,14 +158,28 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
   if (mode === "v2_shared") {
     try {
       const applied = await listPooledAppliedMigrations({ tenantSchema: apiSchema });
-      checks.push(
-        pass(
-          "Migration ledger",
-          applied.length === 0
-            ? "Readable — no migrations applied yet"
-            : `Readable — ${String(applied.length)} migration${applied.length === 1 ? "" : "s"} applied`,
-        ),
-      );
+      const tableCount =
+        schemaResult.status === "fulfilled" ? schemaResult.value.tableCount : 0;
+
+      if (applied.length === 0 && tableCount > 0) {
+        checks.push(
+          warn(
+            "Migration ledger",
+            `Readable — ledger is empty but ${String(tableCount)} table${tableCount === 1 ? "" : "s"} exist`,
+            "Migrations were applied outside the versioned ledger (raw/repeatable push or pre-ledger). " +
+              "Future migrations will be tracked; existing tables are unaffected.",
+          ),
+        );
+      } else {
+        checks.push(
+          pass(
+            "Migration ledger",
+            applied.length === 0
+              ? "Readable — no migrations applied yet"
+              : `Readable — ${String(applied.length)} migration${applied.length === 1 ? "" : "s"} applied`,
+          ),
+        );
+      }
     } catch (err) {
       checks.push(
         warn(
