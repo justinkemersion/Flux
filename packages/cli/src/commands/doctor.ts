@@ -5,6 +5,9 @@ import { resolveHash } from "../project-resolve.js";
 import { B, sectionBanner } from "../cli-layout.js";
 import type { DoctorCheck, DoctorReport } from "../api-client/doctor.js";
 
+// Keep in sync with packages/cli/package.json + cli-handlers/cli-version.ts
+const DOCTOR_CLI_VERSION = "1.1.0";
+
 function statusIcon(status: DoctorCheck["status"]): string {
   if (status === "pass") return chalk.green("PASS");
   if (status === "warn") return chalk.yellow("WARN");
@@ -40,6 +43,7 @@ function printReport(report: DoctorReport): void {
       `${B}${chalk.red("✗")} ${chalk.red.bold("Project has problems")}${chalk.dim(` — ${String(failCount)} failure${failCount === 1 ? "" : "s"}, ${String(warnCount)} warning${warnCount === 1 ? "" : "s"}`)}.`,
     );
   }
+  console.log(chalk.dim(`${B}flux ${DOCTOR_CLI_VERSION} · ${new Date(report.generatedAt).toISOString()}`));
   console.log();
 }
 

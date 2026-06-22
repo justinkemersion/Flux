@@ -179,6 +179,22 @@ Not intended for public docs or marketing consumption.
 
 ---
 
+## CLI versioning contract
+
+`packages/cli` version is the canonical user-facing capability indicator.
+Bump the **minor** version when a meaningful phase group ships; bump **patch** for fixes.
+
+| Version | Phases | Capability tier |
+|---------|--------|-----------------|
+| `1.1.0` | 0–4 | DB inspection · schema/data explorer · project doctor |
+| `1.2.0` | 5–7 | Backup visibility UX · migration plan/diff · activity timeline |
+| `1.3.0` | 8–10 | Active/dormant lifecycle · portfolio dashboard · FLUX.md |
+| `2.0.0` | 11–12 | AI summaries (Layer 3 milestone) |
+
+**Rule:** `packages/cli/package.json` version, `CLI_VERSION` constant in `cli-handlers/cli-version.ts`, and the version printed in `flux doctor` output must stay in sync. Update all three atomically.
+
+---
+
 ## Maker Platform Roadmap
 
 Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at a time with a full `pnpm check:architecture && typecheck && test` gate between each.
