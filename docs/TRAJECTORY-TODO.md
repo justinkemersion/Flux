@@ -188,7 +188,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 | P0 | `done` | v2_shared schema inspection foundation |
 | P1 | `done` | DB Inspection CLI (`flux db inspect\|tables\|describe\|counts`) |
 | P2 | `done` | Dashboard Schema Explorer |
-| P3 | `todo` | Minimal Dashboard Data Preview (owner/admin, LIMIT 50) |
+| P3 | `done` | Minimal Dashboard Data Preview (owner/admin, LIMIT 50) |
 | P4 | `todo` | Project Doctor (`flux doctor`) |
 | P5 | `todo` | Backup Visibility UX polish |
 | P6 | `todo` | Migration Plan/Diff Visibility |
@@ -203,6 +203,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 
 ## Recently completed
 
+- `done` — **Maker Platform Phase 3:** Minimal Data Preview — `buildPreviewRowsSql` (identifier-validated, server-enforced LIMIT 50, ORDER BY PK); `GET /api/projects/[slug]/tables/[table]/rows` (session-authed, validates table against inspection); Schema/Rows tab toggle in `ProjectSchemaExplorer`; copy row JSON; null display; labeled as project-owner inspection; 380 tests, 0 failures.
 - `done` — **Maker Platform Phase 2:** Dashboard Schema Explorer — `GET /api/projects/[slug]/schema` (session-authed, v1+v2); `ProjectSchemaExplorer` client component (table list → detail, columns, PK/FK, RLS badges); replaces "Table browser" stub in Database tools modal; `@flux/core/schema-inspection-types` browser-safe subpath added to client allowlist; 380 tests, 0 failures.
 - `done` — **Maker Platform Phase 1:** DB Inspection CLI — `flux db inspect|tables|describe|counts`; formatter in `lib/db-inspect-output.ts`; handlers in `commands/db-inspect.ts`; registered under `flux db` in `register-cli/db.ts`; v1+v2; `--exact` flag on counts; 380 tests, 0 failures.
 - `done` — **Maker Platform Phase 0:** v2_shared schema inspection — `inspectTenantSchema` now accepts `mode` from options (defaults to `v1_dedicated` for backward compat); `createPooledTenantCatalogQueryFn` in `pooled-schema-inspection.ts` provides a read-only pooled query path via `FLUX_SHARED_POSTGRES_URL`; `POST schema-inspection` route now supports both v1 and v2 (was 501 for v2); 7 new unit tests in `inspect.test.ts`; 380 tests, 0 failures.

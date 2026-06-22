@@ -130,3 +130,36 @@ export function buildExactRowCountSql(schema: string, tableName: string): string
   const tableQ = `"${tableName.replace(/"/g, '""')}"`;
   return `SELECT count(*)::bigint AS exact_rows FROM ${schemaQ}.${tableQ}`;
 }
+
+/**
+ * Builds a bounded SELECT for row preview. Both identifiers are validated
+ * against the catalog name pattern before use. The LIMIT is enforced
+ * server-side — callers must not allow user-supplied limit values.
+ *
+ * Rows are ordered by the first primary key column if provided, else by
+ * system insertion order (no guarantee). This is stable enough for a
+ * preview view and avoids expensive sorts on large tables.
+ */
+export function buildPreviewRowsSql(
+  schema: string,
+  tableName: string,
+  limit: number,
+  primaryKeys: readonly string[] = [],
+): string {
+  assertFluxApiSchemaIdentifier(schema);
+  assertFluxApiSchemaIdentifier(tableName);
+  const schemaQ = `"${schema.replace(/"/g, '""')}"`;
+  const tableQ = `"${tableName.replace(/"/g, '""')}"`;
+  const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 200);
+  const orderClause =
+    primaryKeys.length > 0
+      ? `ORDER BY ${primaryKeys
+          .slice(0, 2)
+          .map((pk) => {
+            assertFluxApiSchemaIdentifier(pk);
+            return `"${pk.replace(/"/g, '""')}"`;
+          })
+          .join(", ")}`
+      : "";
+  return `SELECT * FROM ${schemaQ}.${tableQ} ${orderClause} LIMIT ${String(safeLimit)}`.trim();
+}

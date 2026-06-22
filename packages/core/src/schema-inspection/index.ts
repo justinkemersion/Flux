@@ -30,6 +30,7 @@ export {
   buildForeignKeysSql,
   buildGrantsSql,
   buildIndexesSql,
+  buildPreviewRowsSql,
   buildPrimaryKeysSql,
   buildTablesMetaSql,
 } from "./sql.ts";
