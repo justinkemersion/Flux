@@ -189,7 +189,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 | P1 | `done` | DB Inspection CLI (`flux db inspect\|tables\|describe\|counts`) |
 | P2 | `done` | Dashboard Schema Explorer |
 | P3 | `done` | Minimal Dashboard Data Preview (owner/admin, LIMIT 50) |
-| P4 | `todo` | Project Doctor (`flux doctor`) |
+| P4 | `done` | Project Doctor (`flux doctor`) |
 | P5 | `todo` | Backup Visibility UX polish |
 | P6 | `todo` | Migration Plan/Diff Visibility |
 | P7 | `todo` | Activity Timeline |
@@ -203,6 +203,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 
 ## Recently completed
 
+- `done` — **Maker Platform Phase 4:** Project Doctor — `runProjectDoctor` server-side orchestration (schema/DB, API probe, migration ledger, backup trust); `POST /api/cli/v1/projects/:hash/doctor` (CLI bearer) + `GET /api/projects/[slug]/doctor` (session); `flux doctor` CLI with PASS/WARN/FAIL output and non-zero exit on FAIL; `ProjectHealthCard` collapsible card in project mesh readout; 380 tests, 0 failures.
 - `done` — **Maker Platform Phase 3:** Minimal Data Preview — `buildPreviewRowsSql` (identifier-validated, server-enforced LIMIT 50, ORDER BY PK); `GET /api/projects/[slug]/tables/[table]/rows` (session-authed, validates table against inspection); Schema/Rows tab toggle in `ProjectSchemaExplorer`; copy row JSON; null display; labeled as project-owner inspection; 380 tests, 0 failures.
 - `done` — **Maker Platform Phase 2:** Dashboard Schema Explorer — `GET /api/projects/[slug]/schema` (session-authed, v1+v2); `ProjectSchemaExplorer` client component (table list → detail, columns, PK/FK, RLS badges); replaces "Table browser" stub in Database tools modal; `@flux/core/schema-inspection-types` browser-safe subpath added to client allowlist; 380 tests, 0 failures.
 - `done` — **Maker Platform Phase 1:** DB Inspection CLI — `flux db inspect|tables|describe|counts`; formatter in `lib/db-inspect-output.ts`; handlers in `commands/db-inspect.ts`; registered under `flux db` in `register-cli/db.ts`; v1+v2; `--exact` flag on counts; 380 tests, 0 failures.

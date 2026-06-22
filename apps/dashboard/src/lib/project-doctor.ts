@@ -1,0 +1,221 @@
+import { classifyNewestBackup } from "@flux/core/backup-trust";
+import { resolveTenantApiSchemaName } from "@flux/core";
+import { inspectProjectSchema } from "./project-schema-inspection";
+import { listPooledAppliedMigrations } from "./pooled-migrations";
+import { probeV2SharedCatalogProject, probeTenantApiUrl } from "./tenant-api-probe";
+import { getDb } from "./db";
+import { getProjectManager } from "./flux";
+import { projectBackups } from "@/src/db/schema";
+import { and, desc, eq } from "drizzle-orm";
+
+export type DoctorCheckStatus = "pass" | "warn" | "fail";
+
+export type DoctorCheck = {
+  name: string;
+  status: DoctorCheckStatus;
+  detail: string;
+  remediation?: string;
+};
+
+export type DoctorReport = {
+  projectSlug: string;
+  hash: string;
+  mode: "v1_dedicated" | "v2_shared";
+  schema: string;
+  checks: DoctorCheck[];
+  /** Worst status across all checks. */
+  overallStatus: DoctorCheckStatus;
+  generatedAt: string;
+};
+
+type ProjectRow = {
+  id: string;
+  slug: string;
+  hash: string;
+  mode: string;
+  jwtSecret: string | null;
+  apiSchemaName: string | null;
+  apiSchemaStrategy: string | null;
+};
+
+function worstStatus(checks: DoctorCheck[]): DoctorCheckStatus {
+  if (checks.some((c) => c.status === "fail")) return "fail";
+  if (checks.some((c) => c.status === "warn")) return "warn";
+  return "pass";
+}
+
+function pass(name: string, detail: string): DoctorCheck {
+  return { name, status: "pass", detail };
+}
+function warn(name: string, detail: string, remediation?: string): DoctorCheck {
+  return { name, status: "warn", detail, ...(remediation ? { remediation } : {}) };
+}
+function fail(name: string, detail: string, remediation?: string): DoctorCheck {
+  return { name, status: "fail", detail, ...(remediation ? { remediation } : {}) };
+}
+
+/**
+ * Runs all project doctor checks and returns a structured DoctorReport.
+ *
+ * Checks run as concurrently as possible. Each check is independently
+ * try/catched so one failure does not prevent others from running.
+ */
+export async function runProjectDoctor(project: ProjectRow): Promise<DoctorReport> {
+  const mode = project.mode as "v1_dedicated" | "v2_shared";
+  const isProduction = process.env.NODE_ENV === "production";
+
+  const apiSchema = resolveTenantApiSchemaName({
+    id: project.id,
+    mode,
+    apiSchemaName: project.apiSchemaName,
+    apiSchemaStrategy: project.apiSchemaStrategy as
+      | "legacy_api"
+      | "tenant_schema"
+      | null,
+  });
+
+  // Run independent checks in parallel.
+  const [schemaResult, apiResult, backupResult] = await Promise.allSettled([
+    // Check 1: DB reachable + schema exists (via schema inspection)
+    inspectProjectSchema(project).then((r) => ({
+      tableCount: r.summary.tableCount,
+      schema: r.project.schema,
+    })),
+
+    // Check 2: API reachable
+    mode === "v2_shared"
+      ? probeV2SharedCatalogProject({
+          slug: project.slug,
+          hash: project.hash,
+          isProduction,
+          jwtSecret: project.jwtSecret,
+        })
+      : probeTenantApiUrl(project.slug, project.hash, isProduction, "v1_dedicated"),
+
+    // Check 3: Backup trust
+    getDb()
+      .select({
+        status: projectBackups.status,
+        artifactValidationStatus: projectBackups.artifactValidationStatus,
+        restoreVerificationStatus: projectBackups.restoreVerificationStatus,
+        kind: projectBackups.kind,
+      })
+      .from(projectBackups)
+      .where(and(eq(projectBackups.projectId, project.id)))
+      .orderBy(desc(projectBackups.createdAt))
+      .limit(5),
+  ]);
+
+  const checks: DoctorCheck[] = [];
+
+  // Control plane + project found are implicit (caller already resolved the project).
+  checks.push(pass("Control plane", "Reachable"));
+  checks.push(pass("Project", `Found (${mode === "v2_shared" ? "v2 shared" : "v1 dedicated"})`));
+
+  // DB / schema check
+  if (schemaResult.status === "fulfilled") {
+    const { tableCount } = schemaResult.value;
+    checks.push(
+      pass(
+        "Database",
+        tableCount === 0
+          ? `Reachable — schema ${apiSchema} has no tables yet`
+          : `Reachable — ${String(tableCount)} table${tableCount === 1 ? "" : "s"} in ${apiSchema}`,
+      ),
+    );
+  } else {
+    const msg = schemaResult.reason instanceof Error
+      ? schemaResult.reason.message
+      : String(schemaResult.reason);
+    const isContainerDown = /not running|No Postgres container|not found/i.test(msg);
+    checks.push(
+      fail(
+        "Database",
+        isContainerDown ? "Container not running or not found" : `Unreachable: ${msg.slice(0, 120)}`,
+        isContainerDown
+          ? "Run `flux start <project>` or check container status."
+          : "Check FLUX_SHARED_POSTGRES_URL or container health.",
+      ),
+    );
+  }
+
+  // API probe check
+  if (apiResult.status === "fulfilled") {
+    checks.push(
+      apiResult.value
+        ? pass("API", "Reachable")
+        : warn(
+            "API",
+            "Not reachable from control plane",
+            "Check gateway and PostgREST container. Run `flux gauntlet run <project>` for a detailed probe.",
+          ),
+    );
+  } else {
+    checks.push(warn("API", "Probe failed — unable to reach tenant API endpoint"));
+  }
+
+  // Migration ledger check (v2: pooled query; v1: skip — no pooled ledger)
+  if (mode === "v2_shared") {
+    try {
+      const applied = await listPooledAppliedMigrations({ tenantSchema: apiSchema });
+      checks.push(
+        pass(
+          "Migration ledger",
+          applied.length === 0
+            ? "Readable — no migrations applied yet"
+            : `Readable — ${String(applied.length)} migration${applied.length === 1 ? "" : "s"} applied`,
+        ),
+      );
+    } catch (err) {
+      checks.push(
+        warn(
+          "Migration ledger",
+          `Could not read ledger: ${err instanceof Error ? err.message.slice(0, 80) : "unknown error"}`,
+        ),
+      );
+    }
+  }
+
+  // Backup trust check
+  if (backupResult.status === "fulfilled") {
+    const rows = backupResult.value;
+    const classification = classifyNewestBackup(
+      rows.map((r) => ({
+        status: r.status,
+        artifactValidationStatus: r.artifactValidationStatus,
+        restoreVerificationStatus: r.restoreVerificationStatus,
+      })),
+    );
+    if (classification.tier === "restorable") {
+      checks.push(pass("Backup", "Latest backup is restore-verified"));
+    } else if (classification.tier === "no_backups") {
+      checks.push(
+        warn(
+          "Backup",
+          "No backups exist for this project",
+          "Run `flux backup create <project>` then `flux backup verify`.",
+        ),
+      );
+    } else {
+      checks.push(
+        warn(
+          "Backup",
+          classification.detail,
+          "Run `flux backup verify` to restore-verify the latest backup.",
+        ),
+      );
+    }
+  } else {
+    checks.push(warn("Backup", "Could not read backup records"));
+  }
+
+  return {
+    projectSlug: project.slug,
+    hash: project.hash,
+    mode,
+    schema: apiSchema,
+    checks,
+    overallStatus: worstStatus(checks),
+    generatedAt: new Date().toISOString(),
+  };
+}

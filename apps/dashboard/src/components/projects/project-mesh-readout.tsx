@@ -8,6 +8,7 @@ import { ProjectExportControl } from "@/src/components/projects/project-export-c
 import { LogConsole } from "@/src/components/projects/log-console";
 import { ProjectManifest } from "@/src/components/projects/project-manifest";
 import { TelemetrySparkline } from "@/src/components/projects/telemetry-sparkline";
+import { ProjectHealthCard } from "@/src/components/projects/project-health-card";
 
 type Props = {
   project: ProjectRow;
@@ -33,6 +34,8 @@ export function ProjectMeshReadout({
         <V1DedicatedConnectSection project={project} />
       ) : null}
       <ProjectManifest slug={project.slug} />
+
+      <ProjectHealthCard slug={project.slug} hash={project.hash} />
 
       <section id={`database-${project.slug}`}>
         <ProjectExportControl

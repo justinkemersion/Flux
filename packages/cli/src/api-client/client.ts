@@ -21,6 +21,8 @@ import * as migrations from "./migrations";
 import * as push from "./push";
 import * as schemaInspection from "./schema-inspection";
 import type { SchemaInspectionResult } from "@flux/core/schema-inspection";
+import * as doctor from "./doctor";
+import type { DoctorReport } from "./doctor";
 import type {
   CreateProjectMode,
   CreateProjectResult,
@@ -189,6 +191,10 @@ export class ApiClient {
     includeExactCounts?: boolean;
   }): Promise<SchemaInspectionResult> {
     return schemaInspection.schemaInspectProject(this.asContext(), input);
+  }
+
+  runDoctor(hash: string): Promise<DoctorReport> {
+    return doctor.runDoctorForHash(this.asContext(), hash);
   }
 
   listAppliedMigrations(hash: string): Promise<FluxMigrationRecord[]> {
