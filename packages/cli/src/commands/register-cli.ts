@@ -12,6 +12,7 @@ import { registerGauntletCommands } from "./register-cli/gauntlet";
 import { registerDoctorCommands } from "./register-cli/doctor";
 import { registerActivityCommands } from "./register-cli/activity";
 import { registerProjectMetadataCommands } from "./register-cli/project-metadata";
+import { registerProjectBriefCommands } from "./register-cli/project-brief";
 import { registerProjectLifecycleCommands } from "./register-cli/project-lifecycle-state";
 
 export function registerFluxCliCommands(program: Command): void {
@@ -34,5 +35,6 @@ export function registerFluxCliCommands(program: Command): void {
   registerDoctorCommands(program);
   registerActivityCommands(program);
   registerProjectMetadataCommands(program);
+  registerProjectBriefCommands(program);
   registerProjectLifecycleCommands(program);
 }

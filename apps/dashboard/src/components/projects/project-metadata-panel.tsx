@@ -103,9 +103,9 @@ export function ProjectMetadataPanel({ slug, hash }: Props) {
           About this project
         </h4>
         <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-500">
-          Short description for your portfolio and future-you. Repo{" "}
-          <code className="font-mono">FLUX.md</code> sync comes in a later phase.
-          CLI:{" "}
+          Short description for your portfolio and future-you. For repo-level
+          context, see the{" "}
+          <code className="font-mono">FLUX.md</code> panel below. CLI:{" "}
           <code className="font-mono">flux project metadata --hash {hash}</code>
         </p>
       </div>

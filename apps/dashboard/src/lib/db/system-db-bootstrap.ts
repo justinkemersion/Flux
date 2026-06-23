@@ -168,6 +168,8 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT;
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS brief TEXT;
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'active';
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS flux_md TEXT;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS flux_md_synced_at TIMESTAMPTZ;
   `);
 
   // New projects default to pooled Standard stack; existing rows keep prior mode.

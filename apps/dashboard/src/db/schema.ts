@@ -130,6 +130,9 @@ export const projects = pgTable(
     description: text("description"),
     /** Optional operator brief — not repo FLUX.md (see Phase 11). */
     brief: text("brief"),
+    /** Optional synced snapshot of repo-root FLUX.md (source of truth remains the repo). */
+    fluxMd: text("flux_md"),
+    fluxMdSyncedAt: timestamp("flux_md_synced_at", { mode: "date" }),
     /** Product lifecycle: active (serving), dormant (paused API), archived (frozen). */
     lifecycleState: text("lifecycle_state")
       .notNull()

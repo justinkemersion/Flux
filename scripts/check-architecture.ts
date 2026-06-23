@@ -56,6 +56,7 @@ export const DASHBOARD_CLIENT_SAFE_CORE_SUBPATHS = new Set([
   "database-access-gui",
   "project-lifecycle-state",
   "project-portfolio",
+  "flux-md",
   "schema-inspection-types",
   "standalone",
 ]);

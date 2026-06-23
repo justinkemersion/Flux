@@ -212,13 +212,14 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 | P8 | `done` | Project metadata foundation (description/brief) |
 | P9 | `done` | Active/Dormant Lifecycle |
 | P10 | `done` | Portfolio Dashboard |
-| P11 | `todo` | FLUX.md Project Brief |
+| P11 | `done` | FLUX.md Project Brief |
 | P12 | `todo` | AI-assisted brief + summaries |
 
 ---
 
 ## Recently completed
 
+- `done` — **Maker Platform Phase 11:** FLUX.md Project Brief — `@flux/core/flux-md` template + generation prompt; optional `projects.flux_md` dashboard snapshot synced via `flux project brief push`; local repo detection; session + CLI GET/PUT `/flux-md`; dashboard `ProjectFluxMdPanel` with markdown render + copyable generation prompt when missing.
 - `done` — **Maker Platform Phase 10:** Portfolio Dashboard — lifecycle-grouped project list (Active / Dormant / Archived); portfolio cards with description, backup + last-activity hints, Wake/Open actions; `@flux/core/project-portfolio`; batch `lastActivityAt` on GET `/api/projects`; dormant/archived telemetry shows standby (not error).
 - `done` — **Maker Platform Phase 9:** Active/Dormant Lifecycle — `projects.lifecycle_state` column; `@flux/core/project-lifecycle-state` + gateway 503 for dormant/archived; wake/sleep/archive orchestration with active limits; session + CLI lifecycle routes; `flux project wake|sleep|archive|lifecycle`; dashboard lifecycle badge, fleet summary, `ProjectLifecyclePanel`; activity events; CLI `1.3.0`.
 - `done` — **Maker Platform Phase 8:** Project metadata foundation — `projects.description` + `projects.brief` columns; `@flux/core/project-metadata` validation; session + CLI GET/PATCH metadata routes; `flux project metadata`; dashboard `ProjectMetadataPanel`; fleet card subtitle shows description when set.

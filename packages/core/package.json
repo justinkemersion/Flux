@@ -22,6 +22,7 @@
     "./project-metadata": "./src/project-metadata.ts",
     "./project-lifecycle-state": "./src/project-lifecycle-state.ts",
     "./project-portfolio": "./src/project-portfolio.ts",
+    "./flux-md": "./src/flux-md.ts",
     "./test/sql-assertions": "./src/test/sql-assertions.ts"
   },
   "scripts": {

@@ -26,8 +26,9 @@ import type { DoctorReport } from "./doctor";
 import * as activity from "./activity";
 import type { ProjectActivityResponse } from "./activity";
 import * as projectMetadata from "./project-metadata";
+import * as projectFluxMd from "./project-flux-md";
 import * as projectLifecycleState from "./project-lifecycle-state";
-import type { ProjectMetadataDetail } from "./schemas";
+import type { ProjectFluxMdDetail, ProjectMetadataDetail } from "./schemas";
 import type {
   CreateProjectMode,
   CreateProjectResult,
@@ -218,6 +219,17 @@ export class ApiClient {
     patch: { description?: string | null; brief?: string | null },
   ): Promise<ProjectMetadataDetail> {
     return projectMetadata.patchProjectMetadata(this.asContext(), hash, patch);
+  }
+
+  fetchProjectFluxMdDetail(hash: string): Promise<ProjectFluxMdDetail> {
+    return projectFluxMd.fetchProjectFluxMdDetail(this.asContext(), hash);
+  }
+
+  syncProjectFluxMd(
+    hash: string,
+    content: string | null,
+  ): Promise<ProjectFluxMdDetail> {
+    return projectFluxMd.syncProjectFluxMd(this.asContext(), hash, content);
   }
 
   getProjectLifecycleState(
