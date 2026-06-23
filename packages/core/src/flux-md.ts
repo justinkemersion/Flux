@@ -121,3 +121,22 @@ export function formatFluxMdCliBlock(input: {
   }
   return lines;
 }
+
+/** Short explainer for UI + docs — repo file vs dashboard snapshot. */
+export const FLUX_MD_SOURCE_OF_TRUTH_NOTE =
+  "The file FLUX.md in your app repo is the long-term source of truth. What you see on the dashboard is a synced copy for quick reorientation.";
+
+/** What `flux project brief push` does (repo → dashboard, one direction). */
+export function fluxMdPushCommandExplainer(hash: string): string {
+  return `Uploads FLUX.md from your app repo to refresh this dashboard view. It does not download from the dashboard to your repo. Hash: ${hash}.`;
+}
+
+/** Edit workflow steps when the dashboard is read-only. */
+export function fluxMdEditWorkflowSteps(hash: string): readonly string[] {
+  return [
+    "Copy this brief or export it from the CLI.",
+    "Save or update FLUX.md at your app repo root (next to flux.json).",
+    "Edit the file in your editor or with Cursor.",
+    `Run flux project brief push --hash ${hash} to update what you see here.`,
+  ] as const;
+}

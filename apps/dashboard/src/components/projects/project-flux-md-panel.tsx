@@ -1,9 +1,16 @@
 "use client";
 
-import { buildFluxMdGenerationPrompt, FLUX_MD_FILENAME } from "@flux/core/flux-md";
+import {
+  buildFluxMdGenerationPrompt,
+  FLUX_MD_FILENAME,
+  FLUX_MD_SOURCE_OF_TRUTH_NOTE,
+  fluxMdEditWorkflowSteps,
+  fluxMdPushCommandExplainer,
+} from "@flux/core/flux-md";
 import { Check, Copy, Loader2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DocsMarkdown } from "@/src/components/docs/docs-markdown";
+import { CliSnippetRow } from "@/src/components/projects/project-card-cli-snippets";
 
 type FluxMdPayload = {
   slug: string;
@@ -18,11 +25,70 @@ type Props = {
   hash: string;
 };
 
+function BriefHelpBox({
+  hash,
+  variant,
+}: {
+  hash: string;
+  variant: "empty" | "has-content";
+}) {
+  const pushLine = `flux project brief push --hash ${hash}`;
+
+  if (variant === "empty") {
+    return (
+      <div className="mt-4 space-y-3 rounded-md border border-zinc-200/80 bg-zinc-50/60 p-4 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950/30 dark:text-zinc-300">
+        <p className="font-medium text-zinc-900 dark:text-zinc-100">
+          What is this?
+        </p>
+        <p>{FLUX_MD_SOURCE_OF_TRUTH_NOTE}</p>
+        <p>
+          You can generate a first draft here or in the CLI, then keep the real
+          file in your repo as <code className="font-mono">FLUX.md</code>.
+        </p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-500">
+          {fluxMdPushCommandExplainer(hash)}
+        </p>
+      </div>
+    );
+  }
+
+  const steps = fluxMdEditWorkflowSteps(hash);
+
+  return (
+    <div className="mt-4 space-y-3 rounded-md border border-amber-200/80 bg-amber-50/40 p-4 text-sm text-zinc-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-zinc-300">
+      <p className="font-medium text-zinc-900 dark:text-zinc-100">
+        Read-only preview — how to edit
+      </p>
+      <p>{FLUX_MD_SOURCE_OF_TRUTH_NOTE}</p>
+      <p>
+        This page does not edit the brief directly. To change what you see,
+        update <code className="font-mono">FLUX.md</code> in your app repo, then
+        refresh the dashboard copy:
+      </p>
+      <ol className="list-decimal space-y-1.5 pl-5">
+        {steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      <div className="space-y-1.5 pt-1">
+        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          Refresh dashboard from repo
+        </p>
+        <CliSnippetRow line={pushLine} />
+        <p className="text-xs text-zinc-500 dark:text-zinc-500">
+          {fluxMdPushCommandExplainer(hash)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function ProjectFluxMdPanel({ slug, hash }: Props) {
   const [data, setData] = useState<FluxMdPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [copiedBrief, setCopiedBrief] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -68,8 +134,20 @@ export function ProjectFluxMdPanel({ slug, hash }: Props) {
     if (!generationPrompt) return;
     try {
       await navigator.clipboard.writeText(generationPrompt);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
+      setCopiedPrompt(true);
+      window.setTimeout(() => setCopiedPrompt(false), 2000);
+    } catch {
+      /* clipboard denied */
+    }
+  }
+
+  async function onCopyBrief(): Promise<void> {
+    const text = data?.content?.trim() || draft;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedBrief(true);
+      window.setTimeout(() => setCopiedBrief(false), 2000);
     } catch {
       /* clipboard denied */
     }
@@ -141,30 +219,43 @@ export function ProjectFluxMdPanel({ slug, hash }: Props) {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Project brief ({FLUX_MD_FILENAME})
+            Project brief
           </h4>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-500">
-            Repo-level context for future-you — not a README. Sync from your app
-            repo with{" "}
-            <code className="font-mono">flux project brief push --hash {hash}</code>
-            {" · "}
-            <code className="font-mono">flux project brief generate --hash {hash}</code>
+          <p className="mt-0.5 max-w-prose text-xs leading-relaxed text-zinc-500 dark:text-zinc-500">
+            A five-minute reorientation doc for future-you — not a README.
+            Optional; your project runs fine without it.
           </p>
         </div>
         {!loading ? (
-          <button
-            type="button"
-            onClick={() => void onGenerateDraft()}
-            disabled={generating || saving}
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-          >
-            {generating ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            )}
-            {generating ? "Generating…" : "Generate draft"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {hasContent ? (
+              <button
+                type="button"
+                onClick={() => void onCopyBrief()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              >
+                {copiedBrief ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" aria-hidden />
+                )}
+                {copiedBrief ? "Copied" : "Copy brief"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void onGenerateDraft()}
+              disabled={generating || saving}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              {generating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              )}
+              {generating ? "Generating…" : hasContent ? "Regenerate" : "Generate draft"}
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -179,43 +270,43 @@ export function ProjectFluxMdPanel({ slug, hash }: Props) {
         <div className="mt-4">
           {data?.syncedAt ? (
             <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-500">
-              Last synced {new Date(data.syncedAt).toLocaleString()}
+              Dashboard copy last updated{" "}
+              {new Date(data.syncedAt).toLocaleString()}
+              {" · "}
+              repo file may differ until you push again
             </p>
           ) : null}
           <div className="max-h-[28rem] overflow-y-auto rounded-md border border-zinc-200/80 bg-white/80 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
             <DocsMarkdown markdown={displayContent!} />
           </div>
+          <BriefHelpBox hash={hash} variant="has-content" />
         </div>
       ) : (
-        <div className="mt-4 space-y-3 rounded-md border border-dashed border-zinc-300/80 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-950/20">
-          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-            No {FLUX_MD_FILENAME} synced yet
-          </p>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            This project can still run normally. A Flux project brief helps
-            future-you understand the app, schema, and operating assumptions.
-          </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-500">
-            Generate a draft with AI (uses live schema + activity context when
-            available), copy a prompt for Cursor/Codex, or push an existing repo
-            file.
-          </p>
-          <div className="flex flex-wrap gap-2">
+        <>
+          <div className="mt-4 space-y-3 rounded-md border border-dashed border-zinc-300/80 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-950/20">
+            <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+              No brief on the dashboard yet
+            </p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Generate a draft, paste a prompt into Cursor, or push an existing{" "}
+              <code className="font-mono">{FLUX_MD_FILENAME}</code> from your repo.
+            </p>
             <button
               type="button"
               onClick={() => void onCopyPrompt()}
               disabled={!generationPrompt}
               className="inline-flex items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
             >
-              {copied ? (
+              {copiedPrompt ? (
                 <Check className="h-4 w-4 text-emerald-600" aria-hidden />
               ) : (
                 <Copy className="h-4 w-4" aria-hidden />
               )}
-              {copied ? "Copied" : "Copy generation prompt"}
+              {copiedPrompt ? "Copied" : "Copy generation prompt"}
             </button>
           </div>
-        </div>
+          <BriefHelpBox hash={hash} variant="empty" />
+        </>
       )}
 
       {aiError ? (
@@ -223,7 +314,8 @@ export function ProjectFluxMdPanel({ slug, hash }: Props) {
       ) : null}
       {saved ? (
         <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-400">
-          Draft saved to dashboard.
+          Saved to dashboard. To keep it in git, copy into{" "}
+          <code className="font-mono">{FLUX_MD_FILENAME}</code> in your repo.
         </p>
       ) : null}
 
@@ -231,6 +323,11 @@ export function ProjectFluxMdPanel({ slug, hash }: Props) {
         <div className="mt-4 space-y-3 rounded-md border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-zinc-950/40">
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
             AI draft — review before saving
+          </p>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Saving here updates the dashboard copy only. For version control,
+            also save as <code className="font-mono">{FLUX_MD_FILENAME}</code> in
+            your app repo.
           </p>
           <div className="max-h-64 overflow-y-auto rounded-md border border-zinc-200/80 bg-white/80 p-3 dark:border-zinc-800 dark:bg-zinc-950/50">
             <DocsMarkdown markdown={draft} />
@@ -243,6 +340,14 @@ export function ProjectFluxMdPanel({ slug, hash }: Props) {
               className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
             >
               {saving ? "Saving…" : "Save to dashboard"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void onCopyBrief()}
+              disabled={saving}
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300"
+            >
+              Copy draft
             </button>
             <button
               type="button"
