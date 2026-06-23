@@ -13,6 +13,7 @@
     "./backup-policy": "./src/backup-policy.ts",
     "./offsite-storage": "./src/offsite-storage/index.ts",
     "./sql-migrations": "./src/sql-migrations.ts",
+    "./sql-ddl-classify": "./src/sql-ddl-classify.ts",
     "./sql-repeatable-scripts": "./src/sql-repeatable-scripts.ts",
     "./schema-inspection": "./src/schema-inspection/index.ts",
     "./schema-inspection-types": "./src/schema-inspection/types.ts",

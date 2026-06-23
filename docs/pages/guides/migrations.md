@@ -103,7 +103,7 @@ flux push migrations/ --dry-run   # validate conflicts and size; apply nothing
 flux migrations list              # show flux.flux_migrations for the project
 ```
 
-**`--plan`** prints what would happen (including conflicts) and exits without applying SQL.
+**`--plan`** prints what would happen (including conflicts) and exits without applying SQL. For each pending file it also prints a **heuristic** DDL summary (creates/alters/DROP warnings)—review the SQL files for certainty.
 
 **`--dry-run`** builds the same plan, fails on checksum conflicts or oversized files, and applies nothing—useful in CI before a real push.
 

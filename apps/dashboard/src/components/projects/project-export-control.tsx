@@ -28,6 +28,7 @@ import {
   type ProjectBackupRow,
 } from "@/src/lib/project-backup-trust-client";
 import { ProjectSchemaExplorer } from "@/src/components/projects/project-schema-explorer";
+import { ProjectMigrationsPanel } from "@/src/components/projects/project-migrations-panel";
 
 type BackupTrustHookResult = {
   backups: ProjectBackupRow[];
@@ -642,7 +643,8 @@ export function ProjectExportControl({
           <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
             Tables, columns, relationships, and RLS state.
           </p>
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
+            <ProjectMigrationsPanel slug={slug} hash={hash} />
             <ProjectSchemaExplorer slug={slug} hash={hash} />
           </div>
         </section>

@@ -3,11 +3,30 @@ import {
   migrationPlanTimeline,
   type MigrationPlanResult,
 } from "@flux/core/sql-migrations";
+import {
+  classifyMigrationSql,
+  formatDdlSummaryLines,
+} from "@flux/core/sql-ddl-classify";
 import type { FluxMigrationRecord } from "@flux/core/sql-migrations";
 import chalk from "chalk";
+import { B } from "../cli-layout.js";
 
 export const MIGRATION_EDIT_RULE =
   "Do not edit a migration after it has been applied. Create a new migration instead.";
+
+export const MIGRATION_DDL_HEURISTIC_NOTE =
+  "DDL summaries are heuristic — review SQL files for certainty.";
+
+function printMigrationDdlSummary(content: string): void {
+  const summary = classifyMigrationSql(content);
+  for (const line of formatDdlSummaryLines(summary)) {
+    const styled =
+      line.startsWith("Warning:") || line.startsWith("- contains")
+        ? chalk.yellow(`    ${line}`)
+        : chalk.dim(`    ${line}`);
+    console.log(styled);
+  }
+}
 
 export type MigrationPushMode = "apply" | "plan" | "dry-run";
 
@@ -35,6 +54,15 @@ export function printMigrationPlan(input: {
   const { plan, mode } = input;
   const isPreview = mode === "plan" || mode === "dry-run";
 
+  if (isPreview && plan.apply.length > 0) {
+    console.log(
+      chalk.white(
+        `Pending migrations: ${String(plan.apply.length)} ${chalk.dim(`(${MIGRATION_DDL_HEURISTIC_NOTE})`)}`,
+      ),
+    );
+    console.log();
+  }
+
   for (const entry of migrationPlanTimeline(plan)) {
     const { file, status } = entry;
     if (status === "skip") {
@@ -61,6 +89,8 @@ export function printMigrationPlan(input: {
         chalk.blue("→"),
         chalk.white(`${file.filename} would apply`),
       );
+      printMigrationDdlSummary(file.content);
+      console.log();
     } else {
       console.log(
         chalk.blue("→"),
@@ -94,6 +124,9 @@ export function printMigrationPlanSummary(input: {
       parts.push(`${String(input.conflicts)} conflict${input.conflicts === 1 ? "" : "s"}`);
     }
     console.log(chalk.white(`Plan. ${parts.join(", ")}.`));
+    if (input.wouldApply > 0) {
+      console.log(chalk.dim(`${B}No SQL has been applied.`));
+    }
     return;
   }
   if (input.mode === "dry-run") {

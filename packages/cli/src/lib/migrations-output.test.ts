@@ -50,3 +50,20 @@ test("printMigrationPlan counts apply skip and conflicts", () => {
   assert.equal(counts.wouldSkip, 0);
   assert.equal(counts.conflicts, 0);
 });
+
+test("printMigrationPlan includes ddl summary for pending create table", () => {
+  const sql = "CREATE TABLE widgets (id uuid primary key);";
+  const plan = planMigrations([localFile("001_widgets.sql", sql)], []);
+  const lines: string[] = [];
+  const orig = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  try {
+    printMigrationPlan({ plan, mode: "plan" });
+  } finally {
+    console.log = orig;
+  }
+  assert.ok(lines.some((l) => l.includes("Pending migrations: 1")));
+  assert.ok(lines.some((l) => l.includes("widgets")));
+});
