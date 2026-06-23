@@ -17,7 +17,7 @@ export function registerMigrationsSqlCommands(program: Command): void {
     )
     .argument(
       "[target]",
-      "migrations directory (ledger + checksums) or .sql file (no ledger); default discovery: migrations/, flux/migrations/, sql/, schema.sql",
+      "migrations directory (ledger + checksums) or .sql file (no ledger); default discovery: migrations/, flux/migrations/, sql/migrations/, sql/, schema.sql",
     )
     .option(
       "-p, --project <name>",

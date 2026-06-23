@@ -45,8 +45,29 @@ CREATE POLICY issues_select ON issues FOR SELECT USING (true);
 ALTER TABLE issues ENABLE ROW LEVEL SECURITY;
 `;
   const s = classifyMigrationSql(sql);
-  assert.ok(s.policyChanges.some((p) => p.includes("create policy")));
+  assert.ok(s.policyChanges.some((p) => p.includes("issues_select")));
   assert.ok(s.rlsChanges.some((r) => r.includes("enable RLS")));
+});
+
+test("classifyMigrationSql parses IF NOT EXISTS on indexes and columns", () => {
+  const sql = `
+ALTER TABLE object_photos ADD COLUMN IF NOT EXISTS is_primary boolean;
+CREATE INDEX IF NOT EXISTS object_photos_primary_idx ON object_photos (object_id);
+`;
+  const s = classifyMigrationSql(sql);
+  assert.deepEqual(s.alters, ["object_photos.is_primary"]);
+  assert.deepEqual(s.indexCreates, ["object_photos_primary_idx"]);
+});
+
+test("classifyMigrationSql does not treat ENABLE RLS as table alter", () => {
+  const sql = `
+CREATE TABLE profiles (id uuid primary key);
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+`;
+  const s = classifyMigrationSql(sql);
+  assert.deepEqual(s.creates, ["profiles"]);
+  assert.deepEqual(s.alters, []);
+  assert.ok(s.rlsChanges.some((r) => r.includes("profiles")));
 });
 
 test("formatDdlSummaryLines empty fallback mentions heuristic", () => {

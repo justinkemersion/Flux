@@ -43,3 +43,22 @@ test("resolvePushTarget discovers migrations/ by default", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("resolvePushTarget prefers sql/migrations/ over empty sql/", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "flux-push-sql-mig-"));
+  try {
+    await mkdir(join(dir, "sql", "migrations"), { recursive: true });
+    await writeFile(join(dir, "sql", "migrations", "001_init.sql"), "-- init");
+    const prev = process.cwd();
+    process.chdir(dir);
+    try {
+      const t = await resolvePushTarget();
+      assert.equal(t.kind, "directory");
+      assert.ok(t.path.endsWith("sql/migrations"));
+    } finally {
+      process.chdir(prev);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

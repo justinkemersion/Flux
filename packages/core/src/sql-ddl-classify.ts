@@ -47,8 +47,34 @@ function uniqSorted(values: string[]): string[] {
   );
 }
 
-function identFromGroups(m: RegExpExecArray): string {
-  return (m[1] ?? m[2] ?? m[3] ?? "").trim();
+function identFromGroups(m: RegExpExecArray, offset = 1): string {
+  return (m[offset] ?? m[offset + 1] ?? m[offset + 2] ?? "").trim();
+}
+
+function cleanIdent(name: string): string | null {
+  const n = name.trim();
+  if (!n) return null;
+  const lower = n.toLowerCase();
+  if (
+    lower === "if" ||
+    lower === "not" ||
+    lower === "exists" ||
+    lower === "constraint" ||
+    lower === "on" ||
+    lower === "for" ||
+    lower === "with" ||
+    lower === "check" ||
+    lower === "using" ||
+    lower === "to" ||
+    lower === "only"
+  ) {
+    return null;
+  }
+  return n;
+}
+
+function identFromGroupsClean(m: RegExpExecArray, offset = 1): string | null {
+  return cleanIdent(identFromGroups(m, offset));
 }
 
 function scanAll(re: RegExp, sql: string): RegExpExecArray[] {
@@ -80,7 +106,9 @@ export function classifyMigrationSql(sql: string): DdlMigrationSummary {
         "giu",
       ),
       normalized,
-    ).map(identFromGroups),
+    )
+      .map((m) => identFromGroupsClean(m))
+      .filter((x): x is string => x != null),
   );
 
   const drops = uniqSorted(
@@ -90,33 +118,35 @@ export function classifyMigrationSql(sql: string): DdlMigrationSummary {
         "giu",
       ),
       normalized,
-    ).map(identFromGroups),
+    )
+      .map((m) => identFromGroupsClean(m))
+      .filter((x): x is string => x != null),
   );
 
   const alters: string[] = [];
   const alterRe = new RegExp(
-    `\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?${QUOTED_IDENT}(?:\\s+(ADD|DROP|ALTER)\\s+(?:COLUMN\\s+)?${QUOTED_IDENT})?`,
+    `\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?${QUOTED_IDENT}\\s+(ADD|DROP|ALTER)\\s+(?!CONSTRAINT\\b)(?:COLUMN\\s+)?(?:IF\\s+NOT\\s+EXISTS\\s+)?${QUOTED_IDENT}`,
     "giu",
   );
   for (const m of scanAll(alterRe, normalized)) {
-    const table = identFromGroups(m);
+    const table = identFromGroupsClean(m);
     const op = m[4]?.toUpperCase();
-    const col = m[5] ?? m[6] ?? m[7];
+    const col = identFromGroupsClean(m, 5);
     if (table && col && op) {
       alters.push(`${table}.${col}`);
-    } else if (table) {
-      alters.push(table);
     }
   }
 
   const indexCreates = uniqSorted(
     scanAll(
       new RegExp(
-        `\\bCREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?:CONCURRENTLY\\s+)?${QUOTED_IDENT}`,
+        `\\bCREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?:CONCURRENTLY\\s+)?(?:IF\\s+NOT\\s+EXISTS\\s+)?${QUOTED_IDENT}`,
         "giu",
       ),
       normalized,
-    ).map(identFromGroups),
+    )
+      .map((m) => identFromGroupsClean(m))
+      .filter((x): x is string => x != null),
   );
 
   const indexDrops = uniqSorted(
@@ -126,17 +156,19 @@ export function classifyMigrationSql(sql: string): DdlMigrationSummary {
         "giu",
       ),
       normalized,
-    ).map(identFromGroups),
+    )
+      .map((m) => identFromGroupsClean(m))
+      .filter((x): x is string => x != null),
   );
 
   const policyChanges: string[] = [];
   const policyRe = new RegExp(
-    `\\b(CREATE|ALTER|DROP)\\s+POLICY\\s+${QUOTED_IDENT}`,
+    `\\b(CREATE|ALTER|DROP)\\s+POLICY\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${QUOTED_IDENT}`,
     "giu",
   );
   for (const m of scanAll(policyRe, normalized)) {
     const verb = m[1]!.toLowerCase();
-    const name = identFromGroups(m);
+    const name = identFromGroupsClean(m, 2);
     if (name) policyChanges.push(`${verb} policy ${name}`);
   }
 
@@ -146,7 +178,7 @@ export function classifyMigrationSql(sql: string): DdlMigrationSummary {
     "giu",
   );
   for (const m of scanAll(rlsRe, normalized)) {
-    const table = identFromGroups(m);
+    const table = identFromGroupsClean(m);
     const mode = m[4]!.toLowerCase();
     if (table) rlsChanges.push(`${mode} RLS on ${table}`);
   }

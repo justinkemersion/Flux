@@ -69,6 +69,7 @@ export type PushTarget =
 const DEFAULT_PUSH_CANDIDATES = [
   "migrations",
   "flux/migrations",
+  "sql/migrations",
   "sql",
   "schema.sql",
 ] as const;
@@ -91,7 +92,7 @@ export async function resolvePushTarget(arg?: string): Promise<PushTarget> {
     }
   }
   throw new Error(
-    "No push target found. Pass a .sql file or migrations directory, or add one of: migrations/, flux/migrations/, sql/, schema.sql",
+    "No push target found. Pass a .sql file or migrations directory, or add one of: migrations/, flux/migrations/, sql/migrations/, sql/, schema.sql",
   );
 }
 

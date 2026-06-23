@@ -118,14 +118,19 @@ export function printMigrationPlanSummary(input: {
   if (input.mode === "plan") {
     const parts = [
       `${String(input.wouldApply)} would apply`,
-      `${String(input.wouldSkip)} already applied`,
+      `${String(input.wouldSkip)} in ledger`,
     ];
     if (input.conflicts > 0) {
       parts.push(`${String(input.conflicts)} conflict${input.conflicts === 1 ? "" : "s"}`);
     }
     console.log(chalk.white(`Plan. ${parts.join(", ")}.`));
-    if (input.wouldApply > 0) {
-      console.log(chalk.dim(`${B}No SQL has been applied.`));
+    console.log(chalk.dim(`${B}Plan only — no SQL was executed against the database.`));
+    if (input.wouldApply > 0 && input.wouldSkip === 0) {
+      console.log(
+        chalk.dim(
+          `${B}Migration ledger is empty for this project; existing tables may be from raw/repeatable push or pre-ledger applies.`,
+        ),
+      );
     }
     return;
   }
