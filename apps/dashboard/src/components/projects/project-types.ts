@@ -23,6 +23,8 @@ export type ProjectRow = {
   description?: string | null;
   /** Product lifecycle: active, dormant, or archived. */
   lifecycleState?: "active" | "dormant" | "archived";
+  /** Latest control-plane activity event (ISO). */
+  lastActivityAt?: string | null;
   /** Loaded only after "Reveal keys" — not returned by list API. */
   anonKey?: string | null;
   serviceRoleKey?: string | null;

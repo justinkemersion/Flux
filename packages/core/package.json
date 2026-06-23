@@ -21,6 +21,7 @@
     "./project-activity": "./src/project-activity.ts",
     "./project-metadata": "./src/project-metadata.ts",
     "./project-lifecycle-state": "./src/project-lifecycle-state.ts",
+    "./project-portfolio": "./src/project-portfolio.ts",
     "./test/sql-assertions": "./src/test/sql-assertions.ts"
   },
   "scripts": {

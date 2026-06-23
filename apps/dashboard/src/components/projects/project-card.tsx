@@ -543,6 +543,7 @@ export function ProjectCard({
                 lastHeartbeatAt={p.lastHeartbeatAt}
                 createdAt={p.createdAt}
                 stackStatus={p.status}
+                lifecycleState={p.lifecycleState}
               />
             </>
           }

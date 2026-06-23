@@ -23,8 +23,8 @@ import {
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
+import { ProjectPortfolioSections } from "@/src/components/projects/project-portfolio-sections";
 import { ProjectsFleetBar } from "@/src/components/projects/projects-fleet-bar";
-import { ProjectSummaryCard } from "@/src/components/projects/project-summary-card";
 import {
   errorMessageFromJsonBody,
   readResponseJson,
@@ -442,24 +442,12 @@ export default function ProjectsPage() {
                 Archived {lifecycleSummary.archived}
               </p>
             ) : null}
-          <ul
-            className="grid list-none grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5"
-            aria-label="Project fleet"
-          >
-            {projectList.map((p, i) => (
-              <li key={p.id}>
-                <ProjectSummaryCard
-                  project={p}
-                  staggerIndex={i}
-                  onOpenDetail={() => {
-                    setDetailSlug(p.slug);
-                  }}
-                  onRepaired={() => handleProjectRepaired(p.slug)}
-                  onPowerChanged={() => void load()}
-                />
-              </li>
-            ))}
-          </ul>
+            <ProjectPortfolioSections
+              projects={projectList}
+              onOpenDetail={setDetailSlug}
+              onRepaired={handleProjectRepaired}
+              onPowerChanged={() => void load()}
+            />
           </>
         )}
       </div>

@@ -15,6 +15,8 @@ export type DeriveTelemetryInput = {
   /** Required for the 5m grace window when `lastHeartbeatAt` is null. */
   createdAt: string | Date | null | undefined;
   stackStatus: StackStatusForTelemetry | null | undefined;
+  /** Product lifecycle — dormant/archived projects are intentionally not serving traffic. */
+  lifecycleState?: "active" | "dormant" | "archived" | null | undefined;
 };
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
@@ -37,12 +39,17 @@ function toMs(
 export function deriveTelemetryDisplay(
   input: DeriveTelemetryInput,
 ): FleetTelemetryLevel {
-  const { healthStatus, lastHeartbeatAt, createdAt, stackStatus } = input;
+  const { healthStatus, lastHeartbeatAt, createdAt, stackStatus, lifecycleState } =
+    input;
   const now = Date.now();
   const hbMs = toMs(lastHeartbeatAt);
   const createdMs = toMs(createdAt);
   const inGraceWindow =
     createdMs != null && now - createdMs < FIVE_MIN_MS;
+
+  if (lifecycleState === "dormant" || lifecycleState === "archived") {
+    return "standby";
+  }
 
   if (healthStatus === "stopped") {
     return "standby";

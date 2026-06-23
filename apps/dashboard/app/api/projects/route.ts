@@ -28,6 +28,7 @@ import {
   countLifecycleBucketsForUser,
   countUserActiveProjects,
 } from "@/src/lib/project-lifecycle-state";
+import { loadLastActivityByProjectIds } from "@/src/lib/project-portfolio";
 import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 import { recordProjectCreatedActivity } from "@/src/lib/project-activity";
@@ -138,6 +139,10 @@ export async function GET(): Promise<Response> {
       session.user.id,
     );
     const activeLimit = activeProjectLimitForPlan(plan);
+    const lastActivityByProjectId = await loadLastActivityByProjectIds(
+      db,
+      userProjects.map((p) => p.id),
+    );
 
     const projectsPayload = userProjects.map((p) => {
       const createdAt =
@@ -145,6 +150,7 @@ export async function GET(): Promise<Response> {
           ? p.createdAt.toISOString()
           : p.createdAt;
       const lifecycleState = normalizeProjectLifecycleState(p.lifecycleState);
+      const lastActivityAt = lastActivityByProjectId.get(p.id) ?? null;
 
       if (p.mode === "v2_shared") {
         const status = statusFromV2CatalogHealth(p);
@@ -159,6 +165,7 @@ export async function GET(): Promise<Response> {
           apiUrl: fluxApiUrlForV2Shared(p.slug, p.hash, isProduction),
           createdAt,
           description: p.description ?? null,
+          lastActivityAt,
           healthStatus: p.healthStatus ?? null,
           lastHeartbeatAt: p.lastHeartbeatAt
             ? p.lastHeartbeatAt.toISOString()
@@ -176,6 +183,7 @@ export async function GET(): Promise<Response> {
         status: s?.status ?? "missing",
         lifecycleState,
         description: p.description ?? null,
+        lastActivityAt,
         apiUrl:
           s?.apiUrl ??
           fluxApiUrlForSlug(p.slug, p.hash, isProduction),

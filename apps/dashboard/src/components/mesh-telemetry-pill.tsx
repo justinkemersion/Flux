@@ -37,6 +37,7 @@ type Props = {
   createdAt: string;
   /** Docker stack state from the projects list / detail API. */
   stackStatus: FluxProjectSummary["status"];
+  lifecycleState?: "active" | "dormant" | "archived" | null;
 };
 
 /**
@@ -47,12 +48,14 @@ export function MeshTelemetryPill({
   lastHeartbeatAt,
   createdAt,
   stackStatus,
+  lifecycleState,
 }: Props) {
   const level = deriveTelemetryDisplay({
     healthStatus,
     lastHeartbeatAt,
     createdAt,
     stackStatus,
+    lifecycleState,
   });
   const title =
     healthStatus === "incomplete"
