@@ -1,6 +1,6 @@
 import "server-only";
 
-const MODEL = "@cf/meta/llama-3-8b-instruct" as const;
+import { resolveWorkersAiChatModel } from "@/src/lib/workers-ai-model";
 
 export type WorkersAiMessage = {
   role: "system" | "user" | "assistant";
@@ -29,7 +29,8 @@ export async function runWorkersAiCompletion(
     );
   }
 
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`;
+  const model = resolveWorkersAiChatModel();
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
   const res = await fetch(url, {
     method: "POST",
     headers: {

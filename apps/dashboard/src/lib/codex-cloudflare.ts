@@ -1,6 +1,6 @@
 import { FLUX_CODEX_JSON } from "@/src/lib/flux-codex-static";
 
-const MODEL = "@cf/meta/llama-3-8b-instruct" as const;
+import { resolveWorkersAiChatModel } from "@/src/lib/workers-ai-model";
 
 /**
  * Iterates over Workers AI text chunks. Uses the REST `stream: true` SSE body.
@@ -36,8 +36,9 @@ Canonical JSON (ground truth for all of the above):
 
 ${JSON.stringify(FLUX_CODEX_JSON, null, 2)}`;
 
+  const model = resolveWorkersAiChatModel();
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodeURIComponent(
-    MODEL,
+    model,
   )}`;
 
   const res = await fetch(url, {

@@ -1,6 +1,6 @@
 {
   "name": "@flux/cli",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Flux command-line interface",
   "type": "module",
   "main": "./dist/index.cjs",

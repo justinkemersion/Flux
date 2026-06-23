@@ -19,10 +19,11 @@
  */
 
 import { FLUX_CODEX_JSON } from "../src/lib/flux-codex-static.js";
+import { DEFAULT_WORKERS_AI_CHAT_MODEL } from "../src/lib/workers-ai-model.js";
 
 const EXPECTED_VERSION = 3;
 const PROBE_QUERY = "What is the Flux project slug format?";
-const MODEL = "@cf/meta/llama-3-8b-instruct";
+const MODEL = DEFAULT_WORKERS_AI_CHAT_MODEL;
 const CF_AI_TIMEOUT_MS = 15_000;
 
 type CheckResult = { ok: true } | { ok: false; reason: string };

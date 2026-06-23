@@ -5,7 +5,7 @@ import {
   getNodeStats,
 } from "@/src/lib/fleet-monitor";
 
-const MODEL = "@cf/meta/llama-3-8b-instruct" as const;
+import { resolveWorkersAiChatModel } from "@/src/lib/workers-ai-model";
 
 /**
  * Streams Cloudflare Workers AI response chunks for Flux Codex queries.
@@ -38,8 +38,8 @@ export async function* queryFluxAI(
     JSON.stringify(FLUX_CODEX_AI_PROMPT_JSON, null, 2),
   ].join("\n");
 
-  // Workers AI model identifiers contain `/`; keep the raw segment in-path.
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`;
+  const model = resolveWorkersAiChatModel();
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
 
   const res = await fetch(url, {
     method: "POST",

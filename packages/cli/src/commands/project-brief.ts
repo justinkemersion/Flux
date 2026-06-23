@@ -40,7 +40,7 @@ export async function cmdProjectBrief(
       console.log("");
       console.log(
         chalk.dim(
-          `Review the draft, save as FLUX.md locally, then \`flux project brief push --hash ${hash}\`. Or re-run with --save to store on the dashboard.`,
+          `Review the draft, save as FLUX.md locally, then \`flux project brief push --hash ${hash}\`. Or re-run \`flux project brief generate --save --hash ${hash}\`.`,
         ),
       );
     }
