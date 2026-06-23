@@ -1,4 +1,5 @@
 import { fluxApiUrlForCatalog, slugifyProjectName } from "@flux/core";
+import { normalizeProjectLifecycleState } from "@flux/core/project-lifecycle-state";
 import type { FluxProjectSummary } from "@flux/core/standalone";
 import { eq } from "drizzle-orm";
 import { projects } from "@/src/db/schema";
@@ -31,6 +32,7 @@ export async function GET(req: Request): Promise<Response> {
         hash: projects.hash,
         mode: projects.mode,
         healthStatus: projects.healthStatus,
+        lifecycleState: projects.lifecycleState,
       })
       .from(projects)
       .where(eq(projects.userId, auth.userId));
@@ -52,10 +54,12 @@ export async function GET(req: Request): Promise<Response> {
       v1Summaries.map((s) => [`${s.slug}\0${s.hash}`, s] as const),
     );
 
-    const summaries: FluxProjectSummary[] = rows.map((r) => {
+    const summaries: FluxProjectSummary[] = rows.map((r, i) => {
       const slug = slugifyProjectName(r.slug);
+      const lifecycleState = normalizeProjectLifecycleState(r.lifecycleState);
+      let base: FluxProjectSummary;
       if (r.mode === "v2_shared") {
-        return {
+        base = {
           slug,
           hash: r.hash,
           status: statusFromV2CatalogHealth({
@@ -63,15 +67,16 @@ export async function GET(req: Request): Promise<Response> {
           }),
           apiUrl: fluxApiUrlForCatalog(slug, r.hash, isProduction, "v2_shared"),
         };
+      } else {
+        base =
+          v1BySlugHash.get(`${slug}\0${r.hash}`) ?? {
+            slug,
+            hash: r.hash,
+            status: "missing",
+            apiUrl: fluxApiUrlForCatalog(slug, r.hash, isProduction, "v1_dedicated"),
+          };
       }
-      return (
-        v1BySlugHash.get(`${slug}\0${r.hash}`) ?? {
-          slug,
-          hash: r.hash,
-          status: "missing",
-          apiUrl: fluxApiUrlForCatalog(slug, r.hash, isProduction, "v1_dedicated"),
-        }
-      );
+      return { ...base, lifecycleState };
     });
 
     summaries.sort((a, b) => a.slug.localeCompare(b.slug));

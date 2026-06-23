@@ -89,6 +89,8 @@ export interface FluxProjectSummary {
   status: "running" | "stopped" | "partial" | "missing" | "corrupted";
   /** Public API URL (`https://api--{slug}--{hash}.…` for v2_shared, `https://api.{slug}.{hash}.…` for v1). */
   apiUrl: string;
+  /** Product lifecycle state from catalog (`active` default). */
+  lifecycleState?: "active" | "dormant" | "archived";
 }
 
 type ContainerLifecycleState = "running" | "stopped" | "missing";

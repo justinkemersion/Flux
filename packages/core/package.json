@@ -20,6 +20,7 @@
     "./database-access-gui": "./src/projects/database-access-gui.ts",
     "./project-activity": "./src/project-activity.ts",
     "./project-metadata": "./src/project-metadata.ts",
+    "./project-lifecycle-state": "./src/project-lifecycle-state.ts",
     "./test/sql-assertions": "./src/test/sql-assertions.ts"
   },
   "scripts": {

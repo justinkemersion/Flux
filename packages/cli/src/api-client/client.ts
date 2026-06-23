@@ -26,6 +26,7 @@ import type { DoctorReport } from "./doctor";
 import * as activity from "./activity";
 import type { ProjectActivityResponse } from "./activity";
 import * as projectMetadata from "./project-metadata";
+import * as projectLifecycleState from "./project-lifecycle-state";
 import type { ProjectMetadataDetail } from "./schemas";
 import type {
   CreateProjectMode,
@@ -217,6 +218,23 @@ export class ApiClient {
     patch: { description?: string | null; brief?: string | null },
   ): Promise<ProjectMetadataDetail> {
     return projectMetadata.patchProjectMetadata(this.asContext(), hash, patch);
+  }
+
+  getProjectLifecycleState(
+    hash: string,
+  ): Promise<projectLifecycleState.ProjectLifecycleInfo> {
+    return projectLifecycleState.getProjectLifecycleState(this.asContext(), hash);
+  }
+
+  runProjectLifecycleAction(
+    hash: string,
+    action: import("@flux/core/project-lifecycle-state").ProjectLifecycleAction,
+  ): Promise<{ lifecycleState: import("@flux/core/project-lifecycle-state").ProjectLifecycleState; noop?: boolean }> {
+    return projectLifecycleState.runProjectLifecycleAction(
+      this.asContext(),
+      hash,
+      action,
+    );
   }
 
   listAppliedMigrations(hash: string): Promise<FluxMigrationRecord[]> {

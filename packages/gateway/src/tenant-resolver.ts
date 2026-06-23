@@ -50,6 +50,7 @@ const tenantResolutionSchema = z.object({
   mode: z.enum(["v1_dedicated", "v2_shared"]),
   slug: z.string().min(1),
   migrationStatus: z.string().nullable().optional(),
+  lifecycleState: z.enum(["active", "dormant", "archived"]).optional(),
 });
 
 /**
@@ -118,6 +119,7 @@ async function resolveUncached(host: string): Promise<ResolvedTenant | null> {
           ...result.data,
           jwtSecret: null,
           migrationStatus: result.data.migrationStatus ?? null,
+          lifecycleState: result.data.lifecycleState ?? "active",
         };
         memSet(cacheKey, resolution);
         return { resolution, cacheSource: "redis" };
@@ -184,13 +186,15 @@ async function queryByExactDomain(
     mode: string;
     jwt_secret: string | null;
     migration_status: string | null;
+    lifecycle_state: string | null;
   }>(
     `SELECT d.project_id,
             p.id   AS tenant_id,
             p.slug,
             p.mode,
             p.jwt_secret,
-            p.migration_status
+            p.migration_status,
+            p.lifecycle_state
      FROM   domains d
      JOIN   projects p ON p.id = d.project_id
      WHERE  d.hostname = $1
@@ -206,6 +210,7 @@ async function queryByExactDomain(
     row.mode,
     row.jwt_secret,
     row.migration_status,
+    row.lifecycle_state,
   );
 }
 
@@ -219,10 +224,11 @@ async function queryBySlugAndHash(
     mode: string;
     jwt_secret: string | null;
     migration_status: string | null;
+    lifecycle_state: string | null;
   }>(
     // Filter by both slug AND hash so the lookup is deterministic regardless
     // of how many users share the same slug across the platform.
-    `SELECT id, slug, mode, jwt_secret, migration_status
+    `SELECT id, slug, mode, jwt_secret, migration_status, lifecycle_state
      FROM   projects
      WHERE  slug = $1
        AND  hash = $2
@@ -238,6 +244,7 @@ async function queryBySlugAndHash(
     row.mode,
     row.jwt_secret,
     row.migration_status,
+    row.lifecycle_state,
   );
 }
 
@@ -248,7 +255,12 @@ function toResolution(
   mode: string,
   jwtSecret: string | null,
   migrationStatus: string | null,
+  lifecycleState: string | null,
 ): TenantResolution {
+  const normalizedLifecycle =
+    lifecycleState === "dormant" || lifecycleState === "archived"
+      ? lifecycleState
+      : "active";
   return {
     tenantId,
     projectId,
@@ -257,6 +269,7 @@ function toResolution(
     slug,
     jwtSecret,
     migrationStatus,
+    lifecycleState: normalizedLifecycle,
   };
 }
 

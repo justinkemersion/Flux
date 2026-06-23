@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, RefreshCw, Trash2, Wrench } from "lucide-react"
 import Link from "next/link";
 import { MeshTelemetryPill } from "@/src/components/mesh-telemetry-pill";
 import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
+import { ProjectLifecycleBadge } from "@/src/components/projects/project-lifecycle-badge";
 import { ProjectHeader } from "@/src/components/projects/project-header";
 import { type DisplayStatus } from "@/src/components/projects/project-status-badge";
 import {
@@ -536,6 +537,7 @@ export function ProjectCard({
           statusRow={
             <>
               <EngineModeBadge mode={p.mode} surface="lightHeader" />
+              <ProjectLifecycleBadge state={p.lifecycleState} />
               <MeshTelemetryPill
                 healthStatus={p.healthStatus}
                 lastHeartbeatAt={p.lastHeartbeatAt}

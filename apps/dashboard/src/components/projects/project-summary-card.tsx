@@ -4,6 +4,7 @@ import { Check, Clipboard, Loader2, Wrench } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
+import { ProjectLifecycleBadge } from "@/src/components/projects/project-lifecycle-badge";
 import { ProjectBackupStatusCard } from "@/src/components/projects/project-backup-status-card";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import {
@@ -282,6 +283,7 @@ export function ProjectSummaryCard({
               variant="inline"
             />
             <EngineModeBadge mode={p.mode} surface="darkCard" />
+            <ProjectLifecycleBadge state={p.lifecycleState} />
             <StatusTag displayStatus={displayStatus} project={p} />
           </div>
         </div>

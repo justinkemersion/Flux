@@ -14,6 +14,7 @@ const TENANT: TenantResolution = {
   slug: "demo",
   jwtSecret: PROJECT_SECRET,
   migrationStatus: null,
+  lifecycleState: "active" as const,
 };
 
 function setGatewayEnv(): void {

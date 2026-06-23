@@ -130,6 +130,11 @@ export const projects = pgTable(
     description: text("description"),
     /** Optional operator brief — not repo FLUX.md (see Phase 11). */
     brief: text("brief"),
+    /** Product lifecycle: active (serving), dormant (paused API), archived (frozen). */
+    lifecycleState: text("lifecycle_state")
+      .notNull()
+      .default("active")
+      .$type<"active" | "dormant" | "archived">(),
   },
   (t) => [
     uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug),

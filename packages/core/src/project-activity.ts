@@ -10,6 +10,9 @@ export const PROJECT_ACTIVITY_KINDS = [
   "backup.verified",
   "db.temp_credential_issued",
   "db.tunnel_opened",
+  "lifecycle.wake",
+  "lifecycle.sleep",
+  "lifecycle.archive",
 ] as const;
 
 export type ProjectActivityKind = (typeof PROJECT_ACTIVITY_KINDS)[number];
@@ -66,6 +69,18 @@ export function tempCredentialSummary(access: string, ttlSeconds: number): strin
 
 export function tunnelOpenedSummary(): string {
   return "DB tunnel opened";
+}
+
+export function lifecycleWakeSummary(): string {
+  return "Project woken (active)";
+}
+
+export function lifecycleSleepSummary(): string {
+  return "Project put to sleep (dormant)";
+}
+
+export function lifecycleArchiveSummary(): string {
+  return "Project archived";
 }
 
 /** Day bucket label for grouping timeline rows (UTC calendar day). */

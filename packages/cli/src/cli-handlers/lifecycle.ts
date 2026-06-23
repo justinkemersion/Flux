@@ -119,6 +119,18 @@ export async function cmdDump(
   process.stderr.write("Dump complete.\n");
 }
 
+function lifecycleCell(state: string | undefined): string {
+  const normalized =
+    state === "dormant" || state === "archived" ? state : "active";
+  if (normalized === "active") {
+    return chalk.green("Active".padEnd(10));
+  }
+  if (normalized === "dormant") {
+    return chalk.yellow("Dormant".padEnd(10));
+  }
+  return chalk.dim("Archived".padEnd(10));
+}
+
 export async function cmdList(): Promise<void> {
   const client = getApiClient();
   const rows = await client.listProjects();
@@ -131,15 +143,16 @@ export async function cmdList(): Promise<void> {
   sectionBanner("Flux projects");
   const wProject = 26;
   const wHash = 10;
+  const wLifecycle = 12;
   const wStatus = 12;
   console.log(
     chalk.dim(
-      `  ${"PROJECT".padEnd(wProject)}${"HASH".padEnd(wHash)}${"STATUS".padEnd(wStatus)}API URL`,
+      `  ${"PROJECT".padEnd(wProject)}${"HASH".padEnd(wHash)}${"LIFECYCLE".padEnd(wLifecycle)}${"STATUS".padEnd(wStatus)}API URL`,
     ),
   );
   for (const r of rows) {
     console.log(
-      `  ${chalk.cyan(r.slug.padEnd(wProject))}${chalk.yellow(r.hash.padEnd(wHash))}${statusCell(r.status)}${chalk.white(r.apiUrl)}`,
+      `  ${chalk.cyan(r.slug.padEnd(wProject))}${chalk.yellow(r.hash.padEnd(wHash))}${lifecycleCell(r.lifecycleState)}${statusCell(r.status)}${chalk.white(r.apiUrl)}`,
     );
   }
   console.log();

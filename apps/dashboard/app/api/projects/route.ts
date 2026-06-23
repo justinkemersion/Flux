@@ -19,6 +19,15 @@ import {
   assertWithinProjectLimit,
   loadUserUnlimitedProjects,
 } from "@/src/lib/cli-project-provision";
+import {
+  activeProjectLimitForPlan,
+  assertWithinActiveProjectLimit,
+  normalizeProjectLifecycleState,
+} from "@flux/core/project-lifecycle-state";
+import {
+  countLifecycleBucketsForUser,
+  countUserActiveProjects,
+} from "@/src/lib/project-lifecycle-state";
 import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 import { recordProjectCreatedActivity } from "@/src/lib/project-activity";
@@ -124,11 +133,18 @@ export async function GET(): Promise<Response> {
     }
 
     const isProduction = process.env.NODE_ENV === "production";
+    const lifecycleBuckets = await countLifecycleBucketsForUser(
+      db,
+      session.user.id,
+    );
+    const activeLimit = activeProjectLimitForPlan(plan);
+
     const projectsPayload = userProjects.map((p) => {
       const createdAt =
         p.createdAt instanceof Date
           ? p.createdAt.toISOString()
           : p.createdAt;
+      const lifecycleState = normalizeProjectLifecycleState(p.lifecycleState);
 
       if (p.mode === "v2_shared") {
         const status = statusFromV2CatalogHealth(p);
@@ -139,6 +155,7 @@ export async function GET(): Promise<Response> {
           hash: p.hash,
           mode: p.mode,
           status,
+          lifecycleState,
           apiUrl: fluxApiUrlForV2Shared(p.slug, p.hash, isProduction),
           createdAt,
           description: p.description ?? null,
@@ -157,6 +174,7 @@ export async function GET(): Promise<Response> {
         hash: p.hash,
         mode: p.mode ?? "v1_dedicated",
         status: s?.status ?? "missing",
+        lifecycleState,
         description: p.description ?? null,
         apiUrl:
           s?.apiUrl ??
@@ -169,7 +187,17 @@ export async function GET(): Promise<Response> {
       };
     });
 
-    return Response.json({ projects: projectsPayload, plan, unlimitedProjects });
+    return Response.json({
+      projects: projectsPayload,
+      plan,
+      unlimitedProjects,
+      lifecycle: {
+        active: lifecycleBuckets.active,
+        dormant: lifecycleBuckets.dormant,
+        archived: lifecycleBuckets.archived,
+        activeLimit,
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[flux] GET /api/projects failed:", err);
@@ -269,6 +297,14 @@ export async function POST(req: Request): Promise<Response> {
   const limitCheck = assertWithinProjectLimit(plan, projectCount, { unlimited });
   if (!limitCheck.ok) {
     return jsonError(limitCheck.message, 403);
+  }
+
+  const activeCount = await countUserActiveProjects(db, session.user.id);
+  const activeLimitCheck = assertWithinActiveProjectLimit(plan, activeCount, {
+    unlimited,
+  });
+  if (!activeLimitCheck.ok) {
+    return jsonError(activeLimitCheck.message, 403);
   }
 
   const modePolicy = resolveCreateModeForPlan({

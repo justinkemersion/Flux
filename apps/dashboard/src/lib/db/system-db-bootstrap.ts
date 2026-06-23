@@ -167,6 +167,7 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS backup_retention_days INTEGER;
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT;
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS brief TEXT;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'active';
   `);
 
   // New projects default to pooled Standard stack; existing rows keep prior mode.

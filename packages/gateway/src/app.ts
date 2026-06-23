@@ -4,6 +4,11 @@ import {
   resolveTenant,
   type CacheSource,
 } from "./tenant-resolver.ts";
+import {
+  gatewayBlocksLifecycleState,
+  lifecycleGatewayErrorMessage,
+  normalizeGatewayLifecycleState,
+} from "./lifecycle-gate.ts";
 import { acquireRateSlot } from "./rate-limiter.ts";
 import { verifyInboundProjectBearer } from "./inbound-project-auth.ts";
 import { trackActivity } from "./activity-tracker.ts";
@@ -171,6 +176,23 @@ export function createApp(): Hono {
       });
       return c.json(
         { error: "project is migrating; try again later" },
+        503,
+      );
+    }
+
+    const lifecycleState = normalizeGatewayLifecycleState(tenant.lifecycleState);
+    if (gatewayBlocksLifecycleState(lifecycleState)) {
+      log({
+        host: rawHost,
+        tenantId: tenant.tenantId,
+        mode: tenant.mode,
+        status: 503,
+        start,
+        rateLimited: false,
+        cache: cacheSource,
+      });
+      return c.json(
+        { error: lifecycleGatewayErrorMessage(lifecycleState) },
         503,
       );
     }

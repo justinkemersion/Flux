@@ -210,7 +210,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 | P6 | `done` | Migration Plan/Diff Visibility |
 | P7 | `done` | Activity Timeline |
 | P8 | `done` | Project metadata foundation (description/brief) |
-| P9 | `todo` | Active/Dormant Lifecycle |
+| P9 | `done` | Active/Dormant Lifecycle |
 | P10 | `todo` | Portfolio Dashboard |
 | P11 | `todo` | FLUX.md Project Brief |
 | P12 | `todo` | AI-assisted brief + summaries |
@@ -219,6 +219,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 
 ## Recently completed
 
+- `done` — **Maker Platform Phase 9:** Active/Dormant Lifecycle — `projects.lifecycle_state` column; `@flux/core/project-lifecycle-state` + gateway 503 for dormant/archived; wake/sleep/archive orchestration with active limits; session + CLI lifecycle routes; `flux project wake|sleep|archive|lifecycle`; dashboard lifecycle badge, fleet summary, `ProjectLifecyclePanel`; activity events; CLI `1.3.0`.
 - `done` — **Maker Platform Phase 8:** Project metadata foundation — `projects.description` + `projects.brief` columns; `@flux/core/project-metadata` validation; session + CLI GET/PATCH metadata routes; `flux project metadata`; dashboard `ProjectMetadataPanel`; fleet card subtitle shows description when set.
 - `done` — **Maker Platform Phase 7:** Activity Timeline — `project_activity_events` system table + `@flux/core/project-activity` kinds/summaries/redaction; emitters on project create, migration apply, backup create/verify, temp DB credential; `flux activity` / `flux project activity`; dashboard `ProjectActivityPanel` on project mesh readout; session GET `/api/projects/[slug]/timeline` + CLI GET `/api/cli/v1/projects/[hash]/activity`.
 - `done` — **Maker Platform Phase 6 (polish):** Migration plan footer + DDL classifier fixes (`IF NOT EXISTS`, policy names, RLS-only alters); `sql/migrations/` in default push discovery.

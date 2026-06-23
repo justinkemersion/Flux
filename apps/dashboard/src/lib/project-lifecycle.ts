@@ -9,7 +9,7 @@ export type ProjectPowerAction = "start" | "stop";
 
 type ProjectRow = InferSelectModel<typeof projects>;
 
-async function applyProjectPowerForRow(
+export async function applyProjectPowerForRow(
   project: ProjectRow,
   action: ProjectPowerAction,
 ): Promise<{ ok: true } | { error: string; status: number }> {

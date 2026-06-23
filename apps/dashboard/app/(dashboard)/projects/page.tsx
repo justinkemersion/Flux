@@ -54,6 +54,12 @@ export default function ProjectsPage() {
   const [billingError, setBillingError] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<"hobby" | "pro" | null>(null);
   const [unlimitedProjects, setUnlimitedProjects] = useState(false);
+  const [lifecycleSummary, setLifecycleSummary] = useState<{
+    active: number;
+    dormant: number;
+    archived: number;
+    activeLimit: number;
+  } | null>(null);
   const [detailSlug, setDetailSlug] = useState<string | null>(null);
   const [v2GettingStartedProject, setV2GettingStartedProject] = useState<{
     apiUrl: string;
@@ -100,6 +106,12 @@ export default function ProjectsPage() {
         projects: ProjectRow[];
         plan?: "hobby" | "pro";
         unlimitedProjects?: boolean;
+        lifecycle?: {
+          active: number;
+          dormant: number;
+          archived: number;
+          activeLimit: number;
+        };
       };
       const orderedProjects = [...data.projects].sort((a, b) => {
         const ta = new Date(a.createdAt).getTime();
@@ -123,6 +135,7 @@ export default function ProjectsPage() {
       });
       setUserPlan(data.plan === "pro" ? "pro" : "hobby");
       setUnlimitedProjects(data.unlimitedProjects === true);
+      setLifecycleSummary(data.lifecycle ?? null);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -419,6 +432,16 @@ export default function ProjectsPage() {
             </div>
           </div>
         ) : (
+          <>
+            {lifecycleSummary ? (
+              <p className="mb-6 font-mono text-xs text-zinc-500">
+                Active {lifecycleSummary.active} / {lifecycleSummary.activeLimit}
+                {" · "}
+                Dormant {lifecycleSummary.dormant}
+                {" · "}
+                Archived {lifecycleSummary.archived}
+              </p>
+            ) : null}
           <ul
             className="grid list-none grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5"
             aria-label="Project fleet"
@@ -437,6 +460,7 @@ export default function ProjectsPage() {
               </li>
             ))}
           </ul>
+          </>
         )}
       </div>
 

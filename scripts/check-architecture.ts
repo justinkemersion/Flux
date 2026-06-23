@@ -54,6 +54,7 @@ export const DASHBOARD_CLIENT_SAFE_CORE_SUBPATHS = new Set([
   "backup-policy",
   "backup-trust",
   "database-access-gui",
+  "project-lifecycle-state",
   "schema-inspection-types",
   "standalone",
 ]);

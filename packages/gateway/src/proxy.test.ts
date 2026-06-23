@@ -71,6 +71,7 @@ test("proxy forwards internal auth token and POST body", async () => {
     slug: "demo",
     jwtSecret: null,
     migrationStatus: null as string | null,
+    lifecycleState: "active" as const,
   };
   const expectedProfile = defaultTenantApiSchemaFromProjectId(tenant.tenantId);
 

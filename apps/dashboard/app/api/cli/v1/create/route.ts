@@ -11,6 +11,8 @@ import {
   resolveCreateModeForPlan,
   slugifyProjectName,
 } from "@/src/lib/cli-project-provision";
+import { assertWithinActiveProjectLimit } from "@flux/core/project-lifecycle-state";
+import { countUserActiveProjects } from "@/src/lib/project-lifecycle-state";
 import { getDb, initSystemDb } from "@/src/lib/db";
 
 export const runtime = "nodejs";
@@ -77,6 +79,14 @@ export async function POST(req: Request): Promise<Response> {
   const limitCheck = assertWithinProjectLimit(plan, projectCount, { unlimited });
   if (!limitCheck.ok) {
     return jsonError(limitCheck.message, 403);
+  }
+
+  const activeCount = await countUserActiveProjects(db, auth.userId);
+  const activeLimitCheck = assertWithinActiveProjectLimit(plan, activeCount, {
+    unlimited,
+  });
+  if (!activeLimitCheck.ok) {
+    return jsonError(activeLimitCheck.message, 403);
   }
 
   const modePolicy = resolveCreateModeForPlan({ requestedMode: parsedMode, plan });
