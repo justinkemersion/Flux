@@ -93,6 +93,12 @@ export const projectFluxMdDetailSchema = z.object({
   syncedAt: z.string().nullable(),
 });
 
+export const projectAiSummarySchema = z.object({
+  kind: z.enum(["brief", "activity", "resume"]),
+  label: z.string(),
+  markdown: z.string(),
+});
+
 export const initProjectResponseSchema = z.object({
   action: z.enum(["linked", "created"]),
   slug: z.string(),
@@ -207,6 +213,7 @@ export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
 export type ProjectMetadataDetail = z.infer<typeof projectMetadataDetailSchema>;
 export type ProjectFluxMdDetail = z.infer<typeof projectFluxMdDetailSchema>;
+export type ProjectAiSummary = z.infer<typeof projectAiSummarySchema>;
 export type InitProjectResult = z.infer<typeof initProjectResponseSchema>;
 export type ProjectBackup = z.infer<typeof backupItemSchema>;
 export type PlatformMinimumBackupFreshness = z.infer<

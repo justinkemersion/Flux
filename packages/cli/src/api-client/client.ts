@@ -27,8 +27,9 @@ import * as activity from "./activity";
 import type { ProjectActivityResponse } from "./activity";
 import * as projectMetadata from "./project-metadata";
 import * as projectFluxMd from "./project-flux-md";
+import * as projectAiSummary from "./project-ai-summary";
 import * as projectLifecycleState from "./project-lifecycle-state";
-import type { ProjectFluxMdDetail, ProjectMetadataDetail } from "./schemas";
+import type { ProjectAiSummary, ProjectFluxMdDetail, ProjectMetadataDetail } from "./schemas";
 import type {
   CreateProjectMode,
   CreateProjectResult,
@@ -230,6 +231,13 @@ export class ApiClient {
     content: string | null,
   ): Promise<ProjectFluxMdDetail> {
     return projectFluxMd.syncProjectFluxMd(this.asContext(), hash, content);
+  }
+
+  generateProjectAiSummary(
+    hash: string,
+    kind: "brief" | "activity" | "resume",
+  ): Promise<ProjectAiSummary> {
+    return projectAiSummary.generateProjectAiSummary(this.asContext(), hash, kind);
   }
 
   getProjectLifecycleState(

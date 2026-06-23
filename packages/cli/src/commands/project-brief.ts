@@ -15,6 +15,8 @@ export type CmdProjectBriefOptions = {
   push?: boolean;
   prompt?: boolean;
   clear?: boolean;
+  generate?: boolean;
+  save?: boolean;
 };
 
 export async function cmdProjectBrief(
@@ -25,6 +27,25 @@ export async function cmdProjectBrief(
   const hash = resolveHash(opts.hash, flux);
   const client = getApiClient();
   const remote = await client.fetchProjectFluxMdDetail(hash);
+
+  if (opts.generate) {
+    sectionBanner("Generating FLUX.md draft");
+    const summary = await client.generateProjectAiSummary(hash, "brief");
+    console.log(summary.markdown.trimEnd());
+    if (opts.save) {
+      await client.syncProjectFluxMd(hash, summary.markdown);
+      console.log("");
+      console.log(chalk.green("Saved draft to dashboard snapshot."));
+    } else {
+      console.log("");
+      console.log(
+        chalk.dim(
+          `Review the draft, save as FLUX.md locally, then \`flux project brief push --hash ${hash}\`. Or re-run with --save to store on the dashboard.`,
+        ),
+      );
+    }
+    return;
+  }
 
   if (opts.prompt) {
     sectionBanner("Generate FLUX.md prompt");

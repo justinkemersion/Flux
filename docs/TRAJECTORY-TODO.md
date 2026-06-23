@@ -213,12 +213,13 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 | P9 | `done` | Active/Dormant Lifecycle |
 | P10 | `done` | Portfolio Dashboard |
 | P11 | `done` | FLUX.md Project Brief |
-| P12 | `todo` | AI-assisted brief + summaries |
+| P12 | `done` | AI-assisted brief + summaries |
 
 ---
 
 ## Recently completed
 
+- `done` — **Maker Platform Phase 12:** AI-assisted brief + summaries — `@flux/core/project-ai-prompts`; Workers AI completion for FLUX.md draft, activity summary, and resume brief; session + CLI POST `/ai/summary`; dashboard Generate draft + Summarize buttons; `flux project brief generate [--save]`, `flux project summarize`; CLI `2.0.0`.
 - `done` — **Maker Platform Phase 11:** FLUX.md Project Brief — `@flux/core/flux-md` template + generation prompt; optional `projects.flux_md` dashboard snapshot synced via `flux project brief push`; local repo detection; session + CLI GET/PUT `/flux-md`; dashboard `ProjectFluxMdPanel` with markdown render + copyable generation prompt when missing.
 - `done` — **Maker Platform Phase 10:** Portfolio Dashboard — lifecycle-grouped project list (Active / Dormant / Archived); portfolio cards with description, backup + last-activity hints, Wake/Open actions; `@flux/core/project-portfolio`; batch `lastActivityAt` on GET `/api/projects`; dormant/archived telemetry shows standby (not error).
 - `done` — **Maker Platform Phase 9:** Active/Dormant Lifecycle — `projects.lifecycle_state` column; `@flux/core/project-lifecycle-state` + gateway 503 for dormant/archived; wake/sleep/archive orchestration with active limits; session + CLI lifecycle routes; `flux project wake|sleep|archive|lifecycle`; dashboard lifecycle badge, fleet summary, `ProjectLifecyclePanel`; activity events; CLI `1.3.0`.

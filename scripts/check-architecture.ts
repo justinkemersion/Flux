@@ -57,6 +57,7 @@ export const DASHBOARD_CLIENT_SAFE_CORE_SUBPATHS = new Set([
   "project-lifecycle-state",
   "project-portfolio",
   "flux-md",
+  "project-ai-prompts",
   "schema-inspection-types",
   "standalone",
 ]);

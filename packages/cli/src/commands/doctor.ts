@@ -7,7 +7,7 @@ import type { DoctorCheck, DoctorReport } from "../api-client/doctor.js";
 import { formatCliTimestampDisplay } from "../utils/cli-timestamp.js";
 
 // Keep in sync with packages/cli/package.json + cli-handlers/cli-version.ts
-const DOCTOR_CLI_VERSION = "1.2.0";
+const DOCTOR_CLI_VERSION = "2.0.0";
 
 function statusIcon(status: DoctorCheck["status"]): string {
   if (status === "pass") return chalk.green("PASS");

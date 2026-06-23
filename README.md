@@ -42,7 +42,7 @@ The **control plane** (CLI + optional Next.js dashboard) provisions, tracks, and
 | Piece | Role |
 |-------|------|
 | **`@flux/core`** | Docker orchestration: networks, gateway, per-tenant Postgres + PostgREST, bootstrap SQL, **plain-SQL import** (Supabase-aware transforms, `public` → `api` move), JWT helpers, **environment updates** on the API container, Traefik label helpers. |
-| **`@flux/cli`** | Operator-facing `flux` commands: provisioning, **`flux push`** / migrations ledger, lifecycle, backups + restore verify, **`flux db …`** private database access (SSH tunnels), env, gauntlet smoke, v2→v1 migrate. |
+| **`@flux/cli`** | Operator-facing `flux` commands: provisioning, **`flux push`** / migrations ledger, lifecycle, backups + restore verify, **`flux db …`** inspection + private database access (SSH tunnels), project doctor, **`FLUX.md`** brief sync, env, gauntlet smoke, v2→v1 migrate. |
 | **`@flux/sdk`** | Small TypeScript client over PostgREST-style HTTP (table queries, anon key headers). |
 | **`@flux/engine-v2`** | Shared-cluster provisioning: tenant schema + role bootstrap, pooled push, temp DB access roles, deprovision. |
 | **`@flux/gateway`** | Edge gateway (`flux-node-gateway`): host routing, JWT mint, rate limits, proxy to PostgREST pool. |
@@ -62,11 +62,12 @@ Operator-oriented checklist of what Flux ships **today** (both engines unless no
 | **Backups** | `flux backup create \| list \| verify \| download` — v1 full project DB; v2 **tenant schema export** only. Optional R2 offsite (`FLUX_R2_BACKUPS_*`). Hourly minimum-backup scheduler (`FLUX_MIN_BACKUP_*`). |
 | **Destructive gates** | Restore-verified backup required before **`flux nuke`**, **`flux migrate`**, **`flux db-reset`**, **`flux db restore`**, dashboard **Delete** / **Factory reset** — unless explicit override (`--skip-backup-check` / `?skipBackupCheck=true`). Shared primitive: `@flux/core/backup-trust`. |
 | **Private DB access** | **`flux db tunnel \| shell \| dump \| restore \| password \| access-plan \| gui-config`** — Postgres stays off the public internet; SSH tunnel to Docker-internal host. v1: project **`postgres`** password. v2: **temporary scoped roles** (readonly default); pooled admin never exposed. See [Private database access](#private-database-access). |
-| **Lifecycle** | `flux start \| stop \| nuke`, dashboard start/stop/repair/delete, `flux reap` (idle stop via activity timestamps). |
+| **Lifecycle** | `flux start \| stop \| nuke`, **`flux project wake \| sleep \| archive`**, dashboard lifecycle panel, `flux reap` (idle stop). Dormant/archived projects return **503** at the gateway until woken. |
+| **Project understanding** | **`flux db inspect \| tables \| describe \| counts`**, dashboard Schema Explorer + data preview, **`flux doctor`**, activity timeline, portfolio dashboard (lifecycle groups), **`FLUX.md`** repo brief (`flux project brief push \| generate`), operator metadata (`flux project metadata`), AI summaries when Workers AI is configured (`flux project summarize`, dashboard Generate draft). |
 | **Tenant env** | `flux env set \| list` on PostgREST container (sensitive keys redacted in list). |
 | **Auth & API** | PostgREST JWT (`PGRST_JWT_SECRET` / gateway secret on v2). Gateway Bearer on v2 edge. RLS + **`GRANT`** per tenant role. Docs: [`AGENTS.md`](./AGENTS.md), `/docs/guides/nextjs`. |
 | **Observability** | `flux logs`, dashboard log stream (v1). Fleet monitor + deep v2 JWT probes. `bin/ops-audit.sh`. |
-| **Dashboard product** | GitHub OAuth, Stripe checkout hooks, project detail (mode-aware UI), backup trust UI, Private Database Access copy, interactive docs + Codex on `/docs`. |
+| **Dashboard product** | GitHub OAuth, Stripe checkout hooks, project detail (mode-aware UI), lifecycle + portfolio views, **`FLUX.md`** brief panel, backup trust UI, schema explorer, activity timeline, project doctor, Private Database Access copy, interactive docs + Codex on `/docs`. |
 | **CLI control plane** | `flux login`, Bearer **`/api/cli/v1/*`** routes (push, credentials, db-access, backups, migrate, lifecycle). |
 
 Canonical user docs (rendered at **`https://flux.vsl-base.com/docs/`** when deployed): source lives in **`docs/pages/`** — e.g. [Private database access](./docs/pages/guides/database-access.md) → `/docs/guides/database-access`.
@@ -587,6 +588,13 @@ Implementation: **`packages/cli/src/index.ts`**. Orchestration: **`ProjectManage
 | **`flux env set` / `list`** | Merge PostgREST container env; list redacts sensitive keys. |
 | **`flux supabase-rest-path`** | Toggle **`/rest/v1`** Traefik strip on v1 API container. |
 | **`flux reap --hours N`** | Stop idle projects (activity timestamps). |
+| **`flux project wake \| sleep \| archive`** | Product lifecycle (dormant drains gateway traffic; archived is frozen). |
+| **`flux project metadata`** | Control-plane description + operator brief (distinct from repo **`FLUX.md`**). |
+| **`flux project brief push \| generate \| prompt`** | Repo **`FLUX.md`** sync, AI draft (host Workers AI), or copyable generation prompt. |
+| **`flux project summarize --kind activity\|resume`** | AI summary from schema, activity, backups, and metadata context. |
+| **`flux doctor`** | PASS/WARN/FAIL health check (schema, API, migrations, backups). |
+| **`flux db inspect \| tables \| describe \| counts`** | Read-only schema inspection without opening a SQL GUI. |
+| **`flux activity`** | Project activity timeline (CLI). |
 
 ### Backups
 

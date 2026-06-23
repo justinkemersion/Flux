@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { resolveDashboardBase } from "../dashboard-base";
 
 /** Pinned in source; must match `packages/cli/package.json` and server `/api/install/cli/version` when published. */
-const CLI_VERSION = "1.3.0";
+const CLI_VERSION = "2.0.0";
 
 /** Same origin as the dashboard; used for install bundle and version checks. */
 const resolveInstallOrigin = resolveDashboardBase;

@@ -23,6 +23,7 @@
     "./project-lifecycle-state": "./src/project-lifecycle-state.ts",
     "./project-portfolio": "./src/project-portfolio.ts",
     "./flux-md": "./src/flux-md.ts",
+    "./project-ai-prompts": "./src/project-ai-prompts.ts",
     "./test/sql-assertions": "./src/test/sql-assertions.ts"
   },
   "scripts": {
