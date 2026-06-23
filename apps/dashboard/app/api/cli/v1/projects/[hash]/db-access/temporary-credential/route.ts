@@ -13,6 +13,7 @@ import {
   createProjectDbTempCredential,
   logDbTempCredentialAudit,
 } from "@/src/lib/project-db-temp-credentials";
+import { recordTempCredentialActivity } from "@/src/lib/project-activity";
 
 export const runtime = "nodejs";
 
@@ -94,6 +95,12 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
           ttlSeconds: event.ttlSeconds,
           username: event.username,
           expiresAt: event.expiresAt,
+        });
+        await recordTempCredentialActivity(db, {
+          projectId: event.projectId,
+          userId: event.userId,
+          access: event.access,
+          ttlSeconds: event.ttlSeconds,
         });
         logDbTempCredentialAudit({
           event: "db_temp_credential_created",

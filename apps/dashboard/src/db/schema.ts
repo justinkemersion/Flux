@@ -3,6 +3,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -308,6 +309,28 @@ export const projectDbTempCredentials = pgTable(
   ],
 );
 
+/** Durable project timeline for operator reorientation (no secrets). */
+export const projectActivityEvents = pgTable(
+  "project_activity_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(),
+    summary: text("summary").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("project_activity_events_project_time_idx").on(
+      t.projectId,
+      t.createdAt,
+    ),
+  ],
+);
+
 /** One row per control-plane scheduler; records first and last successful tick. */
 export const platformSchedulerState = pgTable("platform_scheduler_state", {
   schedulerId: text("scheduler_id").primaryKey(),
@@ -318,3 +341,4 @@ export const platformSchedulerState = pgTable("platform_scheduler_state", {
     .notNull()
     .defaultNow(),
 });
+

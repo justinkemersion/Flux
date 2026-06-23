@@ -32,7 +32,7 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-06-21`
+- Last updated: `2026-06-22`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-v2-shared -> deploy-gateway -> deploy-web`
 
@@ -208,7 +208,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 | P4 | `done` | Project Doctor (`flux doctor`) |
 | P5 | `done` | Backup Visibility UX polish |
 | P6 | `done` | Migration Plan/Diff Visibility |
-| P7 | `todo` | Activity Timeline |
+| P7 | `done` | Activity Timeline |
 | P8 | `todo` | Project metadata foundation (description/brief) |
 | P9 | `todo` | Active/Dormant Lifecycle |
 | P10 | `todo` | Portfolio Dashboard |
@@ -219,6 +219,8 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 
 ## Recently completed
 
+- `done` — **Maker Platform Phase 7:** Activity Timeline — `project_activity_events` system table + `@flux/core/project-activity` kinds/summaries/redaction; emitters on project create, migration apply, backup create/verify, temp DB credential; `flux activity` / `flux project activity`; dashboard `ProjectActivityPanel` on project mesh readout; session GET `/api/projects/[slug]/timeline` + CLI GET `/api/cli/v1/projects/[hash]/activity`.
+- `done` — **Maker Platform Phase 6 (polish):** Migration plan footer + DDL classifier fixes (`IF NOT EXISTS`, policy names, RLS-only alters); `sql/migrations/` in default push discovery.
 - `done` — **Maker Platform Phase 6:** Migration Plan/Diff — heuristic `@flux/core/sql-ddl-classify` (CREATE/ALTER/DROP, indexes, policies, RLS, DROP warnings); enriched `flux push --plan` with per-file DDL summaries; dashboard `ProjectMigrationsPanel` (applied ledger + CLI plan hint); session-auth GET `/api/projects/[slug]/migrations`.
 - `done` — **Maker Platform Phase 5:** Backup Visibility UX — shared `formatBackupTrustSummary` / confidence-not-punishment copy in `@flux/core/backup-trust`; `ProjectBackupStatusCard` on project overview + inline badge on fleet cards; Database tools header summary; aligned delete/factory-reset gate copy; `flux backup list` status block + doctor backup lines; CLI `1.2.0`.
 - `done` — **Maker Platform Phase 4:** Project Doctor — `runProjectDoctor` server-side orchestration (schema/DB, API probe, migration ledger, backup trust); `POST /api/cli/v1/projects/:hash/doctor` (CLI bearer) + `GET /api/projects/[slug]/doctor` (session); `flux doctor` CLI with PASS/WARN/FAIL output and non-zero exit on FAIL; `ProjectHealthCard` collapsible card in project mesh readout; 380 tests, 0 failures.

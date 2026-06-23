@@ -5,6 +5,7 @@ import { auth } from "@/src/lib/auth";
 import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { verifyBackupRestore } from "@/src/lib/project-backups";
+import { recordBackupVerifiedActivity } from "@/src/lib/project-activity";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -37,7 +38,7 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
     );
   }
   const [ownerCheck] = await db
-    .select({ id: projectBackups.id })
+    .select({ id: projectBackups.id, projectId: projectBackups.projectId })
     .from(projectBackups)
     .innerJoin(projects, eq(projects.id, projectBackups.projectId))
     .where(
@@ -52,6 +53,11 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
 
   try {
     await verifyBackupRestore(backupId);
+    await recordBackupVerifiedActivity(db, {
+      projectId: ownerCheck.projectId,
+      userId,
+      backupId,
+    });
     return Response.json({ ok: true, backupId, restoreVerificationStatus: "restore_verified" });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

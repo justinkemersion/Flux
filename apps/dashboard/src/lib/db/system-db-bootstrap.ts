@@ -369,4 +369,18 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS project_db_temp_credentials_username_idx
       ON project_db_temp_credentials (username);
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_activity_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      kind TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS project_activity_events_project_time_idx
+      ON project_activity_events (project_id, created_at DESC);
+  `);
 }

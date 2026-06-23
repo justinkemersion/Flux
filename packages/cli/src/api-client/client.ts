@@ -23,6 +23,8 @@ import * as schemaInspection from "./schema-inspection";
 import type { SchemaInspectionResult } from "@flux/core/schema-inspection";
 import * as doctor from "./doctor";
 import type { DoctorReport } from "./doctor";
+import * as activity from "./activity";
+import type { ProjectActivityResponse } from "./activity";
 import type {
   CreateProjectMode,
   CreateProjectResult,
@@ -195,6 +197,13 @@ export class ApiClient {
 
   runDoctor(hash: string): Promise<DoctorReport> {
     return doctor.runDoctorForHash(this.asContext(), hash);
+  }
+
+  fetchProjectActivity(
+    hash: string,
+    limit?: number,
+  ): Promise<ProjectActivityResponse> {
+    return activity.fetchProjectActivity(this.asContext(), hash, limit);
   }
 
   listAppliedMigrations(hash: string): Promise<FluxMigrationRecord[]> {

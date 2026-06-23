@@ -16,6 +16,7 @@ import {
   type BackupRow,
   type PlatformBackupProjectRow,
 } from "@/src/lib/project-backups";
+import { recordBackupCreatedActivity } from "@/src/lib/project-activity";
 import { isR2OffsiteEnabled } from "@/src/lib/backup-storage";
 
 function serializePlatformFreshness(
@@ -169,6 +170,12 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
       slug: resolved.project.slug,
       hash: resolved.project.hash,
       mode: resolved.project.mode,
+    });
+    await recordBackupCreatedActivity(getDb(), {
+      projectId: resolved.project.id,
+      userId: resolved.project.userId,
+      backupId: backup.id,
+      kind: backup.kind,
     });
     const platformFreshness = await getProjectBackupFreshness(resolved.project);
     return Response.json(

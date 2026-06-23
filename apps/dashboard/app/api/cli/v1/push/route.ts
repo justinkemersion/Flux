@@ -19,6 +19,7 @@ import {
   executePooledMigrationPush,
   executePooledRepeatablePush,
 } from "@/src/lib/pooled-migrations";
+import { recordMigrationAppliedActivity } from "@/src/lib/project-activity";
 
 export const runtime = "nodejs";
 
@@ -143,6 +144,13 @@ export async function POST(req: Request): Promise<Response> {
           userSql: sql,
           migration,
         });
+        await recordMigrationAppliedActivity(db, {
+          projectId: row.id,
+          userId: auth.userId,
+          filename: migration.filename,
+          version: migration.version,
+          skipped: result.skipped,
+        });
         return Response.json(
           {
             ok: true,
@@ -192,6 +200,15 @@ export async function POST(req: Request): Promise<Response> {
       ...(repeatable ? { repeatable } : {}),
     });
     if (migration || repeatable) {
+      if (migration) {
+        await recordMigrationAppliedActivity(db, {
+          projectId: row.id,
+          userId: auth.userId,
+          filename: migration.filename,
+          version: migration.version,
+          skipped: pushResult.skipped,
+        });
+      }
       return Response.json(
         {
           ok: true,

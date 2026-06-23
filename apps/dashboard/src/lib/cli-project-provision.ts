@@ -14,6 +14,7 @@ import { probeSingleProject } from "@/src/lib/fleet-monitor";
 import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
 import { resolveCreateModeForPlan, type UserPlan } from "@/src/lib/cli-mode-policy";
 import { resolveCliRoleForUser } from "@/src/lib/cli-admin";
+import { recordProjectCreatedActivity } from "@/src/lib/project-activity";
 
 export const HOBBY_PROJECT_LIMIT = 2;
 export const PRO_PROJECT_LIMIT = 10;
@@ -280,6 +281,13 @@ export async function provisionProjectForUser(input: {
         probeErr,
       );
     }
+    await recordProjectCreatedActivity(input.db, {
+      projectId: dbRow.id,
+      userId: input.userId,
+      slug: project.slug,
+      hash: project.hash,
+      mode: input.mode,
+    });
   } catch (err: unknown) {
     await project.cleanupOnFailure();
     const message = describeProvisionError(err);

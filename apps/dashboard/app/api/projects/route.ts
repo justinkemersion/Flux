@@ -21,6 +21,7 @@ import {
 } from "@/src/lib/cli-project-provision";
 import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
+import { recordProjectCreatedActivity } from "@/src/lib/project-activity";
 
 export const runtime = "nodejs";
 
@@ -331,6 +332,14 @@ export async function POST(req: Request): Promise<Response> {
         probeErr,
       );
     }
+
+    await recordProjectCreatedActivity(db, {
+      projectId: dbProject.id,
+      userId: session.user.id,
+      slug: dbProject.slug,
+      hash: dbProject.hash,
+      mode,
+    });
 
     return Response.json({
       ownerId: session.user.id,
