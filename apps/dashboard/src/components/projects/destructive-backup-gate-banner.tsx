@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  backupTrustBlockedGuidance,
   BACKUP_TRUST_REMEDIATION_CLI,
   type BackupTrustClassification,
 } from "@flux/core/backup-trust";
@@ -60,11 +61,10 @@ export function DestructiveBackupGateBanner({
       className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
       role="alert"
     >
-      <p>{trust.detail}</p>
+      <p>{backupTrustBlockedGuidance(trust)}</p>
       <p className="mt-2">
-        Create and verify a backup before deleting or resetting. In{" "}
-        <strong className="font-medium">Database</strong> tools: backup → verify latest.
-        CLI:{" "}
+        In <strong className="font-medium">Database</strong> tools: create backup → verify
+        latest. CLI:{" "}
         <code className="rounded bg-amber-100/80 px-1 py-0.5 font-mono text-xs dark:bg-amber-900/50">
           {BACKUP_TRUST_REMEDIATION_CLI}
         </code>

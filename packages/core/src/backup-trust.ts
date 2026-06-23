@@ -164,5 +164,118 @@ export function classifyNewestBackup(
 
 export function destructiveBackupCheckMessage(c: BackupTrustClassification): string {
   const hint = `Run \`${BACKUP_TRUST_REMEDIATION_CLI}\` first, or pass --skip-backup-check (dangerous).`;
-  return `Latest backup is not restore-verified. ${hint}\n(${c.detail})`;
+  return `${backupTrustBlockedGuidance(c)} ${hint}\n(${c.detail})`;
+}
+
+/** Verification line for dashboard + CLI backup status blocks. */
+export function backupVerificationStatusLabel(
+  tier: BackupTrustTier,
+  kind?: BackupKind | null,
+): string {
+  switch (tier) {
+    case "restorable":
+      return "Restore-verified";
+    case "no_backups":
+      return "No backup yet";
+    case "artifact_pending":
+      return "Validation in progress";
+    case "restore_failed":
+      return kind === "tenant_export"
+        ? "Tenant export restore verification failed"
+        : "Restore verification failed";
+    case "not_restore_verified":
+      return "Not restore-verified";
+    case "pipeline_incomplete":
+      return "Artifact not valid";
+    case "latest_not_complete":
+      return "Backup not complete";
+    default: {
+      const _x: never = tier;
+      return _x;
+    }
+  }
+}
+
+/** Safe-destructive line for dashboard + CLI backup status blocks. */
+export function backupSafeDestructiveLabel(allows: boolean): string {
+  return allows ? "Allowed" : "Blocked until verification";
+}
+
+/** One-line explanation of backup kind for v1 vs v2 surfaces. */
+export function backupKindExplanation(kind: BackupKind): string {
+  if (kind === "tenant_export") {
+    return "Portable tenant export (v2 shared) — your PostgREST API schema and data only, not full-cluster DR.";
+  }
+  return "Full-database snapshot (v1 dedicated).";
+}
+
+/**
+ * Confidence-not-punishment copy when destructive actions are blocked.
+ * Matches dashboard modals and CLI gate errors.
+ */
+export function backupTrustBlockedGuidance(
+  classification: BackupTrustClassification,
+): string {
+  if (classification.allowsDestructiveWithoutOverride) return "";
+  switch (classification.tier) {
+    case "no_backups":
+      return "This project has no backup yet. Create and restore-verify a backup so destructive actions have a recovery path.";
+    case "not_restore_verified":
+      return "Latest backup has not been restore-verified. Verify it first so this project has a recovery path.";
+    case "artifact_pending":
+      return "Latest backup is still validating. Wait briefly, then verify restore health before destructive actions.";
+    case "restore_failed":
+      return "Latest backup failed restore verification. Create a fresh backup and verify it before destructive actions.";
+    default:
+      return `${classification.detail} Verify the latest backup first so this project has a recovery path.`;
+  }
+}
+
+export type BackupTrustStatusSummary = {
+  latestBackup: string;
+  verification: string;
+  safeDestructive: string;
+  actionHint?: string;
+};
+
+/** Structured backup status for project overview, CLI list, and doctor. */
+export function formatBackupTrustSummary(input: {
+  classification: BackupTrustClassification;
+  kind?: BackupKind | null;
+  latestBackupCreatedAt?: string | null;
+}): BackupTrustStatusSummary {
+  const { classification, kind, latestBackupCreatedAt } = input;
+  const latestBackup =
+    classification.tier === "no_backups"
+      ? "None yet"
+      : (latestBackupCreatedAt?.trim() || "—");
+
+  const summary: BackupTrustStatusSummary = {
+    latestBackup,
+    verification: backupVerificationStatusLabel(classification.tier, kind),
+    safeDestructive: backupSafeDestructiveLabel(
+      classification.allowsDestructiveWithoutOverride,
+    ),
+  };
+
+  if (!classification.allowsDestructiveWithoutOverride) {
+    summary.actionHint = backupTrustRemediationHint(classification.tier);
+  }
+
+  return summary;
+}
+
+export function backupTrustRemediationHint(tier: BackupTrustTier): string {
+  switch (tier) {
+    case "no_backups":
+    case "not_restore_verified":
+    case "restore_failed":
+    case "pipeline_incomplete":
+    case "latest_not_complete":
+      return `Verify latest backup (${BACKUP_TRUST_REMEDIATION_CLI})`;
+    case "artifact_pending":
+      return "Wait for validation to finish, then verify if needed.";
+    default:
+      return "";
+  }
 }

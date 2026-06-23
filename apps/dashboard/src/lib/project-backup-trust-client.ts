@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  BACKUP_TRUST_REMEDIATION_CLI,
+  backupTrustBlockedGuidance,
   classifyNewestBackup,
   type BackupKind,
   type BackupTrustClassification,
@@ -83,7 +83,7 @@ export function destructiveActionBlockedTitle(
     return `Could not load backup status (${options.fetchError}). Open Database tools to refresh.`;
   }
   if (trust.allowsDestructiveWithoutOverride) return "";
-  return `${trust.detail} Create and verify a backup first (${BACKUP_TRUST_REMEDIATION_CLI}), or use Database tools below.`;
+  return `${backupTrustBlockedGuidance(trust)} Open Database tools to create or verify a backup.`;
 }
 
 export function scrollToProjectDatabaseTools(slug: string): void {

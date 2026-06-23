@@ -3,9 +3,11 @@
 import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
 import { backupFreshnessTierLabel } from "@flux/core/backup-policy";
 import {
+  backupKindExplanation,
   backupTrustTierLabelForKind,
   BACKUP_TRUST_REMEDIATION_CLI,
   classifyNewestBackup,
+  formatBackupTrustSummary,
   type BackupKind,
   type BackupTrustTier,
 } from "@flux/core/backup-trust";
@@ -21,8 +23,22 @@ import {
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { ProjectModalShell } from "@/src/components/projects/modal-shell";
 import { ProjectDbAccessPanel } from "@/src/components/projects/project-db-access-panel";
-import { useProjectBackupTrust } from "@/src/lib/project-backup-trust-client";
+import {
+  useProjectBackupTrust,
+  type ProjectBackupRow,
+} from "@/src/lib/project-backup-trust-client";
 import { ProjectSchemaExplorer } from "@/src/components/projects/project-schema-explorer";
+
+type BackupTrustHookResult = {
+  backups: ProjectBackupRow[];
+  platformMinimumBackupFreshness: ReturnType<
+    typeof useProjectBackupTrust
+  >["platformMinimumBackupFreshness"];
+  trust: ReturnType<typeof useProjectBackupTrust>["trust"];
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+};
 
 type Props = {
   slug: string;
@@ -31,6 +47,8 @@ type Props = {
   projectId?: string;
   /** Used when no backup rows yet (correct pooled vs dedicated copy). */
   mode: "v1_dedicated" | "v2_shared";
+  /** When provided, avoids a duplicate backup fetch (mesh readout lifts state). */
+  backupTrustState?: BackupTrustHookResult;
 };
 
 function backupTrustBadgeClass(tier: BackupTrustTier): string {
@@ -91,11 +109,20 @@ const modalSectionClass = "mt-6";
 /**
  * Project export controls for SQL dump streaming.
  */
-export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
+export function ProjectExportControl({
+  slug,
+  hash,
+  projectId,
+  mode,
+  backupTrustState,
+}: Props) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [schemaOnly, setSchemaOnly] = useState(false);
   const [dataOnly, setDataOnly] = useState(false);
   const [clean, setClean] = useState(false);
+  const internalBackup = useProjectBackupTrust(hash, {
+    enabled: backupTrustState == null && toolsOpen,
+  });
   const {
     backups,
     platformMinimumBackupFreshness,
@@ -103,7 +130,7 @@ export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
     loading: backupsLoading,
     error: backupFetchError,
     refresh: refreshBackups,
-  } = useProjectBackupTrust(hash, { enabled: toolsOpen });
+  } = backupTrustState ?? internalBackup;
   const [backupBusy, setBackupBusy] = useState(false);
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
@@ -120,6 +147,12 @@ export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
 
   const newestBackupKind =
     backups[0]?.kind ?? (mode === "v2_shared" ? "tenant_export" : "project_db");
+
+  const backupSummary = formatBackupTrustSummary({
+    classification: backupTrust,
+    kind: newestBackupKind,
+    latestBackupCreatedAt: backups[0]?.createdAt ?? null,
+  });
 
   const latestBackup = backups[0];
   const verifyLatestDisabledReason = useMemo((): string | null => {
@@ -226,8 +259,27 @@ export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
         className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/40"
         aria-label="Project database tools"
       >
-        <div className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Database
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Database
+            </div>
+            {!backupsLoading && !backupFetchError ? (
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                Backup: {backupSummary.verification}
+                {" · "}
+                Destructive actions: {backupSummary.safeDestructive}
+              </p>
+            ) : null}
+          </div>
+          {!backupsLoading && !backupFetchError ? (
+            <span
+              className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium leading-snug ${backupTrustBadgeClass(backupTrust.tier)}`}
+            >
+              <BackupTrustIcon tier={backupTrust.tier} />
+              {backupTrustTierLabelForKind(newestBackupKind, backupTrust.tier)}
+            </span>
+          ) : null}
         </div>
         <button
           type="button"
@@ -273,18 +325,15 @@ export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
               <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
                 Create, download, and verify project snapshots.
               </p>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-500">
+                {backupKindExplanation(newestBackupKind)}
+              </p>
               {newestBackupKind === "tenant_export" ? (
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-500">
-                  Portable tenant export of your PostgREST schema (
-                  <code className="font-mono">t_&lt;shortId&gt;_api</code>
-                  ). Restoring this archive into any Postgres recreates schema and data;
+                  Restoring this archive into any Postgres recreates schema and data;
                   it does not include shared cluster system tables or full-cluster DR.
                 </p>
-              ) : (
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-                  Full-database snapshot for dedicated (v1) stacks.
-                </p>
-              )}
+              ) : null}
             </div>
             <span
               className={`inline-flex shrink-0 items-center gap-1 self-start rounded-md border px-2.5 py-1 text-xs font-medium leading-snug ${backupTrustBadgeClass(backupTrust.tier)}`}
@@ -361,17 +410,37 @@ export function ProjectExportControl({ slug, hash, projectId, mode }: Props) {
 
           {!backupsLoading ? (
             <div className="mt-4 space-y-4">
-              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                {backupTrust.detail}
-              </p>
+              <dl className="grid gap-2 text-sm sm:grid-cols-[9rem_1fr] sm:gap-x-3">
+                <dt className="font-medium text-zinc-600 dark:text-zinc-500">
+                  Latest backup
+                </dt>
+                <dd className="text-zinc-800 dark:text-zinc-200">
+                  {backupSummary.latestBackup === "None yet" ||
+                  backupSummary.latestBackup === "—"
+                    ? backupSummary.latestBackup
+                    : (backups[0]?.createdAt ?? "—")}
+                </dd>
+                <dt className="font-medium text-zinc-600 dark:text-zinc-500">
+                  Verification
+                </dt>
+                <dd className="text-zinc-800 dark:text-zinc-200">
+                  {backupSummary.verification}
+                </dd>
+                <dt className="font-medium text-zinc-600 dark:text-zinc-500">
+                  Safe destructive actions
+                </dt>
+                <dd
+                  className={
+                    backupTrust.allowsDestructiveWithoutOverride
+                      ? "font-medium text-emerald-700 dark:text-emerald-400"
+                      : "font-medium text-amber-800 dark:text-amber-300"
+                  }
+                >
+                  {backupSummary.safeDestructive}
+                </dd>
+              </dl>
               {backups[0] ? (
                 <dl className="grid gap-1 text-xs text-zinc-500 dark:text-zinc-400 sm:grid-cols-[8rem_1fr] sm:gap-x-3">
-                  <dt className="font-medium text-zinc-600 dark:text-zinc-500">
-                    Newest backup
-                  </dt>
-                  <dd className="font-mono text-zinc-600 dark:text-zinc-400">
-                    {backups[0].createdAt ?? "—"}
-                  </dd>
                   {platformMinimumBackupFreshness ? (
                     <>
                       <dt className="font-medium text-zinc-600 dark:text-zinc-500">

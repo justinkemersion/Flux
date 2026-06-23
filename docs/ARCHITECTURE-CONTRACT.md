@@ -24,6 +24,30 @@ The `flux` CLI binary. Owns terminal UX and dashboard API transport — never re
 - `cli-handlers.ts` — command behavior glue.
 - `api-client/` — typed transport against the dashboard API.
 - `output/` — terminal formatting and error printing.
+- `utils/cli-timestamp.ts` — **CLI timestamp contract** (see below).
+
+#### CLI timestamps
+
+Any **human-facing** CLI output that shows a point in time must use `CliTimestamp` / `formatCliTimestampDisplay` from `utils/cli-timestamp.ts` — not raw ISO strings, `Date#toISOString()`, or ad-hoc locale formatting.
+
+Canonical display line (four segments):
+
+```text
+{unixMs} · {isoUtc} · {humanUtc} · {relative}
+```
+
+Example:
+
+```text
+1781975913697 · 2026-06-20T17:18:33.697Z · Jun 20, 2026, 5:18 PM UTC · 2 days ago
+```
+
+- **`unixMs`** — Unix epoch milliseconds (portable machine form).
+- **`isoUtc`** — UTC ISO 8601 from the API wire format (preserved for scripts and logs).
+- **`humanUtc`** — absolute UTC label for operators.
+- **`relative`** — relative phrase (`2 days ago`, `just now`, …).
+
+JSON/machine output paths (gauntlet `--json`, API payloads) keep raw ISO strings; only terminal copy uses this formatter.
 
 ### `dashboard` (`apps/dashboard`)
 

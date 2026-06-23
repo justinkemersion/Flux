@@ -51,7 +51,17 @@ When the operator has enabled [R2 offsite replication](/docs/guides/production-h
 flux backup list --project bloom-atelier --hash 0a1b2c3
 ```
 
-The output shows recent backups newest-first with their trust labels (per [the three trust states](/docs/concepts/backups#the-three-trust-states)). Common labels:
+The output shows recent backups newest-first with their trust labels (per [the three trust states](/docs/concepts/backups#the-three-trust-states)). A status block at the top summarizes the latest backup, verification state, and whether destructive actions are allowed:
+
+```text
+Latest backup:            1781975913697 · 2026-06-20T17:18:33.697Z · Jun 20, 2026, 5:18 PM UTC · 2 days ago
+Verification:             Restore-verified
+Safe destructive actions: Allowed
+```
+
+Timestamps in CLI output always show **Unix ms · ISO UTC · human UTC · relative** so machine and operator forms stay aligned (see `docs/ARCHITECTURE-CONTRACT.md` § CLI timestamps).
+
+Common trust labels in the history list:
 
 - **Restorable** — restore-verified, safe to act on.
 - **Created, not restore-verified** — file exists and looks valid; nobody has tried to restore it yet.

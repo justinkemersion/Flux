@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { injectSchemaInspectionMarkdown } from "./schema-story-report";
+import { formatCliTimestampDisplay } from "../utils/cli-timestamp.js";
 import type {
   GauntletCommandManifest,
   GauntletProjectCtx,
@@ -80,8 +81,8 @@ export function buildMarkdownReport(result: GauntletRunResult): string {
   lines.push(`Project: ${result.projectSlug}`);
   if (result.projectHash) lines.push(`Hash: ${result.projectHash}`);
   if (result.apiUrl) lines.push(`API: ${result.apiUrl}`);
-  lines.push(`Started: ${result.startedAt}`);
-  lines.push(`Finished: ${result.finishedAt}`);
+  lines.push(`Started: ${formatCliTimestampDisplay(result.startedAt)}`);
+  lines.push(`Finished: ${formatCliTimestampDisplay(result.finishedAt)}`);
   lines.push(`Duration: ${formatDurationMs(result.durationMs)}`);
   lines.push("");
   lines.push("## Timeline");

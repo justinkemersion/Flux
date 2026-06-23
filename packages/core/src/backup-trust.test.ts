@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  backupSafeDestructiveLabel,
+  backupTrustBlockedGuidance,
   backupTrustTierLabel,
   backupTrustTierLabelForKind,
+  backupVerificationStatusLabel,
   classifyNewestBackup,
   destructiveBackupCheckMessage,
+  formatBackupTrustSummary,
   type BackupTrustInput,
 } from "./backup-trust.ts";
 
@@ -118,4 +122,52 @@ test("backupTrustTierLabelForKind defaults project_db to legacy label helper", (
     backupTrustTierLabelForKind("project_db", "restorable"),
     backupTrustTierLabel("restorable"),
   );
+});
+
+test("backupVerificationStatusLabel restorable", () => {
+  assert.equal(backupVerificationStatusLabel("restorable"), "Restore-verified");
+});
+
+test("backupSafeDestructiveLabel", () => {
+  assert.equal(backupSafeDestructiveLabel(true), "Allowed");
+  assert.equal(backupSafeDestructiveLabel(false), "Blocked until verification");
+});
+
+test("backupTrustBlockedGuidance uses confidence-not-punishment copy", () => {
+  const c = classifyNewestBackup([
+    {
+      status: "complete",
+      artifactValidationStatus: "artifact_valid",
+      restoreVerificationStatus: "pending",
+    },
+  ]);
+  assert.match(backupTrustBlockedGuidance(c), /has not been restore-verified/);
+  assert.match(backupTrustBlockedGuidance(c), /recovery path/);
+});
+
+test("formatBackupTrustSummary restorable", () => {
+  const c = classifyNewestBackup([
+    {
+      status: "complete",
+      artifactValidationStatus: "artifact_valid",
+      restoreVerificationStatus: "restore_verified",
+    },
+  ]);
+  const s = formatBackupTrustSummary({
+    classification: c,
+    kind: "tenant_export",
+    latestBackupCreatedAt: "2026-06-21T14:22:00.000Z",
+  });
+  assert.equal(s.latestBackup, "2026-06-21T14:22:00.000Z");
+  assert.equal(s.verification, "Restore-verified");
+  assert.equal(s.safeDestructive, "Allowed");
+  assert.equal(s.actionHint, undefined);
+});
+
+test("formatBackupTrustSummary blocked includes action hint", () => {
+  const c = classifyNewestBackup([]);
+  const s = formatBackupTrustSummary({ classification: c, kind: "project_db" });
+  assert.equal(s.latestBackup, "None yet");
+  assert.equal(s.safeDestructive, "Blocked until verification");
+  assert.match(s.actionHint ?? "", /flux backup create/);
 });

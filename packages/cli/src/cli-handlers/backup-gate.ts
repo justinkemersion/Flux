@@ -3,10 +3,14 @@ import {
   BACKUP_TRUST_REMEDIATION_CLI,
   classifyNewestBackup,
   destructiveBackupCheckMessage,
+  formatBackupTrustSummary,
+  type BackupKind,
+  type BackupTrustClassification,
 } from "@flux/core/backup-trust";
 import chalk from "chalk";
 import { getApiClient } from "../api-client";
 import { isCliAdmin } from "../utils/cli-audience";
+import { formatCliTimestampDisplay } from "../utils/cli-timestamp.js";
 
 export async function ensureRestoreVerifiedLatestBackup(
   client: ReturnType<typeof getApiClient>,
@@ -22,14 +26,49 @@ export async function ensureRestoreVerifiedLatestBackup(
   }
 }
 
+function printBackupStatusBlock(
+  classification: BackupTrustClassification,
+  kind: BackupKind,
+  latestCreatedAt?: string | null,
+): void {
+  const summary = formatBackupTrustSummary({
+    classification,
+    kind,
+    latestBackupCreatedAt: latestCreatedAt ?? null,
+  });
+  const labelWidth = 28;
+  const pad = (s: string) => s.padEnd(labelWidth);
+  const latestBackup =
+    latestCreatedAt == null || latestCreatedAt === ""
+      ? summary.latestBackup
+      : formatCliTimestampDisplay(latestCreatedAt);
+  console.log(chalk.dim(`  ${pad("Latest backup:")}${latestBackup}`));
+  console.log(chalk.dim(`  ${pad("Verification:")}${summary.verification}`));
+  const destructiveLine = summary.safeDestructive;
+  const destructiveColor = classification.allowsDestructiveWithoutOverride
+    ? chalk.green(destructiveLine)
+    : chalk.yellow(destructiveLine);
+  console.log(
+    chalk.dim(`  ${pad("Safe destructive actions:")}`) + destructiveColor,
+  );
+  if (summary.actionHint) {
+    console.log(chalk.dim(`  ${pad("Action:")}${summary.actionHint}`));
+  }
+}
+
 export function printBackupTrustSummary(
   classification: ReturnType<typeof classifyNewestBackup>,
   kind?: "project_db" | "tenant_export" | null,
+  latestCreatedAt?: string | null,
 ): void {
+  const k = kind ?? "project_db";
+  printBackupStatusBlock(classification, k, latestCreatedAt);
+
   if (!isCliAdmin() && classification.tier !== "restore_failed") {
     return;
   }
-  const k = kind ?? "project_db";
+
+  console.log();
   const label = backupTrustTierLabelForKind(k, classification.tier);
   if (classification.tier === "restorable") {
     console.log(

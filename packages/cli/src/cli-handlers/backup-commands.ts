@@ -11,10 +11,11 @@ import {
 } from "@flux/core/backup-policy";
 import chalk from "chalk";
 import { getApiClient } from "../api-client";
-import { sectionBanner } from "../cli-layout";
+import { sectionBanner, B } from "../cli-layout";
 import type { FluxJson } from "../flux-config";
 import { resolveHash, resolveOptionalName } from "../project-resolve";
 import { printBackupTrustSummary } from "./backup-gate";
+import { formatCliTimestampDisplay } from "../utils/cli-timestamp.js";
 
 function fmtBytes(n: number | null | undefined): string {
   if (!Number.isFinite(n ?? NaN) || (n ?? 0) < 0) return "-";
@@ -103,11 +104,13 @@ export async function cmdBackupList(
   printPlatformMinimumFreshness(platformMinimumBackupFreshness);
   console.log();
   const classification = classifyNewestBackup(backups);
-  printBackupTrustSummary(classification, backups[0]?.kind);
+  printBackupTrustSummary(classification, backups[0]?.kind, backups[0]?.createdAt);
   if (verbose) {
     if (reconciledAt) {
       console.log(
-        chalk.dim(`  Checked artifacts on server at ${reconciledAt}.`),
+        chalk.dim(
+          `  Checked artifacts on server at ${formatCliTimestampDisplay(reconciledAt)}.`,
+        ),
       );
     }
     if (backupVolumeAbsoluteRoot) {
@@ -146,7 +149,7 @@ export async function cmdBackupList(
       const kindCell = (row.kind ?? "project_db").padEnd(10);
       const offsiteCell = (row.offsiteR2Status ?? row.offsiteStatus ?? "-").padEnd(12);
       console.log(
-        `  ${chalk.cyan(row.id.padEnd(36))} ${kindCell} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${(row.createdAt ?? "-").padEnd(25)} ${offsiteCell} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending").padEnd(16)} ${fmtArtifactRelPath(row.primaryArtifactRelativePath)}`,
+        `  ${chalk.cyan(row.id.padEnd(36))} ${kindCell} ${String(row.status).padEnd(10)} ${fmtBytes(row.sizeBytes ?? null).padEnd(10)} ${formatCliTimestampDisplay(row.createdAt)} ${offsiteCell} ${String(row.artifactValidationStatus ?? "pending").padEnd(17)} ${String(row.restoreVerificationStatus ?? "pending").padEnd(16)} ${fmtArtifactRelPath(row.primaryArtifactRelativePath)}`,
       );
     }
     return;
@@ -156,13 +159,18 @@ export async function cmdBackupList(
       "  History (newest first) — use --verbose for reconcile/paths detail + full technical columns",
     ),
   );
-  console.log(chalk.dim("  ID                                   CREATED                    TRUST"));
   for (let i = 0; i < backups.length; i++) {
     const row = backups[i]!;
     const rowTrust = classifyNewestBackup([row]);
     const trustShort = backupTrustTierLabelForKind(row.kind ?? "project_db", rowTrust.tier);
-    const line = `  ${row.id.padEnd(36)} ${(row.createdAt ?? "-").padEnd(25)} ${trustShort}`;
-    console.log(i === 0 ? line : chalk.dim(line));
+    const created = formatCliTimestampDisplay(row.createdAt);
+    const idLine = `  ${chalk.cyan(row.id)}`;
+    const metaLine = `${B}  ${chalk.dim("Created:")} ${i === 0 ? created : chalk.dim(created)}`;
+    const trustLine = `${B}  ${chalk.dim("Trust:")}   ${i === 0 ? trustShort : chalk.dim(trustShort)}`;
+    console.log(idLine);
+    console.log(metaLine);
+    console.log(trustLine);
+    if (i < backups.length - 1) console.log();
   }
 }
 

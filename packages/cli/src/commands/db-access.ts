@@ -24,6 +24,7 @@ import {
 } from "../db-access/format";
 import { parsePostgresConnectionFields } from "../postgres-connection-fields";
 import { resolveHash, resolveOptionalName } from "../project-resolve";
+import { formatCliTimestampDisplay } from "../utils/cli-timestamp.js";
 
 export type DbAccessCommonOptions = {
   project?: string;
@@ -313,7 +314,7 @@ export async function cmdDbTunnel(
   );
   if (auth?.mode === "v2_shared") {
     console.log(`${B}User:     ${auth.credential.username}`);
-    console.log(`${B}Expires:  ${auth.credential.expiresAt}`);
+    console.log(`${B}Expires:  ${formatCliTimestampDisplay(auth.credential.expiresAt)}`);
   }
   console.log();
   sectionBanner("GUI config");

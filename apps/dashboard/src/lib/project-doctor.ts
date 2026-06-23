@@ -1,4 +1,9 @@
-import { classifyNewestBackup } from "@flux/core/backup-trust";
+import {
+  backupTrustRemediationHint,
+  classifyNewestBackup,
+  formatBackupTrustSummary,
+  type BackupKind,
+} from "@flux/core/backup-trust";
 import { resolveTenantApiSchemaName } from "@flux/core";
 import { inspectProjectSchema } from "./project-schema-inspection";
 import { listPooledAppliedMigrations } from "./pooled-migrations";
@@ -99,6 +104,7 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
         artifactValidationStatus: projectBackups.artifactValidationStatus,
         restoreVerificationStatus: projectBackups.restoreVerificationStatus,
         kind: projectBackups.kind,
+        createdAt: projectBackups.createdAt,
       })
       .from(projectBackups)
       .where(and(eq(projectBackups.projectId, project.id)))
@@ -193,29 +199,45 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
   // Backup trust check
   if (backupResult.status === "fulfilled") {
     const rows = backupResult.value;
+    const newestKind = (rows[0]?.kind ?? (mode === "v2_shared" ? "tenant_export" : "project_db")) as BackupKind;
     const classification = classifyNewestBackup(
       rows.map((r) => ({
         status: r.status,
         artifactValidationStatus: r.artifactValidationStatus,
         restoreVerificationStatus: r.restoreVerificationStatus,
+        kind: r.kind as BackupKind,
       })),
     );
+    const latestCreatedAt = rows[0]?.createdAt;
+    const summary = formatBackupTrustSummary({
+      classification,
+      kind: newestKind,
+      latestBackupCreatedAt:
+        latestCreatedAt instanceof Date
+          ? latestCreatedAt.toISOString()
+          : (latestCreatedAt ?? null),
+    });
     if (classification.tier === "restorable") {
-      checks.push(pass("Backup", "Latest backup is restore-verified"));
+      checks.push(
+        pass(
+          "Backup",
+          `${summary.verification} — safe destructive actions allowed`,
+        ),
+      );
     } else if (classification.tier === "no_backups") {
       checks.push(
         warn(
           "Backup",
-          "No backups exist for this project",
-          "Run `flux backup create <project>` then `flux backup verify`.",
+          `${summary.verification} — ${summary.safeDestructive.toLowerCase()}`,
+          backupTrustRemediationHint(classification.tier),
         ),
       );
     } else {
       checks.push(
         warn(
           "Backup",
-          classification.detail,
-          "Run `flux backup verify` to restore-verify the latest backup.",
+          `${summary.verification} — ${summary.safeDestructive.toLowerCase()}`,
+          summary.actionHint ?? backupTrustRemediationHint(classification.tier),
         ),
       );
     }

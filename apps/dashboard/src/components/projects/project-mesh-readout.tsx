@@ -9,6 +9,8 @@ import { LogConsole } from "@/src/components/projects/log-console";
 import { ProjectManifest } from "@/src/components/projects/project-manifest";
 import { TelemetrySparkline } from "@/src/components/projects/telemetry-sparkline";
 import { ProjectHealthCard } from "@/src/components/projects/project-health-card";
+import { ProjectBackupStatusCard } from "@/src/components/projects/project-backup-status-card";
+import { useProjectBackupTrust } from "@/src/lib/project-backup-trust-client";
 
 type Props = {
   project: ProjectRow;
@@ -27,6 +29,9 @@ export function ProjectMeshReadout({
   credentialSurface = "none",
 }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const projectMode =
+    project.mode === "v2_shared" ? "v2_shared" : "v1_dedicated";
+  const backupTrustState = useProjectBackupTrust(project.hash);
 
   return (
     <div className="mb-4 space-y-5">
@@ -37,12 +42,23 @@ export function ProjectMeshReadout({
 
       <ProjectHealthCard slug={project.slug} hash={project.hash} />
 
+      <ProjectBackupStatusCard
+        slug={project.slug}
+        mode={projectMode}
+        backups={backupTrustState.backups}
+        trust={backupTrustState.trust}
+        loading={backupTrustState.loading}
+        error={backupTrustState.error}
+        onRefresh={() => void backupTrustState.refresh()}
+      />
+
       <section id={`database-${project.slug}`}>
         <ProjectExportControl
           slug={project.slug}
           hash={project.hash}
           projectId={project.id}
-          mode={project.mode === "v2_shared" ? "v2_shared" : "v1_dedicated"}
+          mode={projectMode}
+          backupTrustState={backupTrustState}
         />
       </section>
 

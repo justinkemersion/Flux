@@ -39,7 +39,7 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux migrate` | Orchestrate **v2_shared** → **v1_dedicated** via the control plane (see [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)) |
 | `flux logs` | Tail project logs when wired |
 | `flux backup create` | Both engines — control plane streams `pg_dump -Fc`. v1: full project DB. v2: tenant API schema (`--schema=t_<short>_api --no-owner --no-acl`). See [Backups workflow](/docs/guides/backups) |
-| `flux backup list` | Recent backups newest-first with trust labels (Restorable / Created, not restore-verified / Restore verification failed / etc.). Pass `--verbose` for catalog timestamps, artifact paths, and underlying tier names |
+| `flux backup list` | Recent backups newest-first with trust labels (Restorable / Created, not restore-verified / Restore verification failed / etc.). Timestamps use the universal CLI format: `unixMs · ISO UTC · human UTC · relative`. Pass `--verbose` for artifact paths and full technical columns |
 | `flux backup verify` | Runs **`pg_restore`** in a disposable Postgres container on the control plane. The only step that promotes a backup to **Restorable**. Requires `docker-cli` in the `flux-web` image (self-hosted operators) |
 | `flux backup download` | Writes the custom-format archive to `-o <path>` (or shell redirect). Refuses binary output to a TTY |
 

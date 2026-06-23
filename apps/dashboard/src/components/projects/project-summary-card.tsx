@@ -4,6 +4,7 @@ import { Check, Clipboard, Loader2, Wrench } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { EngineModeBadge } from "@/src/components/projects/engine-mode-badge";
+import { ProjectBackupStatusCard } from "@/src/components/projects/project-backup-status-card";
 import type { ProjectRow } from "@/src/components/projects/project-types";
 import {
   deriveTelemetryDisplay,
@@ -15,6 +16,7 @@ import {
   errorMessageFromJsonBody,
   readResponseJson,
 } from "@/src/lib/fetch-json";
+import { useProjectBackupTrust } from "@/src/lib/project-backup-trust-client";
 
 type ServerStatus = ProjectRow["status"];
 
@@ -97,6 +99,8 @@ export function ProjectSummaryCard({
   staggerIndex = 0,
 }: Props) {
   const isV2Shared = p.mode === "v2_shared";
+  const projectMode = isV2Shared ? "v2_shared" : "v1_dedicated";
+  const backupTrustState = useProjectBackupTrust(p.hash);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [powerAction, setPowerAction] = useState<"start" | "stop" | null>(null);
@@ -267,6 +271,16 @@ export function ProjectSummaryCard({
             <p className="mt-1 text-sm text-zinc-500">{p.slug}</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <ProjectBackupStatusCard
+              slug={p.slug}
+              mode={projectMode}
+              backups={backupTrustState.backups}
+              trust={backupTrustState.trust}
+              loading={backupTrustState.loading}
+              error={backupTrustState.error}
+              onRefresh={() => void backupTrustState.refresh()}
+              variant="inline"
+            />
             <EngineModeBadge mode={p.mode} surface="darkCard" />
             <StatusTag displayStatus={displayStatus} project={p} />
           </div>
