@@ -11,6 +11,7 @@ export const fluxProjectSummarySchema = z.object({
     "corrupted",
   ]),
   apiUrl: z.string(),
+  lifecycleState: z.enum(["active", "dormant", "archived"]).optional(),
 });
 
 export const listProjectsResponseSchema = z.array(fluxProjectSummarySchema);
