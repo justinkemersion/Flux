@@ -7,7 +7,7 @@ import {
   fluxMdEditWorkflowSteps,
   fluxMdPushCommandExplainer,
 } from "@flux/core/flux-md";
-import { Check, Copy, Loader2, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Copy, Loader2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DocsMarkdown } from "@/src/components/docs/docs-markdown";
 import { CliSnippetRow } from "@/src/components/projects/project-card-cli-snippets";
@@ -33,53 +33,57 @@ function BriefHelpBox({
   variant: "empty" | "has-content";
 }) {
   const pushLine = `flux project brief push --hash ${hash}`;
-
-  if (variant === "empty") {
-    return (
-      <div className="mt-4 space-y-3 rounded-md border border-zinc-200/80 bg-zinc-50/60 p-4 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950/30 dark:text-zinc-300">
-        <p className="font-medium text-zinc-900 dark:text-zinc-100">
-          What is this?
-        </p>
-        <p>{FLUX_MD_SOURCE_OF_TRUTH_NOTE}</p>
-        <p>
-          You can generate a first draft here or in the CLI, then keep the real
-          file in your repo as <code className="font-mono">FLUX.md</code>.
-        </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-500">
-          {fluxMdPushCommandExplainer(hash)}
-        </p>
-      </div>
-    );
-  }
-
-  const steps = fluxMdEditWorkflowSteps(hash);
+  const title =
+    variant === "has-content"
+      ? "Read-only preview — how to edit"
+      : "What is this?";
 
   return (
-    <div className="mt-4 space-y-3 rounded-md border border-amber-200/80 bg-amber-50/40 p-4 text-sm text-zinc-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-zinc-300">
-      <p className="font-medium text-zinc-900 dark:text-zinc-100">
-        Read-only preview — how to edit
-      </p>
-      <p>{FLUX_MD_SOURCE_OF_TRUTH_NOTE}</p>
-      <p>
-        This page does not edit the brief directly. To change what you see,
-        update <code className="font-mono">FLUX.md</code> in your app repo, then
-        refresh the dashboard copy:
-      </p>
-      <ol className="list-decimal space-y-1.5 pl-5">
-        {steps.map((step) => (
-          <li key={step}>{step}</li>
-        ))}
-      </ol>
-      <div className="space-y-1.5 pt-1">
-        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-          Refresh dashboard from repo
-        </p>
-        <CliSnippetRow line={pushLine} />
-        <p className="text-xs text-zinc-500 dark:text-zinc-500">
-          {fluxMdPushCommandExplainer(hash)}
-        </p>
+    <details className="group mt-3 rounded-md border border-zinc-200/70 bg-zinc-50/40 dark:border-zinc-800/60 dark:bg-zinc-950/20">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100 [&::-webkit-details-marker]:hidden">
+        <ChevronDown
+          className="h-4 w-4 shrink-0 text-zinc-400 transition-transform group-open:rotate-180"
+          aria-hidden
+        />
+        {title}
+      </summary>
+      <div className="space-y-3 border-t border-zinc-200/70 px-3 py-3 text-sm text-zinc-600 dark:border-zinc-800/60 dark:text-zinc-400">
+        <p>{FLUX_MD_SOURCE_OF_TRUTH_NOTE}</p>
+        {variant === "has-content" ? (
+          <>
+            <p>
+              This page does not edit the brief directly. Update{" "}
+              <code className="font-mono">FLUX.md</code> in your app repo, then
+              refresh the dashboard copy:
+            </p>
+            <ol className="list-decimal space-y-1.5 pl-5">
+              {fluxMdEditWorkflowSteps(hash).map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Refresh dashboard from repo
+              </p>
+              <CliSnippetRow line={pushLine} />
+              <p className="text-xs text-zinc-500 dark:text-zinc-500">
+                {fluxMdPushCommandExplainer(hash)}
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>
+              Generate a first draft here or in the CLI, then keep the file in
+              your repo as <code className="font-mono">FLUX.md</code>.
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-500">
+              {fluxMdPushCommandExplainer(hash)}
+            </p>
+          </>
+        )}
       </div>
-    </div>
+    </details>
   );
 }
 
