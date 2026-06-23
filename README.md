@@ -63,7 +63,7 @@ Operator-oriented checklist of what Flux ships **today** (both engines unless no
 | **Destructive gates** | Restore-verified backup required before **`flux nuke`**, **`flux migrate`**, **`flux db-reset`**, **`flux db restore`**, dashboard **Delete** / **Factory reset** — unless explicit override (`--skip-backup-check` / `?skipBackupCheck=true`). Shared primitive: `@flux/core/backup-trust`. |
 | **Private DB access** | **`flux db tunnel \| shell \| dump \| restore \| password \| access-plan \| gui-config`** — Postgres stays off the public internet; SSH tunnel to Docker-internal host. v1: project **`postgres`** password. v2: **temporary scoped roles** (readonly default); pooled admin never exposed. See [Private database access](#private-database-access). |
 | **Lifecycle** | `flux start \| stop \| nuke`, **`flux project wake \| sleep \| archive`**, dashboard lifecycle panel, `flux reap` (idle stop). Dormant/archived projects return **503** at the gateway until woken. |
-| **Project understanding** | **`flux db inspect \| tables \| describe \| counts`**, dashboard Schema Explorer + data preview, **`flux doctor`**, activity timeline, portfolio dashboard (lifecycle groups), **`FLUX.md`** repo brief (`flux project brief push \| generate`), operator metadata (`flux project metadata`), AI summaries when Workers AI is configured (`flux project summarize`, dashboard Generate draft). |
+| **Project understanding** | **`flux db inspect \| tables \| describe \| counts`**, dashboard Schema Explorer + data preview, **`flux doctor`**, activity timeline, portfolio dashboard (lifecycle groups), **`FLUX.md`** repo brief (`flux project brief push \| generate`), portfolio one-line description via **`flux project metadata --description`**, AI summaries when Workers AI is configured (`flux project summarize`, dashboard Generate draft). |
 | **Tenant env** | `flux env set \| list` on PostgREST container (sensitive keys redacted in list). |
 | **Auth & API** | PostgREST JWT (`PGRST_JWT_SECRET` / gateway secret on v2). Gateway Bearer on v2 edge. RLS + **`GRANT`** per tenant role. Docs: [`AGENTS.md`](./AGENTS.md), `/docs/guides/nextjs`. |
 | **Observability** | `flux logs`, dashboard log stream (v1). Fleet monitor + deep v2 JWT probes. `bin/ops-audit.sh`. |
@@ -589,7 +589,7 @@ Implementation: **`packages/cli/src/index.ts`**. Orchestration: **`ProjectManage
 | **`flux supabase-rest-path`** | Toggle **`/rest/v1`** Traefik strip on v1 API container. |
 | **`flux reap --hours N`** | Stop idle projects (activity timestamps). |
 | **`flux project wake \| sleep \| archive`** | Product lifecycle (dormant drains gateway traffic; archived is frozen). |
-| **`flux project metadata`** | Control-plane description + operator brief (distinct from repo **`FLUX.md`**). |
+| **`flux project metadata --description <text>`** | Optional one-line portfolio subtitle (distinct from repo **`FLUX.md`**). |
 | **`flux project brief push \| generate \| prompt`** | Repo **`FLUX.md`** sync, AI draft (host Workers AI), or copyable generation prompt. |
 | **`flux project summarize --kind activity\|resume`** | AI summary from schema, activity, backups, and metadata context. |
 | **`flux doctor`** | PASS/WARN/FAIL health check (schema, API, migrations, backups). |
