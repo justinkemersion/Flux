@@ -532,7 +532,7 @@ export function ProjectCard({
       <article className="flex flex-col rounded-md border border-zinc-200/70 bg-white p-6 shadow-sm dark:border-zinc-800/80 dark:bg-zinc-950">
         <ProjectHeader
           title={p.name}
-          subtitle={p.slug}
+          subtitle={p.description?.trim() || p.slug}
           statusRow={
             <>
               <EngineModeBadge mode={p.mode} surface="lightHeader" />

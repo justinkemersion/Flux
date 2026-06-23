@@ -25,6 +25,8 @@ import * as doctor from "./doctor";
 import type { DoctorReport } from "./doctor";
 import * as activity from "./activity";
 import type { ProjectActivityResponse } from "./activity";
+import * as projectMetadata from "./project-metadata";
+import type { ProjectMetadataDetail } from "./schemas";
 import type {
   CreateProjectMode,
   CreateProjectResult,
@@ -204,6 +206,17 @@ export class ApiClient {
     limit?: number,
   ): Promise<ProjectActivityResponse> {
     return activity.fetchProjectActivity(this.asContext(), hash, limit);
+  }
+
+  fetchProjectMetadataDetail(hash: string): Promise<ProjectMetadataDetail> {
+    return projectMetadata.fetchProjectMetadataDetail(this.asContext(), hash);
+  }
+
+  patchProjectMetadata(
+    hash: string,
+    patch: { description?: string | null; brief?: string | null },
+  ): Promise<ProjectMetadataDetail> {
+    return projectMetadata.patchProjectMetadata(this.asContext(), hash, patch);
   }
 
   listAppliedMigrations(hash: string): Promise<FluxMigrationRecord[]> {

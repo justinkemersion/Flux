@@ -126,6 +126,10 @@ export const projects = pgTable(
     backupIntervalDays: integer("backup_interval_days"),
     backupRetentionCount: integer("backup_retention_count"),
     backupRetentionDays: integer("backup_retention_days"),
+    /** Short purpose line for portfolio / reorientation (control plane). */
+    description: text("description"),
+    /** Optional operator brief — not repo FLUX.md (see Phase 11). */
+    brief: text("brief"),
   },
   (t) => [
     uniqueIndex("projects_user_slug_uniq").on(t.userId, t.slug),

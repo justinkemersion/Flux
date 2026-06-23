@@ -10,6 +10,7 @@ import { ProjectManifest } from "@/src/components/projects/project-manifest";
 import { TelemetrySparkline } from "@/src/components/projects/telemetry-sparkline";
 import { ProjectHealthCard } from "@/src/components/projects/project-health-card";
 import { ProjectActivityPanel } from "@/src/components/projects/project-activity-panel";
+import { ProjectMetadataPanel } from "@/src/components/projects/project-metadata-panel";
 import { ProjectBackupStatusCard } from "@/src/components/projects/project-backup-status-card";
 import { useProjectBackupTrust } from "@/src/lib/project-backup-trust-client";
 
@@ -44,6 +45,8 @@ export function ProjectMeshReadout({
       <ProjectHealthCard slug={project.slug} hash={project.hash} />
 
       <ProjectActivityPanel slug={project.slug} hash={project.hash} />
+
+      <ProjectMetadataPanel slug={project.slug} hash={project.hash} />
 
       <ProjectBackupStatusCard
         slug={project.slug}

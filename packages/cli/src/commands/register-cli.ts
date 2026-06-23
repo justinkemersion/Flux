@@ -11,6 +11,7 @@ import { registerPostgrestConfigCommands } from "./register-cli/postgrest-config
 import { registerGauntletCommands } from "./register-cli/gauntlet";
 import { registerDoctorCommands } from "./register-cli/doctor";
 import { registerActivityCommands } from "./register-cli/activity";
+import { registerProjectMetadataCommands } from "./register-cli/project-metadata";
 
 export function registerFluxCliCommands(program: Command): void {
   program
@@ -31,4 +32,5 @@ export function registerFluxCliCommands(program: Command): void {
   registerEnvCommands(program);
   registerDoctorCommands(program);
   registerActivityCommands(program);
+  registerProjectMetadataCommands(program);
 }

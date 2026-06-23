@@ -68,6 +68,17 @@ export const projectMetadataSchema = z.object({
   mode: z.union([z.literal("v1_dedicated"), z.literal("v2_shared")]),
   /** Resolved PostgREST primary schema (`api` or `t_<shortId>_api`). */
   apiSchema: z.string().optional(),
+  description: z.string().nullable().optional(),
+  brief: z.string().nullable().optional(),
+});
+
+export const projectMetadataDetailSchema = z.object({
+  slug: z.string(),
+  hash: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  brief: z.string().nullable(),
+  updatedAt: z.string(),
 });
 
 export const initProjectResponseSchema = z.object({
@@ -182,6 +193,7 @@ export type ProjectCredentialsByHash = z.infer<
 export type CreateProjectMode = "v1_dedicated" | "v2_shared";
 export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
+export type ProjectMetadataDetail = z.infer<typeof projectMetadataDetailSchema>;
 export type InitProjectResult = z.infer<typeof initProjectResponseSchema>;
 export type ProjectBackup = z.infer<typeof backupItemSchema>;
 export type PlatformMinimumBackupFreshness = z.infer<

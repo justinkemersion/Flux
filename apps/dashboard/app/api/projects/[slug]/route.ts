@@ -68,6 +68,7 @@ export async function GET(
       mode: project.mode,
       status: statusFromV2CatalogHealth(project),
       apiUrl,
+      description: project.description ?? null,
       createdAt:
         project.createdAt instanceof Date
           ? project.createdAt.toISOString()
@@ -102,6 +103,7 @@ export async function GET(
     mode: project.mode ?? "v1_dedicated",
     status: summary?.status ?? "missing",
     apiUrl: summary?.apiUrl ?? apiUrl,
+    description: project.description ?? null,
     createdAt:
       project.createdAt instanceof Date
         ? project.createdAt.toISOString()

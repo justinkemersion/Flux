@@ -61,6 +61,8 @@ export async function GET(
       mode: projects.mode,
       apiSchemaName: projects.apiSchemaName,
       apiSchemaStrategy: projects.apiSchemaStrategy,
+      description: projects.description,
+      brief: projects.brief,
     })
     .from(projects)
     .where(and(eq(projects.userId, auth.userId), eq(projects.hash, hash)))
@@ -82,6 +84,8 @@ export async function GET(
       hash: row.hash,
       mode: row.mode,
       apiSchema,
+      description: row.description ?? null,
+      brief: row.brief ?? null,
     },
     { headers: { "Cache-Control": "private, no-store" } },
   );

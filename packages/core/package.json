@@ -19,6 +19,7 @@
     "./schema-inspection-types": "./src/schema-inspection/types.ts",
     "./database-access-gui": "./src/projects/database-access-gui.ts",
     "./project-activity": "./src/project-activity.ts",
+    "./project-metadata": "./src/project-metadata.ts",
     "./test/sql-assertions": "./src/test/sql-assertions.ts"
   },
   "scripts": {

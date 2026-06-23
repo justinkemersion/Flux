@@ -141,6 +141,7 @@ export async function GET(): Promise<Response> {
           status,
           apiUrl: fluxApiUrlForV2Shared(p.slug, p.hash, isProduction),
           createdAt,
+          description: p.description ?? null,
           healthStatus: p.healthStatus ?? null,
           lastHeartbeatAt: p.lastHeartbeatAt
             ? p.lastHeartbeatAt.toISOString()
@@ -156,6 +157,7 @@ export async function GET(): Promise<Response> {
         hash: p.hash,
         mode: p.mode ?? "v1_dedicated",
         status: s?.status ?? "missing",
+        description: p.description ?? null,
         apiUrl:
           s?.apiUrl ??
           fluxApiUrlForSlug(p.slug, p.hash, isProduction),
