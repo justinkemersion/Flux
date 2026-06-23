@@ -20,7 +20,7 @@ function printActivityTimeline(
   hash: string,
   events: ProjectActivityEvent[],
 ): void {
-  console.log(sectionBanner("Activity"));
+  sectionBanner("Activity");
   console.log(
     chalk.dim(`Project ${slug} (${hash}) · ${String(events.length)} event(s)`),
   );
