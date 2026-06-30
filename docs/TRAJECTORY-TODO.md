@@ -58,7 +58,7 @@ Not intended for public docs or marketing consumption.
 
 ### 1) Gateway startup smoke in deploy script
 - **Priority:** P0
-- **Status:** todo
+- **Status:** done
 - **Owner:** platform
 - **Why:** prevents silent rollout with restart-looping gateway
 - **Scope:** `bin/deploy-gateway.sh`
@@ -66,10 +66,11 @@ Not intended for public docs or marketing consumption.
   - script retries liveness for a bounded warmup window (e.g. 30–60s)
   - exits non-zero with actionable log guidance if still unhealthy
   - prints final healthy/unhealthy verdict explicitly
+- **Notes:** `FLUX_GATEWAY_HEALTH_WARMUP_SECS` (default 60), `FLUX_GATEWAY_HEALTH_INTERVAL_SECS` (default 3); restart-loop early exit
 
 ### 2) v2 shared probe reliability without implicit Node requirement
 - **Priority:** P0
-- **Status:** todo
+- **Status:** done
 - **Owner:** platform
 - **Why:** current probe assumes `node` + global `fetch` in probe container
 - **Scope:** `bin/deploy-v2-shared.sh`
@@ -77,6 +78,7 @@ Not intended for public docs or marketing consumption.
   - probe works even if gateway image changes runtime toolset
   - fallback path documented and deterministic
   - no false “healthy” due to missing probe binary
+- **Notes:** curl → wget → node in probe container; then `curlimages/curl:8.7.1` on `flux-v2-shared` / `flux-network`; probe failure exits non-zero
 
 ### 3) Collision/error surface in dashboard API response
 - **Priority:** P0

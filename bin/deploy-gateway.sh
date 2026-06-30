@@ -11,6 +11,8 @@
 #   FLUX_GATEWAY_DEEP_URL        — readiness URL (default: http://127.0.0.1:4000/health/deep).
 #   FLUX_GATEWAY_ROUTE_HOST      — optional host header for edge route probe.
 #   FLUX_GATEWAY_SKIP_DB_PREFLIGHT=1 — skip catalog DB connectivity check (not recommended).
+#   FLUX_GATEWAY_HEALTH_WARMUP_SECS — liveness retry window after container cycle (default: 60).
+#   FLUX_GATEWAY_HEALTH_INTERVAL_SECS — seconds between liveness attempts (default: 3).
 #
 # Prerequisites:
 #   - packages/gateway/.env exists on the host (do not commit it)
@@ -29,6 +31,8 @@ ROUTE_HOST="${FLUX_GATEWAY_ROUTE_HOST:-}"
 GATEWAY_ENV_FILE="$REPO_ROOT/packages/gateway/.env"
 PREFLIGHT_PG_IMAGE="${FLUX_GATEWAY_PREFLIGHT_PG_IMAGE:-postgres:17-alpine}"
 PREFLIGHT_NETWORK="${FLUX_GATEWAY_PREFLIGHT_NETWORK:-flux-network}"
+HEALTH_WARMUP_SECS="${FLUX_GATEWAY_HEALTH_WARMUP_SECS:-60}"
+HEALTH_INTERVAL_SECS="${FLUX_GATEWAY_HEALTH_INTERVAL_SECS:-3}"
 
 GATEWAY_TAG="Deploy"
 [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]] && GATEWAY_TAG="Restart"
@@ -93,6 +97,64 @@ gateway_preflight_system_db() {
   exit 1
 }
 
+wait_for_gateway_container() {
+  local deadline=$((SECONDS + HEALTH_WARMUP_SECS))
+  local attempt=0 running status restarts
+
+  while [[ $SECONDS -lt $deadline ]]; do
+    attempt=$((attempt + 1))
+    running="$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo false)"
+    status="$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo missing)"
+    restarts="$(docker inspect -f '{{.RestartCount}}' "$CONTAINER_NAME" 2>/dev/null || echo "?")"
+
+    if [[ "$running" == "true" && "$status" == "running" ]]; then
+      echo "  $CONTAINER_NAME: running (restarts=$restarts, attempt=$attempt)"
+      docker ps --filter "name=^${CONTAINER_NAME}\$" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+      return 0
+    fi
+
+    echo "  attempt $attempt: not ready (running=$running status=$status restarts=$restarts)"
+    if [[ "$status" == "restarting" || "${restarts:-0}" =~ ^[0-9]+$ && "$restarts" -gt 2 ]]; then
+      echo "  ERROR: $CONTAINER_NAME appears to be in a restart loop (status=$status restarts=$restarts)" >&2
+      echo "         Inspect: docker logs --tail 80 $CONTAINER_NAME" >&2
+      docker ps -a --filter "name=^${CONTAINER_NAME}\$" || true
+      exit 1
+    fi
+    sleep "$HEALTH_INTERVAL_SECS"
+  done
+
+  echo "  ERROR: $CONTAINER_NAME did not reach running within ${HEALTH_WARMUP_SECS}s" >&2
+  docker ps -a --filter "name=^${CONTAINER_NAME}\$" || true
+  exit 1
+}
+
+wait_for_gateway_liveness() {
+  local deadline=$((SECONDS + HEALTH_WARMUP_SECS))
+  local attempt=0 code="000"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "  WARN: curl not found; skipped HTTP liveness checks."
+    return 0
+  fi
+
+  echo "--- Gateway ${GATEWAY_TAG}: Health checks (warmup=${HEALTH_WARMUP_SECS}s interval=${HEALTH_INTERVAL_SECS}s) ---"
+
+  while [[ $SECONDS -lt $deadline ]]; do
+    attempt=$((attempt + 1))
+    code="$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 3 "$HEALTH_URL" 2>/dev/null || echo "000")"
+    if [[ "$code" == "200" ]]; then
+      echo "  liveness: OK (${HEALTH_URL}, attempt=$attempt)"
+      return 0
+    fi
+    echo "  attempt $attempt: liveness HTTP ${code} at ${HEALTH_URL}"
+    sleep "$HEALTH_INTERVAL_SECS"
+  done
+
+  echo "  ERROR: liveness check failed after ${HEALTH_WARMUP_SECS}s warmup (last HTTP ${code})" >&2
+  echo "         Inspect: docker logs --tail 80 $CONTAINER_NAME" >&2
+  exit 1
+}
+
 gateway_preflight_system_db
 
 if [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]]; then
@@ -117,26 +179,11 @@ else
 fi
 
 echo "--- Gateway ${GATEWAY_TAG}: Verifying container ---"
-sleep 3
-RUNNING="$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo false)"
-if [[ "$RUNNING" != "true" ]]; then
-  STATUS="$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo missing)"
-  echo "  ERROR: $CONTAINER_NAME is not running (State.Running=$RUNNING status=$STATUS)" >&2
-  docker ps -a --filter "name=^${CONTAINER_NAME}\$" || true
-  exit 1
-fi
-echo "  $CONTAINER_NAME: running"
-docker ps --filter "name=^${CONTAINER_NAME}\$" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+wait_for_gateway_container
+
+wait_for_gateway_liveness
 
 if command -v curl >/dev/null 2>&1; then
-  echo "--- Gateway ${GATEWAY_TAG}: Health checks ---"
-  HEALTH_CODE="$(curl -sS -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")"
-  if [[ "$HEALTH_CODE" != "200" ]]; then
-    echo "  ERROR: liveness check failed (${HEALTH_CODE}) at ${HEALTH_URL}" >&2
-    exit 1
-  fi
-  echo "  liveness: OK (${HEALTH_URL})"
-
   DEEP_BODY="$(curl -sS "$DEEP_URL" || true)"
   DEEP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" "$DEEP_URL" || echo "000")"
   if [[ "$DEEP_CODE" != "200" ]]; then
@@ -154,10 +201,9 @@ if command -v curl >/dev/null 2>&1; then
       echo "  WARN: edge route probe failed for Host=${ROUTE_HOST} (HTTP ${ROUTE_CODE})"
     fi
   fi
-else
-  echo "  WARN: curl not found; skipped HTTP checks."
 fi
 
 echo ""
 echo "--- Gateway ${GATEWAY_TAG}: Operational ---"
+echo "  verdict: healthy"
 echo "  logs: docker logs -f $CONTAINER_NAME"

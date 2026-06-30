@@ -12,6 +12,7 @@
 #   FLUX_V2_PGBOUNCER_CONTAINER    — default: flux-pgbouncer
 #   FLUX_V2_POSTGREST_CONTAINER    — default: flux-postgrest-pool
 #   FLUX_V2_PROBE_CONTAINER        — default: flux-node-gateway (network probe origin)
+#   FLUX_V2_PROBE_CURL_IMAGE       — ephemeral probe fallback (default: curlimages/curl:8.7.1)
 #   FLUX_V2_SKIP_POSTGREST_PROBE=1 — skip postgrest HTTP probe
 #   FLUX_V2_SKIP_CLUSTER_BOOTSTRAP=1 — skip bootstrapSharedCluster (advanced: first-time only)
 #   FLUX_V2_SKIP_GLOBAL_DB_BOOTSTRAP=1 — skip global role bootstrap (advanced only)
@@ -50,6 +51,7 @@ PG_CONTAINER="${FLUX_V2_POSTGRES_CONTAINER:-flux-postgres-v2}"
 PGB_CONTAINER="${FLUX_V2_PGBOUNCER_CONTAINER:-flux-pgbouncer}"
 PGRST_CONTAINER="${FLUX_V2_POSTGREST_CONTAINER:-flux-postgrest-pool}"
 PROBE_CONTAINER="${FLUX_V2_PROBE_CONTAINER:-flux-node-gateway}"
+PROBE_CURL_IMAGE="${FLUX_V2_PROBE_CURL_IMAGE:-curlimages/curl:8.7.1}"
 # Internal URL used only for exec-from-container probes; not used from the host.
 PGRST_INTERNAL_URL="${FLUX_V2_POSTGREST_URL:-http://flux-postgrest-pool:3000/}"
 
@@ -278,39 +280,80 @@ BOOTSTRAP_SQL
   fi
 fi
 
+# HTTP status from PostgREST root (200 or 401 = healthy). Probe order:
+#   1. curl/wget/node in FLUX_V2_PROBE_CONTAINER (when running)
+#   2. ephemeral curl image on flux-v2-shared, then flux-network
+# Does not treat "probe could not run" as healthy.
+probe_postgrest_status() {
+  local url="$1"
+  local status=""
+
+  if docker ps --format '{{.Names}}' | grep -qxF "${PROBE_CONTAINER}"; then
+    status="$(
+      docker exec "$PROBE_CONTAINER" sh -lc '
+        url="$1"
+        if command -v curl >/dev/null 2>&1; then
+          curl -sS -o /dev/null -w "%{http_code}" "$url"
+        elif command -v wget >/dev/null 2>&1; then
+          wget -q -S -O /dev/null "$url" 2>&1 | awk "/^  HTTP/{print \$2; exit}"
+        elif command -v node >/dev/null 2>&1; then
+          node -e "fetch(process.argv[1]).then((r)=>{process.stdout.write(String(r.status));}).catch(()=>process.exit(2));" "$url"
+        else
+          exit 3
+        fi
+      ' _ "$url" 2>/dev/null || true
+    )"
+    status="${status//$'\n'/}"
+    if [[ -n "$status" && "$status" =~ ^[0-9]{3}$ ]]; then
+      echo "$status"
+      return 0
+    fi
+  fi
+
+  for net in flux-v2-shared flux-network; do
+    if ! docker network inspect "$net" >/dev/null 2>&1; then
+      continue
+    fi
+    status="$(
+      docker run --rm --network "$net" "$PROBE_CURL_IMAGE" \
+        curl -sS -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true
+    )"
+    status="${status//$'\n'/}"
+    if [[ -n "$status" && "$status" =~ ^[0-9]{3}$ ]]; then
+      echo "$status"
+      return 0
+    fi
+  done
+
+  echo ""
+  return 1
+}
+
 # ---------------------------------------------------------------------------
 # PostgREST probe — exec from a container on flux-v2-shared so Docker DNS
 # resolves flux-postgrest-pool.  The host cannot reach expose:-only containers.
 # ---------------------------------------------------------------------------
 if [[ "${FLUX_V2_SKIP_POSTGREST_PROBE:-}" == "1" ]]; then
   echo "--- v2 Shared ${V2_TAG}: PostgREST probe skipped (FLUX_V2_SKIP_POSTGREST_PROBE=1) ---"
-elif docker ps --format '{{.Names}}' | grep -qxF "${PROBE_CONTAINER}"; then
-  echo "--- v2 Shared ${V2_TAG}: PostgREST probe (from ${PROBE_CONTAINER}) ---"
-  # Prefer curl when available; fallback to node fetch for minimal images.
-  # 401 is expected for unauthenticated requests and is considered healthy.
-  probe_status="$(
-    docker exec "$PROBE_CONTAINER" sh -lc \
-      'if command -v curl >/dev/null 2>&1; then curl -sS -o /dev/null -w "%{http_code}" "$1"; else node -e "fetch(process.argv[1]).then((r)=>{process.stdout.write(String(r.status));}).catch(()=>process.exit(2));" "$1"; fi' \
-      _ "$PGRST_INTERNAL_URL" 2>/dev/null || true
-  )"
+else
+  echo "--- v2 Shared ${V2_TAG}: PostgREST probe (${PGRST_INTERNAL_URL}) ---"
+  probe_status="$(probe_postgrest_status "$PGRST_INTERNAL_URL" || true)"
   if [[ "$probe_status" == "200" || "$probe_status" == "401" ]]; then
     echo "  postgrest: OK (${PGRST_INTERNAL_URL} -> ${probe_status}; 401 unauth is healthy)"
   elif [[ -z "$probe_status" ]]; then
-    echo "  WARN: postgrest probe failed from ${PROBE_CONTAINER}; no status returned."
-    echo "        (container may lack Node/fetch support; set FLUX_V2_SKIP_POSTGREST_PROBE=1 to skip)"
+    echo "  ERROR: postgrest probe could not run (no curl/wget/node in ${PROBE_CONTAINER} and ephemeral ${PROBE_CURL_IMAGE} failed)" >&2
+    echo "         Ensure flux-v2-shared network exists and PostgREST is reachable, or set FLUX_V2_SKIP_POSTGREST_PROBE=1." >&2
+    exit 1
   else
-    echo "  WARN: postgrest probe returned HTTP ${probe_status} at ${PGRST_INTERNAL_URL}"
+    echo "  ERROR: postgrest probe returned HTTP ${probe_status} at ${PGRST_INTERNAL_URL}" >&2
+    echo "         Inspect: docker logs --tail 80 ${PGRST_CONTAINER}" >&2
+    exit 1
   fi
-else
-  # NOTE: flux-postgrest-pool uses expose: not ports:, so it is unreachable from
-  # the host shell.  We skip silently rather than probing a Docker-internal hostname
-  # that will always fail DNS resolution on the host.
-  echo "  WARN: probe container ${PROBE_CONTAINER} not running; PostgREST probe skipped."
-  echo "        Start ${PROBE_CONTAINER} or set FLUX_V2_SKIP_POSTGREST_PROBE=1 to suppress."
 fi
 
 echo ""
 echo "--- v2 Shared ${V2_TAG}: Operational ---"
+echo "  verdict: healthy"
 echo "  logs postgres:  docker logs -f $PG_CONTAINER"
 echo "  logs pgbouncer: docker logs -f $PGB_CONTAINER"
 echo "  logs postgrest: docker logs -f $PGRST_CONTAINER"
