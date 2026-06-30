@@ -1,21 +1,15 @@
 /**
  * Scoped MCP token capabilities (Phase 5).
- * Enforcement on routes/tools is deferred to later slices.
+ * Canonical enum lives in @flux/core/mcp-capabilities.
  */
 
-export const MCP_CAPABILITIES = [
-  "project:read",
-  "schema:read",
-  "backup:read",
-  "backup:ensure_verified",
-  "migration:plan",
-  "migration:apply",
-  "query:readonly",
-  "intent:read",
-  "activity:read",
-] as const;
+export {
+  MCP_CAPABILITIES,
+  isKnownMcpCapability,
+  type McpCapability,
+} from "@flux/core/mcp-capabilities";
 
-export type McpCapability = (typeof MCP_CAPABILITIES)[number];
+import { MCP_CAPABILITIES, type McpCapability } from "@flux/core/mcp-capabilities";
 
 const MCP_CAPABILITY_SET = new Set<string>(MCP_CAPABILITIES);
 
@@ -32,10 +26,6 @@ export const MCP_TOKEN_EXPIRY_DAYS = {
   mutationCapable: { default: 7, max: 30 },
 } as const;
 
-export function isKnownMcpCapability(value: string): value is McpCapability {
-  return MCP_CAPABILITY_SET.has(value);
-}
-
 export function validateMcpCapabilities(
   capabilities: readonly string[],
 ): { ok: true; capabilities: McpCapability[] } | { ok: false; error: string } {
@@ -49,12 +39,12 @@ export function validateMcpCapabilities(
     if (!cap) {
       return { ok: false, error: "Capabilities must be non-empty strings." };
     }
-    if (!isKnownMcpCapability(cap)) {
+    if (!MCP_CAPABILITY_SET.has(cap)) {
       return { ok: false, error: `Unknown capability: ${cap}` };
     }
     if (seen.has(cap)) continue;
     seen.add(cap);
-    normalized.push(cap);
+    normalized.push(cap as McpCapability);
   }
   return { ok: true, capabilities: normalized };
 }

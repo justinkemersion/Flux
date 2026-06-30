@@ -15,6 +15,7 @@ import { registerProjectMetadataCommands } from "./register-cli/project-metadata
 import { registerProjectBriefCommands } from "./register-cli/project-brief";
 import { registerProjectSummarizeCommands } from "./register-cli/project-summarize";
 import { registerProjectLifecycleCommands } from "./register-cli/project-lifecycle-state";
+import { registerMcpCommands } from "./register-cli/mcp";
 
 export function registerFluxCliCommands(program: Command): void {
   program
@@ -39,4 +40,5 @@ export function registerFluxCliCommands(program: Command): void {
   registerProjectBriefCommands(program);
   registerProjectSummarizeCommands(program);
   registerProjectLifecycleCommands(program);
+  registerMcpCommands(program);
 }

@@ -1,6 +1,6 @@
 {
   "name": "@flux/mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Flux MCP server (Pass 1: read + preflight) — operate Flux projects from AI coding agents over the Model Context Protocol.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -8,10 +8,12 @@
     "flux-mcp": "./dist/index.cjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "bundled-docs"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "pnpm run copy-docs && tsup",
+    "copy-docs": "mkdir -p bundled-docs/guides bundled-docs/reference && cp ../../docs/pages/guides/mcp.md bundled-docs/guides/ && cp ../../docs/pages/guides/migrations.md bundled-docs/guides/ && cp ../../docs/pages/guides/backups.md bundled-docs/guides/ && cp ../../docs/pages/reference/cli.md bundled-docs/reference/",
     "start": "tsx src/index.ts",
     "dev": "tsx src/index.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",

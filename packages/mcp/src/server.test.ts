@@ -9,23 +9,9 @@ import {
   PHASE_4_WRITE_TOOLS,
 } from "./policy";
 import type { FluxToolClient } from "./tools";
+import { FLUX_MCP_TOOL_MANIFEST, manifestToolNames } from "./tool-manifest";
 
-const EXPECTED_TOOLS = [
-  "flux.project.list",
-  "flux.project.describe",
-  "flux.schema.inspect",
-  "flux.schema.counts",
-  "flux.migrations.list",
-  "flux.doctor",
-  "flux.activity",
-  "flux.backup.list",
-  "flux.destructive.preflight",
-  "flux.backup.ensureVerified",
-  "flux.migration.plan",
-  "flux.migration.apply",
-  "flux.credentials.temporary",
-  "flux.query.readonly",
-];
+const EXPECTED_TOOLS = manifestToolNames();
 
 const NON_MUTATING = new Set(["read", "preflight", "plan", "credential"]);
 
@@ -42,10 +28,11 @@ function stubClient(): FluxToolClient {
   ) as unknown as FluxToolClient;
 }
 
-test("registers Pass 1 + Pass 2 + Phase 3B + Phase 4 write tool set", () => {
+test("registers MCP v0.1 manifest tool set", () => {
   const defs = createToolDefs(stubClient());
   const names = defs.map((d) => d.name).sort();
   assert.deepEqual(names, [...EXPECTED_TOOLS].sort());
+  assert.equal(defs.length, FLUX_MCP_TOOL_MANIFEST.length);
 });
 
 test("every tool has an object inputSchema and allowed intent class", () => {

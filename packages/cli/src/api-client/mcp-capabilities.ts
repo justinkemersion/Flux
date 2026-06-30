@@ -1,18 +1,11 @@
-/** Scoped MCP token capabilities — kept in sync with dashboard `mcp-capabilities.ts`. */
+/**
+ * Scoped MCP token capabilities — re-exported from @flux/core.
+ * Presets remain CLI-local for operator ergonomics.
+ */
 
-export const MCP_CAPABILITIES = [
-  "project:read",
-  "schema:read",
-  "backup:read",
-  "backup:ensure_verified",
-  "migration:plan",
-  "migration:apply",
-  "query:readonly",
-  "intent:read",
-  "activity:read",
-] as const;
+export { MCP_CAPABILITIES, type McpCapability } from "@flux/core/mcp-capabilities";
 
-export type McpCapability = (typeof MCP_CAPABILITIES)[number];
+import type { McpCapability } from "@flux/core/mcp-capabilities";
 
 /** Read-only observer — list/describe projects, schema, backups, intents, activity. */
 export const MCP_CAPABILITY_PRESET_READ_ONLY_OBSERVER = [

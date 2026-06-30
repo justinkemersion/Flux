@@ -24,6 +24,7 @@ export {
 export type { McpTokenSource, ResolvedMcpServerToken, TokenFamily } from "./mcp-auth";
 export { MCP_CAPABILITIES, MCP_CAPABILITY_PRESETS } from "./mcp-capabilities";
 export type { McpCapability } from "./mcp-capabilities";
+export { normalizeFluxApiBase } from "./normalize-api-base";
 export {
   buildMcpLegacyCliTokenWarning,
   legacyMcpWarningImpliesImmediateRemoval,

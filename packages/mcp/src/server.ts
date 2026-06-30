@@ -8,6 +8,11 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ReadResourceRequestSchema,
   ListToolsRequestSchema,
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -49,9 +54,15 @@ import {
   assertMcpToolCapabilityAllowed,
   MCP_CAPABILITY_DENIED_GATE,
 } from "./mcp-capability-guard";
+import { FLUX_MCP_PROMPTS, isFluxMcpPromptName, renderFluxPrompt } from "./prompts";
+import {
+  FLUX_RESOURCE_TEMPLATES,
+  FLUX_STATIC_RESOURCES,
+  readFluxResource,
+} from "./resources";
 
 export const FLUX_MCP_NAME = "flux";
-export const FLUX_MCP_VERSION = "0.0.1";
+export const FLUX_MCP_VERSION = "0.1.0";
 
 /** Build and validate the registered tool set for a given client. */
 export function createToolDefs(client: FluxToolClient): ToolDef[] {
@@ -303,7 +314,7 @@ export function createFluxMcpServer(
 
   const server = new Server(
     { name: FLUX_MCP_NAME, version: FLUX_MCP_VERSION },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, resources: {}, prompts: {} } },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -313,6 +324,37 @@ export function createFluxMcpServer(
       inputSchema: d.inputSchema,
     })),
   }));
+
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: [...FLUX_STATIC_RESOURCES],
+  }));
+
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: [...FLUX_RESOURCE_TEMPLATES],
+  }));
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const uri = request.params.uri;
+    const result = await readFluxResource(uri, client);
+    if ("error" in result) {
+      throw new Error(result.error);
+    }
+    return {
+      contents: [{ uri, mimeType: result.mimeType, text: result.text }],
+    };
+  });
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: [...FLUX_MCP_PROMPTS],
+  }));
+
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const name = request.params.name;
+    if (!isFluxMcpPromptName(name)) {
+      throw new Error(`Unknown prompt: ${name}`);
+    }
+    return renderFluxPrompt(name, request.params.arguments);
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;

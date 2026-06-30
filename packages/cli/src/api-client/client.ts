@@ -10,6 +10,7 @@ import type {
 } from "@flux/core/standalone";
 import { resolveFluxApiToken } from "../config";
 import { resolveMcpServerToken } from "./mcp-auth";
+import { normalizeFluxApiBase } from "./normalize-api-base";
 import { HOSTED_FLUX_PUBLIC_API_BASE } from "../utils/env-file";
 import * as backups from "./backups";
 import * as dbAccess from "./db-access";
@@ -57,7 +58,7 @@ const DEFAULT_BASE = HOSTED_FLUX_PUBLIC_API_BASE;
 
 function resolveApiBase(): string {
   const raw = process.env.FLUX_API_BASE?.trim();
-  return raw && raw.length > 0 ? raw.replace(/\/$/, "") : DEFAULT_BASE;
+  return raw && raw.length > 0 ? normalizeFluxApiBase(raw) : DEFAULT_BASE;
 }
 
 function notImplemented(baseUrl: string, method: string): Error {
@@ -79,7 +80,7 @@ export class ApiClient {
     baseUrl: string = resolveApiBase(),
     options?: { resolveToken?: () => string | undefined },
   ) {
-    this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.baseUrl = normalizeFluxApiBase(baseUrl);
     this.resolveToken = options?.resolveToken ?? resolveFluxApiToken;
   }
 

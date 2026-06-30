@@ -1,26 +1,12 @@
 /**
- * MCP tool → required capability mapping (Phase 5 Slice F).
- * Defense-in-depth before control-plane route enforcement.
+ * MCP tool → required capability mapping (derived from tool-manifest).
  */
 
 import type { McpCapability } from "@flux/cli/api-client";
+import { manifestRequiredCapabilities } from "./tool-manifest.js";
 
-export const MCP_TOOL_REQUIRED_CAPABILITIES: Readonly<Record<string, McpCapability>> = {
-  "flux.project.list": "project:read",
-  "flux.project.describe": "project:read",
-  "flux.schema.inspect": "schema:read",
-  "flux.schema.counts": "schema:read",
-  "flux.migrations.list": "schema:read",
-  "flux.doctor": "project:read",
-  "flux.activity": "activity:read",
-  "flux.backup.list": "backup:read",
-  "flux.destructive.preflight": "backup:read",
-  "flux.backup.ensureVerified": "backup:ensure_verified",
-  "flux.migration.plan": "migration:plan",
-  "flux.migration.apply": "migration:apply",
-  "flux.credentials.temporary": "query:readonly",
-  "flux.query.readonly": "query:readonly",
-};
+export const MCP_TOOL_REQUIRED_CAPABILITIES: Readonly<Record<string, McpCapability>> =
+  manifestRequiredCapabilities();
 
 export function requiredCapabilityForMcpTool(tool: string): McpCapability | null {
   return MCP_TOOL_REQUIRED_CAPABILITIES[tool] ?? null;

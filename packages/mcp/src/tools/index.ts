@@ -31,6 +31,7 @@ import type {
 } from "@flux/cli/api-client";
 import type { IntentClass } from "../policy";
 import { InvalidInputError, ok, type ToolResult } from "../result";
+import { FLUX_MCP_TOOL_MANIFEST } from "../tool-manifest";
 import { buildMigrationPlan } from "./migration-plan";
 import { runMigrationApply } from "./migration-apply";
 import { runBackupEnsureVerified } from "./backup-ensure";
@@ -192,7 +193,7 @@ export function buildTools(
   deps: ToolDeps = {},
 ): ToolDef[] {
   const queryExecutor = deps.queryExecutor ?? liveReadonlyQueryExecutor;
-  return [
+  const handlerDefs: ToolDef[] = [
     {
       name: "flux.project.list",
       description:
@@ -675,4 +676,19 @@ export function buildTools(
       },
     },
   ];
+
+  const handlersByName = new Map(handlerDefs.map((def) => [def.name, def.handler]));
+  return FLUX_MCP_TOOL_MANIFEST.map((entry) => {
+    const handler = handlersByName.get(entry.name);
+    if (!handler) {
+      throw new Error(`Missing MCP tool handler for manifest entry: ${entry.name}`);
+    }
+    return {
+      name: entry.name,
+      description: entry.description,
+      intentClass: entry.auditEventKind as IntentClass,
+      inputSchema: entry.inputSchema,
+      handler,
+    };
+  });
 }

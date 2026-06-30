@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "flux": {
+      "command": "node",
+      "args": ["/home/justin/Projects/flux/packages/mcp/dist/index.cjs"],
+      "env": {
+        "FLUX_MCP_TOKEN": "flx_mcp_...",
+        "FLUX_API_BASE": "https://flux.vsl-base.com/api"
+      }
+    }
+  }
+}

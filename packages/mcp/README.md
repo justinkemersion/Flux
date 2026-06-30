@@ -2,7 +2,23 @@
 
 Flux MCP server — operate Flux projects from AI coding agents (Cursor, Claude Code, Codex, Gemini CLI, Windsurf, …) over the [Model Context Protocol](https://modelcontextprotocol.io).
 
-This is **Flux MCP v0** (Phases 3A–4 + Phase 5 scoped tokens, closed 2026-06-30): controlled migration apply, scoped `flx_mcp_` auth, audit/intent identity, and capability enforcement. Arbitrary write SQL and destructive lifecycle MCP tools remain **deferred**.
+This is **Flux MCP v0.1** (contract-hardened): canonical tool manifest, resources, prompts, scoped `flx_mcp_` auth, audit/intent identity, and capability enforcement. Arbitrary write SQL and destructive lifecycle MCP tools remain **blocked**.
+
+## v0.1 contract (summary)
+
+| Class | Tools / posture | Mutation |
+|-------|-----------------|----------|
+| **Read / context** | `flux.project.list`, `flux.project.describe`, `flux.doctor`, `flux.activity` | No |
+| **Read / sensitive metadata** | `flux.schema.*`, `flux.migrations.list`, `flux.backup.list`, `flux.query.readonly` | No |
+| **Plan** | `flux.migration.plan`, `flux.destructive.preflight` | No (plan-only / preflight) |
+| **Guarded mutation** | `flux.backup.ensureVerified`, `flux.migration.apply`, `flux.credentials.temporary` | Yes — capability + audit/intent gates |
+| **Blocked destructive** | `flux.nuke`, `flux.project.delete`, `flux.migrate`, factory reset, db-reset, restore | Never exposed via MCP |
+
+**Secret non-leakage:** Tool and resource responses never include raw DB passwords, pooled admin credentials, long-lived JWT secrets, or plaintext MCP tokens. Audit rows store only safe `keyPreview` / `keyType` metadata. See `src/tool-manifest.ts` per-tool `secretPolicy`.
+
+**Smoke:** `./bin/mcp-smoke.sh` (offline). `./bin/mcp-smoke.sh --hosted` with `FLUX_MCP_TOKEN` + `FLUX_MCP_SMOKE_HASH` for live probes.
+
+**Connectivity doctor:** `flux mcp doctor` (requires `FLUX_MCP_TOKEN`; validates `GET /api/cli/v1/auth/verify`).
 
 ## What this is
 

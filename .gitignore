@@ -26,6 +26,7 @@ docker/traefik/letsencrypt/
 # Editor
 .vscode/
 .idea/
+.cursor/mcp.json
 *.swp
 *.swo
 
