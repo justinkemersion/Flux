@@ -28,6 +28,10 @@ import {
   countLifecycleBucketsForUser,
   countUserActiveProjects,
 } from "@/src/lib/project-lifecycle-state";
+import {
+  mapProvisionProjectError,
+  provisionProjectErrorBody,
+} from "@/src/lib/provision-project-errors";
 import { loadLastActivityByProjectIds } from "@/src/lib/project-portfolio";
 import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
@@ -348,11 +352,8 @@ export async function POST(req: Request): Promise<Response> {
       isProduction: process.env.NODE_ENV === "production",
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("Invalid project name")) {
-      return jsonError(message, 400);
-    }
-    return jsonError(message, 500);
+    const mapped = mapProvisionProjectError(err);
+    return Response.json(provisionProjectErrorBody(mapped), { status: mapped.status });
   }
 
   try {

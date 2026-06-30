@@ -15,6 +15,7 @@ import { dispatchProvisionProject } from "@/src/lib/provisioning-engine";
 import { resolveCreateModeForPlan, type UserPlan } from "@/src/lib/cli-mode-policy";
 import { resolveCliRoleForUser } from "@/src/lib/cli-admin";
 import { recordProjectCreatedActivity } from "@/src/lib/project-activity";
+import { mapProvisionProjectError } from "@/src/lib/provision-project-errors";
 
 export const HOBBY_PROJECT_LIMIT = 2;
 export const PRO_PROJECT_LIMIT = 10;
@@ -252,11 +253,8 @@ export async function provisionProjectForUser(input: {
       isProduction: input.isProduction,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("Invalid project name")) {
-      return { ok: false, status: 400, message };
-    }
-    return { ok: false, status: 500, message };
+    const mapped = mapProvisionProjectError(err);
+    return { ok: false, status: mapped.status, message: mapped.message };
   }
 
   try {

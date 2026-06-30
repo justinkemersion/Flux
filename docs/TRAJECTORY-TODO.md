@@ -82,7 +82,7 @@ Not intended for public docs or marketing consumption.
 
 ### 3) Collision/error surface in dashboard API response
 - **Priority:** P0
-- **Status:** todo
+- **Status:** done
 - **Owner:** dashboard
 - **Why:** `TenantShortIdCollisionError` should produce explicit operator-friendly API message
 - **Scope:** `apps/dashboard/app/api/projects/route.ts`
@@ -90,6 +90,7 @@ Not intended for public docs or marketing consumption.
   - collision error maps to deterministic HTTP code/message
   - includes remediation hint (“regenerate tenant UUID / retry create”)
   - covered by route-level test
+- **Notes:** `mapProvisionProjectError` in `provision-project-errors.ts`; 409 + `tenant_short_id_collision` for dashboard POST and CLI provision path
 
 ### 3b) Rotate all development and remote secrets after infra stabilization
 - **Priority:** P0
