@@ -874,6 +874,7 @@ export async function projectsDueForPlatformBackup(): Promise<
       hash: projects.hash,
       userId: projects.userId,
       mode: projects.mode,
+      lifecycleState: projects.lifecycleState,
       backupIntervalDays: projects.backupIntervalDays,
       backupRetentionCount: projects.backupRetentionCount,
       backupRetentionDays: projects.backupRetentionDays,
@@ -885,6 +886,9 @@ export async function projectsDueForPlatformBackup(): Promise<
     if (
       isSchedulerExcludedProject({ slug: row.slug, userId: row.userId })
     ) {
+      continue;
+    }
+    if (row.lifecycleState === "archived") {
       continue;
     }
     const mode = row.mode as BackupEngineMode;
