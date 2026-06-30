@@ -109,6 +109,16 @@ inspect → plan → intent → ensure verified backup → preflight
 
 Routes added: `PATCH /api/cli/v1/intents/:id` (terminal intent updates).
 
+### Phase 3C: Sanitized backup-facing MCP outputs
+
+Status: complete.
+
+Phase 3C ensures **`flux.backup.list`** and **`flux.backup.ensureVerified`** never return raw control-plane backup rows to agents. Sanitization happens in `@flux/mcp` (`src/tools/backup-sanitize.ts`); the underlying `/api/cli/v1/projects/:hash/backups` response shape is unchanged.
+
+**Safe fields:** backup id, status, kind/format labels, timestamps, artifact/restore verification status (and derived booleans), per-row trust classification, size, platform backup compliance summary.
+
+**Removed:** paths, volume roots, offsite storage metadata, checksums, signed URLs, credentials, and nested raw artifact fields. Audit redaction also catches path-like string values.
+
 ### Deferred to Phase 4
 
 Durable schema/data mutation (`flux.migration.apply`), scoped `flx_mcp_` tokens, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.

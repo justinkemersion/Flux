@@ -10,6 +10,7 @@ import type {
   DatabaseAccessPlan,
   TemporaryDbCredential,
 } from "@flux/cli/api-client";
+import { containsBackupStorageLeak } from "./backup-sanitize";
 
 const FAKE_V2_PLAN = { mode: "v2_shared" } as unknown as DatabaseAccessPlan;
 
@@ -104,6 +105,49 @@ test("destructive.preflight allows when latest backup is restore-verified", asyn
   assert.equal(data.allowed, true);
   assert.equal(data.tier, "restorable");
   assert.equal(res.remediation, undefined);
+});
+
+test("backup.list returns sanitized backup rows without storage fields", async () => {
+  const tool = getTool(
+    fakeClient({
+      listProjectBackups: async () => ({
+        backups: [
+          {
+            id: "b1",
+            kind: "tenant_export",
+            format: "pg_custom",
+            status: "complete",
+            createdAt: "2026-06-27T15:31:45.367Z",
+            completedAt: "2026-06-27T15:31:50.000Z",
+            sizeBytes: 999,
+            checksumSha256: "deadbeef",
+            primaryArtifactAbsolutePath: "/srv/flux/backups/b1.dump",
+            offsiteKey: "tenant/b1.dump",
+            offsiteBucket: "flux-backups",
+            artifactValidationStatus: "artifact_valid",
+            restoreVerificationStatus: "restore_verified",
+          },
+        ],
+        backupVolumeAbsoluteRoot: "/srv/flux/backups",
+        platformMinimumBackupFreshness: {
+          effectivePolicy: { intervalDays: 7, retentionCount: 4, retentionDays: 30 },
+          freshness: { tier: "fresh", platformBackupCompliant: true, detail: "ok" },
+        },
+      }),
+    }),
+    "flux.backup.list",
+  );
+  const res = await tool.handler({ hash: "abc1234" });
+  assert.equal(res.ok, true);
+  assert.equal(containsBackupStorageLeak(res.data), false);
+  const data = res.data as {
+    backups: { backupId: string; trustTier: string; restoreVerified?: boolean }[];
+    platformBackupCompliant?: boolean;
+  };
+  assert.equal(data.backups[0]!.backupId, "b1");
+  assert.equal(data.backups[0]!.trustTier, "restorable");
+  assert.equal(data.backups[0]!.restoreVerified, true);
+  assert.equal(data.platformBackupCompliant, true);
 });
 
 test("read tools reject a missing hash argument", async () => {

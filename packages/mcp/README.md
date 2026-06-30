@@ -2,7 +2,7 @@
 
 Flux MCP server — operate Flux projects from AI coding agents (Cursor, Claude Code, Codex, Gemini CLI, Windsurf, …) over the [Model Context Protocol](https://modelcontextprotocol.io).
 
-This is **Phase 3B**: everything in Phase 3A **plus** one **protective mutation** tool (`flux.backup.ensureVerified`). Schema/data mutation (`flux.migration.apply`, etc.) remains **deferred to Phase 4**.
+This is **Phase 3B + 3C**: Phase 3A **plus** protective backup mutation (`flux.backup.ensureVerified`) and **sanitized backup-facing MCP outputs**. Schema/data mutation (`flux.migration.apply`, etc.) remains **deferred to Phase 4**.
 
 ## What this is
 
@@ -50,7 +50,7 @@ Audit persistence failure is **non-fatal** for read/plan/preflight/credential to
 - `flux.migrations.list` — applied migration ledger.
 - `flux.doctor` — project health checks.
 - `flux.activity` — recent activity timeline.
-- `flux.backup.list` — backups and their validation/restore-verification state.
+- `flux.backup.list` — sanitized backup summaries (trust tier, validation/restore state). **No paths, offsite storage details, or raw API rows.**
 - `flux.destructive.preflight` — whether destructive actions are currently allowed (reuses `@flux/core/backup-trust`). **No mutation.**
 
 ### Pass 2 — plan / credential / read-only query
@@ -83,6 +83,14 @@ inspect → plan → intent → ensure verified backup → preflight
 ```
 
 Required: `hash`. Defaults: `verifyLatestIfFresh: true`, `wait: true`.
+
+### Phase 3C — sanitized backup outputs
+
+Backup-facing MCP tools (`flux.backup.list`, `flux.backup.ensureVerified`) sanitize control-plane backup API responses in the MCP layer (the underlying CLI API is unchanged). Agents receive only safe fields:
+
+- `backupId`, `status`, `kind`, `format`, timestamps, validation/restore status (+ derived booleans), per-row `trustTier` / `detail`, `sizeBytes`, list-level `platformBackupCompliant`
+
+Stripped/redacted: local/absolute artifact paths, volume roots, signed URLs, offsite keys/buckets/providers, checksums, and raw backup rows. Audit stderr lines also redact path-like string values.
 
 Every tool returns:
 

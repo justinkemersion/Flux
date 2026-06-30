@@ -33,6 +33,7 @@ import type { IntentClass } from "../policy";
 import { InvalidInputError, ok, type ToolResult } from "../result";
 import { buildMigrationPlan } from "./migration-plan";
 import { runBackupEnsureVerified } from "./backup-ensure";
+import { sanitizeBackupListForMcp } from "./backup-sanitize";
 import {
   DEFAULT_ROW_CAP,
   MAX_ROW_CAP,
@@ -347,7 +348,8 @@ export function buildTools(
       handler: async (args): Promise<ToolResult> => {
         const hash = requireHash(args);
         const result = await client.listProjectBackups(hash);
-        return ok(`${result.backups.length} backup(s).`, result);
+        const data = sanitizeBackupListForMcp(result);
+        return ok(`${data.backups.length} backup(s).`, data);
       },
     },
     {

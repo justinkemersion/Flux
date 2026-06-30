@@ -25,6 +25,9 @@ function redactString(value: string): string {
   if (CONNECTION_STRING_RE.test(value)) return REDACTED;
   if (FLX_LIVE_KEY_RE.test(value)) return REDACTED;
   if (/^Bearer\s+\S+/i.test(value)) return REDACTED;
+  if (/\/srv\/|primaryArtifact|\.dump\b|offsiteKey|backupVolume/i.test(value)) {
+    return REDACTED;
+  }
   return value.length > MAX_STRING_LENGTH
     ? `${value.slice(0, MAX_STRING_LENGTH)}…[truncated]`
     : value;

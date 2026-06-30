@@ -20,7 +20,11 @@ function assertNoLeaks(label: string, payload: unknown): void {
     /primaryArtifact/,
     /offsiteKey/,
     /offsiteBucket/,
+    /offsiteProvider/,
     /backupVolumeAbsoluteRoot/,
+    /checksumSha256/,
+    /localArtifactStatus/,
+    /r2OffsiteEnabled/,
     /flx_live_/,
     /eyJ[A-Za-z0-9_-]{10,}\./,
     /postgres:\/\//,
@@ -39,23 +43,12 @@ async function main(): Promise<void> {
 
   console.log("\n1) flux.backup.list");
   const list = await invokeFluxMcpTool("flux.backup.list", { hash: HASH }, client);
-  const listData = list.data as { backups?: { restoreVerificationStatus?: string }[] };
-  const newestVerified =
-    listData.backups?.[0]?.restoreVerificationStatus === "restore_verified";
-  console.log(
-    JSON.stringify(
-      {
-        ok: list.ok,
-        summary: list.summary,
-        backupCount: listData.backups?.length,
-        newestRestoreVerified: newestVerified,
-      },
-      null,
-      2,
-    ),
-  );
-  assertNoLeaks("backup.list summary", { ok: list.ok, summary: list.summary });
+  console.log(JSON.stringify(list, null, 2));
+  assertNoLeaks("backup.list", list);
+  const listData = list.data as { backups?: { restoreVerified?: boolean }[] };
   if (!list.ok) process.exit(1);
+  const newestVerified = listData.backups?.[0]?.restoreVerified === true;
+  console.log(`newestRestoreVerified=${String(newestVerified)} backupCount=${String(listData.backups?.length)}`);
 
   console.log("\n2) flux.backup.ensureVerified");
   const ensure = await invokeFluxMcpTool(

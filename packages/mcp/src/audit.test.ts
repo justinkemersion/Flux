@@ -30,6 +30,11 @@ test("redactValue redacts JWT and postgres connection strings in values", () => 
   assert.equal(redactValue(conn), "[redacted]");
 });
 
+test("redactValue redacts path-like backup storage strings in values", () => {
+  assert.equal(redactValue("/srv/flux/backups/proj/b1.dump"), "[redacted]");
+  assert.equal(redactValue("restore_verified"), "restore_verified");
+});
+
 test("redactValue truncates very long strings", () => {
   const out = redactValue("x".repeat(500)) as string;
   assert.ok(out.length < 300);
