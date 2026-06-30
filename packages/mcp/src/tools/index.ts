@@ -14,6 +14,8 @@ import {
 } from "@flux/core/backup-trust";
 import type { BackupTrustInput } from "@flux/core/backup-trust";
 import type {
+  DatabaseAccessPlan,
+  DbAccessLevel,
   DoctorReport,
   FluxMigrationRecord,
   FluxProjectSummary,
@@ -23,9 +25,20 @@ import type {
   ProjectLifecycleInfo,
   ProjectMetadata,
   SchemaInspectionResult,
+  TemporaryDbCredential,
 } from "@flux/cli/api-client";
 import type { IntentClass } from "../policy";
 import { InvalidInputError, ok, type ToolResult } from "../result";
+import { buildMigrationPlan } from "./migration-plan";
+import {
+  DEFAULT_ROW_CAP,
+  MAX_ROW_CAP,
+  validateReadonlyQuery,
+} from "./query-validate";
+import {
+  liveReadonlyQueryExecutor,
+  type ReadonlyQueryExecutor,
+} from "./query-executor";
 
 /** Minimal control-plane surface used by Pass 1 tools (satisfied by `ApiClient`). */
 export interface FluxToolClient {
@@ -41,6 +54,16 @@ export interface FluxToolClient {
   runDoctor(hash: string): Promise<DoctorReport>;
   fetchProjectActivity(hash: string, limit?: number): Promise<ProjectActivityResponse>;
   listProjectBackups(hash: string): Promise<ListProjectBackupsResult>;
+  getProjectDbAccessPlan(hash: string): Promise<DatabaseAccessPlan>;
+  createTemporaryProjectDbCredential(
+    hash: string,
+    options?: { access?: DbAccessLevel; ttlSeconds?: number },
+  ): Promise<TemporaryDbCredential>;
+}
+
+/** Injectable dependencies for tools that touch the database directly. */
+export interface ToolDeps {
+  queryExecutor?: ReadonlyQueryExecutor;
 }
 
 export interface ToolDef {
@@ -103,7 +126,32 @@ function optionalPositiveInt(
   return raw;
 }
 
-export function buildTools(client: FluxToolClient): ToolDef[] {
+function requireString(args: Record<string, unknown>, key: string): string {
+  const raw = args[key];
+  const value = typeof raw === "string" ? raw : "";
+  if (!value.trim()) {
+    throw new InvalidInputError(`Missing required string argument: ${key}`);
+  }
+  return value;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+const DEFAULT_CREDENTIAL_TTL_SECONDS = 900;
+const MIN_CREDENTIAL_TTL_SECONDS = 60;
+const MAX_CREDENTIAL_TTL_SECONDS = 3600;
+
+const DEFAULT_QUERY_TIMEOUT_MS = 5000;
+const MIN_QUERY_TIMEOUT_MS = 100;
+const MAX_QUERY_TIMEOUT_MS = 30000;
+
+export function buildTools(
+  client: FluxToolClient,
+  deps: ToolDeps = {},
+): ToolDef[] {
+  const queryExecutor = deps.queryExecutor ?? liveReadonlyQueryExecutor;
   return [
     {
       name: "flux.project.list",
@@ -304,6 +352,197 @@ export function buildTools(client: FluxToolClient): ToolDef[] {
           "Destructive actions are BLOCKED: no restore-verified backup.",
           data,
           destructiveBackupCheckMessage(classification),
+        );
+      },
+    },
+    {
+      name: "flux.migration.plan",
+      description:
+        "Plan local SQL migrations against the applied ledger (no apply). Returns a planId, stable planHash, files to apply/skip, conflicts, warnings, and whether the plan looks destructive-shaped.",
+      intentClass: "plan",
+      inputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string", description: "Project hash (7 hex chars)." },
+          slug: { type: "string", description: "Optional project slug (label only)." },
+          workspaceRoot: {
+            type: "string",
+            description:
+              "Absolute repo root. If omitted, cwd is used only when it contains flux.json.",
+          },
+          migrationsPath: {
+            type: "string",
+            description:
+              "Migrations directory, absolute or relative to workspaceRoot (e.g. \"migrations\").",
+          },
+          mode: {
+            type: "string",
+            enum: ["v1_dedicated", "v2_shared"],
+            description: "Optional mode hint (informational).",
+          },
+        },
+        required: ["hash", "migrationsPath"],
+        additionalProperties: false,
+      },
+      handler: async (args): Promise<ToolResult> => {
+        const hash = requireHash(args);
+        const slug = typeof args.slug === "string" ? args.slug : undefined;
+        const workspaceRoot =
+          typeof args.workspaceRoot === "string" ? args.workspaceRoot : undefined;
+        const migrationsPath =
+          typeof args.migrationsPath === "string" ? args.migrationsPath : undefined;
+        const data = await buildMigrationPlan(
+          {
+            hash,
+            ...(slug ? { slug } : {}),
+            ...(workspaceRoot ? { workspaceRoot } : {}),
+            ...(migrationsPath ? { migrationsPath } : {}),
+          },
+          (h) => client.listAppliedMigrations(h),
+        );
+        const summary = `Plan ${data.planHash.slice(0, 12)}: ${String(data.counts.apply)} to apply, ${String(data.counts.skip)} to skip, ${String(data.counts.conflicts)} conflict(s)${data.destructiveShaped ? " (destructive-shaped)" : ""}.`;
+        if (data.conflicts.length > 0) {
+          return ok(
+            summary,
+            data,
+            "Resolve checksum conflicts: create a new migration instead of editing an applied one.",
+          );
+        }
+        return ok(summary, data);
+      },
+    },
+    {
+      name: "flux.credentials.temporary",
+      description:
+        "Issue a short-lived, READONLY, project-scoped database credential (v2_shared only). Never returns pooled admin or service-role secrets.",
+      intentClass: "credential",
+      inputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string", description: "Project hash (7 hex chars)." },
+          access: {
+            type: "string",
+            enum: ["ro"],
+            description: "Must be \"ro\" (read-only). Read/write is not available.",
+          },
+          ttlSeconds: {
+            type: "integer",
+            description: `Lifetime in seconds (default ${String(DEFAULT_CREDENTIAL_TTL_SECONDS)}, max ${String(MAX_CREDENTIAL_TTL_SECONDS)}).`,
+          },
+        },
+        required: ["hash"],
+        additionalProperties: false,
+      },
+      handler: async (args): Promise<ToolResult> => {
+        const hash = requireHash(args);
+        if (args.access !== undefined && args.access !== "ro") {
+          throw new InvalidInputError('access must be "ro" (read-only).');
+        }
+        const ttlRaw = optionalPositiveInt(args, "ttlSeconds");
+        const ttlSeconds = clamp(
+          ttlRaw ?? DEFAULT_CREDENTIAL_TTL_SECONDS,
+          MIN_CREDENTIAL_TTL_SECONDS,
+          MAX_CREDENTIAL_TTL_SECONDS,
+        );
+
+        const metadata = await client.getProjectMetadata(hash);
+        if (metadata.mode !== "v2_shared") {
+          throw new InvalidInputError(
+            "flux.credentials.temporary is only available for v2_shared projects.",
+          );
+        }
+
+        const credential = await client.createTemporaryProjectDbCredential(hash, {
+          access: "readonly",
+          ttlSeconds,
+        });
+        if (credential.access !== "readonly") {
+          throw new Error("Refusing to return a non-readonly credential.");
+        }
+        return ok(
+          `Temporary readonly credential for ${metadata.slug} (expires ${credential.expiresAt}).`,
+          { credential },
+        );
+      },
+    },
+    {
+      name: "flux.query.readonly",
+      description:
+        "Run a single bounded, read-only SQL query (SELECT/WITH only) using a short-lived readonly credential (v2_shared only). Enforces statement timeout and a hard row cap; rejects any non-read SQL.",
+      intentClass: "read",
+      inputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string", description: "Project hash (7 hex chars)." },
+          sql: {
+            type: "string",
+            description: "A single SELECT or WITH statement. No mutations.",
+          },
+          rowCap: {
+            type: "integer",
+            description: `Max rows returned (default ${String(DEFAULT_ROW_CAP)}, max ${String(MAX_ROW_CAP)}).`,
+          },
+          statementTimeoutMs: {
+            type: "integer",
+            description: `Statement timeout in ms (default ${String(DEFAULT_QUERY_TIMEOUT_MS)}, max ${String(MAX_QUERY_TIMEOUT_MS)}).`,
+          },
+        },
+        required: ["hash", "sql"],
+        additionalProperties: false,
+      },
+      handler: async (args): Promise<ToolResult> => {
+        const hash = requireHash(args);
+        const sql = requireString(args, "sql");
+        const rowCapRaw = optionalPositiveInt(args, "rowCap");
+        const timeoutRaw = optionalPositiveInt(args, "statementTimeoutMs");
+        const statementTimeoutMs = clamp(
+          timeoutRaw ?? DEFAULT_QUERY_TIMEOUT_MS,
+          MIN_QUERY_TIMEOUT_MS,
+          MAX_QUERY_TIMEOUT_MS,
+        );
+
+        // Validate BEFORE any credential issuance or DB access: this is where
+        // write/mutation attempts are denied.
+        const { wrapped, cap } = validateReadonlyQuery(sql, {
+          ...(rowCapRaw !== undefined ? { rowCap: rowCapRaw } : {}),
+        });
+
+        const metadata = await client.getProjectMetadata(hash);
+        if (metadata.mode !== "v2_shared") {
+          throw new InvalidInputError(
+            "flux.query.readonly is only available for v2_shared projects.",
+          );
+        }
+
+        const [plan, credential] = await Promise.all([
+          client.getProjectDbAccessPlan(hash),
+          client.createTemporaryProjectDbCredential(hash, {
+            access: "readonly",
+            ttlSeconds: DEFAULT_CREDENTIAL_TTL_SECONDS,
+          }),
+        ]);
+        if (credential.access !== "readonly") {
+          throw new Error("Refusing to use a non-readonly credential.");
+        }
+
+        const exec = await queryExecutor.run({
+          plan,
+          credential,
+          wrappedSql: wrapped,
+          statementTimeoutMs,
+        });
+        const truncated = exec.rows.length > cap;
+        const rows = truncated ? exec.rows.slice(0, cap) : exec.rows;
+        return ok(
+          `${String(rows.length)} row(s)${truncated ? " (truncated at row cap)" : ""}.`,
+          {
+            rows,
+            fields: exec.fields,
+            rowCount: rows.length,
+            truncated,
+            rowCap: cap,
+            statementTimeoutMs,
+          },
         );
       },
     },

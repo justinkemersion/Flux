@@ -1,30 +1,43 @@
 /**
- * Tool intent classification and Pass 1 safety policy.
+ * Tool intent classification and the non-mutation safety policy.
  *
- * Pass 1 intentionally ships **read** and **preflight** tools only. There are no
- * write, query, migration-apply, or destructive tools yet. `assertPass1Tools`
- * is a guard that fails fast if a non-Pass-1 tool is ever registered, so the
- * read-only guarantee cannot silently regress.
+ * Through Pass 2 the server exposes only non-mutating tools:
+ *   - `read`       — pure reads (list/describe/inspect/doctor/activity, bounded readonly query).
+ *   - `preflight`  — destructive-gate checks (no mutation).
+ *   - `plan`       — migration planning (no apply).
+ *   - `credential` — issuing a short-lived, readonly, v2-only DB credential.
+ *
+ * `write` and `destructive` intents remain forbidden (durable mutation is Pass 3).
+ * `assertNonMutatingTools` fails fast if a forbidden intent is ever registered,
+ * so the "no durable mutation" guarantee cannot silently regress.
  */
 
-export type IntentClass = "read" | "preflight" | "write" | "destructive";
+export type IntentClass =
+  | "read"
+  | "preflight"
+  | "plan"
+  | "credential"
+  | "write"
+  | "destructive";
 
-const PASS_1_INTENTS: ReadonlySet<IntentClass> = new Set<IntentClass>([
+const NON_MUTATING_INTENTS: ReadonlySet<IntentClass> = new Set<IntentClass>([
   "read",
   "preflight",
+  "plan",
+  "credential",
 ]);
 
-export function isAllowedInPass1(intent: IntentClass): boolean {
-  return PASS_1_INTENTS.has(intent);
+export function isNonMutatingIntent(intent: IntentClass): boolean {
+  return NON_MUTATING_INTENTS.has(intent);
 }
 
-export function assertPass1Tools(
+export function assertNonMutatingTools(
   defs: ReadonlyArray<{ name: string; intentClass: IntentClass }>,
 ): void {
   for (const def of defs) {
-    if (!isAllowedInPass1(def.intentClass)) {
+    if (!isNonMutatingIntent(def.intentClass)) {
       throw new Error(
-        `Tool "${def.name}" has intent "${def.intentClass}", which is not permitted in Flux MCP Pass 1 (read/preflight only).`,
+        `Tool "${def.name}" has intent "${def.intentClass}", which performs durable mutation and is not permitted before Pass 3 (read/preflight/plan/credential only).`,
       );
     }
   }

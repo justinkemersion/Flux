@@ -10,7 +10,8 @@
       "types": "./dist/index.d.cts",
       "default": "./dist/index.cjs"
     },
-    "./api-client": "./src/api-client/index.ts"
+    "./api-client": "./src/api-client/index.ts",
+    "./db-access": "./src/db-access/index.ts"
   },
   "bin": {
     "flux": "./dist/index.cjs"

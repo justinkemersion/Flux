@@ -15,7 +15,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { getFluxToolClient } from "./client";
 import { buildTools, type FluxToolClient, type ToolDef } from "./tools";
-import { assertPass1Tools } from "./policy";
+import { assertNonMutatingTools } from "./policy";
 import { emitAudit } from "./audit";
 import { fail, toStableError, type ToolResult } from "./result";
 
@@ -25,7 +25,7 @@ export const FLUX_MCP_VERSION = "0.0.1";
 /** Build and validate the Pass 1 tool set for a given client. */
 export function createToolDefs(client: FluxToolClient): ToolDef[] {
   const defs = buildTools(client);
-  assertPass1Tools(defs);
+  assertNonMutatingTools(defs);
   return defs;
 }
 

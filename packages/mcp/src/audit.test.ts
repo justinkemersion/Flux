@@ -50,6 +50,31 @@ test("buildAuditLine produces single-line JSON with redacted args", () => {
   assert.equal(parsed.args.hash, "abc");
 });
 
+test("redactValue scrubs temporary DB credential material (field-level)", () => {
+  const out = redactValue({
+    username: "flux_temp_ro_abc1234_deadbeef",
+    password: "super-secret-temp-password",
+    access: "readonly",
+    tenantSchema: "t_abc123456789_api",
+  }) as Record<string, unknown>;
+
+  // username/schema/access are not secrets; password must be redacted.
+  assert.equal(out.username, "flux_temp_ro_abc1234_deadbeef");
+  assert.equal(out.access, "readonly");
+  assert.equal(out.password, "[redacted]");
+  assert.equal(
+    JSON.stringify(out).includes("super-secret-temp-password"),
+    false,
+  );
+});
+
+test("redactValue redacts a whole credential object under a credential key", () => {
+  const out = redactValue({
+    credential: { username: "u", password: "p" },
+  }) as Record<string, unknown>;
+  assert.equal(out.credential, "[redacted]");
+});
+
 test("emitAudit writes exactly one line", () => {
   const lines: string[] = [];
   emitAudit(

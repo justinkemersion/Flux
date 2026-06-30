@@ -1,6 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildTools, type FluxToolClient, type ToolDef } from "./index";
+import {
+  buildTools,
+  type FluxToolClient,
+  type ToolDeps,
+  type ToolDef,
+} from "./index";
+import type {
+  DatabaseAccessPlan,
+  TemporaryDbCredential,
+} from "@flux/cli/api-client";
+
+const FAKE_V2_PLAN = { mode: "v2_shared" } as unknown as DatabaseAccessPlan;
+
+const RO_CREDENTIAL: TemporaryDbCredential = {
+  username: "flux_temp_ro_abc1234_deadbeef",
+  password: "super-secret-temp-password",
+  access: "readonly",
+  expiresAt: "2026-01-01T00:15:00.000Z",
+  tenantSchema: "t_abc123456789_api",
+  searchPath: ["t_abc123456789_api"],
+};
 
 function fakeClient(overrides: Partial<FluxToolClient>): FluxToolClient {
   const base: FluxToolClient = {
@@ -21,12 +41,18 @@ function fakeClient(overrides: Partial<FluxToolClient>): FluxToolClient {
     },
     fetchProjectActivity: async () => ({ projectSlug: "s", hash: "h", events: [] }),
     listProjectBackups: async () => ({ backups: [] }),
+    getProjectDbAccessPlan: async () => FAKE_V2_PLAN,
+    createTemporaryProjectDbCredential: async () => RO_CREDENTIAL,
   };
   return { ...base, ...overrides };
 }
 
-function getTool(client: FluxToolClient, name: string): ToolDef {
-  const def = buildTools(client).find((d) => d.name === name);
+function getTool(
+  client: FluxToolClient,
+  name: string,
+  deps: ToolDeps = {},
+): ToolDef {
+  const def = buildTools(client, deps).find((d) => d.name === name);
   assert.ok(def, `tool ${name} should exist`);
   return def;
 }
@@ -163,4 +189,124 @@ test("project.list returns a count and the project array", async () => {
   assert.equal(res.ok, true);
   const data = res.data as { projects: unknown[] };
   assert.equal(data.projects.length, 1);
+});
+
+test("credentials.temporary refuses non-ro access", async () => {
+  const tool = getTool(fakeClient({}), "flux.credentials.temporary");
+  await assert.rejects(
+    () => tool.handler({ hash: "abc1234", access: "rw" }),
+    /access must be "ro"/,
+  );
+});
+
+test("credentials.temporary rejects v1_dedicated projects", async () => {
+  const tool = getTool(
+    fakeClient({
+      getProjectMetadata: async () => ({ slug: "s", hash: "h", mode: "v1_dedicated" }),
+    }),
+    "flux.credentials.temporary",
+  );
+  await assert.rejects(
+    () => tool.handler({ hash: "abc1234" }),
+    /only available for v2_shared/,
+  );
+});
+
+test("credentials.temporary forces readonly and returns the credential", async () => {
+  let requestedAccess: string | undefined;
+  const tool = getTool(
+    fakeClient({
+      createTemporaryProjectDbCredential: async (_hash, options) => {
+        requestedAccess = options?.access;
+        return RO_CREDENTIAL;
+      },
+    }),
+    "flux.credentials.temporary",
+  );
+  const res = await tool.handler({ hash: "abc1234" });
+  assert.equal(res.ok, true);
+  assert.equal(requestedAccess, "readonly");
+  const data = res.data as { credential: { access: string } };
+  assert.equal(data.credential.access, "readonly");
+});
+
+const okExecutor: ToolDeps = {
+  queryExecutor: {
+    run: async (req) => {
+      // Echo back the wrapped SQL so the test can assert LIMIT enforcement.
+      return { rows: [{ wrapped: req.wrappedSql }], fields: ["wrapped"] };
+    },
+  },
+};
+
+test("query.readonly rejects mutation SQL before any DB access", async () => {
+  let executed = false;
+  let credentialIssued = false;
+  const tool = getTool(
+    fakeClient({
+      createTemporaryProjectDbCredential: async () => {
+        credentialIssued = true;
+        return RO_CREDENTIAL;
+      },
+    }),
+    "flux.query.readonly",
+    {
+      queryExecutor: {
+        run: async () => {
+          executed = true;
+          return { rows: [], fields: [] };
+        },
+      },
+    },
+  );
+  await assert.rejects(
+    () =>
+      tool.handler({
+        hash: "abc1234",
+        sql: "WITH x AS (DELETE FROM products RETURNING *) SELECT * FROM x",
+      }),
+    /non-read or privileged/,
+  );
+  assert.equal(executed, false);
+  assert.equal(credentialIssued, false);
+});
+
+test("query.readonly wraps SELECT with a bounded LIMIT and reports rows", async () => {
+  const tool = getTool(fakeClient({}), "flux.query.readonly", okExecutor);
+  const res = await tool.handler({
+    hash: "abc1234",
+    sql: "SELECT id FROM products",
+    rowCap: 25,
+  });
+  assert.equal(res.ok, true);
+  const data = res.data as {
+    rows: Array<{ wrapped: string }>;
+    rowCount: number;
+    rowCap: number;
+  };
+  assert.equal(data.rowCap, 25);
+  // cap + 1 is requested so truncation can be detected.
+  assert.match(data.rows[0]!.wrapped, /LIMIT 26$/);
+  assert.match(data.rows[0]!.wrapped, /flux_readonly/);
+});
+
+test("query.readonly truncates at the row cap", async () => {
+  const manyRows: ToolDeps = {
+    queryExecutor: {
+      run: async () => ({
+        rows: [{ n: 1 }, { n: 2 }, { n: 3 }],
+        fields: ["n"],
+      }),
+    },
+  };
+  const tool = getTool(fakeClient({}), "flux.query.readonly", manyRows);
+  const res = await tool.handler({
+    hash: "abc1234",
+    sql: "SELECT n FROM t",
+    rowCap: 2,
+  });
+  const data = res.data as { rows: unknown[]; truncated: boolean; rowCount: number };
+  assert.equal(data.truncated, true);
+  assert.equal(data.rows.length, 2);
+  assert.equal(data.rowCount, 2);
 });
