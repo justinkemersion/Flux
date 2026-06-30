@@ -1,0 +1,35 @@
+{
+  "name": "@flux/mcp",
+  "version": "0.0.1",
+  "description": "Flux MCP server (Pass 1: read + preflight) — operate Flux projects from AI coding agents over the Model Context Protocol.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "bin": {
+    "flux-mcp": "./dist/index.cjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "start": "tsx src/index.ts",
+    "dev": "tsx src/index.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.33.0",
+  "dependencies": {
+    "@flux/cli": "workspace:*",
+    "@flux/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.2"
+  }
+}
