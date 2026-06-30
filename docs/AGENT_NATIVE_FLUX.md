@@ -121,11 +121,15 @@ inspect → plan → intent → ensure verified backup → preflight → apply
 
 **Slice D (complete):** Read-only **Agent Activity** dashboard page at `/agent-activity` — lists sanitized MCP intents with filters, pagination, and expandable safe detail. Uses session auth + `GET /api/agent/intents` only (no CLI token in browser). **Approval UI remains deferred.** Merged audit timeline deferred to Slice D2.
 
-**Still in Phase 4B:** smoke fixture project (Slice E); merged audit timeline (Slice D2).
+**Still in Phase 4B:** merged audit timeline (Slice D2).
+
+**Slice E (complete):** Dedicated smoke fixture discipline — `mcp-smoke-fixture` operator doc, slug gate + `--allow-non-fixture-project` override, `9999_mcp_noop_smoke_*.sql` migrations, optional metadata advisory. See `plans/mcp/fixture-project.md`.
 
 **Intent list API (Slice C):** `GET /api/agent/intents` (dashboard session) returns sanitized intents for the signed-in user only. Query: `projectHash`, `tool`, `status`, `intentClass`, `riskLevel`, `limit` (default 50, max 200), `cursor`. Response: `{ intents: [...], nextCursor? }` — each row has safe `summary` (not raw `requestSummary`) and sanitized `metadata`. Operators may also use `GET /api/cli/v1/intents` (Bearer) or `ApiClient.listMcpIntents()`.
 
 **Agent Activity page (Slice D):** `/agent-activity` — read-only dashboard UI over the intent list API. Filters sync to URL query params; “Load more” uses `nextCursor`. Expand a row for safe summary/metadata JSON. Link from the projects header (“Agent Activity”). No approval actions. Merged audit+intent timeline is deferred (D2).
+
+**Smoke fixture (Slice E):** Phase 4+ live smoke must target a disposable fixture project (`mcp-smoke-fixture` suggested). Script refuses non-fixture slugs unless `--allow-non-fixture-project`. Migration files: `9999_mcp_noop_smoke_*.sql` (comment + `SELECT version();`). Setup: `plans/mcp/fixture-project.md`.
 
 ### Phase 3B: Protective backup verification (`flux.backup.ensureVerified`)
 

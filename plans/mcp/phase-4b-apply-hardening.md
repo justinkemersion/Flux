@@ -1,6 +1,6 @@
 # Flux MCP Phase 4B — Migration Apply Hardening
 
-**Status:** In progress — Slice D complete  
+**Status:** Complete — Slice E done (D2 merged audit timeline deferred)  
 **Precedes:** Scoped `flx_mcp_` tokens, streamable HTTP, any new mutation tools  
 **Builds on:** Phase 4 (`flux.migration.apply`), Phase 4 smoke safety (`--hash`, `--slug`, `--yes-apply-smoke-migration`)
 
@@ -246,11 +246,13 @@ Recommended slice order (one focused commit per slice when possible):
 
 ### Slice E — Smoke fixture discipline
 
-- [ ] Add `plans/mcp/fixture-project.md` operator setup
-- [ ] Optional slug convention warning in smoke lib
-- [ ] Update README smoke examples (remove real app project names)
-- [ ] Document bloom-atelier smoke row as historical; fixture for future runs
-- [ ] Run: `pnpm --filter @flux/mcp test`
+- [x] Add `plans/mcp/fixture-project.md` operator setup
+- [x] Slug convention gate + `--allow-non-fixture-project` override in smoke lib
+- [x] Optional project metadata advisory via `getProjectMetadata`
+- [x] `9999_mcp_noop_smoke_*.sql` migration naming + `smoke-migration.ts` helper
+- [x] Update README smoke examples (fixture slug `mcp-smoke-fixture`)
+- [x] Document bloom-atelier smoke row as historical; fixture for future runs
+- [x] Run: `pnpm --filter @flux/mcp test`
 
 ---
 
@@ -286,9 +288,10 @@ Recommended slice order (one focused commit per slice when possible):
 
 ### Smoke fixture
 
-- [ ] Smoke script cannot run apply without `--hash`, `--slug`, `--yes-apply-smoke-migration`
-- [ ] Documentation describes fixture project setup
-- [ ] Generated migration is comment + `SELECT version();` only
+- [x] Smoke script cannot run apply without `--hash`, `--slug`, `--yes-apply-smoke-migration`
+- [x] Non-fixture slug refuses without `--allow-non-fixture-project`
+- [x] Documentation describes fixture project setup (`plans/mcp/fixture-project.md`)
+- [x] Generated migration is `9999_mcp_noop_smoke_*.sql` — comment + `SELECT version();` only
 
 ---
 

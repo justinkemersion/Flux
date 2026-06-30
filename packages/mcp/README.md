@@ -158,25 +158,26 @@ pnpm --filter @flux/mcp build
 node packages/mcp/dist/index.cjs
 ```
 
-### Phase 4 live smoke (explicit target only)
+### Phase 4 live smoke (fixture project only)
 
-The Phase 4 smoke script writes a **real migration ledger row**. It never defaults to a project — you must pass `--hash` and `--slug`, and acknowledge apply explicitly.
+The Phase 4 smoke script writes a **real migration ledger row**. It never defaults to a project — you must pass `--hash` and `--slug`, use a **fixture-looking slug**, and acknowledge apply explicitly.
 
-Use a **disposable fixture project**, not a production app:
+**Operator setup:** [`plans/mcp/fixture-project.md`](../../plans/mcp/fixture-project.md) (suggested slug: `mcp-smoke-fixture`, v2_shared).
 
 ```bash
 pnpm --filter @flux/mcp exec tsx scripts/phase4-smoke.ts \
-  --hash <7-char-hex> \
-  --slug <fixture-project-slug> \
+  --hash <fixture-hash> \
+  --slug mcp-smoke-fixture \
   --yes-apply-smoke-migration
 ```
 
-- `--hash` and `--slug` are **required** (no positional args, no env inference).
+- `--hash` and `--slug` are **required** (no positional args, no env inference, no first-project selection).
+- Slug must contain `smoke`, `fixture`, or `test` — otherwise the script **refuses** unless you also pass `--allow-non-fixture-project`.
 - `--yes-apply-smoke-migration` is **required** before `flux.migration.apply` runs.
-- The smoke migration is harmless: SQL comment + `SELECT version();` only (no DDL, no writes).
-- The ledger row is real history — do not manually edit or delete it.
+- Smoke migration file: `9999_mcp_noop_smoke_<suffix>.sql` — comment + `SELECT version();` only (no DDL/DML).
+- Ledger rows are **real history** — do not manually edit or delete them.
 
-Steps 1–3 (plan, ensure verified backup, preflight) run without the acknowledgement flag; apply and the stale-plan check refuse without it.
+Steps 1–3 (plan, ensure verified backup, preflight) run without the apply acknowledgement; apply and stale-plan check refuse without it. Non-fixture slugs never run silently.
 
 ## Register in Cursor
 

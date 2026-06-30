@@ -5,11 +5,14 @@
  * Usage:
  *   pnpm --filter @flux/mcp exec tsx scripts/phase4-smoke.ts \
  *     --hash <7-char-hex> \
- *     --slug <project-slug> \
+ *     --slug mcp-smoke-fixture \
  *     --yes-apply-smoke-migration
  *
- * Requires explicit --hash and --slug (no defaults). Apply steps require
- * --yes-apply-smoke-migration because this writes a real migration ledger row.
+ * Requires explicit --hash and --slug (no defaults). Slug must look like a fixture
+ * (contain smoke, fixture, or test) unless --allow-non-fixture-project is passed.
+ * Apply steps require --yes-apply-smoke-migration (real ledger row).
+ *
+ * Operator setup: plans/mcp/fixture-project.md
  */
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -20,11 +23,12 @@ import { getApiClient } from "@flux/cli/api-client";
 import { invokeFluxMcpTool } from "../src/server.ts";
 import {
   APPLY_ACK_REFUSAL_MESSAGE,
-  assertHarmlessSmokeMigration,
-  buildSmokeMigrationSql,
+  buildNoopSmokeMigration,
   formatMigrationApplyWarning,
+  formatNonFixtureMetadataWarning,
+  formatNonFixtureSlugOverrideWarning,
+  metadataLooksLikeFixture,
   parsePhase4SmokeArgs,
-  smokeMigrationFilename,
 } from "../src/scripts/phase4-smoke-lib.ts";
 
 function assertNoLeaks(label: string, payload: unknown): void {
@@ -63,11 +67,35 @@ function makeSmokeWorkspace(input: {
   const dir = join(root, migrationsPath);
   mkdirSync(dir, { recursive: true });
   const suffix = randomUUID().slice(0, 8);
-  const filename = smokeMigrationFilename(suffix);
-  const sql = buildSmokeMigrationSql(suffix);
-  assertHarmlessSmokeMigration(sql);
-  writeFileSync(join(dir, filename), sql);
-  return { root, migrationsPath, filename, sql };
+  const migration = buildNoopSmokeMigration(suffix);
+  writeFileSync(join(dir, migration.filename), migration.sql);
+  return {
+    root,
+    migrationsPath,
+    filename: migration.filename,
+    sql: migration.sql,
+  };
+}
+
+async function warnIfMetadataNotFixture(
+  client: ReturnType<typeof getApiClient>,
+  hash: string,
+  slug: string,
+): Promise<void> {
+  try {
+    const meta = await client.getProjectMetadata(hash);
+    if (
+      !metadataLooksLikeFixture({
+        slug: meta.slug,
+        description: meta.description ?? null,
+        brief: meta.brief ?? null,
+      })
+    ) {
+      console.warn(formatNonFixtureMetadataWarning({ slug, hash }));
+    }
+  } catch {
+    // Optional advisory only — slug gate is authoritative.
+  }
 }
 
 async function main(): Promise<void> {
@@ -77,9 +105,14 @@ async function main(): Promise<void> {
     process.exit(parsed.exitCode);
   }
 
-  const { hash, slug, applyAcknowledged } = parsed;
+  const { hash, slug, applyAcknowledged, slugLooksLikeFixture, allowNonFixtureProject } =
+    parsed;
+  if (!slugLooksLikeFixture && allowNonFixtureProject) {
+    console.warn(formatNonFixtureSlugOverrideWarning(slug));
+  }
   console.log(`Phase 4 smoke — ${slug} (${hash})`);
   const client = getApiClient();
+  await warnIfMetadataNotFixture(client, hash, slug);
   const ws = makeSmokeWorkspace({ hash, slug });
 
   try {
