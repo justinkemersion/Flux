@@ -30,6 +30,10 @@ Every tool returns the standard envelope `{ ok, summary, data, remediation? }`, 
 
 See `packages/mcp/README.md` for local run + Cursor/agent registration.
 
+**Live validation:** Pass 1 was validated end-to-end against the control plane using read/preflight tools only — `flux.project.list`, `flux.project.describe`, `flux.schema.inspect`, `flux.backup.list`, and `flux.destructive.preflight` all returned successfully with one redacted audit line per call and no mutations.
+
+**Read-output polish (post-validation):** based on the live run, schema-inspection now deduplicates composite foreign-key columns upstream in `@flux/core` (so CLI, dashboard, and MCP all benefit), and `flux.project.describe` surfaces non-failing advisories (`agent_context_missing` when no FLUX.md brief is synced; `plan_limit_exceeded` when active projects exceed the plan limit).
+
 ### Deferred to Pass 2+
 
 Write tools, read-only SQL query (via ephemeral `ro` credentials), migration plan/apply (plan-first with a `planId`), control-plane rate limiting, scoped `flx_mcp_` tokens, streamable HTTP transport, a persisted `mcp_audit_events` ledger, and the dashboard approval/audit console.

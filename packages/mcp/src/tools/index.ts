@@ -51,6 +51,16 @@ export interface ToolDef {
   handler(args: Record<string, unknown>): Promise<ToolResult>;
 }
 
+/**
+ * Non-failing advisory surfaced in `flux.project.describe` output. Agents can
+ * react to these (e.g. sync a FLUX.md brief) without the tool call failing.
+ */
+export interface DescribeWarning {
+  code: "agent_context_missing" | "plan_limit_exceeded";
+  severity: "info" | "warning";
+  message: string;
+}
+
 const HASH_INPUT_SCHEMA: Tool["inputSchema"] = {
   type: "object",
   properties: {
@@ -119,10 +129,31 @@ export function buildTools(client: FluxToolClient): ToolDef[] {
           client.getProjectLifecycleState(hash).catch(() => null),
           client.fetchProjectFluxMdDetail(hash).catch(() => null),
         ]);
+
+        const warnings: DescribeWarning[] = [];
+        const hasBrief =
+          (brief?.content ?? "").trim().length > 0 ||
+          (metadata.brief ?? "").trim().length > 0;
+        if (!hasBrief) {
+          warnings.push({
+            code: "agent_context_missing",
+            severity: "info",
+            message: "No FLUX.md brief is synced for this project.",
+          });
+        }
+        if (lifecycle && lifecycle.activeCount > lifecycle.activeLimit) {
+          warnings.push({
+            code: "plan_limit_exceeded",
+            severity: "warning",
+            message: "activeCount exceeds activeLimit.",
+          });
+        }
+
         return ok(`Project ${metadata.slug} (${metadata.mode}).`, {
           metadata,
           lifecycle,
           brief,
+          warnings,
         });
       },
     },

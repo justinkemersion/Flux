@@ -74,6 +74,76 @@ test("read tools reject a missing hash argument", async () => {
   await assert.rejects(() => tool.handler({}), /hash/);
 });
 
+const LIFECYCLE_AT_LIMIT = {
+  slug: "s",
+  hash: "h",
+  name: "s",
+  lifecycleState: "active" as const,
+  summary: "ok",
+  activeCount: 3,
+  activeLimit: 10,
+  plan: "pro" as const,
+};
+
+test("project.describe warns when no FLUX.md brief is synced", async () => {
+  const tool = getTool(
+    fakeClient({
+      getProjectMetadata: async () => ({ slug: "s", hash: "h", mode: "v2_shared" }),
+      getProjectLifecycleState: async () => LIFECYCLE_AT_LIMIT,
+      fetchProjectFluxMdDetail: async () => ({
+        slug: "s",
+        hash: "h",
+        name: "s",
+        content: null,
+        syncedAt: null,
+      }),
+    }),
+    "flux.project.describe",
+  );
+  const res = await tool.handler({ hash: "abc1234" });
+  assert.equal(res.ok, true);
+  const warnings = (res.data as { warnings: Array<{ code: string }> }).warnings;
+  assert.ok(warnings.some((w) => w.code === "agent_context_missing"));
+  assert.equal(
+    warnings.some((w) => w.code === "plan_limit_exceeded"),
+    false,
+  );
+});
+
+test("project.describe warns when activeCount exceeds activeLimit", async () => {
+  const tool = getTool(
+    fakeClient({
+      getProjectMetadata: async () => ({
+        slug: "s",
+        hash: "h",
+        mode: "v2_shared",
+        brief: "synced brief",
+      }),
+      getProjectLifecycleState: async () => ({
+        ...LIFECYCLE_AT_LIMIT,
+        activeCount: 13,
+        activeLimit: 10,
+      }),
+      fetchProjectFluxMdDetail: async () => ({
+        slug: "s",
+        hash: "h",
+        name: "s",
+        content: "# brief",
+        syncedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    }),
+    "flux.project.describe",
+  );
+  const res = await tool.handler({ hash: "abc1234" });
+  assert.equal(res.ok, true);
+  const warnings = (res.data as { warnings: Array<{ code: string }> }).warnings;
+  assert.ok(warnings.some((w) => w.code === "plan_limit_exceeded"));
+  assert.equal(
+    warnings.some((w) => w.code === "agent_context_missing"),
+    false,
+  );
+});
+
 test("project.list returns a count and the project array", async () => {
   const tool = getTool(
     fakeClient({

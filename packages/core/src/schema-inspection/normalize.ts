@@ -29,6 +29,27 @@ function asString(value: unknown): string {
   return String(value ?? "");
 }
 
+/**
+ * Deduplicate while preserving first-seen order.
+ *
+ * `information_schema` composite foreign keys produce a cartesian product
+ * between `key_column_usage` and `constraint_column_usage` (N columns -> N*N
+ * rows), which surfaces as repeated column names (e.g. `a, a, b, b`). A foreign
+ * key can never reference the same column twice, so collapsing duplicates is
+ * always safe and yields the true ordered column list for every consumer
+ * (CLI, dashboard, MCP, warnings).
+ */
+function dedupePreserveOrder(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
 function parseIndexColumns(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((v) => String(v));
@@ -80,8 +101,12 @@ export function normalizeInspectionRows(input: {
     );
     const fromTable = asString(sorted[0]?.from_table);
     const toTable = asString(sorted[0]?.to_table);
-    const fromColumns = sorted.map((r) => asString(r.from_column));
-    const toColumns = sorted.map((r) => asString(r.to_column));
+    const fromColumns = dedupePreserveOrder(
+      sorted.map((r) => asString(r.from_column)),
+    );
+    const toColumns = dedupePreserveOrder(
+      sorted.map((r) => asString(r.to_column)),
+    );
     const fk: InspectedForeignKey = {
       constraintName,
       columns: fromColumns,
