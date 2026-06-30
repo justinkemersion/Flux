@@ -3,10 +3,13 @@
  * Phase 4 live smoke: plan → ensureVerified → preflight → apply (+ stale-plan refusal).
  *
  * Usage:
- *   pnpm --filter @flux/mcp exec tsx scripts/phase4-smoke.ts [hash] [slug]
- *   # default: bloom-atelier 61d9dff
+ *   pnpm --filter @flux/mcp exec tsx scripts/phase4-smoke.ts \
+ *     --hash <7-char-hex> \
+ *     --slug <project-slug> \
+ *     --yes-apply-smoke-migration
  *
- * Creates a disposable migration under /tmp and applies it once, then verifies stale-plan refusal.
+ * Requires explicit --hash and --slug (no defaults). Apply steps require
+ * --yes-apply-smoke-migration because this writes a real migration ledger row.
  */
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -15,9 +18,14 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getApiClient } from "@flux/cli/api-client";
 import { invokeFluxMcpTool } from "../src/server.ts";
-
-const HASH = (process.argv[2] ?? "61d9dff").trim().toLowerCase();
-const SLUG = (process.argv[3] ?? "bloom-atelier").trim();
+import {
+  APPLY_ACK_REFUSAL_MESSAGE,
+  assertHarmlessSmokeMigration,
+  buildSmokeMigrationSql,
+  formatMigrationApplyWarning,
+  parsePhase4SmokeArgs,
+  smokeMigrationFilename,
+} from "../src/scripts/phase4-smoke-lib.ts";
 
 function assertNoLeaks(label: string, payload: unknown): void {
   const text = JSON.stringify(payload);
@@ -42,36 +50,45 @@ function assertNoLeaks(label: string, payload: unknown): void {
   }
 }
 
-function makeSmokeWorkspace(): { root: string; migrationsPath: string; filename: string } {
+function makeSmokeWorkspace(input: {
+  hash: string;
+  slug: string;
+}): { root: string; migrationsPath: string; filename: string; sql: string } {
   const root = mkdtempSync(join(tmpdir(), "flux-mcp-phase4-"));
   writeFileSync(
     join(root, "flux.json"),
-    JSON.stringify({ slug: SLUG, hash: HASH }, null, 2),
+    JSON.stringify({ slug: input.slug, hash: input.hash }, null, 2),
   );
   const migrationsPath = "migrations";
   const dir = join(root, migrationsPath);
   mkdirSync(dir, { recursive: true });
   const suffix = randomUUID().slice(0, 8);
-  const filename = `9999_mcp_smoke_${suffix}.sql`;
-  writeFileSync(
-    join(dir, filename),
-    `-- flux mcp phase4 smoke ${suffix}\nSELECT version();\n`,
-  );
-  return { root, migrationsPath, filename };
+  const filename = smokeMigrationFilename(suffix);
+  const sql = buildSmokeMigrationSql(suffix);
+  assertHarmlessSmokeMigration(sql);
+  writeFileSync(join(dir, filename), sql);
+  return { root, migrationsPath, filename, sql };
 }
 
 async function main(): Promise<void> {
-  console.log(`Phase 4 smoke — ${SLUG} (${HASH})`);
+  const parsed = parsePhase4SmokeArgs(process.argv.slice(2));
+  if (!parsed.ok) {
+    console.error(parsed.error);
+    process.exit(parsed.exitCode);
+  }
+
+  const { hash, slug, applyAcknowledged } = parsed;
+  console.log(`Phase 4 smoke — ${slug} (${hash})`);
   const client = getApiClient();
-  const ws = makeSmokeWorkspace();
+  const ws = makeSmokeWorkspace({ hash, slug });
 
   try {
     console.log("\n1) flux.migration.plan");
     const plan = await invokeFluxMcpTool(
       "flux.migration.plan",
       {
-        hash: HASH,
-        slug: SLUG,
+        hash,
+        slug,
         workspaceRoot: ws.root,
         migrationsPath: ws.migrationsPath,
       },
@@ -96,7 +113,7 @@ async function main(): Promise<void> {
     console.log("\n2) flux.backup.ensureVerified");
     const ensure = await invokeFluxMcpTool(
       "flux.backup.ensureVerified",
-      { hash: HASH, slug: SLUG, verifyLatestIfFresh: true, reason: "phase4-smoke" },
+      { hash, slug, verifyLatestIfFresh: true, reason: "phase4-smoke" },
       client,
     );
     console.log(JSON.stringify(ensure, null, 2));
@@ -104,18 +121,27 @@ async function main(): Promise<void> {
     if (!ensure.ok) process.exit(1);
 
     console.log("\n3) flux.destructive.preflight");
-    const preflight = await invokeFluxMcpTool("flux.destructive.preflight", { hash: HASH }, client);
+    const preflight = await invokeFluxMcpTool("flux.destructive.preflight", { hash }, client);
     console.log(JSON.stringify(preflight, null, 2));
     assertNoLeaks("destructive.preflight", preflight);
     const preflightData = preflight.data as { allowed?: boolean };
     if (!preflight.ok || preflightData.allowed !== true) process.exit(1);
 
+    if (!applyAcknowledged) {
+      console.error(`\n${APPLY_ACK_REFUSAL_MESSAGE}`);
+      process.exit(2);
+    }
+
+    console.log(
+      `\n${formatMigrationApplyWarning({ slug, hash, filename: ws.filename })}`,
+    );
+
     console.log("\n4) flux.migration.apply");
     const apply = await invokeFluxMcpTool(
       "flux.migration.apply",
       {
-        hash: HASH,
-        slug: SLUG,
+        hash,
+        slug,
         planId: planData.planId,
         planHash: planData.planHash,
         workspaceRoot: ws.root,
@@ -149,8 +175,8 @@ async function main(): Promise<void> {
     const staleApply = await invokeFluxMcpTool(
       "flux.migration.apply",
       {
-        hash: HASH,
-        slug: SLUG,
+        hash,
+        slug,
         planId: planData.planId,
         planHash: planData.planHash,
         workspaceRoot: ws.root,

@@ -141,6 +141,26 @@ pnpm --filter @flux/mcp build
 node packages/mcp/dist/index.cjs
 ```
 
+### Phase 4 live smoke (explicit target only)
+
+The Phase 4 smoke script writes a **real migration ledger row**. It never defaults to a project — you must pass `--hash` and `--slug`, and acknowledge apply explicitly.
+
+Use a **disposable fixture project**, not a production app:
+
+```bash
+pnpm --filter @flux/mcp exec tsx scripts/phase4-smoke.ts \
+  --hash <7-char-hex> \
+  --slug <fixture-project-slug> \
+  --yes-apply-smoke-migration
+```
+
+- `--hash` and `--slug` are **required** (no positional args, no env inference).
+- `--yes-apply-smoke-migration` is **required** before `flux.migration.apply` runs.
+- The smoke migration is harmless: SQL comment + `SELECT version();` only (no DDL, no writes).
+- The ledger row is real history — do not manually edit or delete it.
+
+Steps 1–3 (plan, ensure verified backup, preflight) run without the acknowledgement flag; apply and the stale-plan check refuse without it.
+
 ## Register in Cursor
 
 ```json
