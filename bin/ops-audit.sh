@@ -273,39 +273,41 @@ audit_stale_containers() {
 
 audit_backup_catalog() {
   section "Backup catalog (latest per project)"
-  local sys_db
+  local sys_db sql_file
   sys_db="$(docker ps --format '{{.Names}}' | grep -E 'flux-system-db$' | head -1 || true)"
+  sql_file="${SCRIPT_DIR}/ops-audit/sql/backup-catalog-latest.sql"
   if [[ -z "$sys_db" ]]; then
     warn "flux-system-db container not found — skip catalog query"
     return
   fi
+  if [[ ! -f "$sql_file" ]]; then
+    fail "missing ops-audit SQL: $sql_file"
+    return
+  fi
   local rows
-  rows="$(docker exec "$sys_db" psql -U postgres -d postgres -tA -F '|' -c "
-    SELECT DISTINCT ON (p.slug)
-      p.slug, p.mode, b.status,
-      b.artifact_validation_status,
-      b.restore_verification_status,
-      b.offsite_status,
-      b.created_at::date
-    FROM project_backups b
-    JOIN projects p ON p.id = b.project_id
-    ORDER BY p.slug, b.created_at DESC;
-  " 2>/dev/null || true)"
+  rows="$(docker exec -i "$sys_db" psql -U postgres -d postgres -tA -F '|' -f - <"$sql_file" 2>/dev/null || true)"
   if [[ -z "$rows" ]]; then
     warn "could not read project_backups from $sys_db"
     return
   fi
-  while IFS='|' read -r slug mode st art restore offsite created; do
-    [[ -z "$slug" ]] && continue
-    echo "  $slug ($mode) latest=$created status=$st art=$art restore=$restore offsite=$offsite"
+  while IFS='|' read -r slug hash mode lifecycle st art restore offsite created; do
+    [[ -z "$slug" || -z "$hash" ]] && continue
+    local label="${slug}:${hash} (${mode}, ${lifecycle:-active})"
+    echo "  $label latest=$created status=$st art=$art restore=$restore offsite=$offsite"
+    if [[ "${lifecycle:-active}" != "active" ]]; then
+      if [[ "$restore" == "restore_failed" ]]; then
+        warn "$label: latest backup restore_verification failed (lifecycle=${lifecycle:-unknown}; skipped FAIL)"
+      fi
+      continue
+    fi
     if [[ "$restore" == "pending" && "$st" == "complete" ]]; then
-      warn "$slug: latest backup is NOT restore-verified — run: flux backup verify -p $slug --hash <hash> --latest"
+      warn "$label: latest backup is NOT restore-verified — run: flux backup verify -p $slug --hash $hash --latest"
     fi
     if [[ "$restore" == "restore_failed" ]]; then
-      fail "$slug: latest backup restore_verification failed"
+      fail "$label: latest backup restore_verification failed"
     fi
     if [[ "$offsite" == "failed" ]]; then
-      warn "$slug: offsite replication failed on latest backup"
+      warn "$label: offsite replication failed on latest backup"
     fi
   done <<<"$rows"
 
@@ -330,45 +332,31 @@ read_min_backup_interval_days() {
 audit_platform_backup_freshness() {
   local sys_db="$1"
   section "Platform minimum backup freshness"
-  local interval_days
+  local interval_days sql_file
   interval_days="$(read_min_backup_interval_days)"
-  echo "  interval_days=$interval_days (restore-verified age threshold)"
+  sql_file="${SCRIPT_DIR}/ops-audit/sql/platform-backup-freshness.sql"
+  echo "  interval_days=$interval_days (restore-verified age threshold; active projects only)"
+  if [[ ! -f "$sql_file" ]]; then
+    fail "missing ops-audit SQL: $sql_file"
+    return
+  fi
 
   local freshness_rows
-  freshness_rows="$(docker exec "$sys_db" psql -U postgres -d postgres -tA -F '|' -c "
-    SELECT p.slug, p.mode,
-      lv.restore_verification_at::date,
-      CASE
-        WHEN lv.restore_verification_at IS NULL THEN NULL
-        ELSE (CURRENT_DATE - lv.restore_verification_at::date)
-      END AS age_days
-    FROM projects p
-    LEFT JOIN LATERAL (
-      SELECT b.restore_verification_at
-      FROM project_backups b
-      WHERE b.project_id = p.id
-        AND b.status = 'complete'
-        AND b.restore_verification_status = 'restore_verified'
-        AND b.restore_verification_at IS NOT NULL
-      ORDER BY b.restore_verification_at DESC
-      LIMIT 1
-    ) lv ON true
-    WHERE p.slug NOT IN ('flux-system', 'static')
-    ORDER BY p.slug;
-  " 2>/dev/null || true)"
+  freshness_rows="$(docker exec -i "$sys_db" psql -U postgres -d postgres -tA -F '|' -f - <"$sql_file" 2>/dev/null || true)"
   if [[ -z "$freshness_rows" ]]; then
     warn "could not read restore-verified freshness from $sys_db"
     return
   fi
-  while IFS='|' read -r slug mode verified_date age_days; do
-    [[ -z "$slug" ]] && continue
+  while IFS='|' read -r slug hash mode verified_date age_days; do
+    [[ -z "$slug" || -z "$hash" ]] && continue
+    local label="${slug}:${hash} (${mode})"
     if [[ -z "$verified_date" || "$verified_date" == "" ]]; then
-      warn "$slug ($mode): no restore-verified backup — platform minimum backup freshness not met"
+      warn "$label: no restore-verified backup — platform minimum backup freshness not met"
       continue
     fi
-    echo "  $slug ($mode) newest_verified=$verified_date age_days=${age_days:-?}"
+    echo "  $label newest_verified=$verified_date age_days=${age_days:-?}"
     if [[ -n "${age_days:-}" && "$age_days" =~ ^[0-9]+$ && "$age_days" -gt "$interval_days" ]]; then
-      warn "$slug: restore-verified backup is ${age_days}d old (platform minimum: ${interval_days}d)"
+      warn "$label: restore-verified backup is ${age_days}d old (platform minimum: ${interval_days}d)"
     fi
   done <<<"$freshness_rows"
 }

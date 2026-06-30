@@ -36,9 +36,20 @@ Not intended for public docs or marketing consumption.
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-v2-shared -> deploy-gateway -> deploy-web`
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
-- **Latest ops audit:** `./bin/ops-audit.sh --remote --deep --smoke` (2026-06-30) — 1 FAIL (`yeastcoast` restore verification); 15 WARN (mostly expected v2 gateway 401 probes)
+- **Latest ops audit:** `./bin/ops-audit.sh --remote --deep --smoke` — see [Ops cleanup 2026-06-30](#ops-cleanup-2026-06-30) below
 
 ---
+
+## Ops cleanup 2026-06-30
+
+| Item | Status | Notes |
+|------|--------|--------|
+| Duplicate v2 `yeastcoast` (`3db3f78`) | `done` | Archived via operator SQL (owner: `justinkennethemter@gmail.com`; active project is v1 `ffca33f` for `justinkemersion@pm.me`) |
+| Ops-audit slug collision | `done` | `DISTINCT ON (p.id)`; display `slug:hash`; SQL in `bin/ops-audit/sql/` + tests |
+| Empty tenant restore verify policy | `todo` | Product ticket: [`plans/ops/empty-tenant-backup-verify.md`](ops/empty-tenant-backup-verify.md) |
+| Platform scheduler archived skip | `done` | `projectsDueForPlatformBackup` skips `lifecycle_state = archived` |
+
+**Context:** Empty v2 tenant exports validate as artifacts but fail pg_restore table-count check (zero user tables). Do not treat as corrupt; future tier e.g. `restorable_empty_tenant` / `backup_empty_but_valid`.
 
 ## P0 — Production correctness & safety
 
