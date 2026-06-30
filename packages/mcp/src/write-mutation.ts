@@ -15,8 +15,11 @@ import type { ToolDef } from "./tools";
 import type { ToolResult } from "./result";
 import {
   migrationApplyAuditGate,
+  migrationApplyIntentMetadata,
   type MigrationApplyFailureData,
+  type MigrationApplyStaleFailureData,
   type MigrationApplySuccessData,
+  buildStalePlanToolResult,
   validateStoredPlanForApply,
 } from "./tools/migration-apply";
 
@@ -87,12 +90,7 @@ export async function validateMigrationApplyPlan(
     return {
       ok: false,
       gate: validation.gate,
-      result: {
-        ok: false,
-        summary: validation.summary,
-        data: { gate: validation.gate },
-        remediation: validation.remediation,
-      },
+      result: buildStalePlanToolResult({ stale: validation.stale }),
     };
   }
 
@@ -137,17 +135,11 @@ export async function createPendingWriteIntent(
 
 function intentMetadataFromResult(result: ToolResult): Record<string, unknown> | undefined {
   if (!result.data || typeof result.data !== "object") return undefined;
-  const data = result.data as MigrationApplySuccessData | MigrationApplyFailureData;
-  return {
-    planHash: data.planHash,
-    appliedCount: data.appliedCount,
-    appliedFiles: data.appliedFiles,
-    destructiveShaped: data.destructiveShaped,
-    ...(data.backupTrustTier !== undefined ? { backupTrustTier: data.backupTrustTier } : {}),
-    ...("failedFile" in data && data.failedFile !== undefined
-      ? { failedFile: data.failedFile }
-      : {}),
-  };
+  const data = result.data as
+    | MigrationApplySuccessData
+    | MigrationApplyFailureData
+    | MigrationApplyStaleFailureData;
+  return migrationApplyIntentMetadata(data);
 }
 
 export async function updateWriteIntentTerminal(

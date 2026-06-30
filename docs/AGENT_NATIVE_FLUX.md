@@ -97,16 +97,35 @@ inspect → plan → intent → ensure verified backup → preflight → apply
 **Behavior:**
 
 - Applies only files in the stored plan’s apply set, in order, via existing CLI `pushSql` / versioned migration metadata (no duplicated push logic).
-- Re-reads local migration files before apply; refuses missing/stale plans (`Plan not found or MCP server restarted. Re-run flux.migration.plan.`).
+- Re-reads local migration files before apply; refuses missing/stale plans with typed `data.staleReason` codes and gate `migration_apply_blocked_stale_plan` (standard fix: re-run `flux.migration.plan`; `plan_not_found` also covers MCP server restart).
 - Creates a pending **write** intent before any migration push API call; requires persisted audit APIs.
 - Requires restore-verified backup trust when `requireVerifiedBackup !== false` (default true). **No `skipBackupCheck`.**
 - Destructive-shaped plans (from `flux.migration.plan` classification) require `allowDestructive: true` and still require restore-verified backup.
-- Refuses plans with conflicts; stops on first push failure with partial-apply metadata.
+- Refuses plans with conflicts; stops on first push failure with partial-apply metadata (`partialApply`, `failureIndex`, `remainingFiles`, ledger-safe remediation).
+- Partial failure never includes raw SQL from push errors in summary or audit metadata.
 - Intent + audit finalized with safe metadata only (no SQL, secrets, paths, credentials, raw backup rows).
 
 **Audit gates:** `migration_apply_allowed`, `migration_apply_blocked_no_backup`, `migration_apply_blocked_stale_plan`, `migration_apply_blocked_destructive_requires_allow`, `migration_apply_failed`.
 
 **Still deferred beyond Phase 4:** arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI.
+
+**Operator response to partial apply:** Inspect `failedFile`; treat `appliedFiles` as ledgered history (do not edit the ledger). Fix forward with a new migration or resolve the push error, then `flux.migration.plan` → `flux.migration.apply`.
+
+### Phase 4B — apply hardening (in progress)
+
+**Slice A (complete):** Partial-apply summaries, remediation, intent/audit safe metadata.
+
+**Slice B (complete):** Typed stale-plan `staleReason` codes, per-reason remediation, safe refusal `data` (`expectedPlanHash`, `changedFiles`, etc.), intent/audit metadata for stale refusals.
+
+**Slice C (complete):** Read-only intent visibility API (`GET /api/agent/intents`, session auth) with sanitization (`mcp-intent-sanitize.ts`, `listMcpIntentsForUser`). Optional operator CLI list via `GET /api/cli/v1/intents` + `ApiClient.listMcpIntents`. **No approval flow.** **No new MCP mutation tools.**
+
+**Slice D (complete):** Read-only **Agent Activity** dashboard page at `/agent-activity` — lists sanitized MCP intents with filters, pagination, and expandable safe detail. Uses session auth + `GET /api/agent/intents` only (no CLI token in browser). **Approval UI remains deferred.** Merged audit timeline deferred to Slice D2.
+
+**Still in Phase 4B:** smoke fixture project (Slice E); merged audit timeline (Slice D2).
+
+**Intent list API (Slice C):** `GET /api/agent/intents` (dashboard session) returns sanitized intents for the signed-in user only. Query: `projectHash`, `tool`, `status`, `intentClass`, `riskLevel`, `limit` (default 50, max 200), `cursor`. Response: `{ intents: [...], nextCursor? }` — each row has safe `summary` (not raw `requestSummary`) and sanitized `metadata`. Operators may also use `GET /api/cli/v1/intents` (Bearer) or `ApiClient.listMcpIntents()`.
+
+**Agent Activity page (Slice D):** `/agent-activity` — read-only dashboard UI over the intent list API. Filters sync to URL query params; “Load more” uses `nextCursor`. Expand a row for safe summary/metadata JSON. Link from the projects header (“Agent Activity”). No approval actions. Merged audit+intent timeline is deferred (D2).
 
 ### Phase 3B: Protective backup verification (`flux.backup.ensureVerified`)
 

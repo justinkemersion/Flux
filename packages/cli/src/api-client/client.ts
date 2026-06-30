@@ -35,6 +35,8 @@ import type { ProjectAiSummary, ProjectFluxMdDetail, ProjectMetadataDetail } fro
 import type {
   CreateMcpIntentInput,
   CreateMcpIntentResult,
+  ListMcpIntentsQuery,
+  ListMcpIntentsResult,
   McpIntentDetail,
 } from "./mcp-intents";
 import type { RecordMcpAuditEventInput, RecordMcpAuditEventResult } from "./mcp-audit";
@@ -453,6 +455,10 @@ export class ApiClient {
 
   getMcpIntent(intentId: string): Promise<McpIntentDetail> {
     return mcpIntents.getMcpIntent(this.asContext(), intentId);
+  }
+
+  listMcpIntents(query?: ListMcpIntentsQuery): Promise<ListMcpIntentsResult> {
+    return mcpIntents.listMcpIntents(this.asContext(), query ?? {});
   }
 
   updateMcpIntent(

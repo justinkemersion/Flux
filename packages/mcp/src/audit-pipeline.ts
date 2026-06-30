@@ -18,6 +18,12 @@ import {
 } from "./policy";
 import type { ToolResult } from "./result";
 import { sanitizeBackupMetadata } from "./tools/backup-sanitize";
+import {
+  migrationApplyAuditMetadata,
+  type MigrationApplyFailureData,
+  type MigrationApplyStaleFailureData,
+  type MigrationApplySuccessData,
+} from "./tools/migration-apply";
 
 export interface McpPersistenceClient {
   recordMcpAuditEvent(input: RecordMcpAuditEventInput): Promise<{ ok: true; auditId: string }>;
@@ -238,6 +244,20 @@ export async function finalizeToolAudit(
       typeof (result.data as { planHash?: unknown }).planHash === "string"
     ) {
       auditPayload.planHash = (result.data as { planHash: string }).planHash;
+    }
+    if (result?.data && typeof result.data === "object") {
+      const applyMeta = migrationApplyAuditMetadata(
+        result.data as
+          | MigrationApplySuccessData
+          | MigrationApplyFailureData
+          | MigrationApplyStaleFailureData,
+      );
+      if (applyMeta) {
+        auditPayload.metadata = {
+          ...(auditPayload.metadata ?? {}),
+          ...applyMeta,
+        };
+      }
     }
   }
 

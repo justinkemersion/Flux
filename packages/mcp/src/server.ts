@@ -191,10 +191,7 @@ async function runWriteMutationTool(
   const planCheck = await validateMigrationApplyPlan(args);
   if (!planCheck.ok) {
     return {
-      result: {
-        ...planCheck.result,
-        data: { gate: planCheck.gate },
-      },
+      result: planCheck.result,
       gate: planCheck.gate,
       errorCode: "invalid_input",
     };

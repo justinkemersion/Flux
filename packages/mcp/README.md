@@ -100,6 +100,23 @@ inspect → plan → intent → ensure verified backup → preflight → apply
 
 Required: `hash`, `planId`, `planHash`, `migrationsPath`. Defaults: `requireVerifiedBackup: true`, `allowDestructive: false`.
 
+**Partial apply (Phase 4B Slice A):** If apply stops after some files succeed, the tool returns `ok: false` with a structured summary, remediation, and safe `data` (`partialApply`, `failureIndex`, `remainingFiles`, `appliedFiles`, `failedFile`). Push error bodies are never echoed (no raw SQL). Remediation warns that ledger rows are real history — **do not manually edit or delete them**. Re-run `flux.migration.plan` before retrying apply.
+
+**Stale plan refusal (Phase 4B Slice B):** Apply refuses when the stored plan is missing, mismatched, or no longer matches local files or ledger state. Every refusal uses gate `migration_apply_blocked_stale_plan`, a typed `data.staleReason`, and remediation that tells the agent to re-run `flux.migration.plan`. No raw SQL, absolute paths, tokens, or credentials appear in the response.
+
+| `staleReason` | Typical cause | Remediation |
+|---------------|---------------|-------------|
+| `plan_not_found` | Unknown `planId` or MCP server restarted (in-memory plan store) | Re-run `flux.migration.plan` |
+| `plan_hash_mismatch` | Submitted `planHash` ≠ stored plan | Re-run `flux.migration.plan`; apply new `planId` + `planHash` |
+| `plan_file_missing` | Planned `.sql` file removed locally | Restore file or re-plan from current workspace |
+| `plan_file_checksum_mismatch` | Local file changed after planning | Re-run `flux.migration.plan` before apply |
+| `plan_conflicts_present` | Plan has checksum conflicts | Resolve conflicts; re-plan |
+| `plan_apply_set_changed` | Ledger or apply set drifted since planning | Re-run `flux.migration.plan` |
+| `plan_workspace_invalid` | `workspaceRoot` not Flux-linked | Fix workspace; re-plan |
+| `plan_migrations_path_invalid` | `migrationsPath` missing or unreadable | Fix path; re-plan |
+
+Safe `data` fields on stale refusal: `planId`, `planHash` (when known), `staleReason`, `expectedPlanHash`, `actualPlanHash` (hash mismatches only), `changedFiles` / `missingFiles` (filenames only), `gate`, `errorCode`, `intentId` (when intent was created before drift check).
+
 ### `flux.backup.ensureVerified` input schema
 
 ```json

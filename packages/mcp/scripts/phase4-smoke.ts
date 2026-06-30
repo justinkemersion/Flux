@@ -190,9 +190,15 @@ async function main(): Promise<void> {
       console.error("expected stale apply to be refused");
       process.exit(1);
     }
-    const staleData = staleApply.data as { gate?: string };
+    const staleData = staleApply.data as { gate?: string; staleReason?: string };
     if (staleData.gate !== "migration_apply_blocked_stale_plan") {
       console.error(`expected migration_apply_blocked_stale_plan, got ${String(staleData.gate)}`);
+      process.exit(1);
+    }
+    if (staleData.staleReason !== "plan_file_checksum_mismatch") {
+      console.error(
+        `expected staleReason plan_file_checksum_mismatch, got ${String(staleData.staleReason)}`,
+      );
       process.exit(1);
     }
 

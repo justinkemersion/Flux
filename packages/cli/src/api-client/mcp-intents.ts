@@ -62,6 +62,53 @@ export interface McpIntentDetail {
   updatedAt: string;
 }
 
+export interface ListMcpIntentsQuery {
+  projectHash?: string;
+  tool?: string;
+  status?: McpIntentStatus;
+  intentClass?: McpIntentClass;
+  riskLevel?: McpRiskLevel;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface SanitizedMcpIntentListItem {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  projectHash: string | null;
+  tool: string;
+  intentClass: McpIntentClass;
+  status: McpIntentStatus;
+  riskLevel: McpRiskLevel;
+  policyDecision: string;
+  approvalStatus: string | null;
+  resultStatus: McpResultStatus | null;
+  errorCode: string | null;
+  planId: string | null;
+  planHash: string | null;
+  summary: Record<string, unknown>;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface ListMcpIntentsResult {
+  intents: SanitizedMcpIntentListItem[];
+  nextCursor?: string;
+}
+
+function buildIntentListQuery(query: ListMcpIntentsQuery): string {
+  const params = new URLSearchParams();
+  if (query.projectHash) params.set("projectHash", query.projectHash);
+  if (query.tool) params.set("tool", query.tool);
+  if (query.status) params.set("status", query.status);
+  if (query.intentClass) params.set("intentClass", query.intentClass);
+  if (query.riskLevel) params.set("riskLevel", query.riskLevel);
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.cursor) params.set("cursor", query.cursor);
+  const qs = params.toString();
+  return qs.length > 0 ? `?${qs}` : "";
+}
+
 export async function createMcpIntent(
   ctx: ApiClientContext,
   input: CreateMcpIntentInput,
@@ -97,6 +144,31 @@ export async function createMcpIntent(
     intentId: (body as { intentId: string }).intentId,
     status: (body as { status: McpIntentStatus }).status,
   };
+}
+
+export async function listMcpIntents(
+  ctx: ApiClientContext,
+  query: ListMcpIntentsQuery = {},
+): Promise<ListMcpIntentsResult> {
+  const token = ctx.tokenOrThrow();
+  const url = `${ctx.baseUrl}/cli/v1/intents${buildIntentListQuery(query)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+  });
+  const text = await res.text();
+  const body = parseJsonResponseBody(
+    text,
+    `MCP intent list: response was not JSON (${res.status}).`,
+  );
+  throwIfNotOkDescribeFailed(res, body, text);
+  if (!body || typeof body !== "object" || !("intents" in body)) {
+    throw new Error("MCP intent list: response missing intents.");
+  }
+  return body as ListMcpIntentsResult;
 }
 
 export async function getMcpIntent(
