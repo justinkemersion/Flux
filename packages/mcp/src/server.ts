@@ -297,3 +297,59 @@ export function createFluxMcpServer(
 
   return server;
 }
+
+/** Invoke a registered MCP tool (same path as CallTool; for ops smoke / scripts). */
+export async function invokeFluxMcpTool(
+  name: string,
+  args: Record<string, unknown>,
+  client: FluxToolClient = getFluxToolClient(),
+): Promise<ToolResult> {
+  const defs = createToolDefs(client);
+  const def = defs.find((d) => d.name === name);
+  const persist = persistenceClient(client);
+  const start = Date.now();
+
+  if (!def) {
+    return fail(`Unknown tool: ${name}`, {
+      remediation: "Call tools/list to see available Flux tools.",
+    });
+  }
+
+  if (isProtectiveMutationIntent(def.intentClass)) {
+    const run = await runProtectiveMutationTool(def, args, client);
+    await finalizeToolAudit({
+      event: {
+        tool: name,
+        intentClass: def.intentClass,
+        decision: "allow",
+        status: run.result.ok ? "ok" : "error",
+        durationMs: Date.now() - start,
+        args,
+        ...(run.errorCode !== undefined ? { errorCode: run.errorCode } : {}),
+        skipIntentCreate: true,
+        ...(run.gate !== undefined ? { gate: run.gate } : {}),
+        ...(run.intentId !== undefined ? { intentId: run.intentId } : {}),
+      },
+      args,
+      result: run.result,
+      ...(persist ? { client: persist } : {}),
+    });
+    return run.result;
+  }
+
+  const result = await def.handler(args);
+  await finalizeToolAudit({
+    event: {
+      tool: name,
+      intentClass: def.intentClass,
+      decision: "allow",
+      status: result.ok ? "ok" : "error",
+      durationMs: Date.now() - start,
+      args,
+    },
+    args,
+    result,
+    ...(persist ? { client: persist } : {}),
+  });
+  return result;
+}
