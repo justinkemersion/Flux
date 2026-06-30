@@ -48,6 +48,8 @@ Not intended for public docs or marketing consumption.
 | Ops-audit slug collision | `done` | `DISTINCT ON (p.id)`; display `slug:hash`; SQL in `bin/ops-audit/sql/` + tests |
 | Empty tenant restore verify policy | `todo` | Product ticket: [`plans/ops/empty-tenant-backup-verify.md`](ops/empty-tenant-backup-verify.md) |
 | Platform scheduler archived skip | `done` | `projectsDueForPlatformBackup` skips `lifecycle_state = archived` |
+| Ops disk cleanup (2026-06-30) | `done` | ~37 GB reclaimed on host; builder/volume prune + log truncate |
+| Edge log rotation + audit noise | `done` | json-file 20m×5 on Traefik/node gateway; v2 401/503 lifecycle OK in ops-audit |
 
 **Context:** Empty v2 tenant exports validate as artifacts but fail pg_restore table-count check (zero user tables). Do not treat as corrupt; future tier e.g. `restorable_empty_tenant` / `backup_empty_but_valid`.
 

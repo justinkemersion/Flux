@@ -8,7 +8,8 @@
 #   ./bin/ops-audit.sh --remote
 #   ./bin/ops-audit.sh --remote --deep --smoke
 #
-# --smoke  GET each tenant API via Traefik :80 (Host: api--<slug>--<hash>.<domain>); v2 also warns on gateway catalog miss.
+# --smoke  GET each tenant API via Traefik :80 (Host: api--<slug>--<hash>.<domain>).
+#          v2 gateway 401 without Bearer = expected auth challenge (OK); 404 = FAIL.
 #          Targets: bin/ops-audit-smoke.projects (copy from ops-audit-smoke.projects.example),
 #          or FLUX_OPS_SMOKE_PROJECTS=slug:hash,... or catalog query when unset.
 #
@@ -141,26 +142,32 @@ audit_flux_web_logs() {
     warn "fleet monitor start message not in recent logs"
   fi
 
-  local sched_err backup_err fleet_err sys_err
-  sched_err="$(echo "$logs" | grep -c 'backup-scheduler.*failed' || true)"
-  backup_err="$(echo "$logs" | grep -c 'backup-scheduler: failed project' || true)"
-  fleet_err="$(echo "$logs" | grep -c 'fleet-monitor.*failed' || true)"
+  local sched_logs sched_err backup_err fleet_err sys_err started_at
+  started_at="$(docker inspect -f '{{.State.StartedAt}}' "$FLUX_WEB_CONTAINER" 2>/dev/null || true)"
+  if [[ -n "$started_at" ]]; then
+    sched_logs="$(docker logs --since "$started_at" "$FLUX_WEB_CONTAINER" 2>&1 || true)"
+  else
+    sched_logs="$logs"
+  fi
+  sched_err="$(echo "$sched_logs" | grep -c 'backup-scheduler.*failed' || true)"
+  backup_err="$(echo "$sched_logs" | grep -c 'backup-scheduler: failed project' || true)"
+  fleet_err="$(echo "$sched_logs" | grep -c 'fleet-monitor.*failed' || true)"
   sys_err="$(echo "$logs" | grep -c 'System DB initialisation failed' || true)"
 
   if [[ "$sys_err" -gt 0 ]]; then
     fail "System DB initialisation failed ($sys_err in tail)"
   fi
   if [[ "$backup_err" -gt 0 ]]; then
-    warn "backup-scheduler project failures in tail ($backup_err) — run: docker logs $FLUX_WEB_CONTAINER 2>&1 | grep backup-scheduler"
+    warn "backup-scheduler project failures since container start ($backup_err) — run: docker logs $FLUX_WEB_CONTAINER 2>&1 | grep backup-scheduler"
   elif [[ "$sched_err" -gt 0 ]]; then
-    warn "backup-scheduler errors in tail ($sched_err)"
+    warn "backup-scheduler errors since container start ($sched_err)"
   else
-    pass "no backup-scheduler failures in log tail"
+    pass "no backup-scheduler failures since container start"
   fi
   if [[ "$fleet_err" -gt 0 ]]; then
-    warn "fleet-monitor failures in tail ($fleet_err)"
+    warn "fleet-monitor failures since container start ($fleet_err)"
   else
-    pass "no fleet-monitor failures in log tail"
+    pass "no fleet-monitor failures since container start"
   fi
 
   local other_err
@@ -256,6 +263,8 @@ audit_disk() {
   root_use="$(df / --output=pcent 2>/dev/null | tail -1 | tr -d ' %' || echo 0)"
   if [[ "$root_use" -ge 90 ]] 2>/dev/null; then
     warn "root filesystem >= 90% full"
+  elif [[ "$root_use" -ge 80 ]] 2>/dev/null; then
+    warn "root filesystem >= 80% full (plan cleanup before 90%)"
   fi
 }
 
@@ -383,7 +392,7 @@ edge_smoke_status_ok() {
 }
 
 probe_tenant_api() {
-  local slug="$1" hash="$2" mode="${3:-}"
+  local slug="$1" hash="$2" mode="${3:-}" lifecycle="${4:-active}"
   local domain host label code gw_code
   domain="$(read_flux_domain)"
   host="$(tenant_smoke_host "$slug" "$hash" "$domain")"
@@ -423,6 +432,10 @@ req.end();
       warn "$label — gateway smoke unreachable (internal Host:${host})"
     elif [[ "$gw_code" == "404" ]]; then
       fail "$label — gateway tenant not found (catalog/parse miss for Host:${host})"
+    elif [[ "$gw_code" == "401" ]]; then
+      pass "$label — gateway 401 expected auth challenge (tenant resolved; Bearer required)"
+    elif [[ "$gw_code" == "503" && "$lifecycle" != "active" ]]; then
+      pass "$label — gateway 503 expected for lifecycle=${lifecycle}"
     elif edge_smoke_status_ok "$gw_code"; then
       pass "$label — gateway internal Host:${host} → ${gw_code}"
     else
@@ -455,28 +468,28 @@ req.end();
 load_smoke_targets() {
   if [[ -n "${FLUX_OPS_SMOKE_PROJECTS:-}" ]]; then
     local IFS=,
-    local entry slug hash mode rest
+    local entry slug hash mode lifecycle rest
     for entry in $FLUX_OPS_SMOKE_PROJECTS; do
       entry="${entry#"${entry%%[![:space:]]*}"}"
       entry="${entry%"${entry##*[![:space:]]}"}"
       [[ -z "$entry" ]] && continue
-      IFS=: read -r slug hash mode rest <<<"$entry"
+      IFS=: read -r slug hash mode lifecycle rest <<<"$entry"
       [[ -z "$slug" || -z "$hash" ]] && continue
-      echo "$slug|$hash|${mode:-}"
+      echo "$slug|$hash|${mode:-}|${lifecycle:-active}"
     done
     return
   fi
 
   if [[ -f "$FLUX_OPS_SMOKE_FILE" ]]; then
-    local line slug hash mode rest
+    local line slug hash mode lifecycle rest
     while IFS= read -r line || [[ -n "$line" ]]; do
       line="${line%%#*}"
       line="${line#"${line%%[![:space:]]*}"}"
       line="${line%"${line##*[![:space:]]}"}"
       [[ -z "$line" ]] && continue
-      IFS=: read -r slug hash mode rest <<<"$line"
+      IFS=: read -r slug hash mode lifecycle rest <<<"$line"
       [[ -z "$slug" || -z "$hash" ]] && continue
-      echo "$slug|$hash|${mode:-}"
+      echo "$slug|$hash|${mode:-}|${lifecycle:-active}"
     done <"$FLUX_OPS_SMOKE_FILE"
     return
   fi
@@ -487,7 +500,7 @@ load_smoke_targets() {
     return
   fi
   docker exec "$sys_db" psql -U postgres -d postgres -tA -F '|' -c "
-    SELECT slug, hash, COALESCE(mode, '')
+    SELECT slug, hash, COALESCE(mode, ''), COALESCE(lifecycle_state, 'active')
     FROM projects
     WHERE slug NOT IN ('flux-system', 'static')
     ORDER BY slug;
@@ -515,10 +528,10 @@ audit_tenant_smoke() {
     return
   fi
 
-  while IFS='|' read -r slug hash mode; do
+  while IFS='|' read -r slug hash mode lifecycle; do
     [[ -z "$slug" || -z "$hash" ]] && continue
     target_count=$((target_count + 1))
-    probe_tenant_api "$slug" "$hash" "$mode"
+    probe_tenant_api "$slug" "$hash" "$mode" "${lifecycle:-active}"
   done <<<"$rows"
 
   if [[ "$target_count" -eq 0 ]]; then
@@ -535,8 +548,11 @@ audit_host_cron() {
     cron_lines="$(crontab -l 2>/dev/null | grep -i flux || true)"
     if [[ -n "$cron_lines" ]]; then
       echo "$cron_lines" | sed 's/^/  /'
+      pass "host crontab entries present"
+    elif container_running "$FLUX_WEB_CONTAINER"; then
+      pass "no host crontab — backups/fleet schedulers run in flux-web; flux reap (idle stop) is optional on the host"
     else
-      warn "no flux-related crontab entries (flux reap is host-scheduled, not in flux-web)"
+      warn "no flux-related crontab entries and flux-web not running"
     fi
   else
     warn "crontab not available"

@@ -786,9 +786,13 @@ Read-only health pass for the Docker host (containers, schedulers, backups, disk
 |------|----------------|
 | *(default)* | Core containers, `flux-web` log errors, backup volume size, gateway `/health`, stale exited `flux-*` containers |
 | `--deep` | Latest `project_backups` per slug (`restore=pending` warns) |
-| `--smoke` | `GET http://127.0.0.1/` with `Host: api--<slug>--<hash>.<domain>` via Traefik (301/200 = edge routing). For **v2_shared**, also warns if `flux-node-gateway` returns `tenant not found`. |
+| `--smoke` | `GET http://127.0.0.1/` with `Host: api--<slug>--<hash>.<domain>` via Traefik (301/200 = edge routing). For **v2_shared**, gateway **401** without Bearer = expected auth challenge (OK); **404** = catalog miss (FAIL). |
 
-**Smoke targets:** copy **`bin/ops-audit-smoke.projects.example`** → **`bin/ops-audit-smoke.projects`** (one `slug:hash[:mode]` per line), set **`FLUX_OPS_SMOKE_PROJECTS`**, or omit the file to probe every catalog project except `flux-system` / `static`.
+**Smoke targets:** copy **`bin/ops-audit-smoke.projects.example`** → **`bin/ops-audit-smoke.projects`** (one `slug:hash[:mode[:lifecycle]]` per line), set **`FLUX_OPS_SMOKE_PROJECTS`**, or omit the file to probe every catalog project except `flux-system` / `static`.
+
+**Edge log rotation:** Traefik (`flux-gateway`) and Node gateway (`flux-node-gateway`) use Docker `json-file` limits (`20m` × 5 files) in **`docker/traefik/docker-compose.yml`** and **`packages/gateway/docker-compose.yml`**. Recreate containers after pull to apply: `docker compose -f docker/traefik/docker-compose.yml up -d` and `./bin/deploy-gateway.sh` (or `FLUX_DEPLOY_RESTART_ONLY=1`).
+
+**Host cron:** Backups and fleet monitoring run inside **`flux-web`**. A host **`flux reap`** crontab is optional (idle project stop only); absence is not a failure when `flux-web` is running.
 
 Nightly v1 backups stay **`restore=pending`** until you run **`flux backup verify`** — the deep audit reminds you; see [Backups](#backups) (restore-verified gate) above.
 

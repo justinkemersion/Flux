@@ -39,6 +39,12 @@ services:
       - ./letsencrypt:/letsencrypt
     networks:
       - flux-network
+    # Cap json-file logs (Traefik access logs can grow to GB without rotation).
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 networks:
   flux-network:

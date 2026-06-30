@@ -27,6 +27,11 @@ services:
       - "${GATEWAY_HOST_PORT:-4000}:${PORT:-4000}"
     networks:
       - flux-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 networks:
   flux-network:

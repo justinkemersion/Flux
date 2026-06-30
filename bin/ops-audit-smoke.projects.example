@@ -3,6 +3,7 @@
 # Copy to ops-audit-smoke.projects (same directory) and edit. One project per line:
 #   slug:hash
 #   slug:hash:mode     optional — v1_dedicated | v2_shared (informational in logs)
+#   slug:hash:mode:lifecycle   optional — active | archived | dormant (503 on archived/dormant = OK)
 #
 # Or set FLUX_OPS_SMOKE_FILE to another path, or FLUX_OPS_SMOKE_PROJECTS="slug:hash,..."
 #
