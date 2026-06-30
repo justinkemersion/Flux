@@ -23,7 +23,14 @@ export function ProjectPortfolioSections({
   onPowerChanged,
 }: Props) {
   const grouped = groupProjectsForPortfolio(projects);
-  let stagger = 0;
+  const staggerById = new Map<string, number>();
+  let nextStagger = 0;
+  for (const section of PORTFOLIO_SECTION_ORDER) {
+    for (const row of grouped[section]) {
+      staggerById.set(row.id, nextStagger);
+      nextStagger += 1;
+    }
+  }
 
   return (
     <div className="space-y-10">
@@ -45,21 +52,17 @@ export function ProjectPortfolioSections({
               className="grid list-none grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5"
               aria-label={`${PORTFOLIO_SECTION_LABELS[section]} projects`}
             >
-              {rows.map((p) => {
-                const index = stagger;
-                stagger += 1;
-                return (
+              {rows.map((p) => (
                   <li key={p.id}>
                     <ProjectSummaryCard
                       project={p}
-                      staggerIndex={index}
+                      staggerIndex={staggerById.get(p.id) ?? 0}
                       onOpenDetail={() => onOpenDetail(p.slug)}
                       onRepaired={() => onRepaired(p.slug)}
                       onPowerChanged={onPowerChanged}
                     />
                   </li>
-                );
-              })}
+                ))}
             </ul>
           </section>
         );

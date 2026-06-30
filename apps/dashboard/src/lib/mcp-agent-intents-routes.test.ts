@@ -132,7 +132,6 @@ test("agent intent list rejects unauthenticated requests", async () => {
 });
 
 test("agent intent list returns sanitized intents for session user", async () => {
-  let queriedUserId: string | undefined;
   const res = await runAgentIntentList(
     new Request("http://test/api/agent/intents?projectHash=abc1234&status=failed&limit=10"),
     {
@@ -146,8 +145,6 @@ test("agent intent list returns sanitized intents for session user", async () =>
   assert.equal(json.intents.length, 1);
   assert.equal(json.intents[0]?.tool, "flux.migration.apply");
   assert.equal(containsIntentLeak(json), false);
-  queriedUserId = AUTH.userId;
-  assert.equal(queriedUserId, AUTH.userId);
 
   const listed = await listMcpIntentsForUser(mockListDb([ROW_A]), AUTH.userId, {
     limit: 10,

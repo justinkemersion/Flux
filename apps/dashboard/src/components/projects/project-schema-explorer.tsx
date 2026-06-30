@@ -88,15 +88,12 @@ function RowsView({
   table: InspectedTable;
 }) {
   const [data, setData] = useState<RowPreviewResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setData(null);
 
     fetch(
       `/api/projects/${encodeURIComponent(slug)}/tables/${encodeURIComponent(table.name)}/rows?hash=${encodeURIComponent(hash)}`,
@@ -370,7 +367,12 @@ function TableDetail({
           </div>
         </div>
       ) : (
-        <RowsView slug={slug} hash={hash} table={table} />
+        <RowsView
+          key={`${slug}-${hash}-${table.name}`}
+          slug={slug}
+          hash={hash}
+          table={table}
+        />
       )}
     </div>
   );
@@ -460,8 +462,12 @@ function TableList({
  * sees through PostgREST + RLS.
  */
 export function ProjectSchemaExplorer({ slug, hash }: Props) {
+  return <ProjectSchemaExplorerInner key={`${slug}-${hash}`} slug={slug} hash={hash} />;
+}
+
+function ProjectSchemaExplorerInner({ slug, hash }: Props) {
   const [result, setResult] = useState<SchemaInspectionResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<InspectedTable | null>(
     null,
@@ -469,10 +475,6 @@ export function ProjectSchemaExplorer({ slug, hash }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setSelectedTable(null);
 
     fetch(
       `/api/projects/${encodeURIComponent(slug)}/schema?hash=${encodeURIComponent(hash)}`,
