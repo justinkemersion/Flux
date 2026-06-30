@@ -1,5 +1,6 @@
 import { auth } from "@/src/lib/auth";
 import { applyCliRateLimitIfNeeded } from "@/src/lib/flux-proxy";
+import { NextResponse } from "next/server";
 import type { NextFetchEvent, NextMiddleware, NextRequest } from "next/server";
 
 type AuthMiddleware = (request: NextRequest, event: NextFetchEvent) => ReturnType<NextMiddleware>;
@@ -7,20 +8,21 @@ type AuthMiddleware = (request: NextRequest, event: NextFetchEvent) => ReturnTyp
 /**
  * Next.js 16 proxy (formerly middleware).
  *
- * Must export a function named `proxy` (see Next.js 16 proxy convention).
+ * Must export a function named `proxy`.
  *
- * - `/api/cli/v1/*`: fixed-window rate limiting, then continue (no browser login redirect).
- * - All other matched paths: Auth.js session gate via the `authorized` callback in `auth.ts`.
+ * Important: `auth(callback)` returns a route-handler object, not middleware.
+ * Use the base `auth` export for session gating; apply CLI rate limits separately.
+ *
+ * - `/api/cli/v1/*`: rate limit → `NextResponse.next()` (Bearer auth in route handlers).
+ * - Other matched paths: Auth.js `auth()` + `authorized` callback in `auth.ts`.
  */
-const authMiddleware = auth((req) => {
-  if (req.nextUrl.pathname.startsWith("/api/cli/v1")) {
-    const limited = applyCliRateLimitIfNeeded(req);
-    if (limited) return limited;
-  }
-}) as unknown as AuthMiddleware;
-
 export function proxy(request: NextRequest, event: NextFetchEvent) {
-  return authMiddleware(request, event);
+  if (request.nextUrl.pathname.startsWith("/api/cli/v1")) {
+    const limited = applyCliRateLimitIfNeeded(request);
+    if (limited) return limited;
+    return NextResponse.next();
+  }
+  return (auth as unknown as AuthMiddleware)(request, event);
 }
 
 export const config = {
@@ -28,7 +30,7 @@ export const config = {
     "/api/cli/v1/:path*",
     /*
      * Match all request paths except for the ones starting with:
-     * - api/cli (CLI API — rate limit handled in auth callback; session gate skipped via authorized())
+     * - api/cli (CLI API — rate limit above; no session gate)
      * - _next/static (static files)
      * - _next/image (image optimization)
      * - favicon.ico
