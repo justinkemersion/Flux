@@ -2,7 +2,7 @@
 
 Flux MCP server — operate Flux projects from AI coding agents (Cursor, Claude Code, Codex, Gemini CLI, Windsurf, …) over the [Model Context Protocol](https://modelcontextprotocol.io).
 
-This is **Pass 2**: read + preflight + **migration planning** + **bounded read-only DB query**. There are still **no write / apply / mutation tools** — those are deferred to Pass 3.
+This is **Phase 3A**: read + preflight + migration planning + bounded read-only DB query + **persisted audit/intents** + **CLI API rate limiting**. There are still **no write / apply / mutation tools** — those are deferred to Phase 3B.
 
 ## What this is
 
@@ -10,9 +10,26 @@ A thin, additive [MCP](https://modelcontextprotocol.io) server that exposes the 
 
 ## Why there are still no write/apply tools
 
-The server only registers **non-mutating** tools (`read`, `preflight`, `plan`, `credential`). Agents can observe a project, plan migrations, ask whether a destructive action *would* be allowed, and run **read-only** SQL — but they cannot apply migrations or write data. Durable mutation is Pass 3.
+The server only registers **non-mutating** tools (`read`, `preflight`, `plan`, `credential`). Agents can observe a project, plan migrations, ask whether a destructive action *would* be allowed, and run **read-only** SQL — but they cannot apply migrations or write data. Durable mutation is Phase 3B. The guarantee is enforced in code: `assertNonMutatingTools` (see `src/policy.ts`) fails fast if any tool with a `write` or `destructive` intent is ever registered, and `assertWriteDestructivePolicy` requires persisted audit/intent/planId/backup-trust before future mutating tools can run.
 
-The guarantee is enforced in code: `assertNonMutatingTools` (see `src/policy.ts`) fails fast if any tool with a `write` or `destructive` intent is ever registered.
+## Phase 3A — ledger before loaded gun
+
+Every tool call:
+
+1. Emits one redacted stderr audit line (unchanged from Pass 1/2).
+2. POSTs a redacted row to `POST /api/cli/v1/audit` via `@flux/cli/api-client`.
+3. For plan/credential/readonly-query/preflight actions, also POSTs an intent to `POST /api/cli/v1/intents`.
+
+Audit persistence failure is **non-fatal** for current read/plan/preflight/credential tools (stderr warning). Write/destructive tools (not registered yet) would treat audit/intent persistence failure as **fatal** — policy is in place now.
+
+Intents are recorded for:
+
+- `flux.migration.plan` (`plan`, includes `planId` / `planHash`)
+- `flux.credentials.temporary` (`credential`, `risk_level: sensitive`)
+- `flux.query.readonly` (`read`, metadata: row cap + timeout — SQL redacted)
+- `flux.destructive.preflight` (`preflight`, backup-trust decision metadata)
+
+Control-plane `/api/cli/v1/*` routes are rate-limited (fixed-window, in-memory, keyed by CLI key). Audit POST uses a separate high allowance.
 
 ## Tools
 

@@ -354,3 +354,72 @@ export const platformSchedulerState = pgTable("platform_scheduler_state", {
     .defaultNow(),
 });
 
+/** Durable MCP tool-call audit ledger (no secrets; server-owned user identity). */
+export const mcpAuditEvents = pgTable(
+  "mcp_audit_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    keyId: text("key_id"),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    projectHash: text("project_hash"),
+    tool: text("tool").notNull(),
+    intentClass: text("intent_class").notNull(),
+    decision: text("decision").notNull(),
+    gate: text("gate"),
+    planId: text("plan_id"),
+    planHash: text("plan_hash"),
+    requestSummary: jsonb("request_summary").notNull(),
+    resultStatus: text("result_status").notNull(),
+    errorCode: text("error_code"),
+    durationMs: integer("duration_ms").notNull(),
+    metadata: jsonb("metadata"),
+  },
+  (t) => [
+    index("mcp_audit_events_user_time_idx").on(t.userId, t.createdAt),
+    index("mcp_audit_events_project_time_idx").on(t.projectId, t.createdAt),
+    index("mcp_audit_events_tool_time_idx").on(t.tool, t.createdAt),
+  ],
+);
+
+/** Durable MCP agent intents (plans, credentials, readonly query, preflight). */
+export const mcpIntents = pgTable(
+  "mcp_intents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    keyId: text("key_id"),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    projectHash: text("project_hash"),
+    tool: text("tool").notNull(),
+    intentClass: text("intent_class").notNull(),
+    status: text("status").notNull(),
+    riskLevel: text("risk_level").notNull(),
+    planId: text("plan_id"),
+    planHash: text("plan_hash"),
+    requestSummary: jsonb("request_summary").notNull(),
+    policyDecision: text("policy_decision").notNull(),
+    requiresApproval: boolean("requires_approval").notNull().default(false),
+    approvalStatus: text("approval_status"),
+    resultStatus: text("result_status"),
+    errorCode: text("error_code"),
+    metadata: jsonb("metadata"),
+  },
+  (t) => [
+    index("mcp_intents_user_time_idx").on(t.userId, t.createdAt),
+    index("mcp_intents_project_time_idx").on(t.projectId, t.createdAt),
+    index("mcp_intents_status_time_idx").on(t.status, t.createdAt),
+  ],
+);
+

@@ -29,7 +29,15 @@ import * as projectMetadata from "./project-metadata";
 import * as projectFluxMd from "./project-flux-md";
 import * as projectAiSummary from "./project-ai-summary";
 import * as projectLifecycleState from "./project-lifecycle-state";
+import * as mcpAudit from "./mcp-audit";
+import * as mcpIntents from "./mcp-intents";
 import type { ProjectAiSummary, ProjectFluxMdDetail, ProjectMetadataDetail } from "./schemas";
+import type {
+  CreateMcpIntentInput,
+  CreateMcpIntentResult,
+  McpIntentDetail,
+} from "./mcp-intents";
+import type { RecordMcpAuditEventInput, RecordMcpAuditEventResult } from "./mcp-audit";
 import type {
   CreateProjectMode,
   CreateProjectResult,
@@ -427,6 +435,24 @@ export class ApiClient {
     hash: string,
   ): Promise<void> {
     return env.setProjectEnv(this.asContext(), project, envMap, hash);
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /cli/v1/audit — MCP tool-call audit ledger
+  // ---------------------------------------------------------------------------
+  recordMcpAuditEvent(input: RecordMcpAuditEventInput): Promise<RecordMcpAuditEventResult> {
+    return mcpAudit.recordMcpAuditEvent(this.asContext(), input);
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /cli/v1/intents — MCP agent intents
+  // ---------------------------------------------------------------------------
+  createMcpIntent(input: CreateMcpIntentInput): Promise<CreateMcpIntentResult> {
+    return mcpIntents.createMcpIntent(this.asContext(), input);
+  }
+
+  getMcpIntent(intentId: string): Promise<McpIntentDetail> {
+    return mcpIntents.getMcpIntent(this.asContext(), intentId);
   }
 }
 

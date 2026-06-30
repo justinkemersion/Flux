@@ -48,8 +48,39 @@ New tools:
 
 **Live validation:** smoke-tested end-to-end against the control plane — `flux.migration.plan` produced a stable plan (apply/skip/conflicts, no apply), `flux.credentials.temporary` issued a readonly v2 credential, `flux.query.readonly` ran `SELECT 1` and a bounded `SELECT … LIMIT` over the SSH tunnel, and a write attempt (`INSERT …`) was rejected in ~1 ms with `invalid_input` — before any credential issuance or DB connection. This confirms the plan's goal: agents can understand, plan, and safely read without mutation.
 
-**Mutation remains deferred to Pass 3.** There are still no write/apply tools.
+**Mutation remains deferred to Phase 3B.** There are still no write/apply tools.
 
-### Deferred to Pass 3+
+### Phase 3A: Persistent audit/intents and control-plane rate limiting
 
-Durable mutation (`flux.migration.apply`), backup creation/verification tools, scoped `flx_mcp_` tokens, streamable HTTP transport, control-plane rate limiting, a persisted `mcp_audit_events` ledger, and the dashboard approval/audit console.
+Status: complete.
+
+Phase 3A adds the **ledger before loaded gun** foundation: agent actions become recorded, policy-checked intents rather than untracked side effects — still with **no mutation/apply tools**.
+
+**Persisted audit events (`mcp_audit_events`):**
+
+- Every MCP tool call still emits one redacted JSON line to stderr (`event: "flux_mcp_tool_call"`).
+- After each call, the MCP server also POSTs to `POST /api/cli/v1/audit` (CLI key auth; server-owned `user_id`).
+- Payloads redact tokens, passwords, temp credentials, JWTs, OAuth material, Authorization headers, and connection strings with credentials.
+- Read/plan/query/preflight tools: audit persistence failure is **non-fatal** (stderr warning).
+- Future write/destructive tools (Phase 3B+): audit persistence failure is **fatal** before execution (policy enforced now).
+
+**Persisted intents (`mcp_intents`):**
+
+- `flux.migration.plan` → `intent_class: plan` with `planId` / `planHash`
+- `flux.credentials.temporary` → `intent_class: credential`, `risk_level: sensitive`
+- `flux.query.readonly` → `intent_class: read` with row cap / timeout metadata (no SQL secrets)
+- `flux.destructive.preflight` → `intent_class: preflight` with backup-trust decision metadata
+
+Routes: `POST /api/cli/v1/intents`, `GET /api/cli/v1/intents/:id`.
+
+**Control-plane rate limiting:**
+
+- Fixed-window in-memory limiter on `/api/cli/v1/*` (keyed by CLI key hash, fallback `anon`).
+- Stable `429` + `Retry-After`; write/sensitive tiers fail closed if limiter storage is unavailable; read tier may fail open with a warning.
+- `POST /api/cli/v1/audit` uses a separate high allowance so audit logging cannot starve itself.
+
+**Still deferred:** `flux.migration.apply`, backup create/verify MCP tools, scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools.
+
+### Deferred to Phase 3B / Phase 4
+
+Durable mutation (`flux.migration.apply`), backup creation/verification tools, scoped `flx_mcp_` tokens, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.

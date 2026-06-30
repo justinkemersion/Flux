@@ -388,4 +388,63 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS project_activity_events_project_time_idx
       ON project_activity_events (project_id, created_at DESC);
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mcp_audit_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key_id TEXT,
+      project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+      project_hash TEXT,
+      tool TEXT NOT NULL,
+      intent_class TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      gate TEXT,
+      plan_id TEXT,
+      plan_hash TEXT,
+      request_summary JSONB NOT NULL,
+      result_status TEXT NOT NULL,
+      error_code TEXT,
+      duration_ms INTEGER NOT NULL,
+      metadata JSONB
+    );
+    CREATE INDEX IF NOT EXISTS mcp_audit_events_user_time_idx
+      ON mcp_audit_events (user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS mcp_audit_events_project_time_idx
+      ON mcp_audit_events (project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS mcp_audit_events_tool_time_idx
+      ON mcp_audit_events (tool, created_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mcp_intents (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key_id TEXT,
+      project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+      project_hash TEXT,
+      tool TEXT NOT NULL,
+      intent_class TEXT NOT NULL,
+      status TEXT NOT NULL,
+      risk_level TEXT NOT NULL,
+      plan_id TEXT,
+      plan_hash TEXT,
+      request_summary JSONB NOT NULL,
+      policy_decision TEXT NOT NULL,
+      requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+      approval_status TEXT,
+      result_status TEXT,
+      error_code TEXT,
+      metadata JSONB
+    );
+    CREATE INDEX IF NOT EXISTS mcp_intents_user_time_idx
+      ON mcp_intents (user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS mcp_intents_project_time_idx
+      ON mcp_intents (project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS mcp_intents_status_time_idx
+      ON mcp_intents (status, created_at DESC);
+  `);
 }

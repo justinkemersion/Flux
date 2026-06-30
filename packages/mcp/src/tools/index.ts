@@ -59,6 +59,12 @@ export interface FluxToolClient {
     hash: string,
     options?: { access?: DbAccessLevel; ttlSeconds?: number },
   ): Promise<TemporaryDbCredential>;
+  recordMcpAuditEvent(
+    input: import("@flux/cli/api-client").RecordMcpAuditEventInput,
+  ): Promise<import("@flux/cli/api-client").RecordMcpAuditEventResult>;
+  createMcpIntent(
+    input: import("@flux/cli/api-client").CreateMcpIntentInput,
+  ): Promise<import("@flux/cli/api-client").CreateMcpIntentResult>;
 }
 
 /** Injectable dependencies for tools that touch the database directly. */

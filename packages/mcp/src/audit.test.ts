@@ -22,6 +22,14 @@ test("redactValue scrubs sensitive keys recursively", () => {
   assert.equal(nested.ok, 1);
 });
 
+test("redactValue redacts JWT and postgres connection strings in values", () => {
+  const jwt =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.abc123signature";
+  const conn = "postgres://admin:secret@db.internal:5432/app";
+  assert.equal(redactValue(jwt), "[redacted]");
+  assert.equal(redactValue(conn), "[redacted]");
+});
+
 test("redactValue truncates very long strings", () => {
   const out = redactValue("x".repeat(500)) as string;
   assert.ok(out.length < 300);
@@ -58,7 +66,6 @@ test("redactValue scrubs temporary DB credential material (field-level)", () => 
     tenantSchema: "t_abc123456789_api",
   }) as Record<string, unknown>;
 
-  // username/schema/access are not secrets; password must be redacted.
   assert.equal(out.username, "flux_temp_ro_abc1234_deadbeef");
   assert.equal(out.access, "readonly");
   assert.equal(out.password, "[redacted]");

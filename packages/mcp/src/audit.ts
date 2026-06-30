@@ -12,14 +12,27 @@ import type { IntentClass } from "./policy";
 const SENSITIVE_KEY_RE =
   /(token|secret|password|passwd|pwd|jwt|authorization|auth|api[_-]?key|anon[_-]?key|service[_-]?role|credential|bearer|\bkey\b)/i;
 
+const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/;
+const CONNECTION_STRING_RE =
+  /\b(?:postgres(?:ql)?|mysql|mongodb):\/\/[^\s:@/]+:[^\s@/]+@/i;
+const FLX_LIVE_KEY_RE = /\bflx_live_[a-f0-9]{32}_[a-f0-9]{4}\b/i;
+
 const MAX_STRING_LENGTH = 256;
 const REDACTED = "[redacted]";
 
+function redactString(value: string): string {
+  if (JWT_RE.test(value)) return REDACTED;
+  if (CONNECTION_STRING_RE.test(value)) return REDACTED;
+  if (FLX_LIVE_KEY_RE.test(value)) return REDACTED;
+  if (/^Bearer\s+\S+/i.test(value)) return REDACTED;
+  return value.length > MAX_STRING_LENGTH
+    ? `${value.slice(0, MAX_STRING_LENGTH)}…[truncated]`
+    : value;
+}
+
 export function redactValue(value: unknown): unknown {
   if (typeof value === "string") {
-    return value.length > MAX_STRING_LENGTH
-      ? `${value.slice(0, MAX_STRING_LENGTH)}…[truncated]`
-      : value;
+    return redactString(value);
   }
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item));

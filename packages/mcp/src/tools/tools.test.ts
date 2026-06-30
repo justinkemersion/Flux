@@ -43,6 +43,8 @@ function fakeClient(overrides: Partial<FluxToolClient>): FluxToolClient {
     listProjectBackups: async () => ({ backups: [] }),
     getProjectDbAccessPlan: async () => FAKE_V2_PLAN,
     createTemporaryProjectDbCredential: async () => RO_CREDENTIAL,
+    recordMcpAuditEvent: async () => ({ ok: true, auditId: "audit-1" }),
+    createMcpIntent: async () => ({ intentId: "intent-1", status: "completed" }),
   };
   return { ...base, ...overrides };
 }

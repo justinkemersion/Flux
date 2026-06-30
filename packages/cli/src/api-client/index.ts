@@ -33,3 +33,18 @@ export type { SchemaInspectionResult } from "@flux/core/schema-inspection";
 export type { FluxMigrationRecord } from "@flux/core/sql-migrations";
 export type { FluxProjectSummary } from "@flux/core/standalone";
 export type { ProjectActivityEvent } from "@flux/core/project-activity";
+
+export type {
+  McpAuditDecision,
+  McpIntentClass as McpAuditIntentClass,
+  McpResultStatus,
+  RecordMcpAuditEventInput,
+  RecordMcpAuditEventResult,
+} from "./mcp-audit";
+export type {
+  CreateMcpIntentInput,
+  CreateMcpIntentResult,
+  McpIntentDetail,
+  McpIntentStatus,
+  McpRiskLevel,
+} from "./mcp-intents";
