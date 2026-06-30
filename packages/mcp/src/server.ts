@@ -45,6 +45,10 @@ import {
   type WritePersistenceClient,
 } from "./write-mutation";
 import { fail, toStableError, type ToolResult } from "./result";
+import {
+  assertMcpToolCapabilityAllowed,
+  MCP_CAPABILITY_DENIED_GATE,
+} from "./mcp-capability-guard";
 
 export const FLUX_MCP_NAME = "flux";
 export const FLUX_MCP_VERSION = "0.0.1";
@@ -344,6 +348,36 @@ export function createFluxMcpServer(
       );
     }
 
+    const capabilityDenial = await assertMcpToolCapabilityAllowed(name, client);
+    if (capabilityDenial) {
+      try {
+        await finalizeToolAudit({
+          event: {
+            tool: name,
+            intentClass: def.intentClass,
+            decision: "deny",
+            status: "error",
+            durationMs: Date.now() - start,
+            args,
+            errorCode: "capability_denied",
+            gate: MCP_CAPABILITY_DENIED_GATE,
+          },
+          args,
+          result: capabilityDenial,
+          ...(persist ? { client: persist } : {}),
+        });
+      } catch (persistErr) {
+        const persistStable = toStableError(persistErr);
+        return toCallToolResult(
+          fail(
+            persistStable.message,
+            persistStable.remediation ? { remediation: persistStable.remediation } : undefined,
+          ),
+        );
+      }
+      return toCallToolResult(capabilityDenial);
+    }
+
     if (isProtectiveMutationIntent(def.intentClass)) {
       const run = await runProtectiveMutationTool(def, args, client);
       try {
@@ -478,6 +512,26 @@ export async function invokeFluxMcpTool(
     return fail(`Unknown tool: ${name}`, {
       remediation: "Call tools/list to see available Flux tools.",
     });
+  }
+
+  const capabilityDenial = await assertMcpToolCapabilityAllowed(name, client);
+  if (capabilityDenial) {
+    await finalizeToolAudit({
+      event: {
+        tool: name,
+        intentClass: def.intentClass,
+        decision: "deny",
+        status: "error",
+        durationMs: Date.now() - start,
+        args,
+        errorCode: "capability_denied",
+        gate: MCP_CAPABILITY_DENIED_GATE,
+      },
+      args,
+      result: capabilityDenial,
+      ...(persist ? { client: persist } : {}),
+    });
+    return capabilityDenial;
   }
 
   if (isProtectiveMutationIntent(def.intentClass)) {

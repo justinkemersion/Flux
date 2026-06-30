@@ -36,6 +36,40 @@ export function controlPlaneAuthIdentity(auth: ControlPlaneAuth): {
   return { userId: auth.userId, keyId: auth.keyId };
 }
 
+/** Safe auth metadata merged server-side into audit/intent rows for MCP tokens. */
+export function controlPlaneAuthPersistenceMetadata(
+  auth: ControlPlaneAuth,
+): Record<string, unknown> {
+  if (isMcpControlPlaneAuth(auth)) {
+    return {
+      authFamily: "mcp",
+      keyType: "mcp",
+      keyPreview: auth.keyPreview,
+      embeddedKeyId: auth.embeddedKeyId,
+    };
+  }
+  return {
+    authFamily: "cli",
+    keyType: "cli",
+  };
+}
+
+export function mergeControlPlaneAuthMetadata(
+  auth: ControlPlaneAuth,
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  const authMeta = controlPlaneAuthPersistenceMetadata(auth);
+  const base =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? { ...metadata }
+      : {};
+  delete base.token;
+  delete base.keyHash;
+  delete base.key_hash;
+  const merged = { ...base, ...authMeta };
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
 /**
  * Dispatches Bearer auth to `flx_live_` CLI keys or `flx_mcp_` MCP tokens.
  * Returns null when the token is missing, unknown, expired, or revoked.

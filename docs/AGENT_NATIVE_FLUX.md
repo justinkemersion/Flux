@@ -175,7 +175,7 @@ Arbitrary write SQL, streamable HTTP transport, dashboard approval/audit console
 
 ### Phase 5: Scoped MCP tokens (`flx_mcp_`)
 
-Status: in progress (Slices A–D complete).
+Status: in progress (Slices A–F complete; Slice G rollout pending).
 
 Scoped MCP tokens limit the Flux MCP server to explicit projects, capabilities, and expiry. They are distinct from broad CLI keys (`flx_live_`).
 
@@ -185,10 +185,12 @@ Scoped MCP tokens limit the Flux MCP server to explicit projects, capabilities, 
 
 **Slice C (complete):** Session API routes — `POST/GET /api/agent/mcp-tokens`, `DELETE /api/agent/mcp-tokens/:id`.
 
-**Slice D (complete):** Dashboard UI at `/settings/mcp-tokens` — list, create, revoke, one-time plaintext display. Cross-link from API Keys settings. MCP runtime still uses `FLUX_API_TOKEN` only.
+**Slice D (complete):** Dashboard UI at `/settings/mcp-tokens` — list, create, revoke, one-time plaintext display. Cross-link from API Keys settings.
 
 **Slice E (complete):** MCP server prefers `FLUX_MCP_TOKEN` → `FLUX_API_TOKEN` → `~/.flux/config.json`. Legacy sources emit stderr warning (not stdout). Invalid `FLUX_MCP_TOKEN` fails at startup. CLI `resolveFluxApiToken()` unchanged.
 
-**Still in Phase 5:** audit/redaction hardening (F), docs/deprecation clock (G).
+**Slice F (complete):** `flx_mcp_` secret detection and redaction across stderr audit, persisted audit/intent payloads, and dashboard sanitized views. MCP audit/intent rows record `keyPreview` / `keyType: "mcp"` without plaintext token or hash. MCP-side capability preflight denies tools missing required capabilities when using `FLUX_MCP_TOKEN` (legacy `FLUX_API_TOKEN` unchanged with warning).
+
+**Still in Phase 5:** formal docs rollout and `flx_live_` deprecation clock (Slice G).
 
 See `plans/mcp/phase-5-scoped-mcp-tokens.md`.

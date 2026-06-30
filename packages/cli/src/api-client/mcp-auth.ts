@@ -110,3 +110,17 @@ export function warningContainsTokenValue(warning: string, token: string): boole
   if (!token) return false;
   return warning.includes(token);
 }
+
+export function isSafeMcpKeyPreview(value: string): boolean {
+  return /^flx_mcp_[a-f0-9]{4}…[a-f0-9]{4}$/i.test(value.trim());
+}
+
+export function stringContainsMcpTokenMaterial(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (isSafeMcpKeyPreview(trimmed)) return false;
+  if (FLUX_MCP_TOKEN_REGEX.test(trimmed)) return true;
+  if (/\bflx_mcp_(?:[a-f0-9]{12}_[a-f0-9]{1,}|[a-f0-9]{4}_[a-f0-9]{4,}|[a-f0-9]{8,})\b/i.test(trimmed)) return true;
+  if (/^Bearer\s+flx_mcp_/i.test(trimmed)) return true;
+  return false;
+}

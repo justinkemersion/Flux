@@ -139,3 +139,25 @@ test("sanitizeMcpIntentRow redacts JWT material", () => {
   });
   assert.equal(sanitized.summary.reason, "[redacted]");
 });
+
+test("sanitizeIntentMetadata keeps safe MCP keyPreview", () => {
+  const metadata = sanitizeIntentMetadata({
+    authFamily: "mcp",
+    keyType: "mcp",
+    keyPreview: "flx_mcp_aabb…0123",
+    embeddedKeyId: "aabbccddeeff",
+  });
+  assert.equal(metadata?.keyPreview, "flx_mcp_aabb…0123");
+  assert.equal(metadata?.embeddedKeyId, "aabbccddeeff");
+  assert.equal(containsIntentLeak(metadata), false);
+});
+
+test("sanitizeIntentRequestSummary redacts flx_mcp_ tokens in allowlisted fields", () => {
+  const token = "flx_mcp_aabbccddeeff_0123456789abcdef0123_abcd";
+  const summary = sanitizeIntentRequestSummary({
+    hash: "abc1234",
+    reason: `Bearer ${token}`,
+  });
+  assert.equal(summary.reason, "[redacted]");
+  assert.equal(containsIntentLeak(summary), false);
+});

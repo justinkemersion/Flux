@@ -4,10 +4,12 @@ import assert from "node:assert/strict";
 import {
   assertValidMcpEnvToken,
   detectTokenFamily,
+  isSafeMcpKeyPreview,
   isValidMcpTokenFormat,
   legacyMcpTokenWarningForSource,
   LEGACY_MCP_TOKEN_WARNING,
   resolveMcpServerToken,
+  stringContainsMcpTokenMaterial,
   warningContainsTokenValue,
 } from "./mcp-auth.ts";
 
@@ -141,4 +143,12 @@ test("valid FLUX_MCP_TOKEN passes startup validation", () => {
     const resolved = resolveMcpServerToken();
     assert.doesNotThrow(() => assertValidMcpEnvToken(resolved));
   });
+});
+
+test("stringContainsMcpTokenMaterial detects full, partial, and Bearer MCP tokens", () => {
+  assert.equal(stringContainsMcpTokenMaterial(VALID_MCP), true);
+  assert.equal(stringContainsMcpTokenMaterial("flx_mcp_aabbccddeeff_0123"), true);
+  assert.equal(stringContainsMcpTokenMaterial(`Bearer ${VALID_MCP}`), true);
+  assert.equal(isSafeMcpKeyPreview("flx_mcp_aabb…0123"), true);
+  assert.equal(stringContainsMcpTokenMaterial("flx_mcp_aabb…0123"), false);
 });

@@ -58,13 +58,28 @@ export const projectCredentialsResponseSchema = z.discriminatedUnion("mode", [
   projectCredentialsV1Schema,
 ]);
 
-export const verifyTokenResponseSchema = z.object({
+export const verifyTokenCliResponseSchema = z.object({
   ok: z.literal(true),
   user: z.string(),
   plan: z.union([z.literal("hobby"), z.literal("pro")]),
   defaultMode: z.union([z.literal("v1_dedicated"), z.literal("v2_shared")]),
   cliRole: z.union([z.literal("admin"), z.literal("operator")]).default("operator"),
 });
+
+export const verifyTokenMcpResponseSchema = z.object({
+  ok: z.literal(true),
+  tokenFamily: z.literal("mcp"),
+  capabilities: z.array(z.string()),
+  projectIds: z.array(z.string()),
+  expiresAt: z.string(),
+  keyPreview: z.string(),
+  embeddedKeyId: z.string(),
+});
+
+export const verifyTokenResponseSchema = z.union([
+  verifyTokenCliResponseSchema,
+  verifyTokenMcpResponseSchema,
+]);
 
 export const projectMetadataSchema = z.object({
   slug: z.string(),
@@ -210,6 +225,20 @@ export type ProjectCredentialsByHash = z.infer<
 >;
 export type CreateProjectMode = "v1_dedicated" | "v2_shared";
 export type VerifyTokenResult = z.infer<typeof verifyTokenResponseSchema>;
+export type VerifyTokenCliResult = z.infer<typeof verifyTokenCliResponseSchema>;
+export type VerifyTokenMcpResult = z.infer<typeof verifyTokenMcpResponseSchema>;
+
+export function isMcpVerifyResult(
+  result: VerifyTokenResult,
+): result is VerifyTokenMcpResult {
+  return "tokenFamily" in result && result.tokenFamily === "mcp";
+}
+
+export function isCliVerifyResult(
+  result: VerifyTokenResult,
+): result is VerifyTokenCliResult {
+  return "user" in result;
+}
 export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
 export type ProjectMetadataDetail = z.infer<typeof projectMetadataDetailSchema>;
 export type ProjectFluxMdDetail = z.infer<typeof projectFluxMdDetailSchema>;

@@ -18,8 +18,16 @@ export {
   NO_MCP_TOKEN_WARNING,
   resolveMcpServerToken,
   warningContainsTokenValue,
+  isSafeMcpKeyPreview,
+  stringContainsMcpTokenMaterial,
 } from "./mcp-auth";
 export type { McpTokenSource, ResolvedMcpServerToken, TokenFamily } from "./mcp-auth";
+export { MCP_CAPABILITIES } from "./mcp-capabilities";
+export type { McpCapability } from "./mcp-capabilities";
+export {
+  isCliVerifyResult,
+  isMcpVerifyResult,
+} from "./schemas";
 
 export type { ApiClientContext } from "./context";
 export type { TemporaryDbCredential } from "./db-access";
@@ -40,6 +48,8 @@ export type {
   ProjectMetadataDetail,
   VerifyBackupResult,
   VerifyTokenResult,
+  VerifyTokenCliResult,
+  VerifyTokenMcpResult,
 } from "./schemas";
 
 export type { PushSqlResult } from "./push";

@@ -62,7 +62,7 @@ export async function runCliAuditPost(
 
   const inserted = await insertMcpAuditEvent(
     db,
-    controlPlaneAuthIdentity(auth),
+    auth,
     validated.input,
     project.projectId,
   );

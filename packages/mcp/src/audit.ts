@@ -7,6 +7,7 @@
  */
 
 import type { IntentClass } from "./policy";
+import { stringContainsMcpTokenMaterial } from "@flux/cli/api-client";
 
 /** Keys whose values are scrubbed before logging (defense-in-depth). */
 const SENSITIVE_KEY_RE =
@@ -24,6 +25,7 @@ function redactString(value: string): string {
   if (JWT_RE.test(value)) return REDACTED;
   if (CONNECTION_STRING_RE.test(value)) return REDACTED;
   if (FLX_LIVE_KEY_RE.test(value)) return REDACTED;
+  if (stringContainsMcpTokenMaterial(value)) return REDACTED;
   if (/^Bearer\s+\S+/i.test(value)) return REDACTED;
   if (/\/srv\/|primaryArtifact|\.dump\b|offsiteKey|backupVolume/i.test(value)) {
     return REDACTED;

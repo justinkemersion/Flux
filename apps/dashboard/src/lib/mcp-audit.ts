@@ -4,6 +4,8 @@
 
 import { mcpAuditEvents } from "@/src/db/schema";
 import type { SystemDb } from "@/src/lib/db";
+import type { ControlPlaneAuth } from "./control-plane-auth";
+import { controlPlaneAuthIdentity, mergeControlPlaneAuthMetadata } from "./control-plane-auth";
 import { containsObviousSecret } from "./mcp-secret-scan";
 
 export const MCP_INTENT_CLASSES = [
@@ -152,15 +154,17 @@ export function validateMcpAuditEventInput(
 
 export async function insertMcpAuditEvent(
   db: SystemDb,
-  auth: { userId: string; keyId: string },
+  auth: ControlPlaneAuth,
   input: McpAuditEventInput,
   projectId: string | null,
 ): Promise<McpAuditInsertResult> {
+  const identity = controlPlaneAuthIdentity(auth);
+  const metadata = mergeControlPlaneAuthMetadata(auth, input.metadata);
   const [row] = await db
     .insert(mcpAuditEvents)
     .values({
-      userId: auth.userId,
-      keyId: auth.keyId,
+      userId: identity.userId,
+      keyId: identity.keyId,
       projectId: projectId ?? input.projectId ?? null,
       projectHash: input.projectHash ?? null,
       tool: input.tool,
@@ -173,7 +177,7 @@ export async function insertMcpAuditEvent(
       resultStatus: input.resultStatus,
       errorCode: input.errorCode ?? null,
       durationMs: input.durationMs,
-      metadata: input.metadata ?? null,
+      metadata,
     })
     .returning({ id: mcpAuditEvents.id });
 

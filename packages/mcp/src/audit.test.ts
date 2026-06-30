@@ -30,6 +30,14 @@ test("redactValue redacts JWT and postgres connection strings in values", () => 
   assert.equal(redactValue(conn), "[redacted]");
 });
 
+test("redactValue redacts flx_mcp_ tokens and Bearer authorization headers", () => {
+  const mcp =
+    "flx_mcp_aabbccddeeff_0123456789abcdef0123_abcd";
+  assert.equal(redactValue(mcp), "[redacted]");
+  assert.equal(redactValue(`Bearer ${mcp}`), "[redacted]");
+  assert.equal(redactValue("flx_mcp_aabb…0123"), "flx_mcp_aabb…0123");
+});
+
 test("redactValue redacts path-like backup storage strings in values", () => {
   assert.equal(redactValue("/srv/flux/backups/proj/b1.dump"), "[redacted]");
   assert.equal(redactValue("restore_verified"), "restore_verified");

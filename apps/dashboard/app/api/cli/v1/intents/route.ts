@@ -101,7 +101,7 @@ export async function runCliIntentPost(
 
   const inserted = await insertMcpIntent(
     db,
-    controlPlaneAuthIdentity(auth),
+    auth,
     validated.input,
     project.projectId,
   );

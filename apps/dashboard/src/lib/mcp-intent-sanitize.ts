@@ -4,6 +4,10 @@
  */
 
 import type { McpIntentClass, McpResultStatus } from "./mcp-audit";
+import {
+  isSafeMcpKeyPreview,
+  stringContainsMcpTokenMaterial,
+} from "./mcp-secret-patterns";
 import type { McpIntentStatus, McpRiskLevel } from "./mcp-intents";
 
 const SENSITIVE_KEY_RE =
@@ -31,16 +35,20 @@ const METADATA_ALLOWLIST = new Set([
   "applyCount",
   "appliedCount",
   "appliedFiles",
+  "authFamily",
   "backupTrustTier",
   "backupId",
   "changedFiles",
   "created",
   "destructiveShaped",
   "detail",
+  "embeddedKeyId",
   "failedFile",
   "failureIndex",
   "gate",
   "intentId",
+  "keyPreview",
+  "keyType",
   "missingFiles",
   "partialApply",
   "planHash",
@@ -113,6 +121,9 @@ export interface McpIntentRowForSanitize {
 }
 
 function redactString(value: string, keyPath: string): string {
+  if (keyPath === "keyPreview" || keyPath.endsWith(".keyPreview")) {
+    if (isSafeMcpKeyPreview(value)) return value;
+  }
   if (SENSITIVE_KEY_RE.test(keyPath)) return REDACTED;
   if (keyPath === "sql" || keyPath.endsWith(".sql")) return REDACTED;
   if (keyPath === "workspaceRoot" || keyPath.endsWith("workspaceRoot")) return REDACTED;
@@ -122,6 +133,7 @@ function redactString(value: string, keyPath: string): string {
   if (JWT_RE.test(value)) return REDACTED;
   if (CONNECTION_STRING_RE.test(value)) return REDACTED;
   if (FLX_LIVE_KEY_RE.test(value)) return REDACTED;
+  if (stringContainsMcpTokenMaterial(value)) return REDACTED;
   if (/^Bearer\s+\S+/i.test(value)) return REDACTED;
   if (PATH_LIKE_VALUE_RE.test(value)) return REDACTED;
   if (ABSOLUTE_PATH_RE.test(value)) return REDACTED;
@@ -216,6 +228,7 @@ export function containsIntentLeak(value: unknown): boolean {
     /CREATE TABLE/i,
     /postgres:\/\//i,
     /flx_live_/i,
+    /\bflx_mcp_[a-f0-9]{12}_[a-f0-9]{20}/i,
     /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
     /\/srv\//,
     /\/home\//,

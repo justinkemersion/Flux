@@ -570,11 +570,14 @@ Plaintext token lives only in React component state until dismissed; never in li
 
 Warnings go to **stderr only** (stdout is the MCP stream).
 
-### Slice F — Audit + redaction
+### Slice F — Audit + redaction + MCP capability guard
 
-- [ ] Ensure `keyId` + `keyPreview` on all MCP audit/intent writes for MCP tokens
-- [ ] `FLX_MCP_KEY_RE` in `mcp-secret-scan.ts`
-- [ ] Tests: no token in persisted audit/intent payloads
+- [x] Ensure `keyId` + `keyPreview` on all MCP audit/intent writes for MCP tokens (`mergeControlPlaneAuthMetadata`)
+- [x] `flx_mcp_` patterns in `mcp-secret-scan.ts`, MCP stderr audit, intent sanitizer
+- [x] MCP-side `assertMcpToolCapabilityAllowed` before tool handlers when `FLUX_MCP_TOKEN` is set (verify profile cached from `/api/cli/v1/auth/verify`)
+- [x] Safe denial messages (tool, capability, `/settings/mcp-tokens` remediation; no token leakage)
+- [x] Tests: secret scan, enrichment, capability allow/deny, legacy path, no leakage
+- [x] **Not in Slice F:** formal `flx_live_` deprecation clock (Slice G), streamable HTTP, new MCP tools
 
 ### Slice G — Docs + rollout
 
@@ -589,11 +592,17 @@ Warnings go to **stderr only** (stdout is the MCP stream).
 
 ## 16. Suggested first implementation prompt
 
-**Slices A–E are complete.** Use this when starting Slice F:
+**Slices A–F are complete.** Use this when starting Slice G:
+
+> **Flux MCP Phase 5 — Slice G: Docs + rollout**
+>
+> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice G). Update env-var docs and start the formal `flx_live_` deprecation notice for MCP config.
+
+### Slice F prompt (completed)
 
 > **Flux MCP Phase 5 — Slice F: Audit + redaction**
 >
-> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice F). Add `flx_mcp_` to secret scan; ensure MCP audit/intent rows use keyPreview for MCP tokens.
+> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice F). Add `flx_mcp_` to secret scan; ensure MCP audit/intent rows use keyPreview for MCP tokens; add MCP-side capability defense-in-depth.
 
 ### Slice E prompt (completed)
 

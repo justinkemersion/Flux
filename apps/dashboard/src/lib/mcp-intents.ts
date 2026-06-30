@@ -10,6 +10,8 @@ import {
   type McpIntentClass,
   type McpResultStatus,
 } from "./mcp-audit";
+import type { ControlPlaneAuth } from "./control-plane-auth";
+import { controlPlaneAuthIdentity, mergeControlPlaneAuthMetadata } from "./control-plane-auth";
 import { containsObviousSecret } from "./mcp-secret-scan";
 import {
   sanitizeMcpIntentRow,
@@ -426,16 +428,18 @@ export async function resolveOwnedProjectId(
 
 export async function insertMcpIntent(
   db: SystemDb,
-  auth: { userId: string; keyId: string },
+  auth: ControlPlaneAuth,
   input: McpIntentInput,
   resolvedProjectId: string | null,
 ): Promise<McpIntentInsertResult> {
+  const identity = controlPlaneAuthIdentity(auth);
+  const metadata = mergeControlPlaneAuthMetadata(auth, input.metadata);
   const now = new Date();
   const [row] = await db
     .insert(mcpIntents)
     .values({
-      userId: auth.userId,
-      keyId: auth.keyId,
+      userId: identity.userId,
+      keyId: identity.keyId,
       projectId: resolvedProjectId ?? input.projectId ?? null,
       projectHash: input.projectHash ?? null,
       tool: input.tool,
@@ -450,7 +454,7 @@ export async function insertMcpIntent(
       approvalStatus: input.approvalStatus ?? null,
       resultStatus: input.resultStatus ?? null,
       errorCode: input.errorCode ?? null,
-      metadata: input.metadata ?? null,
+      metadata,
       createdAt: now,
       updatedAt: now,
     })

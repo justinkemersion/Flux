@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import chalk from "chalk";
-import { getApiClient } from "../api-client";
+import { getApiClient, isCliVerifyResult } from "../api-client";
 import { loadConfig, resolveFluxApiToken, saveConfig } from "../config";
 import { cliDimHint } from "../utils/cli-audience";
 
@@ -38,7 +38,13 @@ export async function runFluxLogin(options: { refresh?: boolean }): Promise<void
   }
 
   const client = getApiClient();
-  const { user, plan, defaultMode, cliRole } = await client.verifyToken(key);
+  const verify = await client.verifyToken(key);
+  if (!isCliVerifyResult(verify)) {
+    throw new Error(
+      "flux login requires a CLI API key (flx_live_…). MCP tokens belong in FLUX_MCP_TOKEN for the MCP server.",
+    );
+  }
+  const { user, plan, defaultMode, cliRole } = verify;
   saveConfig({
     token: key,
     profile: { plan, defaultMode, user, cliRole },

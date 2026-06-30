@@ -166,6 +166,17 @@ Optional `FLUX_API_BASE` for non-default control planes.
 
 `FLUX_MCP_TOKEN` must be a valid `flx_mcp_…` token. Invalid values fail at MCP startup with a clear error.
 
+### Phase 5 Slice F — redaction, audit identity, capability guard
+
+When using `FLUX_MCP_TOKEN`:
+
+- **Defense-in-depth:** before calling the control plane, the MCP server checks the cached token profile from `GET /api/cli/v1/auth/verify` and denies tools that lack the required capability (e.g. `flux.migration.apply` needs `migration:apply`). Denials name the tool and capability and point to `/settings/mcp-tokens` — never the token value.
+- **Legacy `FLUX_API_TOKEN`:** still works with a stderr warning; local capability preflight is skipped (route enforcement remains).
+- **Redaction:** full/partial `flx_mcp_…` strings and `Authorization: Bearer flx_mcp_…` are scrubbed from stderr audit lines, persisted audit/intent payloads, and dashboard sanitized views. Safe `keyPreview` fragments (`flx_mcp_abcd…0123`) are allowed.
+- **Audit/intent enrichment:** MCP-authenticated rows store `authFamily: "mcp"`, `keyType: "mcp"`, `keyPreview`, and `embeddedKeyId` in metadata — never plaintext token or hash.
+
+Formal `flx_live_` deprecation clock remains deferred to Slice G.
+
 ## Run it locally
 
 ```bash
