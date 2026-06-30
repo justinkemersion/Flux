@@ -1,5 +1,5 @@
 /**
- * Flux MCP server (Pass 1 + Pass 2 + Phase 3A audit/intent + Phase 3B protective mutation).
+ * Flux MCP server (Pass 1 + Pass 2 + Phase 3A audit/intent + Phase 3B protective mutation + Phase 4 write).
  *
  * Wires read/preflight/plan/credential/protective tools into an MCP `Server`.
  * Every tool call emits a stderr audit line and attempts control-plane audit/intent persistence.
@@ -17,11 +17,14 @@ import {
   type FluxToolClient,
   type ProtectiveMutationContext,
   type ToolDef,
+  type WriteMutationContext,
 } from "./tools";
 import {
   assertProtectiveMutationPolicy,
   assertRegisteredToolsPolicy,
+  assertWriteDestructivePolicy,
   isProtectiveMutationIntent,
+  isWriteIntent,
 } from "./policy";
 import { finalizeToolAudit, type McpPersistenceClient } from "./audit-pipeline";
 import {
@@ -32,6 +35,15 @@ import {
   updateProtectiveIntentTerminal,
   type ProtectivePersistenceClient,
 } from "./protective-mutation";
+import {
+  createPendingWriteIntent,
+  isWritePersistenceAvailable,
+  migrationApplyGateFromResult,
+  updateWriteIntentTerminal,
+  validateMigrationApplyPlan,
+  writeIntentFinalizationFailureResult,
+  type WritePersistenceClient,
+} from "./write-mutation";
 import { fail, toStableError, type ToolResult } from "./result";
 
 export const FLUX_MCP_NAME = "flux";
@@ -157,6 +169,130 @@ async function runProtectiveMutationTool(
   };
 }
 
+async function runWriteMutationTool(
+  def: ToolDef,
+  args: Record<string, unknown>,
+  client: FluxToolClient,
+): Promise<{ result: ToolResult; gate?: string; intentId?: string; errorCode?: string }> {
+  if (!isWritePersistenceAvailable(client)) {
+    return {
+      result: fail(
+        "Persistent MCP audit/intent persistence is unavailable; write tools are blocked.",
+        {
+          remediation:
+            "Ensure the MCP server is connected to a control plane with audit and intent APIs, and FLUX_API_TOKEN is set.",
+        },
+      ),
+      gate: "migration_apply_failed",
+      errorCode: "upstream_error",
+    };
+  }
+
+  const planCheck = await validateMigrationApplyPlan(args);
+  if (!planCheck.ok) {
+    return {
+      result: {
+        ...planCheck.result,
+        data: { gate: planCheck.gate },
+      },
+      gate: planCheck.gate,
+      errorCode: "invalid_input",
+    };
+  }
+
+  const writeClient = client as WritePersistenceClient;
+  let intentId: string;
+
+  try {
+    const pending = await createPendingWriteIntent(
+      writeClient,
+      def,
+      args,
+      planCheck.context,
+    );
+    intentId = pending.intentId;
+  } catch (err) {
+    const stable = toStableError(err);
+    return {
+      result: fail(
+        `Persistent MCP intent required but unavailable: ${stable.message}`,
+        stable.remediation ? { remediation: stable.remediation } : undefined,
+      ),
+      gate: "migration_apply_failed",
+      errorCode: stable.code,
+    };
+  }
+
+  const planId = typeof args.planId === "string" ? args.planId.trim() : "";
+  const policy = assertWriteDestructivePolicy({
+    intentClass: "write",
+    auditAvailable: true,
+    intentRecorded: true,
+    planId,
+  });
+  if (!policy.allowed) {
+    const policyResult = fail(policy.reason, {
+      remediation:
+        "Resolve MCP audit/intent persistence and supply a valid planId before migration apply.",
+    });
+    try {
+      await updateWriteIntentTerminal(writeClient, intentId, policyResult, "upstream_error");
+    } catch {
+      // Best-effort intent terminal update.
+    }
+    return {
+      result: policyResult,
+      intentId,
+      gate: "migration_apply_failed",
+      errorCode: "upstream_error",
+    };
+  }
+
+  const ctx: WriteMutationContext = {
+    intentId,
+    plan: planCheck.context,
+  };
+  let handlerResult: ToolResult;
+  try {
+    handlerResult = await def.handler(args, ctx);
+  } catch (err) {
+    const stable = toStableError(err);
+    handlerResult = fail(
+      stable.message,
+      stable.remediation ? { remediation: stable.remediation } : undefined,
+    );
+    try {
+      await updateWriteIntentTerminal(
+        writeClient,
+        intentId,
+        handlerResult,
+        stable.code,
+      );
+    } catch {
+      // Intent update failure after handler error.
+    }
+    return {
+      result: handlerResult,
+      intentId,
+      gate: migrationApplyGateFromResult(handlerResult),
+      errorCode: stable.code,
+    };
+  }
+
+  let finalResult = handlerResult;
+  try {
+    await updateWriteIntentTerminal(writeClient, intentId, handlerResult);
+  } catch {
+    finalResult = writeIntentFinalizationFailureResult(handlerResult, intentId);
+  }
+
+  return {
+    result: finalResult,
+    intentId,
+    gate: migrationApplyGateFromResult(finalResult),
+  };
+}
+
 export function createFluxMcpServer(
   client: FluxToolClient = getFluxToolClient(),
 ): Server {
@@ -213,6 +349,38 @@ export function createFluxMcpServer(
 
     if (isProtectiveMutationIntent(def.intentClass)) {
       const run = await runProtectiveMutationTool(def, args, client);
+      try {
+        await finalizeToolAudit({
+          event: {
+            tool: name,
+            intentClass: def.intentClass,
+            decision: "allow",
+            status: run.result.ok ? "ok" : "error",
+            durationMs: Date.now() - start,
+            args,
+            ...(run.errorCode !== undefined ? { errorCode: run.errorCode } : {}),
+            skipIntentCreate: true,
+            ...(run.gate !== undefined ? { gate: run.gate } : {}),
+            ...(run.intentId !== undefined ? { intentId: run.intentId } : {}),
+          },
+          args,
+          result: run.result,
+          ...(persist ? { client: persist } : {}),
+        });
+      } catch (persistErr) {
+        const persistStable = toStableError(persistErr);
+        return toCallToolResult(
+          fail(
+            persistStable.message,
+            persistStable.remediation ? { remediation: persistStable.remediation } : undefined,
+          ),
+        );
+      }
+      return toCallToolResult(run.result);
+    }
+
+    if (isWriteIntent(def.intentClass)) {
+      const run = await runWriteMutationTool(def, args, client);
       try {
         await finalizeToolAudit({
           event: {
@@ -317,6 +485,28 @@ export async function invokeFluxMcpTool(
 
   if (isProtectiveMutationIntent(def.intentClass)) {
     const run = await runProtectiveMutationTool(def, args, client);
+    await finalizeToolAudit({
+      event: {
+        tool: name,
+        intentClass: def.intentClass,
+        decision: "allow",
+        status: run.result.ok ? "ok" : "error",
+        durationMs: Date.now() - start,
+        args,
+        ...(run.errorCode !== undefined ? { errorCode: run.errorCode } : {}),
+        skipIntentCreate: true,
+        ...(run.gate !== undefined ? { gate: run.gate } : {}),
+        ...(run.intentId !== undefined ? { intentId: run.intentId } : {}),
+      },
+      args,
+      result: run.result,
+      ...(persist ? { client: persist } : {}),
+    });
+    return run.result;
+  }
+
+  if (isWriteIntent(def.intentClass)) {
+    const run = await runWriteMutationTool(def, args, client);
     await finalizeToolAudit({
       event: {
         tool: name,

@@ -8,8 +8,10 @@
  *   - `credential` — issuing a short-lived, readonly, v2-only DB credential.
  *
  * Phase 3B adds `protective_mutation` for a single allowlisted tool
- * (`flux.backup.ensureVerified`). Schema/data `write` and `destructive` intents
- * remain forbidden until Phase 4.
+ * (`flux.backup.ensureVerified`).
+ *
+ * Phase 4 adds `write` for a single allowlisted tool (`flux.migration.apply`).
+ * Arbitrary SQL and destructive lifecycle tools remain forbidden.
  *
  * Phase 3A adds the "ledger before loaded gun" rule: future write/destructive tools
  * require persisted audit availability (and intents/planId/backup trust as applicable).
@@ -39,6 +41,9 @@ const MUTATING_INTENTS: ReadonlySet<IntentClass> = new Set<IntentClass>([
 /** Phase 3B: only these tools may register as `protective_mutation`. */
 export const PHASE_3B_PROTECTIVE_TOOLS = new Set(["flux.backup.ensureVerified"]);
 
+/** Phase 4: only these tools may register as `write`. */
+export const PHASE_4_WRITE_TOOLS = new Set(["flux.migration.apply"]);
+
 /** Tools that create durable intents in Phase 3A+ (post-hoc or pre-exec). */
 const INTENT_TRACKED_TOOL_NAMES = new Set([
   "flux.migration.plan",
@@ -56,6 +61,10 @@ export function isProtectiveMutationIntent(intent: IntentClass): boolean {
   return intent === "protective_mutation";
 }
 
+export function isWriteIntent(intent: IntentClass): boolean {
+  return intent === "write";
+}
+
 export function isMutatingIntent(intent: IntentClass): boolean {
   return MUTATING_INTENTS.has(intent);
 }
@@ -67,6 +76,9 @@ export function isAllowedRegistration(
   if (NON_MUTATING_INTENTS.has(intentClass)) return true;
   if (intentClass === "protective_mutation") {
     return PHASE_3B_PROTECTIVE_TOOLS.has(toolName);
+  }
+  if (intentClass === "write") {
+    return PHASE_4_WRITE_TOOLS.has(toolName);
   }
   return false;
 }
@@ -177,7 +189,7 @@ export function assertRegisteredToolsPolicy(
   for (const def of defs) {
     if (!isAllowedRegistration(def.intentClass, def.name)) {
       throw new Error(
-        `Tool "${def.name}" has intent "${def.intentClass}", which is not permitted in the current MCP phase (read/preflight/plan/credential/protective_mutation allowlist only).`,
+        `Tool "${def.name}" has intent "${def.intentClass}", which is not permitted in the current MCP phase (read/preflight/plan/credential/protective_mutation/write allowlist only).`,
       );
     }
   }

@@ -48,7 +48,7 @@ New tools:
 
 **Live validation:** smoke-tested end-to-end against the control plane — `flux.migration.plan` produced a stable plan (apply/skip/conflicts, no apply), `flux.credentials.temporary` issued a readonly v2 credential, `flux.query.readonly` ran `SELECT 1` and a bounded `SELECT … LIMIT` over the SSH tunnel, and a write attempt (`INSERT …`) was rejected in ~1 ms with `invalid_input` — before any credential issuance or DB connection. This confirms the plan's goal: agents can understand, plan, and safely read without mutation.
 
-**Mutation remains deferred to Phase 4.** Phase 3B adds only protective backup mutation; there are still no write/apply/schema-mutation tools.
+**Mutation remains deferred to Phase 4.** Phase 3B adds only protective backup mutation; there are still no write/apply/schema-mutation tools until Phase 4 lands.
 
 ### Phase 3A: Persistent audit/intents and control-plane rate limiting
 
@@ -79,7 +79,34 @@ Routes: `POST /api/cli/v1/intents`, `GET /api/cli/v1/intents/:id`.
 - Stable `429` + `Retry-After`; write/sensitive tiers fail closed if limiter storage is unavailable; read tier may fail open with a warning.
 - `POST /api/cli/v1/audit` uses a separate high allowance so audit logging cannot starve itself.
 
-**Still deferred to Phase 4:** `flux.migration.apply`, schema/data mutation tools, scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools.
+**Still deferred to Phase 4 (pre-4):** scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools.
+
+### Phase 4: Controlled migration apply (`flux.migration.apply`)
+
+Phase 4 adds the **first schema/data mutation MCP tool**, but only through a previously generated migration plan. It completes the safe control loop:
+
+```text
+inspect → plan → intent → ensure verified backup → preflight → apply
+```
+
+1. `flux.migration.plan`
+2. `flux.backup.ensureVerified`
+3. `flux.destructive.preflight`
+4. `flux.migration.apply`
+
+**Behavior:**
+
+- Applies only files in the stored plan’s apply set, in order, via existing CLI `pushSql` / versioned migration metadata (no duplicated push logic).
+- Re-reads local migration files before apply; refuses missing/stale plans (`Plan not found or MCP server restarted. Re-run flux.migration.plan.`).
+- Creates a pending **write** intent before any migration push API call; requires persisted audit APIs.
+- Requires restore-verified backup trust when `requireVerifiedBackup !== false` (default true). **No `skipBackupCheck`.**
+- Destructive-shaped plans (from `flux.migration.plan` classification) require `allowDestructive: true` and still require restore-verified backup.
+- Refuses plans with conflicts; stops on first push failure with partial-apply metadata.
+- Intent + audit finalized with safe metadata only (no SQL, secrets, paths, credentials, raw backup rows).
+
+**Audit gates:** `migration_apply_allowed`, `migration_apply_blocked_no_backup`, `migration_apply_blocked_stale_plan`, `migration_apply_blocked_destructive_requires_allow`, `migration_apply_failed`.
+
+**Still deferred beyond Phase 4:** arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI.
 
 ### Phase 3B: Protective backup verification (`flux.backup.ensureVerified`)
 
@@ -119,6 +146,6 @@ Phase 3C ensures **`flux.backup.list`** and **`flux.backup.ensureVerified`** nev
 
 **Removed:** paths, volume roots, offsite storage metadata, checksums, signed URLs, credentials, and nested raw artifact fields. Audit redaction also catches path-like string values.
 
-### Deferred to Phase 4
+### Still deferred beyond Phase 4
 
-Durable schema/data mutation (`flux.migration.apply`), scoped `flx_mcp_` tokens, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.
+Arbitrary write SQL, scoped `flx_mcp_` tokens, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.

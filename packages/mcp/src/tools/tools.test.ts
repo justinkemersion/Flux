@@ -55,6 +55,7 @@ function fakeClient(overrides: Partial<FluxToolClient>): FluxToolClient {
       backupId: "b-new",
       restoreVerificationStatus: "restore_verified",
     }),
+    pushSql: async () => ({ tablesMoved: 0, sequencesMoved: 0, viewsMoved: 0 }),
   };
   return { ...base, ...overrides };
 }

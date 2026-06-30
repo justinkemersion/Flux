@@ -50,6 +50,7 @@ function minimalClient(overrides: Partial<FluxToolClient> = {}): FluxToolClient 
     recordMcpAuditEvent: async () => ({ ok: true, auditId: "audit-1" }),
     createMcpIntent: async () => ({ intentId: "intent-1", status: "pending" }),
     updateMcpIntent: async () => ({ intentId: "intent-1", status: "completed" }),
+    pushSql: async () => ({ tablesMoved: 0, sequencesMoved: 0, viewsMoved: 0 }),
     ...overrides,
   };
 }

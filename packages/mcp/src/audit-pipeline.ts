@@ -34,6 +34,7 @@ const INTENT_TRACKED_TOOLS = new Set([
   "flux.query.readonly",
   "flux.destructive.preflight",
   "flux.backup.ensureVerified",
+  "flux.migration.apply",
 ]);
 
 const POST_HOC_INTENT_TOOLS = new Set([
@@ -90,6 +91,9 @@ function riskLevelForTool(tool: string, intentClass: IntentClass): CreateMcpInte
     return "medium";
   }
   if (tool === "flux.migration.plan") {
+    return "medium";
+  }
+  if (tool === "flux.migration.apply") {
     return "medium";
   }
   return "low";
@@ -214,6 +218,26 @@ export async function finalizeToolAudit(
     auditPayload.gate = event.gate;
     if (event.intentId) {
       auditPayload.metadata = { intentId: event.intentId };
+    }
+  }
+  if (event.tool === "flux.migration.apply" && event.gate) {
+    auditPayload.gate = event.gate;
+    if (event.intentId) {
+      auditPayload.metadata = { intentId: event.intentId };
+    }
+    if (
+      result?.data &&
+      typeof result.data === "object" &&
+      typeof (result.data as { planId?: unknown }).planId === "string"
+    ) {
+      auditPayload.planId = (result.data as { planId: string }).planId;
+    }
+    if (
+      result?.data &&
+      typeof result.data === "object" &&
+      typeof (result.data as { planHash?: unknown }).planHash === "string"
+    ) {
+      auditPayload.planHash = (result.data as { planHash: string }).planHash;
     }
   }
 

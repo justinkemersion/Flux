@@ -32,6 +32,7 @@ import type {
 import type { IntentClass } from "../policy";
 import { InvalidInputError, ok, type ToolResult } from "../result";
 import { buildMigrationPlan } from "./migration-plan";
+import { runMigrationApply } from "./migration-apply";
 import { runBackupEnsureVerified } from "./backup-ensure";
 import { sanitizeBackupListForMcp } from "./backup-sanitize";
 import {
@@ -78,11 +79,24 @@ export interface FluxToolClient {
     intentId: string,
     input: import("@flux/cli/api-client").UpdateMcpIntentInput,
   ): Promise<import("@flux/cli/api-client").UpdateMcpIntentResult>;
+  pushSql(input: {
+    slug: string;
+    hash: string;
+    sql: string;
+    migration?: import("@flux/core/sql-migrations").MigrationPushMeta;
+  }): Promise<import("@flux/cli/api-client").PushSqlResult>;
 }
 
 export interface ProtectiveMutationContext {
   intentId: string;
 }
+
+export interface WriteMutationContext {
+  intentId: string;
+  plan: import("../write-mutation").MigrationApplyPlanContext;
+}
+
+export type MutationContext = ProtectiveMutationContext | WriteMutationContext;
 
 /** Injectable dependencies for tools that touch the database directly. */
 export interface ToolDeps {
@@ -96,7 +110,7 @@ export interface ToolDef {
   inputSchema: Tool["inputSchema"];
   handler(
     args: Record<string, unknown>,
-    ctx?: ProtectiveMutationContext,
+    ctx?: MutationContext,
   ): Promise<ToolResult>;
 }
 
@@ -474,6 +488,55 @@ export function buildTools(
           );
         }
         return ok(summary, data);
+      },
+    },
+    {
+      name: "flux.migration.apply",
+      description:
+        "Apply a prior flux.migration.plan apply set only. Requires restore-verified backup (default), persisted audit/intent, matching planId/planHash, and allowDestructive for destructive-shaped plans. No arbitrary SQL.",
+      intentClass: "write",
+      inputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string", description: "Project hash (7 hex chars)." },
+          slug: { type: "string", description: "Optional project slug (defaults from metadata)." },
+          planId: { type: "string", description: "planId from flux.migration.plan." },
+          planHash: { type: "string", description: "planHash from flux.migration.plan." },
+          workspaceRoot: {
+            type: "string",
+            description:
+              "Absolute repo root. If omitted, cwd is used only when it contains flux.json.",
+          },
+          migrationsPath: {
+            type: "string",
+            description:
+              "Migrations directory, absolute or relative to workspaceRoot (must match planning).",
+          },
+          reason: {
+            type: "string",
+            description: "Optional operator, human-readable reason (audit only).",
+          },
+          requireVerifiedBackup: {
+            type: "boolean",
+            description:
+              "When true (default), refuse unless a restore-verified backup exists.",
+            default: true,
+          },
+          allowDestructive: {
+            type: "boolean",
+            description:
+              "When true, allow destructive-shaped plans (still requires restore-verified backup).",
+            default: false,
+          },
+        },
+        required: ["hash", "planId", "planHash", "migrationsPath"],
+        additionalProperties: false,
+      },
+      handler: async (args, ctx): Promise<ToolResult> => {
+        if (!ctx?.intentId || !("plan" in ctx) || !ctx.plan) {
+          throw new Error("flux.migration.apply requires a persisted write intent context.");
+        }
+        return runMigrationApply(client, args, { intentId: ctx.intentId }, ctx.plan.stored, ctx.plan.migrationsDir);
       },
     },
     {

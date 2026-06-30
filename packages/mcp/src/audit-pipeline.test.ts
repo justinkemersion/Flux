@@ -141,6 +141,66 @@ test("finalizeToolAudit persists backup ensure gate without storage paths", asyn
   assert.equal(JSON.stringify(audit.requestSummary).includes("/secret/path"), false);
 });
 
+test("finalizeToolAudit migration apply redacts sql and paths in requestSummary", async () => {
+  const audits: unknown[] = [];
+
+  await finalizeToolAudit({
+    event: {
+      tool: "flux.migration.apply",
+      intentClass: "write",
+      decision: "allow",
+      status: "ok",
+      durationMs: 12,
+      args: {
+        hash: "abc1234",
+        planId: "plan-1",
+        planHash: "hash-1",
+        migrationsPath: "/home/agent/proj/migrations",
+        sql: "CREATE TABLE secret (pw text);",
+        token: "flx_live_secret",
+      },
+      skipIntentCreate: true,
+      gate: "migration_apply_allowed",
+      intentId: "intent-42",
+    },
+    args: {
+      hash: "abc1234",
+      planId: "plan-1",
+      planHash: "hash-1",
+      migrationsPath: "/home/agent/proj/migrations",
+      sql: "CREATE TABLE secret (pw text);",
+      token: "flx_live_secret",
+    },
+    result: {
+      ok: true,
+      summary: "ok",
+      data: {
+        planId: "plan-1",
+        planHash: "hash-1",
+        appliedCount: 1,
+        appliedFiles: ["0001_init.sql"],
+        intentId: "intent-42",
+        gate: "migration_apply_allowed",
+      },
+    },
+    client: {
+      recordMcpAuditEvent: async (input) => {
+        audits.push(input);
+        return { ok: true, auditId: "a1" };
+      },
+      createMcpIntent: async () => ({ intentId: "i1", status: "completed" }),
+    },
+  });
+
+  assert.equal(audits.length, 1);
+  const audit = audits[0] as { gate?: string; requestSummary: Record<string, unknown> };
+  assert.equal(audit.gate, "migration_apply_allowed");
+  assert.equal(audit.requestSummary.sql, "[redacted]");
+  const serialized = JSON.stringify(audit.requestSummary);
+  assert.equal(serialized.includes("flx_live"), false);
+  assert.equal(serialized.includes("CREATE TABLE"), false);
+});
+
 test("finalizeToolAudit creates intent for migration.plan with planId", async () => {
   const intents: unknown[] = [];
 

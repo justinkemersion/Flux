@@ -30,6 +30,8 @@ export type {
   VerifyTokenResult,
 } from "./schemas";
 
+export type { PushSqlResult } from "./push";
+
 export type { SchemaInspectionResult } from "@flux/core/schema-inspection";
 export type { FluxMigrationRecord } from "@flux/core/sql-migrations";
 export type { FluxProjectSummary } from "@flux/core/standalone";
