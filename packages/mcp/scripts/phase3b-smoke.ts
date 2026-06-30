@@ -39,8 +39,22 @@ async function main(): Promise<void> {
 
   console.log("\n1) flux.backup.list");
   const list = await invokeFluxMcpTool("flux.backup.list", { hash: HASH }, client);
-  console.log(JSON.stringify({ ok: list.ok, summary: list.summary, backupCount: (list.data as { backups?: unknown[] })?.backups?.length }, null, 2));
-  assertNoLeaks("backup.list", list);
+  const listData = list.data as { backups?: { restoreVerificationStatus?: string }[] };
+  const newestVerified =
+    listData.backups?.[0]?.restoreVerificationStatus === "restore_verified";
+  console.log(
+    JSON.stringify(
+      {
+        ok: list.ok,
+        summary: list.summary,
+        backupCount: listData.backups?.length,
+        newestRestoreVerified: newestVerified,
+      },
+      null,
+      2,
+    ),
+  );
+  assertNoLeaks("backup.list summary", { ok: list.ok, summary: list.summary });
   if (!list.ok) process.exit(1);
 
   console.log("\n2) flux.backup.ensureVerified");
