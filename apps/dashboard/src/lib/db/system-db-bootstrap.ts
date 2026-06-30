@@ -447,4 +447,33 @@ export async function runSystemDbBootstrap(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS mcp_intents_status_time_idx
       ON mcp_intents (status, created_at DESC);
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS flux_mcp_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key_hash TEXT NOT NULL UNIQUE,
+      key_id TEXT NOT NULL UNIQUE,
+      key_preview TEXT NOT NULL,
+      project_ids JSONB NOT NULL,
+      capabilities JSONB NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ,
+      metadata JSONB
+    );
+    CREATE INDEX IF NOT EXISTS flux_mcp_tokens_user_id_idx
+      ON flux_mcp_tokens (user_id);
+    CREATE INDEX IF NOT EXISTS flux_mcp_tokens_key_id_idx
+      ON flux_mcp_tokens (key_id);
+    CREATE INDEX IF NOT EXISTS flux_mcp_tokens_expires_at_idx
+      ON flux_mcp_tokens (expires_at);
+    CREATE INDEX IF NOT EXISTS flux_mcp_tokens_revoked_at_idx
+      ON flux_mcp_tokens (revoked_at);
+    CREATE INDEX IF NOT EXISTS flux_mcp_tokens_project_ids_gin_idx
+      ON flux_mcp_tokens USING GIN (project_ids);
+    CREATE INDEX IF NOT EXISTS flux_mcp_tokens_capabilities_gin_idx
+      ON flux_mcp_tokens USING GIN (capabilities);
+  `);
 }

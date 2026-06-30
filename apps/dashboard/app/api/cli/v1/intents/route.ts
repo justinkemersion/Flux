@@ -3,20 +3,25 @@
  * GET /api/cli/v1/intents — list MCP intents for the authenticated CLI user (read-only).
  */
 
-import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { controlPlaneAuthIdentity } from "@/src/lib/control-plane-auth";
 import type { SystemDb } from "@/src/lib/db";
 import {
   insertMcpIntent,
   listMcpIntentsForUser,
   parseListMcpIntentsQuery,
-  resolveOwnedProjectId,
   validateMcpIntentInput,
 } from "@/src/lib/mcp-intents";
+import {
+  authorizeCliRoute,
+  cliRouteAuthJsonError,
+  enforceControlPlaneProjectScope,
+} from "@/src/lib/mcp-route-auth";
 
 export interface CliIntentRouteDeps {
   initSystemDb: () => Promise<void>;
   getDb: () => SystemDb;
-  authenticate: typeof authenticateCliApiKey;
+  authorizeCliRoute?: typeof authorizeCliRoute;
 }
 
 function jsonError(message: string, status: number): Response {
@@ -30,10 +35,15 @@ export async function runCliIntentGet(
   await deps.initSystemDb();
   const db = deps.getDb();
   const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await deps.authenticate(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
+  const authorize = deps.authorizeCliRoute ?? authorizeCliRoute;
+  const authResult = await authorize(db, secret, {
+    pathname: new URL(req.url).pathname,
+    method: "GET",
+  });
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = authResult.auth;
 
   const parsed = parseListMcpIntentsQuery(new URL(req.url).searchParams);
   if (!parsed.ok) {
@@ -57,10 +67,15 @@ export async function runCliIntentPost(
   await deps.initSystemDb();
   const db = deps.getDb();
   const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await deps.authenticate(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
+  const authorize = deps.authorizeCliRoute ?? authorizeCliRoute;
+  const authResult = await authorize(db, secret, {
+    pathname: new URL(req.url).pathname,
+    method: "POST",
+  });
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = authResult.auth;
 
   let body: unknown;
   try {
@@ -74,9 +89,9 @@ export async function runCliIntentPost(
     return jsonError(validated.error, 400);
   }
 
-  const project = await resolveOwnedProjectId(
+  const project = await enforceControlPlaneProjectScope(
     db,
-    auth.userId,
+    auth,
     validated.input.projectHash,
     validated.input.projectId,
   );
@@ -86,7 +101,7 @@ export async function runCliIntentPost(
 
   const inserted = await insertMcpIntent(
     db,
-    auth,
+    controlPlaneAuthIdentity(auth),
     validated.input,
     project.projectId,
   );
@@ -105,21 +120,17 @@ export const runtime = "nodejs";
 /** GET /api/cli/v1/intents */
 export async function GET(req: Request): Promise<Response> {
   const { getDb, initSystemDb } = await import("@/src/lib/db");
-  const { authenticateCliApiKey } = await import("@/src/lib/cli-api-auth");
   return runCliIntentGet(req, {
     initSystemDb,
     getDb,
-    authenticate: authenticateCliApiKey,
   });
 }
 
 /** POST /api/cli/v1/intents */
 export async function POST(req: Request): Promise<Response> {
   const { getDb, initSystemDb } = await import("@/src/lib/db");
-  const { authenticateCliApiKey } = await import("@/src/lib/cli-api-auth");
   return runCliIntentPost(req, {
     initSystemDb,
     getDb,
-    authenticate: authenticateCliApiKey,
   });
 }

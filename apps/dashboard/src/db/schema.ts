@@ -181,6 +181,34 @@ export const apiKeys = pgTable(
   (t) => [index("flux_api_keys_user_id_idx").on(t.userId)],
 );
 
+/** Scoped MCP tokens — project/capability/expiry bounded; plaintext never stored. */
+export const mcpTokens = pgTable(
+  "flux_mcp_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    keyHash: text("key_hash").notNull().unique(),
+    /** Stable audit segment embedded in the token body (not the row UUID). */
+    keyId: text("key_id").notNull().unique(),
+    keyPreview: text("key_preview").notNull(),
+    projectIds: jsonb("project_ids").notNull().$type<string[]>(),
+    capabilities: jsonb("capabilities").notNull().$type<string[]>(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+    revokedAt: timestamp("revoked_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { mode: "date" }),
+    metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
+  },
+  (t) => [
+    index("flux_mcp_tokens_user_id_idx").on(t.userId),
+    index("flux_mcp_tokens_key_id_idx").on(t.keyId),
+    index("flux_mcp_tokens_expires_at_idx").on(t.expiresAt),
+    index("flux_mcp_tokens_revoked_at_idx").on(t.revokedAt),
+  ],
+);
+
 /**
  * Custom-domain → project mapping used by the @flux/gateway for tenant resolution.
  * Every CRUD operation on this table must evict the Redis key `hostname:<normalizedHost>`

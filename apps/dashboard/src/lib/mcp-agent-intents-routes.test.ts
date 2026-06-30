@@ -13,6 +13,15 @@ import { containsIntentLeak } from "./mcp-intent-sanitize.ts";
 const AUTH = { userId: "user-a", keyId: "key-1" };
 const OTHER_USER = "user-b";
 
+const CLI_AUTH_RESULT = {
+  ok: true as const,
+  auth: { keyType: "cli" as const, userId: AUTH.userId, keyId: AUTH.keyId },
+};
+
+function mockAuthorize() {
+  return async () => CLI_AUTH_RESULT;
+}
+
 const ROW_A = {
   id: "00000000-0000-4000-8000-000000000010",
   createdAt: new Date("2026-06-30T12:00:00.000Z"),
@@ -152,7 +161,7 @@ test("cli intent list rejects missing bearer token", async () => {
   const res = await runCliIntentGet(new Request("http://test/api/cli/v1/intents"), {
     initSystemDb: async () => undefined,
     getDb: () => ({}) as never,
-    authenticate: async () => null,
+    authorizeCliRoute: async () => ({ ok: false as const, status: 401, error: "Unauthorized" }),
   });
   assert.equal(res.status, 401);
 });
@@ -165,7 +174,7 @@ test("cli intent list supports tool and risk filters", async () => {
     {
       initSystemDb: async () => undefined,
       getDb: () => mockListDb([ROW_B]),
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(res.status, 200);
@@ -233,7 +242,7 @@ test("pre-check: both list routes return newest-first sanitized intents", async 
     {
       initSystemDb: async () => undefined,
       getDb: () => db,
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(cliRes.status, 200);

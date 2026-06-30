@@ -1,4 +1,5 @@
-import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { authorizeCliHttpRequest, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
 import {
   assertWithinProjectLimit,
   buildInitPayloadFromCatalogRow,
@@ -35,11 +36,11 @@ function jsonError(message: string, status: number): Response {
 export async function POST(req: Request): Promise<Response> {
   await initSystemDb();
   const db = getDb();
-  const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
+  const authResult = await authorizeCliHttpRequest(db, req);
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = authResult.auth;
 
   let body: unknown;
   try {

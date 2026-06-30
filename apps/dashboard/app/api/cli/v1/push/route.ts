@@ -1,8 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { FLUX_PROJECT_HASH_HEX_LEN, resolveTenantApiSchemaName } from "@flux/core";
 import { projects } from "@/src/db/schema";
-import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
+import {
+  authorizeCliRoute,
+  cliRouteAuthJsonError,
+  enforceControlPlaneProjectScope,
+} from "@/src/lib/mcp-route-auth";
 import { getProjectManager } from "@/src/lib/flux";
 import {
   normalizePushSql,
@@ -44,10 +49,14 @@ export async function POST(req: Request): Promise<Response> {
   await initSystemDb();
   const db = getDb();
   const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
+  const authResult = await authorizeCliRoute(db, secret, {
+    pathname: new URL(req.url).pathname,
+    method: "POST",
+  });
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = authResult.auth;
 
   let body: unknown;
   try {
@@ -101,6 +110,10 @@ export async function POST(req: Request): Promise<Response> {
       `hash must be a ${String(FLUX_PROJECT_HASH_HEX_LEN)}-char lowercase hex id`,
       400,
     );
+  }
+  const scope = await enforceControlPlaneProjectScope(db, auth, hash);
+  if (!scope.ok) {
+    return jsonError(scope.error, scope.status);
   }
   const owned = await db
     .select({

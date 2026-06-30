@@ -4,10 +4,8 @@ import {
   resolveTenantApiSchemaName,
 } from "@flux/core";
 import { projects } from "@/src/db/schema";
-import {
-  authenticateCliApiKey,
-  extractBearerToken,
-} from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { authorizeCliHttpRequest, authorizeCliRoute, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { assertDestructiveBackupAllowed } from "@/src/lib/destructive-backup-gate";
 import { runCliProjectDelete } from "@/src/lib/destructive-project-routes";
@@ -38,12 +36,6 @@ export async function GET(
 ): Promise<Response> {
   await initSystemDb();
   const db = getDb();
-  const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
-  }
-
   const { hash: paramHash } = await context.params;
   const hash = (paramHash ?? "").trim().toLowerCase();
   if (!isValidHash(hash)) {
@@ -52,6 +44,12 @@ export async function GET(
       400,
     );
   }
+
+  const authResult = await authorizeCliHttpRequest(db, req, { projectHash: hash });
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
+  }
+  const auth = authResult.auth;
 
   const [row] = await db
     .select({
@@ -108,8 +106,11 @@ export async function DELETE(
     authenticateCli: async (authorizationHeader) => {
       const db = getDb();
       const secret = extractBearerToken(authorizationHeader);
-      const auth = await authenticateCliApiKey(db, secret);
-      return auth ? { userId: auth.userId } : null;
+      const authResult = await authorizeCliRoute(db, secret, {
+        pathname: "/api/cli/v1/projects/:hash",
+        method: "DELETE",
+      });
+      return authResult.ok ? { userId: authResult.auth.userId } : null;
     },
     findOwnedProjectByHash: async (userId, hash) => {
       const db = getDb();

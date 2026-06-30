@@ -1,10 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import { projects } from "@/src/db/schema";
-import {
-  authenticateCliApiKey,
-  extractBearerToken,
-} from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { authorizeCliHttpRequest, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 
@@ -63,11 +61,11 @@ export async function GET(
 ): Promise<Response> {
   await initSystemDb();
   const db = getDb();
-  const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
+  const authResult = await authorizeCliHttpRequest(db, req);
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = authResult.auth;
 
   const { hash: paramHash } = await context.params;
   const hash = (paramHash ?? "").trim().toLowerCase();
@@ -114,11 +112,11 @@ export async function PATCH(
 ): Promise<Response> {
   await initSystemDb();
   const db = getDb();
-  const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
+  const authResult = await authorizeCliHttpRequest(db, req);
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = authResult.auth;
 
   const { hash: paramHash } = await context.params;
   const hash = (paramHash ?? "").trim().toLowerCase();

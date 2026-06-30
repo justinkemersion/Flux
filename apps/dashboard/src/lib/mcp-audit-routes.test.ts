@@ -8,6 +8,15 @@ import { validateMcpIntentInput, validateMcpIntentUpdateInput } from "./mcp-inte
 import { containsObviousSecret } from "./mcp-secret-scan.ts";
 
 const AUTH = { userId: "user-server", keyId: "key-1" };
+
+const CLI_AUTH_RESULT = {
+  ok: true as const,
+  auth: { keyType: "cli" as const, userId: AUTH.userId, keyId: AUTH.keyId },
+};
+
+function mockAuthorize() {
+  return async () => CLI_AUTH_RESULT;
+}
 const PROJECT_ID = "00000000-0000-4000-8000-000000000099";
 
 function auditBody(overrides: Record<string, unknown> = {}) {
@@ -33,7 +42,7 @@ test("audit route rejects malformed payloads", async () => {
     {
       initSystemDb: async () => undefined,
       getDb: () => ({}) as never,
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(res.status, 400);
@@ -87,7 +96,7 @@ test("audit route records server-owned user identity", async () => {
             },
           }),
         }) as never,
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(res.status, 200);
@@ -123,7 +132,7 @@ test("intent route validates project ownership", async () => {
             }),
           }),
         }) as never,
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(res.status, 404);
@@ -161,7 +170,7 @@ test("intent route inserts when project is owned", async () => {
             }),
           }),
         }) as never,
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(res.status, 200);
@@ -238,7 +247,7 @@ test("intent patch route updates owned intent", async () => {
             }),
           }),
         }) as never,
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(res.status, 200);

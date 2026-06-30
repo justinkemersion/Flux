@@ -3,8 +3,10 @@ import { normalizeProjectLifecycleState } from "@flux/core/project-lifecycle-sta
 import type { FluxProjectSummary } from "@flux/core/standalone";
 import { eq } from "drizzle-orm";
 import { projects } from "@/src/db/schema";
-import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { isMcpControlPlaneAuth } from "@/src/lib/control-plane-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
+import { authorizeCliRoute, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
 import { getProjectManager } from "@/src/lib/flux";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 
@@ -19,15 +21,20 @@ export async function GET(req: Request): Promise<Response> {
   await initSystemDb();
   const db = getDb();
   const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const authResult = await authorizeCliRoute(db, secret, {
+    pathname: new URL(req.url).pathname,
+    method: "GET",
+  });
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = authResult.auth;
 
   const pm = getProjectManager();
   try {
     const rows = await db
       .select({
+        id: projects.id,
         slug: projects.slug,
         hash: projects.hash,
         mode: projects.mode,
@@ -37,8 +44,12 @@ export async function GET(req: Request): Promise<Response> {
       .from(projects)
       .where(eq(projects.userId, auth.userId));
 
+    const scopedRows = isMcpControlPlaneAuth(auth)
+      ? rows.filter((row) => auth.projectIds.includes(row.id))
+      : rows;
+
     const isProduction = process.env.NODE_ENV === "production";
-    const v1Refs = rows
+    const v1Refs = scopedRows
       .filter((r) => r.mode === "v1_dedicated")
       .map((r) => ({ slug: r.slug, hash: r.hash }));
 
@@ -54,7 +65,7 @@ export async function GET(req: Request): Promise<Response> {
       v1Summaries.map((s) => [`${s.slug}\0${s.hash}`, s] as const),
     );
 
-    const summaries: FluxProjectSummary[] = rows.map((r, i) => {
+    const summaries: FluxProjectSummary[] = scopedRows.map((r, i) => {
       const slug = slugifyProjectName(r.slug);
       const lifecycleState = normalizeProjectLifecycleState(r.lifecycleState);
       let base: FluxProjectSummary;

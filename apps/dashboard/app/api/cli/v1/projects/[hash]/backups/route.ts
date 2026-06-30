@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import { projects } from "@/src/db/schema";
 import { auth } from "@/src/lib/auth";
-import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { authorizeCliHttpRequest, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getBackupStorage } from "@/src/lib/backup-storage";
 import {
@@ -95,11 +96,6 @@ async function resolveOwnedProject(
 > {
   await initSystemDb();
   const db = getDb();
-  const secret = extractBearerToken(req.headers.get("authorization"));
-  const cliAuth = await authenticateCliApiKey(db, secret);
-  const session = cliAuth ? null : await auth();
-  const userId = cliAuth?.userId ?? session?.user?.id ?? null;
-  if (!userId) return { error: jsonError("Unauthorized", 401) };
 
   const { hash: rawHash } = await context.params;
   const hash = (rawHash ?? "").trim().toLowerCase();
@@ -111,6 +107,20 @@ async function resolveOwnedProject(
       ),
     };
   }
+
+  const secret = extractBearerToken(req.headers.get("authorization"));
+  let userId: string | null = null;
+  if (secret) {
+    const authResult = await authorizeCliHttpRequest(db, req, { projectHash: hash });
+    if (!authResult.ok) {
+      return { error: cliRouteAuthJsonError(authResult) };
+    }
+    userId = authResult.auth.userId;
+  } else {
+    const session = await auth();
+    userId = session?.user?.id ?? null;
+  }
+  if (!userId) return { error: jsonError("Unauthorized", 401) };
 
   const [project] = await db
     .select({

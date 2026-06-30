@@ -18,6 +18,10 @@ test("system DB bootstrap creates MCP audit/intent tables idempotently", async (
   assert.match(joined, /CREATE TABLE IF NOT EXISTS mcp_intents/);
   assert.match(joined, /mcp_audit_events_user_time_idx/);
   assert.match(joined, /mcp_intents_status_time_idx/);
+  assert.match(joined, /CREATE TABLE IF NOT EXISTS flux_mcp_tokens/);
+  assert.match(joined, /flux_mcp_tokens_user_id_idx/);
+  assert.match(joined, /flux_mcp_tokens_key_id_idx/);
+  assert.match(joined, /flux_mcp_tokens_project_ids_gin_idx/);
 
   const firstCount = queries.length;
   await runSystemDbBootstrap(pool as never);

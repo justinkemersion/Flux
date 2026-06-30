@@ -1,9 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { projects } from "@/src/db/schema";
-import {
-  authenticateCliApiKey,
-  extractBearerToken,
-} from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { authorizeCliRoute } from "@/src/lib/mcp-route-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import { assertDestructiveBackupAllowed } from "@/src/lib/destructive-backup-gate";
@@ -22,8 +20,11 @@ export async function POST(req: Request): Promise<Response> {
     authenticateCli: async (authorizationHeader) => {
       const db = getDb();
       const secret = extractBearerToken(authorizationHeader);
-      const auth = await authenticateCliApiKey(db, secret);
-      return auth ? { userId: auth.userId } : null;
+      const authResult = await authorizeCliRoute(db, secret, {
+        pathname: "/api/cli/v1/migrate",
+        method: "POST",
+      });
+      return authResult.ok ? { userId: authResult.auth.userId } : null;
     },
     findOwnedProjectId: async ({ userId, slug, hash }) => {
       const db = getDb();

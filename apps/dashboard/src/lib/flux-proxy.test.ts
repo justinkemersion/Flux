@@ -17,6 +17,15 @@ import {
 
 const AUTH = { userId: "user-1", keyId: "key-1" };
 
+const CLI_AUTH_RESULT = {
+  ok: true as const,
+  auth: { keyType: "cli" as const, userId: AUTH.userId, keyId: AUTH.keyId },
+};
+
+function mockAuthorize() {
+  return async () => CLI_AUTH_RESULT;
+}
+
 test("proxy exports a function named proxy", () => {
   assert.equal(typeof proxy, "function");
   assert.equal(proxy.name, "proxy");
@@ -104,7 +113,7 @@ test("audit route reachable when proxy rate limit allows POST", async () => {
             }),
           }),
         }) as never,
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(res.status, 200);
@@ -151,7 +160,7 @@ test("intent route reachable when proxy rate limit allows POST", async () => {
             }),
           }),
         }) as never,
-      authenticate: async () => AUTH,
+      authorizeCliRoute: mockAuthorize(),
     },
   );
   assert.equal(res.status, 200);

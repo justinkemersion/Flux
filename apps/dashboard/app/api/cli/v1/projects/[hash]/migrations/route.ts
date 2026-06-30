@@ -4,10 +4,8 @@ import {
   resolveTenantApiSchemaName,
 } from "@flux/core";
 import { projects } from "@/src/db/schema";
-import {
-  authenticateCliApiKey,
-  extractBearerToken,
-} from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { authorizeCliHttpRequest, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import { listPooledAppliedMigrations } from "@/src/lib/pooled-migrations";
@@ -33,12 +31,6 @@ type Ctx = { params: Promise<{ hash: string }> };
 export async function GET(_req: Request, context: Ctx): Promise<Response> {
   await initSystemDb();
   const db = getDb();
-  const secret = extractBearerToken(_req.headers.get("authorization"));
-  const auth = await authenticateCliApiKey(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
-  }
-
   const { hash: paramHash } = await context.params;
   const hash = (paramHash ?? "").trim().toLowerCase();
   if (!isValidHash(hash)) {
@@ -47,6 +39,10 @@ export async function GET(_req: Request, context: Ctx): Promise<Response> {
       400,
     );
   }
+  const authResult = await authorizeCliHttpRequest(db, _req, { projectHash: hash });
+  if (!authResult.ok) return cliRouteAuthJsonError(authResult);
+  const auth = authResult.auth;
+
 
   const [row] = await db
     .select({

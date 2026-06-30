@@ -3,24 +3,20 @@
  * PATCH /api/cli/v1/intents/:id — update terminal intent state after tool execution.
  */
 
-import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { controlPlaneAuthIdentity } from "@/src/lib/control-plane-auth";
 import type { SystemDb } from "@/src/lib/db";
 import {
   getMcpIntentById,
   updateMcpIntentById,
   validateMcpIntentUpdateInput,
 } from "@/src/lib/mcp-intents";
+import { authorizeCliRoute, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
 
-export interface CliIntentGetRouteDeps {
+export interface CliIntentIdRouteDeps {
   initSystemDb: () => Promise<void>;
   getDb: () => SystemDb;
-  authenticate: typeof authenticateCliApiKey;
-}
-
-export interface CliIntentPatchRouteDeps {
-  initSystemDb: () => Promise<void>;
-  getDb: () => SystemDb;
-  authenticate: typeof authenticateCliApiKey;
+  authorizeCliRoute?: typeof authorizeCliRoute;
 }
 
 function jsonError(message: string, status: number): Response {
@@ -32,15 +28,20 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function runCliIntentGet(
   req: Request,
   context: Ctx,
-  deps: CliIntentGetRouteDeps,
+  deps: CliIntentIdRouteDeps,
 ): Promise<Response> {
   await deps.initSystemDb();
   const db = deps.getDb();
   const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await deps.authenticate(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
+  const authorize = deps.authorizeCliRoute ?? authorizeCliRoute;
+  const authResult = await authorize(db, secret, {
+    pathname: new URL(req.url).pathname,
+    method: "GET",
+  });
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = controlPlaneAuthIdentity(authResult.auth);
 
   const { id } = await context.params;
   const result = await getMcpIntentById(db, auth, id ?? "");
@@ -56,15 +57,20 @@ export async function runCliIntentGet(
 export async function runCliIntentPatch(
   req: Request,
   context: Ctx,
-  deps: CliIntentPatchRouteDeps,
+  deps: CliIntentIdRouteDeps,
 ): Promise<Response> {
   await deps.initSystemDb();
   const db = deps.getDb();
   const secret = extractBearerToken(req.headers.get("authorization"));
-  const auth = await deps.authenticate(db, secret);
-  if (!auth) {
-    return jsonError("Unauthorized", 401);
+  const authorize = deps.authorizeCliRoute ?? authorizeCliRoute;
+  const authResult = await authorize(db, secret, {
+    pathname: new URL(req.url).pathname,
+    method: "PATCH",
+  });
+  if (!authResult.ok) {
+    return cliRouteAuthJsonError(authResult);
   }
+  const auth = controlPlaneAuthIdentity(authResult.auth);
 
   const { id } = await context.params;
   const intentId = id ?? "";
@@ -101,21 +107,17 @@ export const runtime = "nodejs";
 /** GET /api/cli/v1/intents/:id */
 export async function GET(req: Request, context: Ctx): Promise<Response> {
   const { getDb, initSystemDb } = await import("@/src/lib/db");
-  const { authenticateCliApiKey } = await import("@/src/lib/cli-api-auth");
   return runCliIntentGet(req, context, {
     initSystemDb,
     getDb,
-    authenticate: authenticateCliApiKey,
   });
 }
 
 /** PATCH /api/cli/v1/intents/:id */
 export async function PATCH(req: Request, context: Ctx): Promise<Response> {
   const { getDb, initSystemDb } = await import("@/src/lib/db");
-  const { authenticateCliApiKey } = await import("@/src/lib/cli-api-auth");
   return runCliIntentPatch(req, context, {
     initSystemDb,
     getDb,
-    authenticate: authenticateCliApiKey,
   });
 }

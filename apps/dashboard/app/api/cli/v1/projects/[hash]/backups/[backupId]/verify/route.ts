@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import { projectBackups, projects } from "@/src/db/schema";
 import { auth } from "@/src/lib/auth";
-import { authenticateCliApiKey, extractBearerToken } from "@/src/lib/cli-api-auth";
+import { extractBearerToken } from "@/src/lib/cli-api-auth";
+import { authorizeCliHttpRequest, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { verifyBackupRestore } from "@/src/lib/project-backups";
 import { recordBackupVerifiedActivity } from "@/src/lib/project-activity";
@@ -23,11 +24,6 @@ function isValidHash(h: string): boolean {
 export async function POST(req: Request, context: Ctx): Promise<Response> {
   await initSystemDb();
   const db = getDb();
-  const secret = extractBearerToken(req.headers.get("authorization"));
-  const cliAuth = await authenticateCliApiKey(db, secret);
-  const session = cliAuth ? null : await auth();
-  const userId = cliAuth?.userId ?? session?.user?.id ?? null;
-  if (!userId) return jsonError("Unauthorized", 401);
 
   const { hash: rawHash, backupId } = await context.params;
   const hash = (rawHash ?? "").trim().toLowerCase();
@@ -37,6 +33,19 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
       400,
     );
   }
+
+  const secret = extractBearerToken(req.headers.get("authorization"));
+  let userId: string | null = null;
+  if (secret) {
+    const authResult = await authorizeCliHttpRequest(db, req, { projectHash: hash });
+    if (!authResult.ok) return cliRouteAuthJsonError(authResult);
+    userId = authResult.auth.userId;
+  } else {
+    const session = await auth();
+    userId = session?.user?.id ?? null;
+  }
+  if (!userId) return jsonError("Unauthorized", 401);
+
   const [ownerCheck] = await db
     .select({ id: projectBackups.id, projectId: projectBackups.projectId })
     .from(projectBackups)
