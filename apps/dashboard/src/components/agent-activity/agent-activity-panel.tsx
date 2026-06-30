@@ -1,7 +1,6 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -45,11 +44,6 @@ export function AgentActivityPanel() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  const userSegment =
-    session?.user?.githubLogin?.trim() ||
-    session?.user?.id?.trim() ||
-    "—";
 
   const loadIntents = useCallback(
     async (opts: { cursor?: string; append?: boolean }) => {
@@ -127,32 +121,16 @@ export function AgentActivityPanel() {
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-zinc-950 text-zinc-300">
-      <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-8 lg:px-10">
-        <nav
-          className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500"
-          aria-label="Breadcrumb"
-        >
-          <Link href="/projects" className="text-zinc-300 hover:text-zinc-100">
-            Projects
-          </Link>
-          <span aria-hidden>/</span>
-          <span className="truncate text-zinc-500" title={userSegment}>
-            {userSegment}
-          </span>
-          <span aria-hidden>/</span>
-          <span className="text-zinc-200">Agent Activity</span>
-        </nav>
+    <>
+      <header className="mb-6">
+        <h1 className="text-lg font-semibold text-zinc-100">Agent Activity</h1>
+        <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+          Read-only view of recent MCP agent intents. Sanitized summaries only — no raw SQL,
+          paths, or credentials. Approval controls are not available here.
+        </p>
+      </header>
 
-        <header className="mb-6">
-          <h1 className="text-lg font-semibold text-zinc-100">Agent Activity</h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
-            Read-only view of recent MCP agent intents. Sanitized summaries only — no raw SQL,
-            paths, or credentials. Approval controls are not available here.
-          </p>
-        </header>
-
-        <section
+      <section
           className="mb-6 grid gap-3 rounded-lg border border-zinc-800/80 bg-zinc-900/30 p-4 sm:grid-cols-2 lg:grid-cols-5"
           aria-label="Filters"
         >
@@ -353,8 +331,7 @@ export function AgentActivityPanel() {
             ) : null}
           </>
         )}
-      </div>
-    </div>
+    </>
   );
 }
 

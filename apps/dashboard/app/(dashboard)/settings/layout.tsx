@@ -14,16 +14,5 @@ export default async function SettingsLayout({
     redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent("/settings")}`);
   }
 
-  const userSegment =
-    session.user.githubLogin?.trim() ||
-    session.user.id?.trim() ||
-    "—";
-
-  return (
-    <div className="flex min-h-full flex-col bg-zinc-950 text-zinc-400">
-      <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-8 lg:px-10">
-        <SettingsShell userSegment={userSegment}>{children}</SettingsShell>
-      </div>
-    </div>
-  );
+  return <SettingsShell>{children}</SettingsShell>;
 }

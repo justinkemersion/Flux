@@ -5,13 +5,12 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import { useSession } from "next-auth/react";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
 } from "react";
+import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 
 /** Page-level overlays (mesh readout, create project): portal to `document.body`, z-[200]. */
@@ -24,18 +23,13 @@ import type { ProjectRow } from "@/src/components/projects/project-types";
 import { V2GettingStartedModal } from "@/src/components/projects/v2-getting-started-modal";
 import { ProjectMeshReadout } from "@/src/components/projects/project-mesh-readout";
 import { ProjectPortfolioSections } from "@/src/components/projects/project-portfolio-sections";
-import { ProjectsFleetBar } from "@/src/components/projects/projects-fleet-bar";
 import {
   errorMessageFromJsonBody,
   readResponseJson,
 } from "@/src/lib/fetch-json";
 
 export default function ProjectsPage() {
-  const { data: session } = useSession();
-  const userSegment =
-    session?.user?.githubLogin?.trim() ||
-    session?.user?.id?.trim() ||
-    "—";
+  const searchParams = useSearchParams();
 
   const [projectList, setProjectList] = useState<ProjectRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -244,6 +238,12 @@ export default function ProjectsPage() {
     setCreateOpen(true);
   }
 
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      openCreateModal();
+    }
+  }, [searchParams]);
+
   function closeCreateModal(): void {
     if (creating || upgradeLoading) return;
     setCreateOpen(false);
@@ -360,32 +360,8 @@ export default function ProjectsPage() {
     ? projectList.find((p) => p.slug === detailSlug)
     : undefined;
 
-  const { fleetLine, fleetDegraded } = useMemo(() => {
-    if (loadError) {
-      return { fleetLine: "Fleet error", fleetDegraded: true };
-    }
-    if (fetching && projectList.length === 0) {
-      return { fleetLine: "Syncing projects", fleetDegraded: false };
-    }
-    const bad = projectList.some(
-      (p) => p.status === "missing" || p.status === "corrupted",
-    );
-    if (bad) {
-      return { fleetLine: "Needs attention", fleetDegraded: true };
-    }
-    return { fleetLine: "All projects healthy", fleetDegraded: false };
-  }, [loadError, fetching, projectList]);
-
   return (
-    <div className="flex min-h-full w-full flex-1 flex-col bg-zinc-950 text-zinc-400">
-      <ProjectsFleetBar
-        userSegment={userSegment}
-        fleetLine={fleetLine}
-        fleetDegraded={fleetDegraded}
-        onNewProject={openCreateModal}
-      />
-
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-8 sm:px-8 sm:py-10 lg:px-10">
+    <>
         <div className="mb-8 flex min-w-0 flex-wrap items-center justify-end gap-3">
           {userPlan === "hobby" ? (
             <button
@@ -450,8 +426,6 @@ export default function ProjectsPage() {
             />
           </>
         )}
-      </div>
-
       {detailSlug && detailProject && mounted
         ? createPortal(
             <div
@@ -666,6 +640,6 @@ export default function ProjectsPage() {
         hash={v2GettingStartedProject?.hash ?? ""}
         gatewayJwtSecretOneTime={v2GettingStartedProject?.projectJwtSecret}
       />
-    </div>
+    </>
   );
 }

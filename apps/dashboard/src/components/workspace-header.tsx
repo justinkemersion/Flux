@@ -28,7 +28,12 @@ function formatUtc(d: Date): string {
 
 export function WorkspaceHeader() {
   const pathname = usePathname();
-  if (pathname === "/projects") {
+  const hideOnDashboard =
+    pathname === "/projects" ||
+    pathname.startsWith("/projects/") ||
+    pathname.startsWith("/settings") ||
+    pathname === "/agent-activity";
+  if (hideOnDashboard) {
     return null;
   }
   const isLanding =
