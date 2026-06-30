@@ -1,6 +1,6 @@
 # Flux MCP Phase 5 — Scoped MCP Tokens (`flx_mcp_`)
 
-**Status:** Phase 5 complete (Slices A–G) — scoped MCP tokens are the recommended default; `FLUX_API_TOKEN` for MCP remains `supported_with_warning`.  
+**Status:** Phase 5 **closed** (Slices A–G + hosted smoke 2026-06-30) — scoped MCP tokens are the recommended default; `FLUX_API_TOKEN` for MCP remains `supported_with_warning`. The 90-day legacy MCP deprecation clock starts from hosted smoke sign-off.  
 **Precedes:** Streamable HTTP transport, new mutation MCP tools, org/team RBAC  
 **Builds on:** Phase 4 (`flux.migration.apply`), Phase 4B (intent visibility, Agent Activity, fixture smoke discipline)
 
@@ -344,12 +344,13 @@ Server actions may wrap these from `settings/mcp-tokens/` (new page or tab under
 
 | Step | Action |
 |------|--------|
-| 1 | Deploy control plane with dual auth (`flx_live_` + `flx_mcp_`). |
-| 2 | Ship dashboard MCP token UI. |
-| 3 | Update `packages/mcp/README.md`, `docs/AGENT_NATIVE_FLUX.md`, `docs/pages/reference/env-vars.md` with `FLUX_MCP_TOKEN`. |
-| 4 | Update Cursor registration example to use `FLUX_MCP_TOKEN`. |
-| 5 | Phase 4 smoke: document optional dedicated **fixture MCP token** with migration preset (still `--hash` / `--slug` / `--yes-apply-smoke-migration`). |
-| 6 | Announce deprecation timeline for `FLUX_API_TOKEN` in MCP configs. |
+| 1 | Deploy control plane with dual auth (`flx_live_` + `flx_mcp_`). ✅ |
+| 2 | Ship dashboard MCP token UI. ✅ |
+| 3 | Update `packages/mcp/README.md`, `docs/AGENT_NATIVE_FLUX.md`, `docs/pages/reference/env-vars.md` with `FLUX_MCP_TOKEN`. ✅ |
+| 4 | Update Cursor registration example to use `FLUX_MCP_TOKEN`. ✅ |
+| 5 | Phase 4 smoke: document optional dedicated **fixture MCP token** with migration preset (still `--hash` / `--slug` / `--yes-apply-smoke-migration`). ✅ |
+| 6 | Announce deprecation timeline for `FLUX_API_TOKEN` in MCP configs. ✅ (non-breaking notice shipped; **90-day clock starts 2026-06-30** after hosted smoke) |
+| 7 | **Hosted smoke** on `https://flux.vsl-base.com` — scoped token, allowed/denied tools, audit/intent identity. ✅ 2026-06-30 |
 
 ### Local MCP config example (target)
 
@@ -588,12 +589,27 @@ Warnings go to **stderr only** (stdout is the MCP stream).
 - [x] Tests: docs/examples secret scan, legacy warning does not imply immediate removal, dashboard copy mentions `FLUX_MCP_TOKEN`
 - [x] **Not in Slice G:** remove `FLUX_API_TOKEN` support, hard removal date, streamable HTTP, token rotate endpoint
 
-**Phase 5 complete.** Optional future work (Slice H+):
+**Phase 5 closed.** Hosted smoke validated 2026-06-30 on `https://flux.vsl-base.com` (deploy `a1a5cc9`).
+
+### Hosted smoke (2026-06-30)
+
+Operator checklist (all passed):
+
+1. `/settings/mcp-tokens` — route live (session redirect when unauthenticated).
+2. Scoped token created with `project:read`, `schema:read`, `backup:read`, `migration:plan` (single project: `habitat` / `59b73eb`).
+3. MCP configured with `FLUX_MCP_TOKEN` + `FLUX_API_BASE=https://flux.vsl-base.com/api`.
+4. **Allowed:** `flux.project.list` (scoped to one project), `flux.schema.inspect`, `flux.migration.plan`.
+5. **Denied:** `flux.migration.apply` — `capability_denied`, remediation points to `/settings/mcp-tokens`.
+6. **Audit/intent rows:** `key_id` (token row UUID), `metadata.keyPreview` (`flx_mcp_4a17…679c`), `metadata.keyType: "mcp"` — no plaintext token or `key_hash` in persisted payloads.
+7. **No leakage:** zero audit/intent rows matched full token material or stored hash digest.
+
+Optional future work (Slice H+ — **paused**; do not start until explicitly prioritized):
 
 - Token rotate endpoint
 - Agent Activity join to show MCP token name
 - Streamable HTTP transport
-- Formal `FLUX_API_TOKEN`-for-MCP removal date (after deprecation countdown)
+- Dashboard approval UI for intents
+- Formal `FLUX_API_TOKEN`-for-MCP hard removal (T+90 from 2026-06-30 → ~2026-09-28 requires `FLUX_MCP_ALLOW_LEGACY_CLI_TOKEN=1`)
 
 **After each slice:** `pnpm check:architecture`, `pnpm typecheck`, `pnpm test`.
 

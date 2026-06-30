@@ -4,6 +4,14 @@ Flux's strategic direction is **"the safety-gated, plan-first, agent-operable Po
 
 This file records the agent-native milestones. Deeper strategy and roadmap live in the plan files under `.cursor/plans/`.
 
+## Product checkpoint — Flux MCP v0 (2026-06-30)
+
+**Flux MCP v0 now supports scoped-token, audited, safety-gated, controlled migration workflows.**
+
+Shipped through Phase 5 (hosted smoke on `https://flux.vsl-base.com`, deploy `a1a5cc9`): scoped `flx_mcp_` tokens, dashboard issuance at `/settings/mcp-tokens`, `FLUX_MCP_TOKEN` auth, server-side capability/project enforcement, MCP-side capability guard, audit/intent identity via `keyPreview`/`keyType` only, and the full inspect → plan → ensure verified backup → preflight → apply loop (apply gated by `migration:apply` capability).
+
+**Paused (not starting immediately):** streamable HTTP MCP transport, dashboard approval UI, org/team RBAC, destructive lifecycle MCP tools. Next prioritization is operator-driven.
+
 ## Milestones
 
 ### Pass 1: Read-only MCP introspection and destructive preflight
@@ -79,7 +87,7 @@ Routes: `POST /api/cli/v1/intents`, `GET /api/cli/v1/intents/:id`.
 - Stable `429` + `Retry-After`; write/sensitive tiers fail closed if limiter storage is unavailable; read tier may fail open with a warning.
 - `POST /api/cli/v1/audit` uses a separate high allowance so audit logging cannot starve itself.
 
-**Still deferred to Phase 4 (pre-4):** streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools. (Scoped `flx_mcp_` tokens: Phase 5 — see below.)
+**Still deferred to Phase 4 (pre-4):** streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools.
 
 ### Phase 4: Controlled migration apply (`flux.migration.apply`)
 
@@ -107,7 +115,7 @@ inspect → plan → intent → ensure verified backup → preflight → apply
 
 **Audit gates:** `migration_apply_allowed`, `migration_apply_blocked_no_backup`, `migration_apply_blocked_stale_plan`, `migration_apply_blocked_destructive_requires_allow`, `migration_apply_failed`.
 
-**Still deferred beyond Phase 4:** arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), streamable HTTP, dashboard approval UI. (Scoped `flx_mcp_` tokens: Phase 5.)
+**Still deferred beyond Phase 4:** arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), streamable HTTP, dashboard approval UI.
 
 **Operator response to partial apply:** Inspect `failedFile`; treat `appliedFiles` as ledgered history (do not edit the ledger). Fix forward with a new migration or resolve the push error, then `flux.migration.plan` → `flux.migration.apply`.
 
@@ -169,13 +177,13 @@ Phase 3C ensures **`flux.backup.list`** and **`flux.backup.ensureVerified`** nev
 
 **Removed:** paths, volume roots, offsite storage metadata, checksums, signed URLs, credentials, and nested raw artifact fields. Audit redaction also catches path-like string values.
 
-### Still deferred beyond Phase 4
+### Still deferred (post–MCP v0)
 
-Arbitrary write SQL, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.
+Arbitrary write SQL, streamable HTTP transport, dashboard approval UI, and destructive lifecycle MCP tools.
 
-### Phase 5: Scoped MCP tokens (`flx_mcp_`) — complete
+### Phase 5: Scoped MCP tokens (`flx_mcp_`) — closed
 
-Status: **complete** (Slices A–G). Optional future work: token rotate endpoint, Agent Activity token-name join, streamable HTTP, formal `FLUX_API_TOKEN`-for-MCP removal date.
+Status: **closed** (Slices A–G + hosted smoke 2026-06-30). Legacy `FLUX_API_TOKEN` for MCP: `supported_with_warning`; **90-day deprecation clock starts 2026-06-30** (~2026-09-28 hard gate without `FLUX_MCP_ALLOW_LEGACY_CLI_TOKEN=1`). Paused follow-ups: token rotate, Agent Activity token-name join, streamable HTTP, approval UI.
 
 Scoped MCP tokens limit the Flux MCP server to explicit projects, capabilities, and expiry. They are distinct from broad CLI keys (`flx_live_`).
 
@@ -191,6 +199,8 @@ Scoped MCP tokens limit the Flux MCP server to explicit projects, capabilities, 
 
 **Slice F (complete):** `flx_mcp_` secret detection and redaction across stderr audit, persisted audit/intent payloads, and dashboard sanitized views. MCP audit/intent rows record `keyPreview` / `keyType: "mcp"` without plaintext token or hash. MCP-side capability preflight denies tools missing required capabilities when using `FLUX_MCP_TOKEN` (legacy `FLUX_API_TOKEN` unchanged with warning).
 
-**Slice G (complete):** Rollout docs (`packages/mcp/README.md`, env-vars), Cursor config examples (production + `pnpm start`), capability presets, dashboard copy for `FLUX_MCP_TOKEN`, and non-breaking legacy deprecation notice (`legacyCliTokenForMcp: supported_with_warning`). Formal removal countdown starts only after hosted UI, published docs, Cursor examples, and one release cycle — no hard date yet.
+**Slice G (complete):** Rollout docs (`packages/mcp/README.md`, env-vars), Cursor config examples (production + `pnpm start`), capability presets, dashboard copy for `FLUX_MCP_TOKEN`, and non-breaking legacy deprecation notice (`legacyCliTokenForMcp: supported_with_warning`).
+
+**Hosted smoke (2026-06-30):** Deployed to `https://flux.vsl-base.com` (`a1a5cc9`). Scoped token (`project:read`, `schema:read`, `backup:read`, `migration:plan`) on project `habitat` (`59b73eb`). Allowed: `flux.project.list` (single-project scope), `flux.schema.inspect`, `flux.migration.plan`. Denied: `flux.migration.apply` (`capability_denied`, missing `migration:apply`). Audit/intent rows show `keyPreview` + `keyType: "mcp"` only; no plaintext token or hash in persisted payloads.
 
 See `plans/mcp/phase-5-scoped-mcp-tokens.md` and `packages/mcp/README.md` for Cursor setup.

@@ -135,7 +135,7 @@ Scoped token for the **Flux MCP server** (`@flux/mcp`) — Cursor, Claude Code, 
 - **Where it's set:** MCP client config only (e.g. Cursor `mcpServers.flux.env`). Not loaded from `flux.json` or CLI dotenv.
 - **Sensitive:** Yes — scoped to selected projects and capabilities, but still grants agent access to those surfaces. Revoke via the dashboard if leaked.
 - **Scopes:** project allowlist, capability allowlist, expiry (shorter default when `migration:apply` or `backup:ensure_verified` is included).
-- **Legacy:** `FLUX_API_TOKEN` still works for MCP with a stderr warning until a formal removal date is announced (no hard date yet).
+- **Legacy:** `FLUX_API_TOKEN` still works for MCP with a stderr warning. Deprecation clock started **2026-06-30** (hosted MCP v0 smoke); plan ~**2026-09-28** for explicit legacy opt-in before hard removal. See [Flux MCP v0 release notes](/docs/release-notes/mcp-v0).
 
 ### `FLUX_DEFAULT_MODE`
 

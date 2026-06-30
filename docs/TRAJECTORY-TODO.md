@@ -32,9 +32,11 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-06-23`
+- Last updated: `2026-06-30`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-v2-shared -> deploy-gateway -> deploy-web`
+- **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
+- **Latest ops audit:** `./bin/ops-audit.sh --remote --deep --smoke` (2026-06-30) — 1 FAIL (`yeastcoast` restore verification); 15 WARN (mostly expected v2 gateway 401 probes)
 
 ---
 
@@ -219,6 +221,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 
 ## Recently completed
 
+- `done` — **Flux MCP v0 (Phase 5):** Scoped `flx_mcp_` tokens, dashboard `/settings/mcp-tokens`, `FLUX_MCP_TOKEN` auth, capability/project enforcement, audit/intent `keyPreview` identity, hosted smoke on `flux.vsl-base.com` (`a1a5cc9`); release notes `docs/pages/release-notes/mcp-v0.md`; legacy MCP deprecation clock 2026-06-30 → ~2026-09-28.
 - `done` — **Maker Platform Phase 12:** AI-assisted brief + summaries — `@flux/core/project-ai-prompts`; Workers AI completion for FLUX.md draft, activity summary, and resume brief; session + CLI POST `/ai/summary`; dashboard Generate draft + Summarize buttons; `flux project brief generate [--save]`, `flux project summarize`; CLI `2.0.0`.
 - `done` — **Maker Platform Phase 11:** FLUX.md Project Brief — `@flux/core/flux-md` template + generation prompt; optional `projects.flux_md` dashboard snapshot synced via `flux project brief push`; local repo detection; session + CLI GET/PUT `/flux-md`; dashboard `ProjectFluxMdPanel` with markdown render + copyable generation prompt when missing.
 - `done` — **Maker Platform Phase 10:** Portfolio Dashboard — lifecycle-grouped project list (Active / Dormant / Archived); portfolio cards with description, backup + last-activity hints, Wake/Open actions; `@flux/core/project-portfolio`; batch `lastActivityAt` on GET `/api/projects`; dormant/archived telemetry shows standby (not error).

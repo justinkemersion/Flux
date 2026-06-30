@@ -2,7 +2,7 @@
 
 Flux MCP server — operate Flux projects from AI coding agents (Cursor, Claude Code, Codex, Gemini CLI, Windsurf, …) over the [Model Context Protocol](https://modelcontextprotocol.io).
 
-This is **Phase 4 (v0)**: Phase 3A–3C **plus** controlled migration apply (`flux.migration.apply`). Arbitrary write SQL and destructive lifecycle MCP tools remain **deferred**.
+This is **Flux MCP v0** (Phases 3A–4 + Phase 5 scoped tokens, closed 2026-06-30): controlled migration apply, scoped `flx_mcp_` auth, audit/intent identity, and capability enforcement. Arbitrary write SQL and destructive lifecycle MCP tools remain **deferred**.
 
 ## What this is
 
@@ -190,8 +190,8 @@ Mutation-capable presets (`migration:apply`, `backup:ensure_verified`) should us
 
 - **`FLUX_API_TOKEN` remains supported temporarily** for MCP — existing Cursor configs keep working.
 - **Scoped `FLUX_MCP_TOKEN` is the recommended default** for all new MCP setups.
-- **Status:** `legacyCliTokenForMcp: supported_with_warning` — no hard removal date yet.
-- A **formal deprecation countdown** starts only after: hosted token UI deployed, docs published, Cursor examples shipped, **and** at least one release cycle has passed. Until then, legacy configs continue to work with a stderr warning only.
+- **Status:** `legacyCliTokenForMcp: supported_with_warning`.
+- **Deprecation clock:** started **2026-06-30** after hosted smoke on `https://flux.vsl-base.com`. Plan: after ~90 days (~2026-09-28), legacy MCP CLI keys require explicit opt-in (`FLUX_MCP_ALLOW_LEGACY_CLI_TOKEN=1`); hard removal is a later phase. See [`docs/pages/release-notes/mcp-v0.md`](../../docs/pages/release-notes/mcp-v0.md).
 
 The Flux **CLI** still uses `FLUX_API_TOKEN` / `flx_live_` keys normally — this deprecation applies to **MCP client config only**.
 
