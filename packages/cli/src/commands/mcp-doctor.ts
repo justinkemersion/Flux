@@ -13,6 +13,10 @@ import {
   FLUX_MCP_CONTRACT_VERSION,
   FLUX_MCP_REGISTERED_TOOL_COUNT,
 } from "@flux/core/mcp-contract";
+import {
+  MCP_MIGRATION_APPLY_DOCTOR_WARNING_LINES,
+  mcpTokenCanApplyMigrations,
+} from "@flux/core/mcp-capability-presets";
 
 export type McpDoctorOptions = {
   baseUrl?: string;
@@ -24,6 +28,14 @@ export type McpDoctorResult = {
   lines: string[];
   exitCode: number;
 };
+
+/** Post-verify warnings appended on successful doctor runs. */
+export function mcpDoctorPostVerifyWarnings(capabilities: readonly string[]): string[] {
+  if (!mcpTokenCanApplyMigrations(capabilities)) {
+    return [];
+  }
+  return ["", ...MCP_MIGRATION_APPLY_DOCTOR_WARNING_LINES];
+}
 
 export async function runMcpDoctorAsync(options: McpDoctorOptions = {}): Promise<McpDoctorResult> {
   const lines: string[] = [];
@@ -84,6 +96,8 @@ export async function runMcpDoctorAsync(options: McpDoctorOptions = {}): Promise
     if (process.env.FLUX_API_TOKEN?.trim()) {
       lines.push("WARN: FLUX_API_TOKEN is set; MCP server prefers FLUX_MCP_TOKEN.");
     }
+
+    lines.push(...mcpDoctorPostVerifyWarnings(verify.capabilities));
 
     return { ok: true, lines, exitCode: 0 };
   } catch (err) {

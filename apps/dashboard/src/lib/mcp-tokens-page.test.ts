@@ -17,6 +17,7 @@ import {
   mcpTokensSignInRedirectUrl,
   parseMcpTokenCreateResponse,
   resolveMcpTokenStatus,
+  showsMigrationApplyWarning,
   showsMutationCapableWarning,
   toMcpTokenListRows,
   validateMcpTokenCreateForm,
@@ -72,6 +73,11 @@ test("mutation-capable capability shows warning helper", () => {
   assert.equal(showsMutationCapableWarning(["project:read"]), false);
   assert.equal(showsMutationCapableWarning(["migration:apply"]), true);
   assert.equal(showsMutationCapableWarning(["backup:ensure_verified", "schema:read"]), true);
+});
+
+test("migration:apply shows dedicated apply warning helper", () => {
+  assert.equal(showsMigrationApplyWarning(["migration:plan"]), false);
+  assert.equal(showsMigrationApplyWarning(["migration:apply"]), true);
 });
 
 test("create displays plaintext token once via create response parser", () => {

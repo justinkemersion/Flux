@@ -13,7 +13,10 @@ import {
   MCP_TOKENS_PAGE_CLI_NOTE,
   MCP_TOKENS_PAGE_INTRO,
   MCP_TOKENS_PAGE_LEGACY_NOTE,
+  MCP_CAPABILITY_PRESET_DEFINITIONS,
+  MCP_MIGRATION_APPLY_TOKEN_WARNING,
   MUTATION_CAPABILITY_WARNING,
+  activeMcpCapabilityPresetId,
   applyCreateTokenToList,
   applyRevokeToTokenList,
   defaultExpiryDaysForCapabilities,
@@ -21,6 +24,7 @@ import {
   formatMcpTokenTimestamp,
   mcpTokenExpiryOptions,
   parseMcpTokenCreateResponse,
+  showsMigrationApplyWarning,
   showsMutationCapableWarning,
   toMcpTokenListRows,
   validateMcpTokenCreateForm,
@@ -82,6 +86,14 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
   );
 
   const mutationWarning = showsMutationCapableWarning(selectedCapabilities);
+  const migrationApplyWarning = showsMigrationApplyWarning(selectedCapabilities);
+  const activePresetId = activeMcpCapabilityPresetId(selectedCapabilities);
+
+  const applyPreset = useCallback((capabilities: readonly string[]) => {
+    const next = [...capabilities];
+    setSelectedCapabilities(next);
+    setExpiryDays(defaultExpiryDaysForCapabilities(next));
+  }, []);
 
   const toggleProject = useCallback((id: string) => {
     setSelectedProjectIds((prev) =>
@@ -246,20 +258,104 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
           </fieldset>
 
           <fieldset className="text-left">
+            <legend className="mb-2 text-xs font-medium text-zinc-500">Capability preset</legend>
+            <ul className="grid gap-3">
+              {MCP_CAPABILITY_PRESET_DEFINITIONS.map((preset) => {
+                const active = activePresetId === preset.id;
+                const isControlledApplier = preset.id === "controlledMigrationApplier";
+                return (
+                  <li key={preset.id}>
+                    <button
+                      type="button"
+                      onClick={() => applyPreset(preset.capabilities)}
+                      className={`w-full rounded-md border px-3 py-3 text-left transition-colors ${focus} ${
+                        isControlledApplier
+                          ? active
+                            ? "border-amber-600/80 bg-amber-950/30 ring-1 ring-amber-700/50"
+                            : "border-amber-900/70 bg-amber-950/15 hover:border-amber-700/70 hover:bg-amber-950/25"
+                          : active
+                            ? "border-zinc-500 bg-zinc-900/70 ring-1 ring-zinc-600/50"
+                            : "border-zinc-800 bg-zinc-950/60 hover:border-zinc-600 hover:bg-zinc-900/50"
+                      }`}
+                      aria-pressed={active}
+                    >
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`text-sm font-semibold ${
+                            isControlledApplier ? "text-amber-100" : "text-zinc-100"
+                          }`}
+                        >
+                          {preset.label}
+                        </span>
+                        {preset.recommendedForCursor ? (
+                          <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                            Cursor-friendly
+                          </span>
+                        ) : null}
+                      </span>
+                      <span
+                        className={`mt-1 block text-xs leading-relaxed ${
+                          isControlledApplier ? "text-amber-200/90" : "text-zinc-500"
+                        }`}
+                      >
+                        {preset.description}
+                      </span>
+                      {preset.cursorWarning ? (
+                        <span className="mt-2 block text-xs font-semibold text-amber-100">
+                          {preset.cursorWarning}
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </fieldset>
+
+          {migrationApplyWarning ? (
+            <div
+              className="rounded-md border-2 border-amber-600/80 bg-amber-950/40 px-4 py-3 text-left"
+              role="alert"
+            >
+              <p className="text-sm font-semibold text-amber-50">
+                WARNING: This MCP token can apply migrations.
+              </p>
+              <p className="mt-1 text-sm text-amber-100/95">{MCP_MIGRATION_APPLY_TOKEN_WARNING}</p>
+              <p className="mt-2 text-xs text-amber-200/80">
+                Use a migration planner preset for everyday Cursor sessions.
+              </p>
+            </div>
+          ) : null}
+
+          <fieldset className="text-left">
             <legend className="mb-2 text-xs font-medium text-zinc-500">Capabilities</legend>
             <ul className="grid gap-2 sm:grid-cols-2">
-              {MCP_CAPABILITIES.map((cap) => (
+              {MCP_CAPABILITIES.map((cap) => {
+                const isApplyCap = cap === "migration:apply";
+                return (
                 <li key={cap}>
-                  <label className="flex cursor-pointer items-center gap-2 border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-300">
+                  <label
+                    className={`flex cursor-pointer items-center gap-2 border px-3 py-2 text-sm ${
+                      isApplyCap
+                        ? "border-amber-900/70 bg-amber-950/20 text-amber-100"
+                        : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+                    }`}
+                  >
                     <input
                       type="checkbox"
                       checked={selectedCapabilities.includes(cap)}
                       onChange={() => toggleCapability(cap)}
                     />
                     <span className="font-mono text-xs">{cap}</span>
+                    {isApplyCap ? (
+                      <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-amber-200/90">
+                        Can apply schema changes
+                      </span>
+                    ) : null}
                   </label>
                 </li>
-              ))}
+              );
+              })}
             </ul>
           </fieldset>
 

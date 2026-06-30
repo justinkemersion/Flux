@@ -4,6 +4,13 @@ import {
   isMutationCapableMcpToken,
   maxMcpTokenExpiryDays,
 } from "@/src/lib/mcp-capabilities";
+import {
+  MCP_CAPABILITY_PRESET_DEFINITIONS,
+  mcpTokenCanApplyMigrations,
+  resolveMcpCapabilityPresetId,
+  type McpCapabilityPresetDefinition,
+  type McpCapabilityPresetId,
+} from "@flux/core/mcp-capability-presets";
 import type { SafeMcpTokenRecord } from "@/src/lib/mcp-token-sanitize";
 import { mcpTokenListResponseContainsSecret } from "@/src/lib/mcp-token-sanitize";
 import type {
@@ -38,6 +45,22 @@ export const MCP_TOKEN_API = {
 
 export const MUTATION_CAPABILITY_WARNING =
   "Selected capabilities include migration apply or backup ensure — these tokens have shorter default expiry and can mutate project state.";
+
+export { MCP_CAPABILITY_PRESET_DEFINITIONS };
+export type { McpCapabilityPresetDefinition, McpCapabilityPresetId };
+
+export const MCP_MIGRATION_APPLY_TOKEN_WARNING =
+  "This token can apply migrations to project databases. Do not use it as your default Cursor MCP token.";
+
+export function showsMigrationApplyWarning(capabilities: readonly string[]): boolean {
+  return mcpTokenCanApplyMigrations(capabilities);
+}
+
+export function activeMcpCapabilityPresetId(
+  capabilities: readonly string[],
+): McpCapabilityPresetId | null {
+  return resolveMcpCapabilityPresetId(capabilities);
+}
 
 export function mcpTokensSignInRedirectUrl(): string {
   return `/api/auth/signin?callbackUrl=${encodeURIComponent(MCP_TOKENS_PAGE_PATH)}`;
