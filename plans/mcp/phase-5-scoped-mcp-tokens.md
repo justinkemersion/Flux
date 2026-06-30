@@ -456,20 +456,119 @@ Allowed routes map to capabilities via `classifyMcpCliRoute` in `mcp-route-auth.
 
 `flx_live_` CLI keys bypass MCP allowlist (full CLI power preserved).
 
-### Slice C — Dashboard CRUD
+### Slice C — Dashboard MCP token API ✅
 
-### Slice D — Dashboard CRUD
+**Shipped.** Session-authenticated create/list/revoke routes; plaintext shown once on create only.
 
-- [ ] `POST/GET /api/agent/mcp-tokens`, revoke action
-- [ ] Minimal settings UI (list, create, revoke, one-time display)
-- [ ] Session auth tests
+- [x] `POST /api/agent/mcp-tokens` — create scoped token (`{ token, tokenRecord }`)
+- [x] `GET /api/agent/mcp-tokens` — list safe fields (`{ tokens: [...] }`)
+- [x] `DELETE /api/agent/mcp-tokens/:id` — soft revoke (`{ ok: true }`)
+- [x] Lib: `createMcpTokenForUser`, `listMcpTokensForUser`, `revokeMcpTokenForUser`
+- [x] Sanitizer: `sanitizeMcpTokenRow`, `mcpTokenListResponseContainsSecret` (`mcp-token-sanitize.ts`)
+- [x] Expiry tiers enforced on create (read-only 30d default / 90d max; mutation 7d / 30d)
+- [x] Unit tests: `mcp-agent-mcp-tokens-routes.test.ts`
+- [x] **Not in Slice C:** dashboard UI, `FLUX_MCP_TOKEN` MCP env switch, `flx_live_` deprecation, `mcp-secret-scan` `flx_mcp_` pattern
 
-### Slice E — MCP server integration
+#### Route shapes (session auth)
 
-- [ ] `FLUX_MCP_TOKEN` resolution in `@flux/cli/api-client` config
-- [ ] Legacy `FLUX_API_TOKEN` warning in `packages/mcp/src/index.ts`
-- [ ] Per-tool `assertMcpCapability` in `server.ts`
-- [ ] MCP unit tests for denied tools
+**POST `/api/agent/mcp-tokens`**
+
+Request body:
+
+```json
+{
+  "name": "optional label",
+  "projectIds": ["<project-uuid>"],
+  "capabilities": ["project:read", "schema:read"],
+  "expiresAt": "optional ISO-8601",
+  "metadata": { "optional": "object" }
+}
+```
+
+Response `201`:
+
+```json
+{
+  "token": "flx_mcp_…",
+  "tokenRecord": {
+    "id": "uuid",
+    "keyId": "12-hex",
+    "keyPreview": "flx_mcp_abcd…wxyz",
+    "name": "optional label",
+    "projectIds": ["…"],
+    "capabilities": ["…"],
+    "expiresAt": "ISO-8601",
+    "revokedAt": null,
+    "createdAt": "ISO-8601",
+    "lastUsedAt": null,
+    "metadata": {}
+  }
+}
+```
+
+Plaintext `token` is returned **only** in this response. DB stores `key_hash` only.
+
+**GET `/api/agent/mcp-tokens`**
+
+Response `200`:
+
+```json
+{ "tokens": [ /* same safe fields as tokenRecord; no token, no keyHash */ ] }
+```
+
+Newest first. `name` is surfaced from `metadata.name` when present.
+
+**DELETE `/api/agent/mcp-tokens/:id`**
+
+Response `200`: `{ "ok": true }`. Sets `revokedAt`; row is retained. Idempotent when already revoked. Owner-scoped (404 for other users).
+
+### Slice D — Dashboard UI ✅
+
+**Shipped.** Minimal settings UI at `/settings/mcp-tokens` for create, list, revoke, and one-time plaintext display.
+
+- [x] Page at `/settings/mcp-tokens` (session auth; unauthenticated → sign-in redirect)
+- [x] List: name, keyPreview, capabilities, project labels/count, expires/revoked/last-used/created, status (active/expired/revoked)
+- [x] Create form: name, project multi-select, capability multi-select, expiry selector, mutation-capable warning
+- [x] One-time plaintext copy box after create (in-memory only; dismiss clears)
+- [x] Revoke with confirmation → `DELETE /api/agent/mcp-tokens/:id`
+- [x] Safety copy: `FLUX_MCP_TOKEN` coming in Slice E; MCP still uses `FLUX_API_TOKEN` today
+- [x] Cross-links from `/settings/keys`
+- [x] Tests: `mcp-tokens-page.test.ts` (auth redirect, list rows, form validation, mutation warning, create-once, list safety, revoke URL/state, status, secret scan)
+- [x] **Not in Slice D:** `FLUX_MCP_TOKEN` MCP env switch (Slice E), `flx_live_` deprecation, streamable HTTP
+
+#### UI route
+
+`/settings/mcp-tokens` — session-authenticated dashboard page. Uses Slice C APIs:
+
+- Initial list: server-side `listMcpTokensForUser`
+- Create: `POST /api/agent/mcp-tokens` (browser `fetch`, cookies)
+- Revoke: `DELETE /api/agent/mcp-tokens/:id`
+
+Plaintext token lives only in React component state until dismissed; never in list payloads, URLs, or storage.
+
+### Slice E — MCP server `FLUX_MCP_TOKEN` ✅
+
+**Shipped.** MCP runtime prefers scoped tokens; legacy CLI sources work with stderr warning.
+
+- [x] `resolveMcpServerToken()` + `getMcpApiClient()` in `@flux/cli/api-client` (`mcp-auth.ts`)
+- [x] Resolution order: `FLUX_MCP_TOKEN` → `FLUX_API_TOKEN` → `~/.flux/config.json`
+- [x] `FLUX_MCP_TOKEN` must be valid `flx_mcp_…` (startup error if not)
+- [x] Legacy `FLUX_API_TOKEN` / config file → stderr warning (not stdout); no token in warning text
+- [x] `bootstrapMcpAuth()` in `packages/mcp/src/auth.ts` + `packages/mcp/src/index.ts`
+- [x] CLI `resolveFluxApiToken()` unchanged (CLI behavior preserved)
+- [x] Tests: `mcp-auth.test.ts`, `auth.test.ts`
+- [x] Docs: `packages/mcp/README.md`, `docs/AGENT_NATIVE_FLUX.md`
+- [x] **Not in Slice E:** formal `flx_live_` deprecation clock, per-tool MCP `server.ts` capability checks beyond Slice B route enforcement, startup `/auth/verify` network call
+
+#### Auth resolution (MCP process only)
+
+| Priority | Source | Behavior |
+|----------|--------|----------|
+| 1 | `FLUX_MCP_TOKEN` | Required `flx_mcp_…` format; fatal on invalid |
+| 2 | `FLUX_API_TOKEN` | Allowed; stderr legacy warning |
+| 3 | `~/.flux/config.json` | Allowed; stderr legacy warning |
+
+Warnings go to **stderr only** (stdout is the MCP stream).
 
 ### Slice F — Audit + redaction
 
@@ -490,13 +589,33 @@ Allowed routes map to capabilities via `classifyMcpCliRoute` in `mcp-route-auth.
 
 ## 16. Suggested first implementation prompt
 
-**Slices A and B are complete.** Use this when starting Slice C:
+**Slices A–E are complete.** Use this when starting Slice F:
 
-> **Flux MCP Phase 5 — Slice C: Dashboard MCP token CRUD**
+> **Flux MCP Phase 5 — Slice F: Audit + redaction**
 >
-> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice C/D). Implement session-authenticated `POST/GET /api/agent/mcp-tokens` and revoke, using existing crypto + validation helpers.
+> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice F). Add `flx_mcp_` to secret scan; ensure MCP audit/intent rows use keyPreview for MCP tokens.
+
+### Slice E prompt (completed)
+
+> **Flux MCP Phase 5 — Slice E: MCP server `FLUX_MCP_TOKEN`**
+>
+> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice E). Wire MCP runtime to prefer `FLUX_MCP_TOKEN` with legacy `FLUX_API_TOKEN` warnings.
+
+### Slice D prompt (completed)
+
+> **Flux MCP Phase 5 — Slice D: Dashboard MCP token UI**
+>
+> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice D). Build settings UI on top of Slice C API routes.
 >
 > No `FLUX_MCP_TOKEN` MCP env switch yet (Slice E).
+
+### Slice C prompt (completed)
+
+> **Flux MCP Phase 5 — Slice C: Dashboard MCP token CRUD API**
+>
+> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice C). Implement session-authenticated `POST/GET /api/agent/mcp-tokens` and revoke, using existing crypto + validation helpers.
+>
+> No `FLUX_MCP_TOKEN` MCP env switch yet (Slice E). No dashboard UI (Slice D).
 
 ### Slice B prompt (completed)
 

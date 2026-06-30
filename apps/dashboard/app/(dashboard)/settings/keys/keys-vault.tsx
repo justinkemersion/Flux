@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState, useTransition } from "react";
 import { createApiKeyAction } from "./actions";
 import { deleteApiKeyAction, revokeApiKeyAction } from "@/src/lib/actions";
@@ -109,7 +110,11 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
           never stored; only a SHA-256 hash is kept. Export{" "}
           <code className="font-mono text-zinc-400">FLUX_API_TOKEN</code> locally and point{" "}
           <code className="font-mono text-zinc-400">FLUX_API_BASE</code> at this app&apos;s origin +{" "}
-          <code className="font-mono text-zinc-400">/api</code>.
+          <code className="font-mono text-zinc-400">/api</code>. For scoped MCP server tokens, use{" "}
+          <Link href="/settings/mcp-tokens" className="text-zinc-400 underline-offset-2 hover:underline">
+            MCP Tokens
+          </Link>
+          .
         </p>
       </div>
 

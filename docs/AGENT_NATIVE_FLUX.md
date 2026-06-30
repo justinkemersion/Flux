@@ -79,7 +79,7 @@ Routes: `POST /api/cli/v1/intents`, `GET /api/cli/v1/intents/:id`.
 - Stable `429` + `Retry-After`; write/sensitive tiers fail closed if limiter storage is unavailable; read tier may fail open with a warning.
 - `POST /api/cli/v1/audit` uses a separate high allowance so audit logging cannot starve itself.
 
-**Still deferred to Phase 4 (pre-4):** scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools.
+**Still deferred to Phase 4 (pre-4):** streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools. (Scoped `flx_mcp_` tokens: Phase 5 — see below.)
 
 ### Phase 4: Controlled migration apply (`flux.migration.apply`)
 
@@ -107,7 +107,7 @@ inspect → plan → intent → ensure verified backup → preflight → apply
 
 **Audit gates:** `migration_apply_allowed`, `migration_apply_blocked_no_backup`, `migration_apply_blocked_stale_plan`, `migration_apply_blocked_destructive_requires_allow`, `migration_apply_failed`.
 
-**Still deferred beyond Phase 4:** arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI.
+**Still deferred beyond Phase 4:** arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), streamable HTTP, dashboard approval UI. (Scoped `flx_mcp_` tokens: Phase 5.)
 
 **Operator response to partial apply:** Inspect `failedFile`; treat `appliedFiles` as ledgered history (do not edit the ledger). Fix forward with a new migration or resolve the push error, then `flux.migration.plan` → `flux.migration.apply`.
 
@@ -171,4 +171,24 @@ Phase 3C ensures **`flux.backup.list`** and **`flux.backup.ensureVerified`** nev
 
 ### Still deferred beyond Phase 4
 
-Arbitrary write SQL, scoped `flx_mcp_` tokens, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.
+Arbitrary write SQL, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.
+
+### Phase 5: Scoped MCP tokens (`flx_mcp_`)
+
+Status: in progress (Slices A–D complete).
+
+Scoped MCP tokens limit the Flux MCP server to explicit projects, capabilities, and expiry. They are distinct from broad CLI keys (`flx_live_`).
+
+**Slice A (complete):** `flux_mcp_tokens` schema, `flx_mcp_` crypto, capability/expiry helpers.
+
+**Slice B (complete):** `authenticateMcpToken`, route allowlist, capability/project enforcement on `/api/cli/v1/*`.
+
+**Slice C (complete):** Session API routes — `POST/GET /api/agent/mcp-tokens`, `DELETE /api/agent/mcp-tokens/:id`.
+
+**Slice D (complete):** Dashboard UI at `/settings/mcp-tokens` — list, create, revoke, one-time plaintext display. Cross-link from API Keys settings. MCP runtime still uses `FLUX_API_TOKEN` only.
+
+**Slice E (complete):** MCP server prefers `FLUX_MCP_TOKEN` → `FLUX_API_TOKEN` → `~/.flux/config.json`. Legacy sources emit stderr warning (not stdout). Invalid `FLUX_MCP_TOKEN` fails at startup. CLI `resolveFluxApiToken()` unchanged.
+
+**Still in Phase 5:** audit/redaction hardening (F), docs/deprecation clock (G).
+
+See `plans/mcp/phase-5-scoped-mcp-tokens.md`.
