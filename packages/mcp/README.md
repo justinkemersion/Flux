@@ -148,7 +148,23 @@ Every tool returns:
 
 ## Authentication
 
-Same as the `flux` CLI: `FLUX_API_TOKEN` or `~/.flux/config.json` from `flux login`. Optional `FLUX_API_BASE` for non-default control planes.
+MCP resolves tokens in this order:
+
+1. **`FLUX_MCP_TOKEN`** (recommended) — scoped `flx_mcp_` token from Dashboard → [Settings → MCP tokens](/settings/mcp-tokens)
+2. **`FLUX_API_TOKEN`** (legacy fallback) — broad `flx_live_` CLI key; stderr warns to migrate
+3. **`~/.flux/config.json`** — from `flux login`; stderr warns to migrate
+
+Optional `FLUX_API_BASE` for non-default control planes.
+
+### Capability presets (create tokens in the dashboard)
+
+| Use case | Suggested capabilities |
+|----------|------------------------|
+| Read-only agent | `project:read`, `schema:read`, `activity:read`, `intent:read` |
+| Migration planner | above + `migration:plan`, `backup:read` |
+| Controlled migration applier | planner set + `migration:apply`, `backup:ensure_verified` (shorter expiry) |
+
+`FLUX_MCP_TOKEN` must be a valid `flx_mcp_…` token. Invalid values fail at MCP startup with a clear error.
 
 ## Run it locally
 
@@ -181,6 +197,24 @@ Steps 1–3 (plan, ensure verified backup, preflight) run without the apply ackn
 
 ## Register in Cursor
 
+**Preferred (scoped MCP token):**
+
+```json
+{
+  "mcpServers": {
+    "flux": {
+      "command": "node",
+      "args": ["/absolute/path/to/flux/packages/mcp/dist/index.cjs"],
+      "env": { "FLUX_MCP_TOKEN": "flx_mcp_..." }
+    }
+  }
+}
+```
+
+Create the token at `/settings/mcp-tokens` on your Flux dashboard. Plaintext is shown once at creation.
+
+**Legacy (broad CLI key — temporary):**
+
 ```json
 {
   "mcpServers": {
@@ -193,6 +227,8 @@ Steps 1–3 (plan, ensure verified backup, preflight) run without the apply ackn
 }
 ```
 
+The MCP server logs a stderr warning when using `FLUX_API_TOKEN` or `~/.flux/config.json` instead of `FLUX_MCP_TOKEN`.
+
 ## Still deferred beyond Phase 4
 
-Arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI.
+Arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), streamable HTTP, dashboard approval UI. Scoped `flx_mcp_` tokens: Phase 5 (see `plans/mcp/phase-5-scoped-mcp-tokens.md`).

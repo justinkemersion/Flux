@@ -9,6 +9,7 @@ import type {
   ImportSqlFileResult,
 } from "@flux/core/standalone";
 import { resolveFluxApiToken } from "../config";
+import { resolveMcpServerToken } from "./mcp-auth";
 import { HOSTED_FLUX_PUBLIC_API_BASE } from "../utils/env-file";
 import * as backups from "./backups";
 import * as dbAccess from "./db-access";
@@ -68,16 +69,22 @@ function notImplemented(baseUrl: string, method: string): Error {
 /**
  * Base URL: hosted default (`HOSTED_FLUX_PUBLIC_API_BASE`), `process.env.FLUX_API_BASE`, inferred from `FLUX_URL` when it is a `*.vsl-base.com` tenant Service URL, or project `.env` / `.env.local` (shell wins).
  * Auth: `Authorization: Bearer` from `FLUX_API_TOKEN` or `~/.flux/config.json` (from `flux login`).
+ * MCP servers should use {@link getMcpApiClient} (`FLUX_MCP_TOKEN` → `FLUX_API_TOKEN` → config).
  */
 export class ApiClient {
   readonly baseUrl: string;
+  private readonly resolveToken: () => string | undefined;
 
-  constructor(baseUrl: string = resolveApiBase()) {
+  constructor(
+    baseUrl: string = resolveApiBase(),
+    options?: { resolveToken?: () => string | undefined },
+  ) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.resolveToken = options?.resolveToken ?? resolveFluxApiToken;
   }
 
   private tokenOrThrow(): string {
-    const t = resolveFluxApiToken();
+    const t = this.resolveToken();
     if (!t) {
       throw new Error(
         "Not authenticated. Set FLUX_API_TOKEN or run `flux login`.",
@@ -96,7 +103,7 @@ export class ApiClient {
   /** Prepare headers for `fetch` once control-plane methods are implemented. */
   authHeaders(): Headers {
     const h = new Headers();
-    const t = resolveFluxApiToken();
+    const t = this.resolveToken();
     if (t) h.set("Authorization", `Bearer ${t}`);
     return h;
   }
@@ -470,7 +477,15 @@ export class ApiClient {
 }
 
 let singleton: ApiClient | undefined;
+let mcpSingleton: ApiClient | undefined;
 
 export function getApiClient(): ApiClient {
   return (singleton ??= new ApiClient());
+}
+
+/** MCP server client — prefers `FLUX_MCP_TOKEN` over CLI token sources. */
+export function getMcpApiClient(): ApiClient {
+  return (mcpSingleton ??= new ApiClient(undefined, {
+    resolveToken: () => resolveMcpServerToken().token,
+  }));
 }

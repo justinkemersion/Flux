@@ -1,18 +1,17 @@
 /**
  * Control-plane client wiring for the Flux MCP server.
  *
- * Reuses the exact same `ApiClient` and auth/config resolution as the `flux`
- * CLI (`FLUX_API_TOKEN` env, then `~/.flux/config.json`). No HTTP logic is
- * duplicated here.
+ * Reuses the exact same `ApiClient` as the `flux` CLI with MCP-specific auth:
+ * `FLUX_MCP_TOKEN` → `FLUX_API_TOKEN` → `~/.flux/config.json`.
  */
 
-import { getApiClient, resolveFluxApiToken } from "@flux/cli/api-client";
+import { getMcpApiClient, resolveMcpServerToken } from "@flux/cli/api-client";
 import type { FluxToolClient } from "./tools";
 
 export function getFluxToolClient(): FluxToolClient {
-  return getApiClient();
+  return getMcpApiClient();
 }
 
 export function isAuthenticated(): boolean {
-  return Boolean(resolveFluxApiToken());
+  return Boolean(resolveMcpServerToken().token);
 }

@@ -81,7 +81,7 @@ async function runProtectiveMutationTool(
         "Persistent MCP audit/intent persistence is unavailable; protective mutation tools are blocked.",
         {
           remediation:
-            "Ensure the MCP server is connected to a control plane with audit and intent APIs, and FLUX_API_TOKEN is set.",
+            "Ensure the MCP server is connected to a control plane with audit and intent APIs, and FLUX_MCP_TOKEN (or legacy FLUX_API_TOKEN) is set.",
         },
       ),
       errorCode: "upstream_error",
@@ -180,7 +180,7 @@ async function runWriteMutationTool(
         "Persistent MCP audit/intent persistence is unavailable; write tools are blocked.",
         {
           remediation:
-            "Ensure the MCP server is connected to a control plane with audit and intent APIs, and FLUX_API_TOKEN is set.",
+            "Ensure the MCP server is connected to a control plane with audit and intent APIs, and FLUX_MCP_TOKEN (or legacy FLUX_API_TOKEN) is set.",
         },
       ),
       gate: "migration_apply_failed",

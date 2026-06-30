@@ -6,8 +6,20 @@
  * resolution as the `flux` CLI without duplicating HTTP logic.
  */
 
-export { ApiClient, getApiClient } from "./client";
+export { ApiClient, getApiClient, getMcpApiClient } from "./client";
 export { resolveFluxApiToken } from "../config";
+export {
+  assertValidMcpEnvToken,
+  detectTokenFamily,
+  isMcpTokenLike,
+  isValidMcpTokenFormat,
+  legacyMcpTokenWarningForSource,
+  LEGACY_MCP_TOKEN_WARNING,
+  NO_MCP_TOKEN_WARNING,
+  resolveMcpServerToken,
+  warningContainsTokenValue,
+} from "./mcp-auth";
+export type { McpTokenSource, ResolvedMcpServerToken, TokenFamily } from "./mcp-auth";
 
 export type { ApiClientContext } from "./context";
 export type { TemporaryDbCredential } from "./db-access";
