@@ -146,25 +146,54 @@ Every tool returns:
 { "ok": true, "summary": "human readable", "data": { }, "remediation": "optional next step" }
 ```
 
-## Authentication
+## Authentication (Phase 5 — scoped `flx_mcp_` tokens)
 
-MCP resolves tokens in this order:
+The MCP server authenticates to the Flux control plane with a **scoped MCP token** (`flx_mcp_…`). Create tokens at **[Settings → MCP tokens](/settings/mcp-tokens)** on your dashboard (`/settings/mcp-tokens`).
 
-1. **`FLUX_MCP_TOKEN`** (recommended) — scoped `flx_mcp_` token from Dashboard → [Settings → MCP tokens](/settings/mcp-tokens)
-2. **`FLUX_API_TOKEN`** (legacy fallback) — broad `flx_live_` CLI key; stderr warns to migrate
-3. **`~/.flux/config.json`** — from `flux login`; stderr warns to migrate
+### Resolution order
+
+| Priority | Env var | Notes |
+|----------|---------|--------|
+| 1 | **`FLUX_MCP_TOKEN`** | **Recommended.** Scoped `flx_mcp_` token from `/settings/mcp-tokens`. |
+| 2 | `FLUX_API_TOKEN` | **Legacy for MCP.** Broad `flx_live_` CLI key — stderr warns on startup; still supported temporarily. |
+| 3 | `~/.flux/config.json` | From `flux login` — same legacy warning as `FLUX_API_TOKEN`. |
 
 Optional `FLUX_API_BASE` for non-default control planes.
 
-### Capability presets (create tokens in the dashboard)
-
-| Use case | Suggested capabilities |
-|----------|------------------------|
-| Read-only agent | `project:read`, `schema:read`, `activity:read`, `intent:read` |
-| Migration planner | above + `migration:plan`, `backup:read` |
-| Controlled migration applier | planner set + `migration:apply`, `backup:ensure_verified` (shorter expiry) |
-
 `FLUX_MCP_TOKEN` must be a valid `flx_mcp_…` token. Invalid values fail at MCP startup with a clear error.
+
+### Token scoping
+
+Each MCP token is limited to:
+
+- **Projects** — only selected project UUIDs (enforced on control-plane routes).
+- **Capabilities** — explicit allowlist (e.g. `schema:read`, `migration:plan`). MCP also preflight-checks capabilities locally when using `FLUX_MCP_TOKEN` (Slice F).
+- **Expiry** — read-only tokens default to 30 days (max 90); mutation-capable tokens default to 7 days (max 30).
+
+**Plaintext is shown once** at creation in the dashboard. Only a hash and safe `keyPreview` (`flx_mcp_abcd…0123`) are stored. Export the token immediately as `FLUX_MCP_TOKEN` in your MCP client config.
+
+### Capability presets
+
+Create tokens in the dashboard with these capability sets (adjust projects and expiry to your workflow):
+
+| Preset | Capabilities | Typical tools |
+|--------|----------------|---------------|
+| **Read-only observer** | `project:read`, `schema:read`, `backup:read`, `intent:read`, `activity:read` | `flux.project.list`, `flux.schema.inspect`, `flux.backup.list`, `flux.activity` |
+| **Schema inspector** | Same as read-only observer | `flux.schema.inspect`, `flux.schema.counts`, `flux.migrations.list` |
+| **Migration planner** | Observer + `migration:plan` | `flux.migration.plan` (never applies) |
+| **Read-only data inspector** | Observer + `query:readonly` | `flux.query.readonly`, `flux.credentials.temporary` (readonly) |
+| **Controlled migration applier** | Planner + `backup:ensure_verified`, `migration:apply` | Full Phase 4 flow: plan → ensure backup → preflight → apply |
+
+Mutation-capable presets (`migration:apply`, `backup:ensure_verified`) should use **shorter expiry**.
+
+### Legacy `FLUX_API_TOKEN` deprecation (MCP only)
+
+- **`FLUX_API_TOKEN` remains supported temporarily** for MCP — existing Cursor configs keep working.
+- **Scoped `FLUX_MCP_TOKEN` is the recommended default** for all new MCP setups.
+- **Status:** `legacyCliTokenForMcp: supported_with_warning` — no hard removal date yet.
+- A **formal deprecation countdown** starts only after: hosted token UI deployed, docs published, Cursor examples shipped, **and** at least one release cycle has passed. Until then, legacy configs continue to work with a stderr warning only.
+
+The Flux **CLI** still uses `FLUX_API_TOKEN` / `flx_live_` keys normally — this deprecation applies to **MCP client config only**.
 
 ### Phase 5 Slice F — redaction, audit identity, capability guard
 
@@ -175,7 +204,63 @@ When using `FLUX_MCP_TOKEN`:
 - **Redaction:** full/partial `flx_mcp_…` strings and `Authorization: Bearer flx_mcp_…` are scrubbed from stderr audit lines, persisted audit/intent payloads, and dashboard sanitized views. Safe `keyPreview` fragments (`flx_mcp_abcd…0123`) are allowed.
 - **Audit/intent enrichment:** MCP-authenticated rows store `authFamily: "mcp"`, `keyType: "mcp"`, `keyPreview`, and `embeddedKeyId` in metadata — never plaintext token or hash.
 
-Formal `flx_live_` deprecation clock remains deferred to Slice G.
+## Register in Cursor
+
+### Preferred — scoped MCP token (production build)
+
+```json
+{
+  "mcpServers": {
+    "flux": {
+      "command": "node",
+      "args": ["/path/to/flux/packages/mcp/dist/index.cjs"],
+      "env": {
+        "FLUX_MCP_TOKEN": "flx_mcp_..."
+      }
+    }
+  }
+}
+```
+
+Create the token at `/settings/mcp-tokens`. Replace `/path/to/flux` with your checkout path. Run `pnpm --filter @flux/mcp build` first if `dist/` is missing.
+
+### Development — no-build alternative
+
+```json
+{
+  "mcpServers": {
+    "flux": {
+      "command": "pnpm",
+      "args": ["--filter", "@flux/mcp", "start"],
+      "env": {
+        "FLUX_MCP_TOKEN": "flx_mcp_..."
+      }
+    }
+  }
+}
+```
+
+Run from the Flux monorepo root so `pnpm --filter @flux/mcp start` resolves.
+
+### Legacy fallback — temporary, discouraged
+
+Broad CLI keys grant full control-plane power. Use only while migrating existing MCP configs:
+
+```json
+{
+  "mcpServers": {
+    "flux": {
+      "command": "node",
+      "args": ["/path/to/flux/packages/mcp/dist/index.cjs"],
+      "env": {
+        "FLUX_API_TOKEN": "flx_live_..."
+      }
+    }
+  }
+}
+```
+
+The MCP server logs a **stderr warning** on startup when using `FLUX_API_TOKEN` or `~/.flux/config.json` instead of `FLUX_MCP_TOKEN`. Warnings never include token values.
 
 ## Run it locally
 
@@ -206,40 +291,6 @@ pnpm --filter @flux/mcp exec tsx scripts/phase4-smoke.ts \
 
 Steps 1–3 (plan, ensure verified backup, preflight) run without the apply acknowledgement; apply and stale-plan check refuse without it. Non-fixture slugs never run silently.
 
-## Register in Cursor
+## Still deferred beyond Phase 5
 
-**Preferred (scoped MCP token):**
-
-```json
-{
-  "mcpServers": {
-    "flux": {
-      "command": "node",
-      "args": ["/absolute/path/to/flux/packages/mcp/dist/index.cjs"],
-      "env": { "FLUX_MCP_TOKEN": "flx_mcp_..." }
-    }
-  }
-}
-```
-
-Create the token at `/settings/mcp-tokens` on your Flux dashboard. Plaintext is shown once at creation.
-
-**Legacy (broad CLI key — temporary):**
-
-```json
-{
-  "mcpServers": {
-    "flux": {
-      "command": "node",
-      "args": ["/absolute/path/to/flux/packages/mcp/dist/index.cjs"],
-      "env": { "FLUX_API_TOKEN": "flx_live_..." }
-    }
-  }
-}
-```
-
-The MCP server logs a stderr warning when using `FLUX_API_TOKEN` or `~/.flux/config.json` instead of `FLUX_MCP_TOKEN`.
-
-## Still deferred beyond Phase 4
-
-Arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), streamable HTTP, dashboard approval UI. Scoped `flx_mcp_` tokens: Phase 5 (see `plans/mcp/phase-5-scoped-mcp-tokens.md`).
+Arbitrary write SQL, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), streamable HTTP, dashboard approval UI. Optional post–Phase 5: token rotate endpoint, Agent Activity token-name join, formal `FLUX_API_TOKEN`-for-MCP removal date.

@@ -15,6 +15,21 @@ import type {
 
 export const MCP_TOKENS_PAGE_PATH = "/settings/mcp-tokens";
 
+export const MCP_TOKENS_PAGE_INTRO =
+  "Scoped tokens for the Flux MCP server — limited to selected projects, capabilities, and expiry. Set the plaintext token as FLUX_MCP_TOKEN in your MCP client (for example Cursor). Plaintext is shown once at creation; only a hash is stored server-side.";
+
+export const MCP_TOKENS_PAGE_LEGACY_NOTE =
+  "Do not use broad API keys (flx_live_) for MCP unless necessary. FLUX_API_TOKEN remains a temporary legacy fallback for MCP with a stderr warning; scoped FLUX_MCP_TOKEN is the recommended default.";
+
+export const MCP_TOKENS_PAGE_CLI_NOTE =
+  "CLI automation continues to use API Keys (flx_live_). MCP tokens cannot replace the Flux CLI.";
+
+export const MCP_TOKEN_PLAINTEXT_ONCE_BANNER =
+  "This token is shown once. Store it now.";
+
+export const MCP_TOKEN_FLUX_MCP_ENV_HINT =
+  "Export as FLUX_MCP_TOKEN in your MCP client config (for example Cursor mcpServers.flux.env). This string is not stored in the dashboard.";
+
 export const MCP_TOKEN_API = {
   list: "/api/agent/mcp-tokens",
   create: "/api/agent/mcp-tokens",

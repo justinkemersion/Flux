@@ -58,7 +58,7 @@ test("bootstrapMcpAuth writes legacy warning to stderr only", () => {
   );
   assert.equal(stdout.length, 0);
   assert.equal(stderr.length, 1);
-  assert.match(stderr[0]!, /Prefer scoped FLUX_MCP_TOKEN/);
+  assert.match(stderr[0]!, /FLUX_MCP_TOKEN is the recommended default/);
   assert.equal(stderr[0]!.includes(VALID_CLI), false);
 });
 

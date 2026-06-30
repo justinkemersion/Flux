@@ -22,8 +22,14 @@ export {
   stringContainsMcpTokenMaterial,
 } from "./mcp-auth";
 export type { McpTokenSource, ResolvedMcpServerToken, TokenFamily } from "./mcp-auth";
-export { MCP_CAPABILITIES } from "./mcp-capabilities";
+export { MCP_CAPABILITIES, MCP_CAPABILITY_PRESETS } from "./mcp-capabilities";
 export type { McpCapability } from "./mcp-capabilities";
+export {
+  buildMcpLegacyCliTokenWarning,
+  legacyMcpWarningImpliesImmediateRemoval,
+  MCP_LEGACY_CLI_TOKEN_DEPRECATION_PREREQUISITES,
+  MCP_LEGACY_CLI_TOKEN_FOR_MCP_STATUS,
+} from "./mcp-deprecation";
 export {
   isCliVerifyResult,
   isMcpVerifyResult,

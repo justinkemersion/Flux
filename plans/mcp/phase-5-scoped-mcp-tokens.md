@@ -1,6 +1,6 @@
 # Flux MCP Phase 5 — Scoped MCP Tokens (`flx_mcp_`)
 
-**Status:** Slice B complete (server auth + route enforcement) — MCP runtime still on `FLUX_API_TOKEN`  
+**Status:** Phase 5 complete (Slices A–G) — scoped MCP tokens are the recommended default; `FLUX_API_TOKEN` for MCP remains `supported_with_warning`.  
 **Precedes:** Streamable HTTP transport, new mutation MCP tools, org/team RBAC  
 **Builds on:** Phase 4 (`flux.migration.apply`), Phase 4B (intent visibility, Agent Activity, fixture smoke discipline)
 
@@ -581,10 +581,19 @@ Warnings go to **stderr only** (stdout is the MCP stream).
 
 ### Slice G — Docs + rollout
 
-- [ ] README, AGENT_NATIVE_FLUX, env-vars, fixture doc note
-- [ ] Deprecation notice for broad CLI keys in MCP config
+- [x] `packages/mcp/README.md` — `FLUX_MCP_TOKEN` default, capability presets, Cursor examples (prod + `pnpm start`), legacy deprecation notice
+- [x] `docs/AGENT_NATIVE_FLUX.md`, `docs/pages/reference/env-vars.md` (`FLUX_MCP_TOKEN`)
+- [x] Dashboard `/settings/mcp-tokens` copy — `FLUX_MCP_TOKEN`, once-only plaintext, avoid broad API keys, shorter mutation expiry
+- [x] `legacyCliTokenForMcp: supported_with_warning` in `@flux/cli/api-client` (`mcp-deprecation.ts`)
+- [x] Tests: docs/examples secret scan, legacy warning does not imply immediate removal, dashboard copy mentions `FLUX_MCP_TOKEN`
+- [x] **Not in Slice G:** remove `FLUX_API_TOKEN` support, hard removal date, streamable HTTP, token rotate endpoint
 
-**Post-Phase 5 (optional Slice H):** token rotate endpoint; Agent Activity join to show token name.
+**Phase 5 complete.** Optional future work (Slice H+):
+
+- Token rotate endpoint
+- Agent Activity join to show MCP token name
+- Streamable HTTP transport
+- Formal `FLUX_API_TOKEN`-for-MCP removal date (after deprecation countdown)
 
 **After each slice:** `pnpm check:architecture`, `pnpm typecheck`, `pnpm test`.
 
@@ -592,11 +601,13 @@ Warnings go to **stderr only** (stdout is the MCP stream).
 
 ## 16. Suggested first implementation prompt
 
-**Slices A–F are complete.** Use this when starting Slice G:
+**Phase 5 is complete.** Optional follow-ups: token rotate, Agent Activity token-name join, streamable HTTP, formal legacy MCP token removal date.
+
+### Slice G prompt (completed)
 
 > **Flux MCP Phase 5 — Slice G: Docs + rollout**
 >
-> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice G). Update env-var docs and start the formal `flx_live_` deprecation notice for MCP config.
+> Read `plans/mcp/phase-5-scoped-mcp-tokens.md` (Slice G). Update env-var docs, Cursor examples, capability presets, dashboard copy, and start the non-breaking `flx_live_` deprecation notice for MCP config.
 
 ### Slice F prompt (completed)
 

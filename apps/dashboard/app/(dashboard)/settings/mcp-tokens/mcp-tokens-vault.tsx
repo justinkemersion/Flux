@@ -7,6 +7,11 @@ import type { SafeMcpTokenRecord } from "@/src/lib/mcp-token-sanitize";
 import type { McpTokenProjectOption } from "@/src/components/mcp-tokens/mcp-tokens-types";
 import {
   MCP_TOKEN_API,
+  MCP_TOKEN_FLUX_MCP_ENV_HINT,
+  MCP_TOKEN_PLAINTEXT_ONCE_BANNER,
+  MCP_TOKENS_PAGE_CLI_NOTE,
+  MCP_TOKENS_PAGE_INTRO,
+  MCP_TOKENS_PAGE_LEGACY_NOTE,
   MUTATION_CAPABILITY_WARNING,
   applyCreateTokenToList,
   applyRevokeToTokenList,
@@ -176,19 +181,17 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">MCP Tokens</h1>
         <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
-          Scoped tokens for the Flux MCP server — limited to selected projects, capabilities, and
-          expiry. Plaintext is shown once at creation; only a hash is stored. The MCP server still
-          uses <code className="font-mono text-zinc-400">FLUX_API_TOKEN</code> today;{" "}
-          <code className="font-mono text-zinc-400">FLUX_MCP_TOKEN</code> support ships in the next
-          slice.
+          {MCP_TOKENS_PAGE_INTRO}
         </p>
         <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600">
-          CLI automation continues to use{" "}
+          {MCP_TOKENS_PAGE_LEGACY_NOTE}
+        </p>
+        <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600">
+          {MCP_TOKENS_PAGE_CLI_NOTE}{" "}
           <Link href="/settings/keys" className="text-zinc-400 underline-offset-2 hover:underline">
             API Keys
-          </Link>{" "}
-          (<code className="font-mono text-zinc-500">flx_live_</code>). MCP tokens cannot replace
-          the Flux CLI.
+          </Link>
+          .
         </p>
       </div>
 
@@ -310,7 +313,7 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
         >
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-medium text-amber-200/90">
-              This token is shown once. Store it now.
+              {MCP_TOKEN_PLAINTEXT_ONCE_BANNER}
             </span>
             <button
               type="button"
@@ -326,8 +329,7 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
             {plaintext}
           </pre>
           <p className="mt-2 text-xs text-amber-200/70">
-            Export as <code className="font-mono">FLUX_MCP_TOKEN</code> when MCP runtime support
-            lands. This string is not stored in the dashboard.
+            {MCP_TOKEN_FLUX_MCP_ENV_HINT}
           </p>
           <button
             type="button"

@@ -4,6 +4,7 @@
  */
 
 import { loadConfig } from "../config";
+import { buildMcpLegacyCliTokenWarning } from "./mcp-deprecation";
 
 export const FLUX_MCP_KEY_PREFIX = "flx_mcp" as const;
 export const FLUX_CLI_KEY_PREFIX = "flx_live" as const;
@@ -91,8 +92,7 @@ export function assertValidMcpEnvToken(resolved: ResolvedMcpServerToken): void {
   }
 }
 
-export const LEGACY_MCP_TOKEN_WARNING =
-  "[flux-mcp] warning: using a broad CLI token for MCP. Prefer scoped FLUX_MCP_TOKEN (create at /settings/mcp-tokens). FLUX_API_TOKEN remains supported temporarily.\n";
+export const LEGACY_MCP_TOKEN_WARNING = buildMcpLegacyCliTokenWarning();
 
 export const NO_MCP_TOKEN_WARNING =
   "[flux-mcp] warning: no API token found. Set FLUX_MCP_TOKEN (recommended) or FLUX_API_TOKEN, or run `flux login`.\n";

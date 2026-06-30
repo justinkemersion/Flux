@@ -2,6 +2,8 @@
 
 Phase 4+ MCP mutation smoke (`flux.migration.apply`) must target a **dedicated fixture project**, not production or demo application projects.
 
+**Auth (Phase 5):** create a scoped token at `/settings/mcp-tokens` and set `FLUX_MCP_TOKEN` in your MCP client. `FLUX_API_TOKEN` remains a temporary legacy fallback with stderr warning.
+
 ## Requirements
 
 | Field | Expectation |

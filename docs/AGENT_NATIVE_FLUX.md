@@ -10,7 +10,7 @@ This file records the agent-native milestones. Deeper strategy and roadmap live 
 
 Status: complete.
 
-The `@flux/mcp` package ships a thin, additive [Model Context Protocol](https://modelcontextprotocol.io) server (stdio) over the existing CLI control-plane API. It reuses the same `ApiClient` and auth/config as the `flux` CLI (`FLUX_API_TOKEN` → `~/.flux/config.json`) via the new additive `@flux/cli/api-client` export subpath. No new control-plane routes, no new data-plane paths, and no changes to v1/v2 runtime, gateway routing, provisioning, backup internals, or PostgREST.
+The `@flux/mcp` package ships a thin, additive [Model Context Protocol](https://modelcontextprotocol.io) server (stdio) over the existing CLI control-plane API. It reuses the same `ApiClient` and auth/config as the `flux` CLI via `@flux/cli/api-client`. MCP prefers **`FLUX_MCP_TOKEN`** (scoped `flx_mcp_` tokens); **`FLUX_API_TOKEN`** remains a temporary legacy fallback with stderr warning. No new control-plane routes, no new data-plane paths, and no changes to v1/v2 runtime, gateway routing, provisioning, backup internals, or PostgREST.
 
 Scope is deliberately **read + preflight only** — agents can observe and reason about a project, and ask whether a destructive action *would* be allowed, but cannot mutate anything. The non-mutation guarantee is enforced in code by the policy guard in `packages/mcp/src/policy.ts` (named `assertNonMutatingTools` as of Pass 2), which fails fast if a `write`/`destructive` tool is ever registered.
 
@@ -173,9 +173,9 @@ Phase 3C ensures **`flux.backup.list`** and **`flux.backup.ensureVerified`** nev
 
 Arbitrary write SQL, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.
 
-### Phase 5: Scoped MCP tokens (`flx_mcp_`)
+### Phase 5: Scoped MCP tokens (`flx_mcp_`) — complete
 
-Status: in progress (Slices A–F complete; Slice G rollout pending).
+Status: **complete** (Slices A–G). Optional future work: token rotate endpoint, Agent Activity token-name join, streamable HTTP, formal `FLUX_API_TOKEN`-for-MCP removal date.
 
 Scoped MCP tokens limit the Flux MCP server to explicit projects, capabilities, and expiry. They are distinct from broad CLI keys (`flx_live_`).
 
@@ -191,6 +191,6 @@ Scoped MCP tokens limit the Flux MCP server to explicit projects, capabilities, 
 
 **Slice F (complete):** `flx_mcp_` secret detection and redaction across stderr audit, persisted audit/intent payloads, and dashboard sanitized views. MCP audit/intent rows record `keyPreview` / `keyType: "mcp"` without plaintext token or hash. MCP-side capability preflight denies tools missing required capabilities when using `FLUX_MCP_TOKEN` (legacy `FLUX_API_TOKEN` unchanged with warning).
 
-**Still in Phase 5:** formal docs rollout and `flx_live_` deprecation clock (Slice G).
+**Slice G (complete):** Rollout docs (`packages/mcp/README.md`, env-vars), Cursor config examples (production + `pnpm start`), capability presets, dashboard copy for `FLUX_MCP_TOKEN`, and non-breaking legacy deprecation notice (`legacyCliTokenForMcp: supported_with_warning`). Formal removal countdown starts only after hosted UI, published docs, Cursor examples, and one release cycle — no hard date yet.
 
-See `plans/mcp/phase-5-scoped-mcp-tokens.md`.
+See `plans/mcp/phase-5-scoped-mcp-tokens.md` and `packages/mcp/README.md` for Cursor setup.

@@ -4,6 +4,9 @@ import { generateMcpToken } from "./mcp-token-auth.ts";
 import type { SafeMcpTokenRecord } from "./mcp-token-sanitize.ts";
 import {
   MCP_TOKEN_API,
+  MCP_TOKEN_FLUX_MCP_ENV_HINT,
+  MCP_TOKENS_PAGE_INTRO,
+  MCP_TOKENS_PAGE_LEGACY_NOTE,
   MCP_TOKENS_PAGE_PATH,
   applyCreateTokenToList,
   applyRevokeToTokenList,
@@ -169,4 +172,14 @@ test("no token leakage in rendered list/detail output", () => {
   };
   assert.equal(mcpTokenDisplayContainsSecret(bad), true);
   assert.equal(mcpTokenDisplayContainsSecret({ tokens: [sampleToken()] }), false);
+});
+
+test("dashboard copy mentions FLUX_MCP_TOKEN and once-only plaintext", () => {
+  assert.match(MCP_TOKENS_PAGE_INTRO, /FLUX_MCP_TOKEN/);
+  assert.match(MCP_TOKENS_PAGE_INTRO, /shown once/i);
+  assert.match(MCP_TOKENS_PAGE_LEGACY_NOTE, /FLUX_MCP_TOKEN/);
+  assert.match(MCP_TOKENS_PAGE_LEGACY_NOTE, /FLUX_API_TOKEN/);
+  assert.match(MCP_TOKENS_PAGE_LEGACY_NOTE, /temporary/i);
+  assert.match(MCP_TOKEN_FLUX_MCP_ENV_HINT, /FLUX_MCP_TOKEN/);
+  assert.match(MCP_TOKEN_FLUX_MCP_ENV_HINT, /not stored/i);
 });

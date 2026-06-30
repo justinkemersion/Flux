@@ -125,6 +125,17 @@ Your **personal API token** for the control plane, generated in *Settings → AP
 - **Type:** opaque string, conventionally prefixed `flx_live_` or `flx_test_`.
 - **Where it's set:** shell export or `.env`/`.env.local`.
 - **Sensitive:** Yes — anyone with this token can act as you against the control plane (create projects, push SQL, read project credentials). Rotate via the dashboard if leaked.
+- **MCP:** `FLUX_API_TOKEN` remains a **temporary legacy fallback** for the Flux MCP server. Prefer **`FLUX_MCP_TOKEN`** (scoped token from *Settings → MCP tokens*). See [`packages/mcp/README.md`](../../../packages/mcp/README.md).
+
+### `FLUX_MCP_TOKEN`
+
+Scoped token for the **Flux MCP server** (`@flux/mcp`) — Cursor, Claude Code, Codex, etc. Create in *Settings → MCP tokens* (`/settings/mcp-tokens`).
+
+- **Type:** `flx_mcp_<keyId>_<secret>_<checksum>` — plaintext shown **once** at creation.
+- **Where it's set:** MCP client config only (e.g. Cursor `mcpServers.flux.env`). Not loaded from `flux.json` or CLI dotenv.
+- **Sensitive:** Yes — scoped to selected projects and capabilities, but still grants agent access to those surfaces. Revoke via the dashboard if leaked.
+- **Scopes:** project allowlist, capability allowlist, expiry (shorter default when `migration:apply` or `backup:ensure_verified` is included).
+- **Legacy:** `FLUX_API_TOKEN` still works for MCP with a stderr warning until a formal removal date is announced (no hard date yet).
 
 ### `FLUX_DEFAULT_MODE`
 
@@ -224,7 +235,8 @@ Alphabetical, so you can `Ctrl+F` from another page.
 | `AUTH_SECRET` | [Auth wiring](#2-auth-wiring-authjs-clerk) | Auth.js session signing key (alias `NEXTAUTH_SECRET`). |
 | `AUTH_URL` | [Auth wiring](#2-auth-wiring-authjs-clerk) | Auth.js callback origin (alias `NEXTAUTH_URL`). |
 | `FLUX_API_BASE` | [CLI](#3-driving-the-cli) | Control plane dashboard API origin + `/api`. |
-| `FLUX_API_TOKEN` | [CLI](#3-driving-the-cli) | Personal API token for the CLI. |
+| `FLUX_API_TOKEN` | [CLI](#3-driving-the-cli) | Personal API token for the CLI (legacy fallback for MCP). |
+| `FLUX_MCP_TOKEN` | [CLI](#3-driving-the-cli) | Scoped MCP server token (`flx_mcp_…`). |
 | `FLUX_BEARER_TOKEN` | [Wiring your app](#1-wiring-your-app-to-a-flux-project) | Pre-minted JWT for scripts/CI that don't sign at request time. |
 | `FLUX_DASHBOARD_BASE` | [CLI](#3-driving-the-cli) | Override for dashboard web origin (rarely needed). |
 | `FLUX_DEBUG` | [CLI](#3-driving-the-cli) | Verbose CLI logging. |

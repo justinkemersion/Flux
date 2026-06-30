@@ -123,6 +123,8 @@ test("legacy sources produce stderr warning without token value", () => {
   assert.equal(warning, LEGACY_MCP_TOKEN_WARNING);
   assert.equal(warningContainsTokenValue(warning!, VALID_CLI), false);
   assert.match(warning!, /\/settings\/mcp-tokens/);
+  assert.match(warning!, /remains supported temporarily/i);
+  assert.match(warning!, /no hard removal date/i);
   assert.equal(legacyMcpTokenWarningForSource("config_file"), LEGACY_MCP_TOKEN_WARNING);
   assert.equal(legacyMcpTokenWarningForSource("FLUX_MCP_TOKEN"), null);
 });
