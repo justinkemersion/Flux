@@ -780,6 +780,13 @@ Read-only health pass for the Docker host (containers, schedulers, backups, disk
 
 # Monthly — backup trust rows in flux-system + tenant edge smoke
 ./bin/ops-audit.sh --remote --deep --smoke
+
+# Disk pressure — read-only inventory (df, /srv, docker reclaimable, large logs)
+./bin/ops-disk-inventory.sh --remote
+
+# Stale test stacks — dry-run list, then --apply to remove exited flux-* containers
+./bin/ops-cleanup-stale-containers.sh --remote
+./bin/ops-cleanup-stale-containers.sh --remote --apply
 ```
 
 | Flag | What it checks |

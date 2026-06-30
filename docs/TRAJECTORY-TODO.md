@@ -50,6 +50,7 @@ Not intended for public docs or marketing consumption.
 | Platform scheduler archived skip | `done` | `projectsDueForPlatformBackup` skips `lifecycle_state = archived` |
 | Ops disk cleanup (2026-06-30) | `done` | ~37 GB reclaimed on host; builder/volume prune + log truncate |
 | Edge log rotation + audit noise | `done` | json-file 20m×5 on Traefik/node gateway; v2 401/503 lifecycle OK in ops-audit |
+| Ops helper scripts | `done` | `bin/ops-disk-inventory.sh`, `bin/ops-cleanup-stale-containers.sh`; scheduler grep false-positive fix |
 
 **Context:** Empty v2 tenant exports validate as artifacts but fail pg_restore table-count check (zero user tables). Do not treat as corrupt; future tier e.g. `restorable_empty_tenant` / `backup_empty_but_valid`.
 

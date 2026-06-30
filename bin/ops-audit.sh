@@ -149,7 +149,8 @@ audit_flux_web_logs() {
   else
     sched_logs="$logs"
   fi
-  sched_err="$(echo "$sched_logs" | grep -c 'backup-scheduler.*failed' || true)"
+  # Errors use logBackupSchedulerError: "backup-scheduler: … — detail" (not tick "failed=0").
+  sched_err="$(echo "$sched_logs" | grep -c 'backup-scheduler:.* — ' || true)"
   backup_err="$(echo "$sched_logs" | grep -c 'backup-scheduler: failed project' || true)"
   fleet_err="$(echo "$sched_logs" | grep -c 'fleet-monitor.*failed' || true)"
   sys_err="$(echo "$logs" | grep -c 'System DB initialisation failed' || true)"
@@ -244,9 +245,15 @@ audit_gateway_health() {
   if container_running "$FLUX_TRAEFIK_CONTAINER"; then
     pass "$FLUX_TRAEFIK_CONTAINER running (restarts=$(container_restarts "$FLUX_TRAEFIK_CONTAINER"))"
     local acme_err
-    acme_err="$(docker logs "$FLUX_TRAEFIK_CONTAINER" 2>&1 | tail -200 | grep -ci 'acme.*error\|unable to obtain certificate' || true)"
+    local traefik_started
+    traefik_started="$(docker inspect -f '{{.State.StartedAt}}' "$FLUX_TRAEFIK_CONTAINER" 2>/dev/null || true)"
+    if [[ -n "$traefik_started" ]]; then
+      acme_err="$(docker logs --since "$traefik_started" "$FLUX_TRAEFIK_CONTAINER" 2>&1 | grep -ci 'acme.*error\|unable to obtain certificate' || true)"
+    else
+      acme_err="$(docker logs "$FLUX_TRAEFIK_CONTAINER" 2>&1 | tail -200 | grep -ci 'acme.*error\|unable to obtain certificate' || true)"
+    fi
     if [[ "$acme_err" -gt 0 ]]; then
-      warn "Traefik log tail has ACME/certificate errors ($acme_err)"
+      warn "Traefik ACME/certificate errors since container start ($acme_err) — check docker logs $FLUX_TRAEFIK_CONTAINER 2>&1 | grep -i acme | tail -5"
     fi
   fi
 }
