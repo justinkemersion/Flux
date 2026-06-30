@@ -8,6 +8,8 @@ section: reference
 
 **Ship date:** 2026-06-30 · **Hosted deploy:** `a1a5cc9` on `https://flux.vsl-base.com`
 
+**Setup guide:** [Flux MCP for agents](/docs/guides/mcp)
+
 Flux MCP v0 is the first production-ready agent control plane for Flux: scoped tokens, persisted audit/intents, backup-gated migration apply, and defense-in-depth capability enforcement.
 
 ## Summary

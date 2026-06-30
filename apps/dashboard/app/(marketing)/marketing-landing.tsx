@@ -1,3 +1,4 @@
+import { AgentAccessSection } from "./components/agent-access-section";
 import { AppShowcase } from "./components/app-showcase";
 import { BuildSection } from "./components/build-section";
 import { DemoPhilosophy } from "./components/demo-philosophy";
@@ -15,6 +16,9 @@ export function MarketingLanding() {
       </div>
       <div className="mt-24 sm:mt-32">
         <DemoPhilosophy />
+      </div>
+      <div className="mt-24 sm:mt-32">
+        <AgentAccessSection />
       </div>
       <div className="mt-24 sm:mt-32">
         <SharedFoundationSection />

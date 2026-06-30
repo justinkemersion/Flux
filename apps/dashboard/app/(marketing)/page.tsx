@@ -4,7 +4,7 @@ import { MarketingLanding } from "./marketing-landing";
 export const metadata: Metadata = {
   title: "Flux — Apps first. Infrastructure underneath.",
   description:
-    "Flux is a self-hosted application foundry for building and operating small, durable software. Postgres, migrations, backups, APIs, and demo-safe defaults from the same foundation.",
+    "Provision tenant APIs, push migrations, inspect schemas, verify backups, and give coding agents structured project context through CLI, dashboard, and MCP.",
 };
 
 export default function Home() {

@@ -15,9 +15,8 @@ export function Hero() {
         Apps first. Infrastructure underneath.
       </h1>
       <p className="mt-8 max-w-xl text-base leading-relaxed text-zinc-400">
-        Flux is a self-hosted application foundry for building and operating small, durable
-        software. Each app gets Postgres, migrations, backups, APIs, and demo-safe defaults from
-        the same foundation.
+        Provision tenant APIs, push migrations, inspect schemas, verify backups, and give coding
+        agents structured project context through CLI, dashboard, and MCP.
       </p>
       <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
         <a href="#apps" className={primaryCtaClass}>

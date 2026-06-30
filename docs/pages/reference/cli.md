@@ -91,12 +91,14 @@ Use your own **slug** and **hash** from **`flux list`** (example values above).
 
 The **`@flux/mcp`** package exposes Flux control-plane tools to Cursor and other MCP clients. It reuses the same `/api/cli/v1/*` routes as the CLI but authenticates with a **scoped** [`FLUX_MCP_TOKEN`](/docs/reference/env-vars) from *Settings → MCP tokens* — not a broad `flx_live_` CLI key.
 
-- Setup and capability presets: [`packages/mcp/README.md`](../../../packages/mcp/README.md) in the monorepo
+- **Setup guide:** [Flux MCP for agents](/docs/guides/mcp)
+- Capability presets and operator detail: [`packages/mcp/README.md`](../../../packages/mcp/README.md) in the monorepo
 - Release notes: [Flux MCP v0](/docs/release-notes/mcp-v0)
 - Milestones and safety thesis: [`docs/AGENT_NATIVE_FLUX.md`](../../AGENT_NATIVE_FLUX.md)
 
 ## Next steps
 
+- [Flux MCP for agents](/docs/guides/mcp)
 - [Flux MCP v0 release notes](/docs/release-notes/mcp-v0)
 - [Private database access](/docs/guides/database-access)
 - [Configuration](/docs/reference/config)

@@ -71,6 +71,7 @@ export const DOCS_NAV: DocsNavSection[] = [
       { title: "Next.js", slug: ["guides", "nextjs"] },
       { title: "Auth.js", slug: ["guides", "authjs"] },
       { title: "Clerk", slug: ["guides", "clerk"] },
+      { title: "MCP", slug: ["guides", "mcp"] },
       { title: "Migrations", slug: ["guides", "migrations"] },
       { title: "Backups", slug: ["guides", "backups"] },
       { title: "Private database access", slug: ["guides", "database-access"] },
