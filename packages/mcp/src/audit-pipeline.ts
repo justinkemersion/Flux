@@ -1,5 +1,5 @@
 /**
- * MCP audit + intent persistence pipeline (Phase 3A).
+ * MCP audit + intent persistence pipeline (Phase 3A + 3B).
  *
  * Preserves stderr JSON audit lines and additionally persists audit events (and
  * intents for selected tools) via the CLI control-plane API.
@@ -8,6 +8,7 @@
 import type {
   CreateMcpIntentInput,
   RecordMcpAuditEventInput,
+  UpdateMcpIntentInput,
 } from "@flux/cli/api-client";
 import { emitAudit, redactValue, type AuditEvent } from "./audit";
 import {
@@ -16,13 +17,26 @@ import {
   type IntentClass,
 } from "./policy";
 import type { ToolResult } from "./result";
+import { sanitizeBackupMetadata } from "./tools/backup-sanitize";
 
 export interface McpPersistenceClient {
   recordMcpAuditEvent(input: RecordMcpAuditEventInput): Promise<{ ok: true; auditId: string }>;
   createMcpIntent(input: CreateMcpIntentInput): Promise<{ intentId: string; status: string }>;
+  updateMcpIntent?(
+    intentId: string,
+    input: UpdateMcpIntentInput,
+  ): Promise<{ intentId: string; status: string }>;
 }
 
 const INTENT_TRACKED_TOOLS = new Set([
+  "flux.migration.plan",
+  "flux.credentials.temporary",
+  "flux.query.readonly",
+  "flux.destructive.preflight",
+  "flux.backup.ensureVerified",
+]);
+
+const POST_HOC_INTENT_TOOLS = new Set([
   "flux.migration.plan",
   "flux.credentials.temporary",
   "flux.query.readonly",
@@ -36,7 +50,7 @@ export function projectHashFromArgs(args: Record<string, unknown>): string | und
   return /^[a-f0-9]{7}$/u.test(h) ? h : undefined;
 }
 
-function requestSummaryFromArgs(args: Record<string, unknown>): Record<string, unknown> {
+export function requestSummaryFromArgs(args: Record<string, unknown>): Record<string, unknown> {
   const summary = redactValue({ ...args }) as Record<string, unknown>;
   if (typeof summary.sql === "string") {
     summary.sql = "[redacted]";
@@ -58,6 +72,7 @@ function buildAuditPayload(
     durationMs: event.durationMs,
     ...(projectHash ? { projectHash } : {}),
     ...(event.errorCode !== undefined ? { errorCode: event.errorCode } : {}),
+    ...(event.gate !== undefined ? { gate: event.gate } : {}),
   };
   return payload;
 }
@@ -137,6 +152,20 @@ function buildIntentPayload(
     };
   }
 
+  if (event.tool === "flux.backup.ensureVerified" && result?.data && typeof result.data === "object") {
+    const data = result.data as Record<string, unknown>;
+    base.metadata = sanitizeBackupMetadata({
+      backupId: data.backupId,
+      created: data.created,
+      verified: data.verified,
+      trustTier: data.trustTier,
+      detail: data.detail,
+      ...(data.platformBackupCompliant !== undefined
+        ? { platformBackupCompliant: data.platformBackupCompliant }
+        : {}),
+    });
+  }
+
   return base;
 }
 
@@ -181,6 +210,12 @@ export async function finalizeToolAudit(
         ? "backup_trust_pass"
         : "backup_trust_blocked";
   }
+  if (event.tool === "flux.backup.ensureVerified" && event.gate) {
+    auditPayload.gate = event.gate;
+    if (event.intentId) {
+      auditPayload.metadata = { intentId: event.intentId };
+    }
+  }
 
   const mustPersist = auditPersistenceRequired(event.intentClass);
 
@@ -195,7 +230,10 @@ export async function finalizeToolAudit(
     return { auditPersisted: false };
   }
 
-  const intentPayload = buildIntentPayload(event, args, result);
+  const skipIntent =
+    event.skipIntentCreate === true || !POST_HOC_INTENT_TOOLS.has(event.tool);
+
+  const intentPayload = skipIntent ? null : buildIntentPayload(event, args, result);
   if (intentPayload && isIntentTrackedTool(event.tool)) {
     try {
       await client.createMcpIntent(intentPayload);

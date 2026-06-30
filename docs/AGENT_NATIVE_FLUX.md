@@ -48,7 +48,7 @@ New tools:
 
 **Live validation:** smoke-tested end-to-end against the control plane — `flux.migration.plan` produced a stable plan (apply/skip/conflicts, no apply), `flux.credentials.temporary` issued a readonly v2 credential, `flux.query.readonly` ran `SELECT 1` and a bounded `SELECT … LIMIT` over the SSH tunnel, and a write attempt (`INSERT …`) was rejected in ~1 ms with `invalid_input` — before any credential issuance or DB connection. This confirms the plan's goal: agents can understand, plan, and safely read without mutation.
 
-**Mutation remains deferred to Phase 3B.** There are still no write/apply tools.
+**Mutation remains deferred to Phase 4.** Phase 3B adds only protective backup mutation; there are still no write/apply/schema-mutation tools.
 
 ### Phase 3A: Persistent audit/intents and control-plane rate limiting
 
@@ -79,8 +79,36 @@ Routes: `POST /api/cli/v1/intents`, `GET /api/cli/v1/intents/:id`.
 - Stable `429` + `Retry-After`; write/sensitive tiers fail closed if limiter storage is unavailable; read tier may fail open with a warning.
 - `POST /api/cli/v1/audit` uses a separate high allowance so audit logging cannot starve itself.
 
-**Still deferred:** `flux.migration.apply`, backup create/verify MCP tools, scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools.
+**Still deferred to Phase 4:** `flux.migration.apply`, schema/data mutation tools, scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI, destructive lifecycle MCP tools.
 
-### Deferred to Phase 3B / Phase 4
+### Phase 3B: Protective backup verification (`flux.backup.ensureVerified`)
 
-Durable mutation (`flux.migration.apply`), backup creation/verification tools, scoped `flx_mcp_` tokens, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.
+Status: complete.
+
+Phase 3B adds the **first MCP side-effect tool**, but only a **protective mutation** — create and restore-verify a backup so future destructive or write operations can be gated safely. Schema/data mutation remains Phase 4.
+
+**Tool:** `flux.backup.ensureVerified` (`intent_class: protective_mutation`, `risk_level: low`)
+
+**Ledger before side effect:**
+
+1. Persistence client must be available (audit + intent create + intent update).
+2. **Pending intent** is created before any backup API call.
+3. Policy gate runs after intent is recorded.
+4. Reuses existing CLI client methods: `listProjectBackups`, `createProjectBackup`, `verifyProjectBackup`.
+5. Intent is updated to terminal state; terminal audit is written after the operation.
+
+**Early return:** when the latest backup is already restore-verified and satisfies optional `maxAgeHours`, returns `created: false`, `verified: true` without creating noise.
+
+**Output sanitization:** no artifact paths, volume roots, offsite keys/buckets, signed URLs, credentials, or raw backup rows in MCP output or audit payloads.
+
+**Agent control loop:**
+
+```text
+inspect → plan → intent → ensure verified backup → preflight
+```
+
+Routes added: `PATCH /api/cli/v1/intents/:id` (terminal intent updates).
+
+### Deferred to Phase 4
+
+Durable schema/data mutation (`flux.migration.apply`), scoped `flx_mcp_` tokens, streamable HTTP transport, dashboard approval/audit console UI, and destructive lifecycle MCP tools.

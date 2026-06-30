@@ -14,6 +14,7 @@ import {
 } from "@flux/core/backup-trust";
 import type { BackupTrustInput } from "@flux/core/backup-trust";
 import type {
+  CreateProjectBackupResult,
   DatabaseAccessPlan,
   DbAccessLevel,
   DoctorReport,
@@ -26,10 +27,12 @@ import type {
   ProjectMetadata,
   SchemaInspectionResult,
   TemporaryDbCredential,
+  VerifyBackupResult,
 } from "@flux/cli/api-client";
 import type { IntentClass } from "../policy";
 import { InvalidInputError, ok, type ToolResult } from "../result";
 import { buildMigrationPlan } from "./migration-plan";
+import { runBackupEnsureVerified } from "./backup-ensure";
 import {
   DEFAULT_ROW_CAP,
   MAX_ROW_CAP,
@@ -54,6 +57,11 @@ export interface FluxToolClient {
   runDoctor(hash: string): Promise<DoctorReport>;
   fetchProjectActivity(hash: string, limit?: number): Promise<ProjectActivityResponse>;
   listProjectBackups(hash: string): Promise<ListProjectBackupsResult>;
+  createProjectBackup(hash: string): Promise<CreateProjectBackupResult>;
+  verifyProjectBackup(input: {
+    hash: string;
+    backupId: string;
+  }): Promise<VerifyBackupResult>;
   getProjectDbAccessPlan(hash: string): Promise<DatabaseAccessPlan>;
   createTemporaryProjectDbCredential(
     hash: string,
@@ -65,6 +73,14 @@ export interface FluxToolClient {
   createMcpIntent(
     input: import("@flux/cli/api-client").CreateMcpIntentInput,
   ): Promise<import("@flux/cli/api-client").CreateMcpIntentResult>;
+  updateMcpIntent(
+    intentId: string,
+    input: import("@flux/cli/api-client").UpdateMcpIntentInput,
+  ): Promise<import("@flux/cli/api-client").UpdateMcpIntentResult>;
+}
+
+export interface ProtectiveMutationContext {
+  intentId: string;
 }
 
 /** Injectable dependencies for tools that touch the database directly. */
@@ -77,7 +93,10 @@ export interface ToolDef {
   description: string;
   intentClass: IntentClass;
   inputSchema: Tool["inputSchema"];
-  handler(args: Record<string, unknown>): Promise<ToolResult>;
+  handler(
+    args: Record<string, unknown>,
+    ctx?: ProtectiveMutationContext,
+  ): Promise<ToolResult>;
 }
 
 /**
@@ -359,6 +378,44 @@ export function buildTools(
           data,
           destructiveBackupCheckMessage(classification),
         );
+      },
+    },
+    {
+      name: "flux.backup.ensureVerified",
+      description:
+        "Ensure a restore-verified backup exists for a project (protective mutation). Reuses an existing restore-verified backup when fresh enough; otherwise creates and verifies a new backup. Never accepts skipBackupCheck.",
+      intentClass: "protective_mutation",
+      inputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string", description: "Project hash (7 hex chars)." },
+          slug: { type: "string", description: "Optional project slug (audit label only)." },
+          reason: { type: "string", description: "Optional operator/agent reason (audit only)." },
+          verifyLatestIfFresh: {
+            type: "boolean",
+            description:
+              "When true (default), reuse the latest restore-verified backup if fresh enough.",
+            default: true,
+          },
+          maxAgeHours: {
+            type: "number",
+            description: "Optional max age in hours for backup reuse.",
+          },
+          wait: {
+            type: "boolean",
+            description:
+              "When true (default), poll until the backup is complete before verify.",
+            default: true,
+          },
+        },
+        required: ["hash"],
+        additionalProperties: false,
+      },
+      handler: async (args, ctx): Promise<ToolResult> => {
+        if (!ctx?.intentId) {
+          throw new Error("flux.backup.ensureVerified requires a persisted intent context.");
+        }
+        return runBackupEnsureVerified(client, args, { intentId: ctx.intentId });
       },
     },
     {

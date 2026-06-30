@@ -31,6 +31,19 @@ export interface CreateMcpIntentResult {
   status: McpIntentStatus;
 }
 
+export interface UpdateMcpIntentInput {
+  status: McpIntentStatus;
+  resultStatus?: McpResultStatus | null;
+  errorCode?: string | null;
+  metadata?: Record<string, unknown> | null;
+  policyDecision?: string;
+}
+
+export interface UpdateMcpIntentResult {
+  intentId: string;
+  status: McpIntentStatus;
+}
+
 export interface McpIntentDetail {
   intentId: string;
   status: McpIntentStatus;
@@ -110,4 +123,43 @@ export async function getMcpIntent(
     throw new Error("MCP intent get: empty response.");
   }
   return body as McpIntentDetail;
+}
+
+export async function updateMcpIntent(
+  ctx: ApiClientContext,
+  intentId: string,
+  input: UpdateMcpIntentInput,
+): Promise<UpdateMcpIntentResult> {
+  const token = ctx.tokenOrThrow();
+  const id = intentId.trim();
+  const url = `${ctx.baseUrl}/cli/v1/intents/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+  const text = await res.text();
+  const body = parseJsonResponseBody(
+    text,
+    `MCP intent update: response was not JSON (${res.status}).`,
+  );
+  throwIfNotOkDescribeFailed(res, body, text);
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !("intentId" in body) ||
+    typeof (body as { intentId: unknown }).intentId !== "string" ||
+    !("status" in body) ||
+    typeof (body as { status: unknown }).status !== "string"
+  ) {
+    throw new Error("MCP intent update: response missing intentId/status.");
+  }
+  return {
+    intentId: (body as { intentId: string }).intentId,
+    status: (body as { status: McpIntentStatus }).status,
+  };
 }

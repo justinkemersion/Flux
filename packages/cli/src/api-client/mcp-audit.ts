@@ -11,6 +11,7 @@ export type McpIntentClass =
   | "plan"
   | "preflight"
   | "credential"
+  | "protective_mutation"
   | "write"
   | "destructive";
 export type McpResultStatus = "ok" | "error";

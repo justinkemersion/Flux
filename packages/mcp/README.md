@@ -2,34 +2,42 @@
 
 Flux MCP server — operate Flux projects from AI coding agents (Cursor, Claude Code, Codex, Gemini CLI, Windsurf, …) over the [Model Context Protocol](https://modelcontextprotocol.io).
 
-This is **Phase 3A**: read + preflight + migration planning + bounded read-only DB query + **persisted audit/intents** + **CLI API rate limiting**. There are still **no write / apply / mutation tools** — those are deferred to Phase 3B.
+This is **Phase 3B**: everything in Phase 3A **plus** one **protective mutation** tool (`flux.backup.ensureVerified`). Schema/data mutation (`flux.migration.apply`, etc.) remains **deferred to Phase 4**.
 
 ## What this is
 
-A thin, additive [MCP](https://modelcontextprotocol.io) server that exposes the existing Flux control-plane API (`/api/cli/v1/*`) to AI agents. It reuses the exact same `ApiClient`, auth/config, migration-planning primitives, and DB-tunnel helpers as the `flux` CLI — no new control-plane routes, no new data-plane paths, and no changes to v1/v2 runtime behavior, provisioning, the gateway, backups, or PostgREST.
+A thin, additive [MCP](https://modelcontextprotocol.io) server that exposes the existing Flux control-plane API (`/api/cli/v1/*`) to AI agents. It reuses the exact same `ApiClient`, auth/config, migration-planning primitives, and DB-tunnel helpers as the `flux` CLI — no new backup routes, no new data-plane paths, and no changes to v1/v2 runtime behavior, provisioning, the gateway, backup internals, or PostgREST.
 
-## Why there are still no write/apply tools
+## Policy (Phase 3B)
 
-The server only registers **non-mutating** tools (`read`, `preflight`, `plan`, `credential`). Agents can observe a project, plan migrations, ask whether a destructive action *would* be allowed, and run **read-only** SQL — but they cannot apply migrations or write data. Durable mutation is Phase 3B. The guarantee is enforced in code: `assertNonMutatingTools` (see `src/policy.ts`) fails fast if any tool with a `write` or `destructive` intent is ever registered, and `assertWriteDestructivePolicy` requires persisted audit/intent/planId/backup-trust before future mutating tools can run.
+Registered intents:
+
+| Intent | Phase 3B |
+|--------|----------|
+| `read`, `preflight`, `plan`, `credential` | Allowed (non-mutating) |
+| `protective_mutation` | Allowed **only** for `flux.backup.ensureVerified` |
+| `write`, `destructive` | **Blocked** at registration (Phase 4) |
+
+`assertRegisteredToolsPolicy` (see `src/policy.ts`) enforces the allowlist. Protective tools require persisted audit/intent APIs before any backup side effect:
+
+1. Check persistence client exists (`recordMcpAuditEvent`, `createMcpIntent`, `updateMcpIntent`).
+2. Create a **pending** intent (`POST /api/cli/v1/intents`).
+3. `assertProtectiveMutationPolicy({ auditAvailable: true, intentRecorded: true })`.
+4. Run backup ensure (existing CLI backup API client methods).
+5. Update intent terminal state (`PATCH /api/cli/v1/intents/:id`).
+6. Finalize terminal audit (`POST /api/cli/v1/audit`).
+
+If intent creation fails, **no backup API calls** are made. If intent finalization fails after a successful backup, the tool returns `ok: false` with backup metadata and remediation (agents must not treat that as a clean success).
 
 ## Phase 3A — ledger before loaded gun
 
 Every tool call:
 
-1. Emits one redacted stderr audit line (unchanged from Pass 1/2).
-2. POSTs a redacted row to `POST /api/cli/v1/audit` via `@flux/cli/api-client`.
-3. For plan/credential/readonly-query/preflight actions, also POSTs an intent to `POST /api/cli/v1/intents`.
+1. Emits one redacted stderr audit line.
+2. POSTs a redacted row to `POST /api/cli/v1/audit`.
+3. For selected tools, also records an intent (`POST /api/cli/v1/intents` or pre/post lifecycle for protective mutation).
 
-Audit persistence failure is **non-fatal** for current read/plan/preflight/credential tools (stderr warning). Write/destructive tools (not registered yet) would treat audit/intent persistence failure as **fatal** — policy is in place now.
-
-Intents are recorded for:
-
-- `flux.migration.plan` (`plan`, includes `planId` / `planHash`)
-- `flux.credentials.temporary` (`credential`, `risk_level: sensitive`)
-- `flux.query.readonly` (`read`, metadata: row cap + timeout — SQL redacted)
-- `flux.destructive.preflight` (`preflight`, backup-trust decision metadata)
-
-Control-plane `/api/cli/v1/*` routes are rate-limited (fixed-window, in-memory, keyed by CLI key). Audit POST uses a separate high allowance.
+Audit persistence failure is **non-fatal** for read/plan/preflight/credential tools. **Fatal** for protective mutation (and future write/destructive tools).
 
 ## Tools
 
@@ -47,47 +55,54 @@ Control-plane `/api/cli/v1/*` routes are rate-limited (fixed-window, in-memory, 
 
 ### Pass 2 — plan / credential / read-only query
 
-- `flux.migration.plan` — plan local `.sql` migrations against the applied ledger using the shared `@flux/core` planning primitives. Returns a `planId`, a stable `planHash`, files to apply/skip, conflicts, warnings, and whether the plan is destructive-shaped. **Plans only; never applies.** Plans are stored in memory for this pass.
-- `flux.credentials.temporary` — issue a short-lived, **readonly**, project-scoped DB credential (**v2_shared only**). Access is always `ro`; never returns pooled-admin or service-role secrets.
-- `flux.query.readonly` — run a single bounded read-only query (**v2_shared only**). Accepts only a single `SELECT`/`WITH` statement, rejects any non-read/privileged keyword, enforces a statement timeout, and wraps the query in a hard outer `LIMIT`. Uses a short-lived readonly credential over the same SSH tunnel as `flux db`.
+- `flux.migration.plan` — plan local `.sql` migrations (never applies).
+- `flux.credentials.temporary` — short-lived **readonly** v2 credential.
+- `flux.query.readonly` — bounded read-only SQL over the SSH tunnel.
 
-Every tool returns the standard envelope:
+### Phase 3B — protective mutation
+
+- `flux.backup.ensureVerified` — ensure a **restore-verified** backup exists. Reuses an existing restore-verified backup when fresh enough (`verifyLatestIfFresh`, optional `maxAgeHours`); otherwise creates and verifies via existing `createProjectBackup` / `verifyProjectBackup` client methods. **Never accepts `skipBackupCheck`.** Output excludes artifact paths, volume roots, offsite keys/buckets, signed URLs, and credentials.
+
+**Suggested agent flow:**
+
+```text
+inspect → plan → intent → ensure verified backup → preflight
+```
+
+### `flux.backup.ensureVerified` input schema
+
+```json
+{
+  "hash": "abc1234",
+  "slug": "optional-label",
+  "reason": "optional audit note",
+  "verifyLatestIfFresh": true,
+  "maxAgeHours": 24,
+  "wait": true
+}
+```
+
+Required: `hash`. Defaults: `verifyLatestIfFresh: true`, `wait: true`.
+
+Every tool returns:
 
 ```json
 { "ok": true, "summary": "human readable", "data": { }, "remediation": "optional next step" }
 ```
 
-Tools never return tokens, JWT secrets, database passwords, or anon/service-role keys, and exactly one redacted audit line is written to **stderr** per call (`event: "flux_mcp_tool_call"`).
-
 ## Authentication
 
-The server uses the same credentials as the `flux` CLI, resolved in this order:
-
-1. `FLUX_API_TOKEN` environment variable.
-2. `~/.flux/config.json` (written by `flux login`).
-
-Optionally set `FLUX_API_BASE` to point at a non-default control plane.
-
-Create a token in the Flux Dashboard (Settings → API keys), or run `flux login`.
+Same as the `flux` CLI: `FLUX_API_TOKEN` or `~/.flux/config.json` from `flux login`. Optional `FLUX_API_BASE` for non-default control planes.
 
 ## Run it locally
 
-From the monorepo:
-
 ```bash
-# Dev (no build step):
 pnpm --filter @flux/mcp start
-
-# Or build the bundled bin and run it:
 pnpm --filter @flux/mcp build
 node packages/mcp/dist/index.cjs
 ```
 
-The process speaks MCP over stdio; it will sit waiting for an MCP client. Logs go to stderr.
-
 ## Register in Cursor
-
-Add an entry to your Cursor MCP config (`~/.cursor/mcp.json` for global, or `.cursor/mcp.json` in a project). After `pnpm --filter @flux/mcp build`:
 
 ```json
 {
@@ -95,80 +110,12 @@ Add an entry to your Cursor MCP config (`~/.cursor/mcp.json` for global, or `.cu
     "flux": {
       "command": "node",
       "args": ["/absolute/path/to/flux/packages/mcp/dist/index.cjs"],
-      "env": {
-        "FLUX_API_TOKEN": "flx_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_xxxx"
-      }
-    }
-  }
-}
-```
-
-Prefer not to build? Run the TypeScript entry directly with `tsx`:
-
-```json
-{
-  "mcpServers": {
-    "flux": {
-      "command": "pnpm",
-      "args": ["--filter", "@flux/mcp", "start"],
       "env": { "FLUX_API_TOKEN": "flx_live_..." }
     }
   }
 }
 ```
 
-The same `command`/`args`/`env` shape works for other MCP-capable agents (Claude Code, Codex, Gemini CLI, Windsurf).
+## Deferred to Phase 4
 
-## Examples
-
-### `flux.migration.plan`
-
-```json
-{
-  "name": "flux.migration.plan",
-  "arguments": {
-    "hash": "61d9dff",
-    "workspaceRoot": "/abs/path/to/your/app",
-    "migrationsPath": "migrations"
-  }
-}
-```
-
-Returns (abridged):
-
-```json
-{
-  "ok": true,
-  "summary": "Plan a1b2c3d4e5f6: 2 to apply, 1 to skip, 0 conflict(s).",
-  "data": {
-    "planId": "…uuid…",
-    "planHash": "a1b2c3d4e5f6…",
-    "apply": [{ "version": "0002_add_index.sql", "filename": "0002_add_index.sql", "checksum": "…" }],
-    "skip": [{ "version": "0001_init.sql", "filename": "0001_init.sql", "checksum": "…" }],
-    "conflicts": [],
-    "destructiveShaped": false,
-    "counts": { "apply": 2, "skip": 1, "conflicts": 0 }
-  }
-}
-```
-
-`workspaceRoot` is only inferred from the current directory when it contains a `flux.json`; otherwise it is required. Nothing is applied.
-
-### `flux.query.readonly`
-
-```json
-{
-  "name": "flux.query.readonly",
-  "arguments": {
-    "hash": "61d9dff",
-    "sql": "SELECT id, title FROM products ORDER BY created_at DESC",
-    "rowCap": 25
-  }
-}
-```
-
-The statement must be a single `SELECT`/`WITH`. A write attempt (e.g. `DELETE FROM products`) is rejected before any database access. The query is wrapped in a hard `LIMIT` and run under a statement timeout via a short-lived readonly credential.
-
-## Deferred to Pass 3+
-
-There are still **no write/apply/mutation tools**. `flux.migration.apply`, backup creation/verification tools, scoped `flx_mcp_` tokens, streamable HTTP transport, control-plane rate limiting, a persisted audit ledger, and the dashboard approval/audit console are intentionally **not** in Pass 2.
+`flux.migration.apply`, schema/data mutation tools, destructive lifecycle MCP tools (nuke, factory reset, restore, db-reset, project delete), scoped `flx_mcp_` tokens, streamable HTTP, dashboard approval UI.

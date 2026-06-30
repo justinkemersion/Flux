@@ -10,7 +10,7 @@ import type { IntentClass } from "./policy";
 
 /** Keys whose values are scrubbed before logging (defense-in-depth). */
 const SENSITIVE_KEY_RE =
-  /(token|secret|password|passwd|pwd|jwt|authorization|auth|api[_-]?key|anon[_-]?key|service[_-]?role|credential|bearer|\bkey\b)/i;
+  /(token|secret|password|passwd|pwd|jwt|authorization|auth|api[_-]?key|anon[_-]?key|service[_-]?role|credential|bearer|\bkey\b|path|artifact|volume|offsite|bucket|signed|url)/i;
 
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/;
 const CONNECTION_STRING_RE =
@@ -55,6 +55,11 @@ export interface AuditEvent {
   durationMs: number;
   args: Record<string, unknown>;
   errorCode?: string;
+  /** When set, skip post-hoc intent creation (pre-exec intent already recorded). */
+  skipIntentCreate?: boolean;
+  /** Optional audit gate label (e.g. backup trust). */
+  gate?: string;
+  intentId?: string;
 }
 
 export function buildAuditLine(event: AuditEvent): string {

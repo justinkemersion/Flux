@@ -1,11 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createToolDefs } from "./server";
-import { assertNonMutatingTools } from "./policy";
+import {
+  assertRegisteredToolsPolicy,
+  assertWriteDestructivePolicy,
+  auditPersistenceRequired,
+  PHASE_3B_PROTECTIVE_TOOLS,
+} from "./policy";
 import type { FluxToolClient } from "./tools";
 
 const EXPECTED_TOOLS = [
-  // Pass 1 (read / preflight)
   "flux.project.list",
   "flux.project.describe",
   "flux.schema.inspect",
@@ -15,7 +19,7 @@ const EXPECTED_TOOLS = [
   "flux.activity",
   "flux.backup.list",
   "flux.destructive.preflight",
-  // Pass 2 (plan / credential / readonly query)
+  "flux.backup.ensureVerified",
   "flux.migration.plan",
   "flux.credentials.temporary",
   "flux.query.readonly",
@@ -36,13 +40,13 @@ function stubClient(): FluxToolClient {
   ) as unknown as FluxToolClient;
 }
 
-test("registers exactly the Pass 1 + Pass 2 tool set", () => {
+test("registers Pass 1 + Pass 2 + Phase 3B protective tool set", () => {
   const defs = createToolDefs(stubClient());
   const names = defs.map((d) => d.name).sort();
   assert.deepEqual(names, [...EXPECTED_TOOLS].sort());
 });
 
-test("every tool has an object inputSchema and a non-mutating intent", () => {
+test("every tool has an object inputSchema and allowed intent class", () => {
   const defs = createToolDefs(stubClient());
   for (const def of defs) {
     assert.equal(
@@ -50,18 +54,41 @@ test("every tool has an object inputSchema and a non-mutating intent", () => {
       "object",
       `${def.name} inputSchema.type`,
     );
-    assert.ok(
-      NON_MUTATING.has(def.intentClass),
-      `${def.name} intent must be non-mutating`,
-    );
+    const allowed =
+      NON_MUTATING.has(def.intentClass) ||
+      (def.intentClass === "protective_mutation" &&
+        PHASE_3B_PROTECTIVE_TOOLS.has(def.name));
+    assert.ok(allowed, `${def.name} intent must be allowed in Phase 3B`);
   }
 });
 
-test("assertNonMutatingTools rejects write/destructive intents", () => {
+test("assertRegisteredToolsPolicy rejects write/destructive intents", () => {
   assert.throws(() =>
-    assertNonMutatingTools([{ name: "x", intentClass: "write" }]),
+    assertRegisteredToolsPolicy([{ name: "x", intentClass: "write" }]),
   );
   assert.throws(() =>
-    assertNonMutatingTools([{ name: "y", intentClass: "destructive" }]),
+    assertRegisteredToolsPolicy([{ name: "y", intentClass: "destructive" }]),
   );
+});
+
+test("assertRegisteredToolsPolicy rejects unlisted protective_mutation tools", () => {
+  assert.throws(() =>
+    assertRegisteredToolsPolicy([
+      { name: "flux.backup.create", intentClass: "protective_mutation" },
+    ]),
+  );
+});
+
+test("auditPersistenceRequired includes protective_mutation", () => {
+  assert.equal(auditPersistenceRequired("protective_mutation"), true);
+  assert.equal(auditPersistenceRequired("read"), false);
+});
+
+test("write/destructive policy still blocks migration.apply class tools", () => {
+  const blocked = assertWriteDestructivePolicy({
+    intentClass: "write",
+    auditAvailable: true,
+    intentRecorded: true,
+  });
+  assert.equal(blocked.allowed, false);
 });

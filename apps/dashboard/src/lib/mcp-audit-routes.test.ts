@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runCliAuditPost } from "../../app/api/cli/v1/audit/route.ts";
 import { runCliIntentPost } from "../../app/api/cli/v1/intents/route.ts";
+import { runCliIntentPatch } from "../../app/api/cli/v1/intents/[id]/route.ts";
 import { validateMcpAuditEventInput } from "./mcp-audit.ts";
+import { validateMcpIntentInput, validateMcpIntentUpdateInput } from "./mcp-intents.ts";
 import { containsObviousSecret } from "./mcp-secret-scan.ts";
 
 const AUTH = { userId: "user-server", keyId: "key-1" };
@@ -165,5 +167,81 @@ test("intent route inserts when project is owned", async () => {
   assert.equal(res.status, 200);
   const json = (await res.json()) as { intentId: string; status: string };
   assert.equal(json.intentId, "intent-id-1");
+  assert.equal(json.status, "completed");
+});
+
+test("intent validation accepts protective_mutation class", () => {
+  const validated = validateMcpIntentInput({
+    tool: "flux.backup.ensureVerified",
+    intentClass: "protective_mutation",
+    status: "pending",
+    riskLevel: "low",
+    policyDecision: "allow",
+    requestSummary: { hash: "abc1234" },
+  });
+  assert.equal(validated.ok, true);
+});
+
+test("intent patch validates status updates", () => {
+  const validated = validateMcpIntentUpdateInput({
+    status: "completed",
+    resultStatus: "ok",
+    metadata: { verified: true, backupId: "b1" },
+  });
+  assert.equal(validated.ok, true);
+});
+
+test("intent patch route updates owned intent", async () => {
+  const res = await runCliIntentPatch(
+    new Request("http://test/api/cli/v1/intents/intent-id-1", {
+      method: "PATCH",
+      headers: { Authorization: "Bearer flx_live_test", "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "completed", resultStatus: "ok" }),
+    }),
+    { params: Promise.resolve({ id: "00000000-0000-4000-8000-000000000001" }) },
+    {
+      initSystemDb: async () => undefined,
+      getDb: () =>
+        ({
+          select: () => ({
+            from: () => ({
+              where: () => ({
+                limit: async () => [
+                  {
+                    id: "00000000-0000-4000-8000-000000000001",
+                    status: "pending",
+                    tool: "flux.backup.ensureVerified",
+                    intentClass: "protective_mutation",
+                    riskLevel: "low",
+                    projectHash: "abc1234",
+                    planId: null,
+                    planHash: null,
+                    policyDecision: "allow",
+                    requiresApproval: false,
+                    approvalStatus: null,
+                    resultStatus: null,
+                    errorCode: null,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                  },
+                ],
+              }),
+            }),
+          }),
+          update: () => ({
+            set: () => ({
+              where: () => ({
+                returning: async () => [
+                  { id: "00000000-0000-4000-8000-000000000001", status: "completed" },
+                ],
+              }),
+            }),
+          }),
+        }) as never,
+      authenticate: async () => AUTH,
+    },
+  );
+  assert.equal(res.status, 200);
+  const json = (await res.json()) as { intentId: string; status: string };
   assert.equal(json.status, "completed");
 });

@@ -11,6 +11,7 @@ export const MCP_INTENT_CLASSES = [
   "plan",
   "preflight",
   "credential",
+  "protective_mutation",
   "write",
   "destructive",
 ] as const;

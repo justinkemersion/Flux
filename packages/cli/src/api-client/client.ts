@@ -454,6 +454,13 @@ export class ApiClient {
   getMcpIntent(intentId: string): Promise<McpIntentDetail> {
     return mcpIntents.getMcpIntent(this.asContext(), intentId);
   }
+
+  updateMcpIntent(
+    intentId: string,
+    input: mcpIntents.UpdateMcpIntentInput,
+  ): Promise<mcpIntents.UpdateMcpIntentResult> {
+    return mcpIntents.updateMcpIntent(this.asContext(), intentId, input);
+  }
 }
 
 let singleton: ApiClient | undefined;

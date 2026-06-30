@@ -321,3 +321,112 @@ export async function getMcpIntentById(
     },
   };
 }
+
+export interface McpIntentUpdateInput {
+  status: McpIntentStatus;
+  resultStatus?: McpResultStatus | null;
+  errorCode?: string | null;
+  metadata?: Record<string, unknown> | null;
+  policyDecision?: string;
+}
+
+export type McpIntentUpdateResult =
+  | { ok: true; intentId: string; status: McpIntentStatus }
+  | { ok: false; status: number; error: string };
+
+export function validateMcpIntentUpdateInput(
+  body: unknown,
+): { ok: true; input: McpIntentUpdateInput } | { ok: false; error: string } {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body must be a JSON object." };
+  }
+
+  const status = body.status;
+  if (
+    typeof status !== "string" ||
+    !(MCP_INTENT_STATUSES as readonly string[]).includes(status)
+  ) {
+    return { ok: false, error: "status is invalid." };
+  }
+
+  const metadataRaw = body.metadata;
+  let metadata: Record<string, unknown> | null | undefined;
+  if (metadataRaw === undefined) {
+    metadata = undefined;
+  } else if (metadataRaw === null) {
+    metadata = null;
+  } else if (!isRecord(metadataRaw)) {
+    return { ok: false, error: "metadata must be a JSON object when provided." };
+  } else {
+    metadata = metadataRaw;
+  }
+
+  const resultStatusRaw = body.resultStatus;
+  let resultStatus: McpResultStatus | null | undefined;
+  if (resultStatusRaw === undefined) {
+    resultStatus = undefined;
+  } else if (resultStatusRaw === null) {
+    resultStatus = null;
+  } else if (resultStatusRaw === "ok" || resultStatusRaw === "error") {
+    resultStatus = resultStatusRaw;
+  } else {
+    return { ok: false, error: "resultStatus must be ok, error, or null." };
+  }
+
+  const policyDecision = optionalString(body.policyDecision);
+  const input: McpIntentUpdateInput = {
+    status: status as McpIntentStatus,
+    ...(resultStatus !== undefined ? { resultStatus } : {}),
+    ...(optionalString(body.errorCode) != null
+      ? { errorCode: optionalString(body.errorCode) }
+      : body.errorCode === null
+        ? { errorCode: null }
+        : {}),
+    ...(metadata !== undefined ? { metadata } : {}),
+    ...(policyDecision != null ? { policyDecision } : {}),
+  };
+
+  if (metadata !== undefined && metadata !== null && containsObviousSecret(metadata)) {
+    return { ok: false, error: "metadata contains obvious secret material." };
+  }
+
+  return { ok: true, input };
+}
+
+export async function updateMcpIntentById(
+  db: SystemDb,
+  auth: { userId: string },
+  intentId: string,
+  input: McpIntentUpdateInput,
+): Promise<McpIntentUpdateResult> {
+  const id = intentId.trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return { ok: false, status: 400, error: "Invalid intent id." };
+  }
+
+  const now = new Date();
+  const patch: Partial<typeof mcpIntents.$inferInsert> = {
+    status: input.status,
+    updatedAt: now,
+    ...(input.resultStatus !== undefined ? { resultStatus: input.resultStatus } : {}),
+    ...(input.errorCode !== undefined ? { errorCode: input.errorCode } : {}),
+    ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
+    ...(input.policyDecision !== undefined ? { policyDecision: input.policyDecision } : {}),
+  };
+
+  const [row] = await db
+    .update(mcpIntents)
+    .set(patch)
+    .where(and(eq(mcpIntents.id, id), eq(mcpIntents.userId, auth.userId)))
+    .returning({ id: mcpIntents.id, status: mcpIntents.status });
+
+  if (!row) {
+    return { ok: false, status: 404, error: "Intent not found." };
+  }
+
+  return {
+    ok: true,
+    intentId: row.id,
+    status: row.status as McpIntentStatus,
+  };
+}

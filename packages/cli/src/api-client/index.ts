@@ -18,6 +18,7 @@ export type { ProjectLifecycleInfo } from "./project-lifecycle-state";
 export type {
   CreateProjectMode,
   CreateProjectResult,
+  CreateProjectBackupResult,
   InitProjectResult,
   ListProjectBackupsResult,
   ProjectBackup,
@@ -47,4 +48,6 @@ export type {
   McpIntentDetail,
   McpIntentStatus,
   McpRiskLevel,
+  UpdateMcpIntentInput,
+  UpdateMcpIntentResult,
 } from "./mcp-intents";

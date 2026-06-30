@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { finalizeToolAudit } from "./audit-pipeline";
-import { assertWriteDestructivePolicy } from "./policy";
+import {
+  assertProtectiveMutationPolicy,
+  assertWriteDestructivePolicy,
+  auditPersistenceRequired,
+} from "./policy";
 
 test("finalizeToolAudit persists audit on success path", async () => {
   const auditCalls: unknown[] = [];
@@ -73,6 +77,68 @@ test("policy blocks write/destructive when persistent audit unavailable", () => 
     backupTrustPass: false,
   });
   assert.equal(destructiveBlocked.allowed, false);
+});
+
+test("protective mutation policy requires intent after pending create", () => {
+  const blocked = assertProtectiveMutationPolicy({
+    auditAvailable: true,
+    intentRecorded: false,
+  });
+  assert.equal(blocked.allowed, false);
+
+  const allowed = assertProtectiveMutationPolicy({
+    auditAvailable: true,
+    intentRecorded: true,
+  });
+  assert.equal(allowed.allowed, true);
+});
+
+test("protective mutation audit persistence is required", () => {
+  assert.equal(auditPersistenceRequired("protective_mutation"), true);
+});
+
+test("finalizeToolAudit persists backup ensure gate without storage paths", async () => {
+  const audits: unknown[] = [];
+
+  await finalizeToolAudit({
+    event: {
+      tool: "flux.backup.ensureVerified",
+      intentClass: "protective_mutation",
+      decision: "allow",
+      status: "ok",
+      durationMs: 4,
+      args: { hash: "abc1234" },
+      skipIntentCreate: true,
+      gate: "backup_ensure_reused",
+      intentId: "intent-99",
+    },
+    args: { hash: "abc1234" },
+    result: {
+      ok: true,
+      summary: "ok",
+      data: {
+        backupId: "b1",
+        created: false,
+        verified: true,
+        trustTier: "restorable",
+        detail: "Latest backup is restore-verified.",
+        intentId: "intent-99",
+        primaryArtifactAbsolutePath: "/secret/path.dump",
+      },
+    },
+    client: {
+      recordMcpAuditEvent: async (input) => {
+        audits.push(input);
+        return { ok: true, auditId: "a1" };
+      },
+      createMcpIntent: async () => ({ intentId: "i1", status: "completed" }),
+    },
+  });
+
+  assert.equal(audits.length, 1);
+  const audit = audits[0] as { gate?: string; requestSummary: Record<string, unknown> };
+  assert.equal(audit.gate, "backup_ensure_reused");
+  assert.equal(JSON.stringify(audit.requestSummary).includes("/secret/path"), false);
 });
 
 test("finalizeToolAudit creates intent for migration.plan with planId", async () => {
