@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { CopyToClipboardButton } from "@/src/components/ui/copy-to-clipboard-button";
 import { MCP_CAPABILITIES } from "@/src/lib/mcp-capabilities";
 import type { SafeMcpTokenRecord } from "@/src/lib/mcp-token-sanitize";
 import type { McpTokenProjectOption } from "@/src/components/mcp-tokens/mcp-tokens-types";
@@ -177,16 +178,16 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
   }, [confirmRevokeId]);
 
   return (
-    <div className="space-y-8 text-center sm:text-left">
+    <div className="space-y-8 text-left">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">MCP Tokens</h1>
-        <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
+        <h1 className="text-lg font-semibold text-zinc-100">MCP Tokens</h1>
+        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-500">
           {MCP_TOKENS_PAGE_INTRO}
         </p>
-        <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600">
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600">
           {MCP_TOKENS_PAGE_LEGACY_NOTE}
         </p>
-        <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600">
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600">
           {MCP_TOKENS_PAGE_CLI_NOTE}{" "}
           <Link href="/settings/keys" className="text-zinc-400 underline-offset-2 hover:underline">
             API Keys
@@ -201,11 +202,11 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
       >
         <h2
           id="create-mcp-token-heading"
-          className="mb-3 text-center text-sm font-semibold text-zinc-300 sm:text-left"
+          className="mb-3 text-sm font-semibold text-zinc-300"
         >
           Create token
         </h2>
-        <div className="mx-auto flex max-w-2xl flex-col gap-4 sm:mx-0">
+        <div className="flex max-w-2xl flex-col gap-4">
           <label className="flex flex-col gap-1 text-left">
             <span className="text-xs font-medium text-zinc-500">Name (optional)</span>
             <input
@@ -315,15 +316,7 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
             <span className="text-xs font-medium text-amber-200/90">
               {MCP_TOKEN_PLAINTEXT_ONCE_BANNER}
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard.writeText(plaintext);
-              }}
-              className={`rounded-md border border-amber-800/80 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-950/40 ${focus}`}
-            >
-              Copy
-            </button>
+            <CopyToClipboardButton text={plaintext} variant="amber-labeled" className={focus} />
           </div>
           <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-amber-100/95">
             {plaintext}
@@ -344,7 +337,7 @@ export function McpTokensVault({ initialTokens, projects }: Props) {
       <section className="text-left" aria-labelledby="mcp-token-list-heading">
         <h2
           id="mcp-token-list-heading"
-          className="mb-3 text-center text-sm font-semibold text-zinc-300 sm:text-left"
+          className="mb-3 text-sm font-semibold text-zinc-300"
         >
           Tokens ({listRows.length})
         </h2>

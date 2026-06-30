@@ -96,7 +96,7 @@ export function ProjectsFleetBar({
             Agent Activity
           </Link>
           <Link
-            href="/settings/keys"
+            href="/settings"
             className={`rounded-md px-2 py-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300 ${focus}`}
           >
             Settings

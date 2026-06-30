@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useState, useTransition } from "react";
+import { CopyToClipboardButton } from "@/src/components/ui/copy-to-clipboard-button";
 import { createApiKeyAction } from "./actions";
 import { deleteApiKeyAction, revokeApiKeyAction } from "@/src/lib/actions";
 
@@ -100,12 +101,10 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
   }, []);
 
   return (
-    <div className="space-y-8 text-center sm:text-left">
+    <div className="space-y-8 text-left">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-          API Keys
-        </h1>
-        <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
+        <h1 className="text-lg font-semibold text-zinc-100">API Keys</h1>
+        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-500">
           CLI and automation use Bearer tokens. Raw secrets are shown once at creation and are
           never stored; only a SHA-256 hash is kept. Export{" "}
           <code className="font-mono text-zinc-400">FLUX_API_TOKEN</code> locally and point{" "}
@@ -124,7 +123,7 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
       >
         <h2
           id="new-key-heading"
-          className="mb-3 text-center text-sm font-semibold text-zinc-300 sm:text-left"
+          className="mb-3 text-sm font-semibold text-zinc-300"
         >
           Create key
         </h2>
@@ -176,15 +175,7 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
             <span className="text-xs font-medium text-amber-200/90">
               New secret (copy now)
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard.writeText(plaintext);
-              }}
-              className="rounded-md border border-amber-800/80 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-950/40"
-            >
-              Copy
-            </button>
+            <CopyToClipboardButton text={plaintext} variant="amber-labeled" />
           </div>
           <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-amber-100/95">
             {plaintext}
@@ -209,7 +200,7 @@ export function KeysVault({ initialRows }: { initialRows: KeyVaultRow[] }) {
       >
         <h2
           id="vault-list-heading"
-          className="mb-3 text-center text-sm font-semibold text-zinc-300 sm:text-left"
+          className="mb-3 text-sm font-semibold text-zinc-300"
         >
           Keys ({rows.length})
         </h2>

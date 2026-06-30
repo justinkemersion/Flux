@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, Clipboard, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
+import { CopyToClipboardButton } from "@/src/components/ui/copy-to-clipboard-button";
 
 export function CopyableConnectField({
   label,
@@ -22,7 +23,6 @@ export function CopyableConnectField({
   emptyHint?: string;
 }) {
   const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const raw = value ?? "";
   const unavailable = raw.length === 0;
@@ -33,17 +33,6 @@ export function CopyableConnectField({
       ? "••••••••"
       : raw;
   const showEmptyHint = unavailable && Boolean(emptyHint);
-
-  async function copy(): Promise<void> {
-    if (unavailable) return;
-    try {
-      await navigator.clipboard.writeText(raw);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard denied */
-    }
-  }
 
   const labelCls = prominent
     ? "mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100"
@@ -92,20 +81,11 @@ export function CopyableConnectField({
             )}
           </button>
         ) : null}
-        <button
-          type="button"
-          onClick={() => void copy()}
+        <CopyToClipboardButton
+          text={raw}
           disabled={unavailable}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-200/80 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-          aria-label={`Copy ${label}`}
-          title="Copy"
-        >
-          {copied ? (
-            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
-          ) : (
-            <Clipboard className="h-4 w-4" aria-hidden />
-          )}
-        </button>
+          ariaLabel={`Copy ${label}`}
+        />
       </div>
     </div>
   );
