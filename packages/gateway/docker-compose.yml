@@ -25,6 +25,30 @@ services:
       - .env
     ports:
       - "${GATEWAY_HOST_PORT:-4000}:${PORT:-4000}"
+# Traefik edge router for v2_shared API hosts (priority 50, below v1 dedicated).
+# tls.domains[*].main entries: run ./bin/sync-v2-gateway-tls-domains.sh after catalog changes.
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: flux-network
+      traefik.http.routers.flux-v2-shared-gateway.entrypoints: websecure
+      traefik.http.routers.flux-v2-shared-gateway.rule: HostRegexp(`^api--.+\.vsl-base\.com$`) || HostRegexp(`^api\.[^.]+\.[^.]+\.vsl-base\.com$`)
+      traefik.http.routers.flux-v2-shared-gateway.priority: "50"
+      traefik.http.routers.flux-v2-shared-gateway.service: flux-v2-shared-gateway
+      traefik.http.routers.flux-v2-shared-gateway.tls: "true"
+      traefik.http.routers.flux-v2-shared-gateway.tls.certresolver: myresolver
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[0].main: api--flux-app-foundry--5774112.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[1].main: api--flux-control-room--faab439.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[2].main: api--habitat--59b73eb.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[3].main: api--living-language--f551aff.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[4].main: api--logos-engine--92a6ed8.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[5].main: api--noisydesign--5ff9c19.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[6].main: api--percept--b915ec8.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[7].main: api--roommating--85a68e7.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[8].main: api--static--64a02b4.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[9].main: api--the-shelf--659100d.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[10].main: api--vessel-ledger--542bf0f.vsl-base.com
+      traefik.http.routers.flux-v2-shared-gateway.tls.domains[11].main: api--yeastcoast--3db3f78.vsl-base.com
+      traefik.http.services.flux-v2-shared-gateway.loadbalancer.server.port: "4000"
     networks:
       - flux-network
     logging:
