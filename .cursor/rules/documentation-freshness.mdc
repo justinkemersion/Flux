@@ -1,0 +1,16 @@
+---
+description: Documentation freshness — README and canonical docs must stay current with platform changes
+alwaysApply: true
+---
+
+# Documentation freshness (Flux)
+
+Before marking Flux work complete:
+
+1. Read [`docs/README-MAINTENANCE-CONTRACT.md`](../../docs/README-MAINTENANCE-CONTRACT.md) when the change touches platform surface area.
+2. **Same commit:** meaningful platform changes must update [`README.md`](../../README.md) and/or canonical docs, unless the commit is mechanical with no behavior change (say so in the commit message).
+3. **Do not** document aspirational features as shipped. Label **experimental**, **beta**, **internal**, and **operator-only** surfaces honestly.
+4. **MCP / tooling** → README MCP section + [`packages/mcp/README.md`](../../packages/mcp/README.md) + [`docs/pages/guides/mcp.md`](../../docs/pages/guides/mcp.md).
+5. **CLI / dashboard / gateway / backup / security / deploy** → matching README sections + relevant `docs/pages/*`, `docs/guides/*`, or `docs/OPERATOR-*.md`.
+6. **App developer footguns** → [`AGENTS.md`](../../AGENTS.md) + relevant `docs/pages/guides/*`.
+7. Run the **documentation checklist** in [`docs/README-MAINTENANCE-CONTRACT.md`](../../docs/README-MAINTENANCE-CONTRACT.md) before finishing.

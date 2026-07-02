@@ -1,31 +1,40 @@
 # Flux Project Rules
 
 ## Project Context
-We are building "Flux", a slimmed-down, high-performance Backend-as-a-Service (BaaS) / Database-as-a-Service (DBaaS) platform. 
-It allows users to create "projects". Each project dynamically spins up an isolated PostgreSQL database and a PostgREST container to instantly generate a REST API. 
+
+Flux is a self-hosted **PostgreSQL + PostgREST backend control plane** for many tenant projects. It is CLI-first and dashboard-assisted, with two runtime modes:
+
+- **`v1_dedicated`** — per-project PostgreSQL + PostgREST containers (Traefik routing).
+- **`v2_shared`** — pooled Postgres/PostgREST behind `@flux/gateway` with schema + role isolation.
+
+Flux also exposes an **AI-assistable MCP interface** (`@flux/mcp`) for coding agents. Canonical orientation: [`README.md`](README.md).
 
 ## Architecture & Tech Stack
+
 - **Monorepo:** pnpm workspaces.
-- **Language:** TypeScript / Node.js.
+- **Language:** TypeScript / Node.js (strict).
 - **Orchestration:** Docker Engine API (via `dockerode`).
-- **Routing:** Traefik (using dynamic Docker labels for routing subdomains).
-- **Tenant DBs:** PostgreSQL (Docker containers).
-- **Tenant APIs:** PostgREST (Docker containers mapped to the PG databases).
-- **Core API / Control Plane:** Express or Hono (Node.js).
+- **Routing:** Traefik (v1 dedicated) + Node gateway (v2 shared).
+- **Control plane:** `@flux/cli`, `apps/dashboard`, `@flux/mcp` → `/api/cli/v1/*` + `flux-system` catalog.
+- **Data plane:** Tenant Postgres + PostgREST (dedicated or pooled).
 
 ## Core Principles (AI Instructions)
-1. **Security & Isolation:** When generating Docker configs, always prioritize container isolation. Use secure random passwords for DBs. Set memory/CPU limits to prevent noisy neighbors.
-2. **Slim & Fast:** Avoid bloated libraries. If Node.js built-in modules can do it (e.g., `crypto`, `fs`), use them.
-3. **Idempotency:** Scripts that create infrastructure must be idempotent. If a project already exists, do not crash; handle it gracefully.
-4. **Error Handling:** Always wrap Docker/Infrastructure calls in try/catch blocks. Log errors with clear, actionable context.
-5. **No Hallucinated DBs:** We do not use ORMs for the tenant databases. We manage raw PostgreSQL instances. 
+
+1. **Security & Isolation:** Prioritize container isolation. Secure random DB passwords. CPU/memory limits.
+2. **Slim & Fast:** Prefer Node built-ins over bloated libraries.
+3. **Idempotency:** Infrastructure scripts must be idempotent.
+4. **Error Handling:** Wrap Docker/infrastructure calls in try/catch with actionable logs.
+5. **No Hallucinated DBs:** Raw PostgreSQL for tenants — no ORMs on tenant databases.
+6. **Documentation freshness:** Platform surface area changes → update README/docs in the same commit. See [`docs/README-MAINTENANCE-CONTRACT.md`](docs/README-MAINTENANCE-CONTRACT.md) and [`.cursor/rules/documentation-freshness.mdc`](.cursor/rules/documentation-freshness.mdc). Do not document aspirational features as shipped.
 
 ## Code Style
-- Use ES Modules (`import`/`export`).
-- Strict TypeScript (`"strict": true` in tsconfig).
-- Keep functions small and single-purpose.
 
-## Security pass queue (Codex audit)
-**Active:** Pass 2 — destructive-operation backup gates. Pass 1 is complete.
-Before substantial work, read **`plans/security/CURRENT.md`** and confirm with the user if the task is not Pass 2.
-Tracker: `plans/security/README.md` · Detail: `plans/security/pass-1-summary.md`.
+- ES Modules (`import`/`export`).
+- Strict TypeScript (`"strict": true`).
+- Small, single-purpose functions.
+
+## Security pass queue
+
+**Active phase:** Deferred — Passes 1–5 complete (see [`plans/security/CURRENT.md`](plans/security/CURRENT.md)).
+
+Before substantial work, read `plans/security/CURRENT.md`. Do not re-implement completed passes (gateway Bearer, migration ledger, destructive backup gates, etc.). Tracker: `plans/security/README.md`.

@@ -1,5 +1,5 @@
 ---
-description: Security pass tracker — surface Pass 2 plan and decision gates before Flux work
+description: Security pass tracker — read CURRENT.md before substantial Flux work
 alwaysApply: true
 ---
 
@@ -8,30 +8,25 @@ alwaysApply: true
 Before planning or implementing substantial Flux work:
 
 1. Read **`plans/security/CURRENT.md`** (active phase, checklists, human decision gates).
-2. **State the active phase** in your first reply (e.g. “Pass 2 — destructive backup gates”).
-3. If the user’s request is **not** Pass 2 and not urgent Pass 1 deploy/smoke/fix, **ask** whether to defer the security queue.
+2. **State the active phase** in your first reply when relevant (currently **deferred** — Passes 1–5 complete).
 
-## Pass 1 — complete
+## Passes 1–5 — complete
 
-Do not re-implement Pass 1 items (gateway Bearer, migration ledger, mesh 401 semantics, etc.). Details: `plans/security/pass-1-summary.md`.
+Do not re-litigate completed work. Details: `plans/security/pass-1-summary.md`, `plans/security/CURRENT.md`.
 
-## Pass 2 — current
-
-Enforce **restore-verified backup** before destructive operations, mirroring `flux nuke` + `@flux/core/backup-trust`:
-
-- `flux migrate`, reset/db-reset parity
-- Dashboard DELETE project, factory reset (and migrate UI if destructive)
-
-Use **`allowsDestructiveWithoutOverride`**; explicit override flags only with clear UX (like `--skip-backup-check`).
+- Pass 1 — gateway Bearer, migration ledger, mesh 401 semantics
+- Pass 2 — restore-verified backup before destructive ops (`@flux/core/backup-trust`)
+- Pass 3 — system-db cutover gating
+- Pass 4 — v2 fleet deep JWT probes
+- Pass 5 — dashboard refactor slices
 
 ## Execution discipline
 
-- Prefer **one focused commit per pass slice** when the user asks to commit.
-- After Pass 2 slices: run `pnpm check:architecture`, `pnpm typecheck`, `pnpm test`; update `CURRENT.md` checkboxes.
-- Deeper context: `AGENTS.md` (v2 client footguns), `plans/security/pass-1-summary.md` (smoke + deploy order).
+- Destructive paths must use **`allowsDestructiveWithoutOverride`**; overrides only with explicit UX (`--skip-backup-check`, etc.).
+- After security-related slices: run `pnpm check:architecture`, `pnpm typecheck`, `pnpm test`; update `CURRENT.md` when adding new passes.
+- Documentation: see `.cursor/rules/documentation-freshness.mdc` and `docs/README-MAINTENANCE-CONTRACT.md`.
 
 ## Interrupt the user when
 
-- Starting a large unrelated feature without confirming Pass 2 deferral.
 - Destructive code paths lack backup trust checks.
 - Proposing to treat mesh “Online” as full JWT/RLS success (edge reachable only).

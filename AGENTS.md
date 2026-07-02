@@ -2,6 +2,17 @@
 
 Use this file when scaffolding **external** repos (Next.js, scripts, etc.) that talk to a Flux **pooled** (`v2_shared`) project over HTTPS + PostgREST. It captures non-obvious failures that do **not** show up in “happy path” snippets.
 
+## Documentation freshness rule
+
+When editing **this** Flux repo (not only external app repos):
+
+- Meaningful **platform surface area** changes must update [`README.md`](README.md) and/or canonical docs in the **same commit** — see [`docs/README-MAINTENANCE-CONTRACT.md`](docs/README-MAINTENANCE-CONTRACT.md).
+- Do **not** document aspirational features as shipped. Mark **experimental**, **beta**, **internal**, and **operator-only** surfaces clearly.
+- **MCP / tooling** changes → README MCP section + [`packages/mcp/README.md`](packages/mcp/README.md) + [`docs/pages/guides/mcp.md`](docs/pages/guides/mcp.md).
+- **CLI / dashboard / gateway / backup / security / deploy** changes → matching README section + relevant `docs/pages/*` or operator docs.
+- **App developer footguns** (v2_shared URLs, schema, JWT, GRANT) → update **this file** and the relevant guide under `docs/pages/guides/`.
+- Before marking work complete, run the checklist in [`docs/README-MAINTENANCE-CONTRACT.md`](docs/README-MAINTENANCE-CONTRACT.md).
+
 Canonical deep dives in this repo:
 
 - [`README.md`](README.md) — architecture, **JWT and schema isolation handshake** (gateway `Accept-Profile` / `Content-Profile`).

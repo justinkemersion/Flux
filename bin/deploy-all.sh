@@ -32,6 +32,7 @@ ENV_LABEL="${FLUX_ENV:-unknown}"
 CONTINUE_ON_WARN="${FLUX_DEPLOY_CONTINUE_ON_WARN:-0}"
 DOCS_STALE_DAYS="${FLUX_DOCS_STALE_DAYS:-14}"
 TRAJECTORY_DOC="docs/TRAJECTORY-TODO.md"
+README_DOC="README.md"
 
 echo "--- Flux Deploy All: Initializing ---"
 echo "  repo: $REPO_ROOT"
@@ -50,9 +51,9 @@ check_docs_freshness() {
   fi
 
   local updated_line
-  updated_line="$(awk '/^-\s*Last updated:\s*`[0-9]{4}-[0-9]{2}-[0-9]{2}`/{print; exit}' "$doc")"
+  updated_line="$(awk '/^-\s*Last (updated|reviewed):\s*`[0-9]{4}-[0-9]{2}-[0-9]{2}`/{print; exit}' "$doc")"
   if [[ -z "$updated_line" ]]; then
-    echo "  WARN: docs freshness check skipped (no 'Last updated: \`YYYY-MM-DD\`' line in ${doc})." >&2
+    echo "  WARN: docs freshness check skipped (no 'Last updated/reviewed: \`YYYY-MM-DD\`' line in ${doc})." >&2
     return 0
   fi
 
@@ -69,14 +70,15 @@ check_docs_freshness() {
   age_days="$(( (now_epoch - updated_epoch) / 86400 ))"
 
   if (( age_days > max_age_days )); then
-    echo "  WARN: trajectory docs are stale (${age_days} days old; threshold ${max_age_days})." >&2
-    echo "        Update ${doc} to reflect current deploy/test priorities." >&2
+    echo "  WARN: docs are stale (${doc}: ${age_days} days old; threshold ${max_age_days})." >&2
+    echo "        Update ${doc} (Last updated/reviewed line) to reflect current platform state." >&2
   else
     echo "  docs: ${doc} is fresh (${age_days} days old; threshold ${max_age_days})"
   fi
 }
 
 check_docs_freshness "$TRAJECTORY_DOC" "$DOCS_STALE_DAYS"
+check_docs_freshness "$README_DOC" "$DOCS_STALE_DAYS"
 
 if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
   echo "--- Flux Deploy All: Git sync (ff-only) ---"
