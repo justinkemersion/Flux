@@ -182,8 +182,8 @@ Optional `FLUX_API_BASE` for non-default control planes.
 
 Each MCP token is limited to:
 
-- **Projects** — only selected project UUIDs (enforced on control-plane routes).
-- **Capabilities** — explicit allowlist (e.g. `schema:read`, `migration:plan`). MCP also preflight-checks capabilities locally when using `FLUX_MCP_TOKEN` (Slice F).
+- **Projects** — only selected project UUIDs. Project-scoped control-plane routes resolve the hash from the URL path and fail closed when the project is outside the token (or the hash is missing).
+- **Capabilities** — explicit allowlist (e.g. `schema:read`, `migration:plan`). MCP also preflight-checks capabilities locally when using `FLUX_MCP_TOKEN` (Slice F). Temporary DB credentials minted via MCP are **readonly only**.
 - **Expiry** — read-only tokens default to 30 days (max 90); mutation-capable tokens default to 7 days (max 30).
 
 **Plaintext is shown once** at creation in the dashboard. Only a hash and safe `keyPreview` (`flx_mcp_abcd…0123`) are stored. Export the token immediately as `FLUX_MCP_TOKEN` in your MCP client config.

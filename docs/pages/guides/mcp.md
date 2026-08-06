@@ -47,6 +47,8 @@ Read-only and context tools are the **default** posture. Mutation requires expli
 3. Copy the plaintext token **once** — only a hash and safe `keyPreview` are stored server-side.
 4. Export it as `FLUX_MCP_TOKEN` in your MCP client config.
 
+Project scope is enforced fail-closed on every project-scoped `/api/cli/v1/projects/:hash/…` route (hash taken from the path when handlers omit it). Tokens with `query:readonly` may mint short-lived **readonly** temporary DB credentials only.
+
 ### Capability presets
 
 | Preset | Capabilities | Typical tools |

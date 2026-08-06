@@ -5,6 +5,7 @@ import {
   assertMcpProjectScope,
   authorizeCliRoute,
   classifyMcpCliRoute,
+  extractCliProjectHashFromPath,
   normalizeCliV1Path,
 } from "./mcp-route-auth.ts";
 import type { McpTokenAuthResult } from "./control-plane-auth.ts";
@@ -12,10 +13,10 @@ import { authenticateCliApiKey, generateFluxCliKey } from "./cli-api-auth.ts";
 import { generateMcpToken } from "./mcp-token-auth.ts";
 
 const USER_ID = "user-scope-1";
-const OTHER_USER = "user-other";
 const PROJECT_A = "00000000-0000-4000-8000-000000000001";
 const PROJECT_B = "00000000-0000-4000-8000-000000000002";
 const HASH_A = "abc1234";
+const HASH_B = "bbb2222";
 
 function mcpAuth(
   overrides: Partial<McpTokenAuthResult> = {},
@@ -52,6 +53,14 @@ test("normalizeCliV1Path replaces project hash segment", () => {
     normalizeCliV1Path("/api/cli/v1/projects/abc1234/backups"),
     "/api/cli/v1/projects/:hash/backups",
   );
+});
+
+test("extractCliProjectHashFromPath reads hash from projects path", () => {
+  assert.equal(
+    extractCliProjectHashFromPath("/api/cli/v1/projects/AbC1234/schema-inspection"),
+    "abc1234",
+  );
+  assert.equal(extractCliProjectHashFromPath("/api/cli/v1/list"), null);
 });
 
 test("classifyMcpCliRoute maps allowed and forbidden routes", () => {
@@ -91,11 +100,11 @@ test("assertMcpProjectScope allows scoped project and denies out-of-scope", asyn
   const allowed = await assertMcpProjectScope(db as never, mcpAuth(), HASH_A);
   assert.equal(allowed.ok, true);
 
-  const dbB = mockProjectDb([{ id: PROJECT_B, userId: USER_ID, hash: "bbb2222" }]);
+  const dbB = mockProjectDb([{ id: PROJECT_B, userId: USER_ID, hash: HASH_B }]);
   const denied = await assertMcpProjectScope(
     dbB as never,
     mcpAuth({ projectIds: [PROJECT_A] }),
-    "bbb2222",
+    HASH_B,
   );
   assert.equal(denied.ok, false);
   if (denied.ok) return;
@@ -188,6 +197,95 @@ test("authorizeCliRoute allows MCP token when capability and scope pass", async 
     pathname: `/api/cli/v1/projects/${HASH_A}/migrations`,
     method: "GET",
     projectHash: HASH_A,
+  });
+  assert.equal(allowed.ok, true);
+});
+
+test("authorizeCliRoute enforces project scope from pathname when projectHash omitted", async () => {
+  const issued = generateMcpToken();
+  let selectCalls = 0;
+  const projectDb = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCalls += 1;
+            if (selectCalls === 1) {
+              return [
+                {
+                  id: "row-1",
+                  userId: USER_ID,
+                  keyId: issued.keyId,
+                  keyPreview: issued.keyPreview,
+                  projectIds: [PROJECT_A],
+                  capabilities: ["query:readonly"],
+                  expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+                  revokedAt: null,
+                },
+              ];
+            }
+            // Out-of-scope project B owned by same user — scope must still deny.
+            return [{ id: PROJECT_B, hash: HASH_B }];
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({
+        where: async () => undefined,
+      }),
+    }),
+  };
+
+  const denied = await authorizeCliRoute(projectDb as never, issued.token, {
+    pathname: `/api/cli/v1/projects/${HASH_B}/db-access/temporary-credential`,
+    method: "POST",
+    // Intentionally omit projectHash — regression for handler fail-open.
+  });
+  assert.equal(denied.ok, false);
+  if (denied.ok) return;
+  assert.equal(denied.status, 403);
+  assert.match(denied.error, /outside MCP token scope/);
+});
+
+test("authorizeCliRoute allows in-scope project when projectHash omitted but present in path", async () => {
+  const issued = generateMcpToken();
+  let selectCalls = 0;
+  const projectDb = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCalls += 1;
+            if (selectCalls === 1) {
+              return [
+                {
+                  id: "row-1",
+                  userId: USER_ID,
+                  keyId: issued.keyId,
+                  keyPreview: issued.keyPreview,
+                  projectIds: [PROJECT_A],
+                  capabilities: ["schema:read"],
+                  expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+                  revokedAt: null,
+                },
+              ];
+            }
+            return [{ id: PROJECT_A, hash: HASH_A }];
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({
+        where: async () => undefined,
+      }),
+    }),
+  };
+
+  const allowed = await authorizeCliRoute(projectDb as never, issued.token, {
+    pathname: `/api/cli/v1/projects/${HASH_A}/schema-inspection`,
+    method: "POST",
   });
   assert.equal(allowed.ok, true);
 });
