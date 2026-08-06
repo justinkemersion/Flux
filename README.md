@@ -454,6 +454,8 @@ Requires **Controlled migration applier** preset (or equivalent capabilities). P
 - **Read-only by default** — mutation tools require explicit capabilities on scoped tokens.
 - **No secret leakage** — responses omit DB passwords, pooled admin creds, JWT secrets, artifact paths.
 - **Server route allowlist** — MCP tokens cannot hit destructive CLI routes (`mcp-route-auth.ts`).
+- **Project scope fail-closed** — every project-scoped `/api/cli/v1/projects/:hash/…` route resolves the hash from the path (or explicit input) and rejects out-of-scope projects; missing hash is denied, not skipped.
+- **Readonly temp credentials** — MCP tokens with `query:readonly` may mint short-lived **readonly** DB credentials only (HTTP `access: readwrite` is rejected).
 - **Audit + intents** — tool calls POST to `/api/cli/v1/audit`; mutations create intents before side effects.
 - **No raw SQL write** — apply only runs files from a prior plan via existing `pushSql`.
 

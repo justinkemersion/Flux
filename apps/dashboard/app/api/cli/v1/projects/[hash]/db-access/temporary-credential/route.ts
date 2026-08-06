@@ -4,8 +4,8 @@ import {
   projectDbTempCredentials,
   projects,
 } from "@/src/db/schema";
-import { extractBearerToken } from "@/src/lib/cli-api-auth";
 import { authorizeCliHttpRequest, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
+import { isMcpControlPlaneAuth } from "@/src/lib/control-plane-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import {
   createProjectDbTempCredential,
@@ -28,13 +28,14 @@ type Ctx = { params: Promise<{ hash: string }> };
 export async function POST(req: Request, context: Ctx): Promise<Response> {
   await initSystemDb();
   const db = getDb();
-  const authResult = await authorizeCliHttpRequest(db, req);
+  const { hash: rawHash } = await context.params;
+  const authResult = await authorizeCliHttpRequest(db, req, {
+    projectHash: rawHash ?? "",
+  });
   if (!authResult.ok) {
     return cliRouteAuthJsonError(authResult);
   }
   const auth = authResult.auth;
-
-  const { hash: rawHash } = await context.params;
   let body: { access?: string; ttlSeconds?: number } = {};
   try {
     body = (await req.json()) as { access?: string; ttlSeconds?: number };
@@ -51,6 +52,15 @@ export async function POST(req: Request, context: Ctx): Promise<Response> {
         : null;
   if (!access) {
     return jsonError("access must be readonly or readwrite.", 400);
+  }
+
+  // MCP tokens are gated by query:readonly; contract is short-lived readonly only
+  // (see flux.credentials.temporary). Do not allow HTTP body escalation to readwrite.
+  if (isMcpControlPlaneAuth(auth) && access === "readwrite") {
+    return jsonError(
+      "MCP tokens may only mint readonly temporary credentials.",
+      403,
+    );
   }
 
   const ttlSeconds =

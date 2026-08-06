@@ -34,6 +34,16 @@ export function normalizeCliV1Path(pathname: string): string {
   return trimmed.replace(/\/projects\/[a-f0-9]{7}(?=\/|$)/gi, "/projects/:hash");
 }
 
+/**
+ * Extract the 7-char project hash from a CLI v1 projects path.
+ * Used so projectScoped MCP routes enforce scope even when handlers omit projectHash.
+ */
+export function extractCliProjectHashFromPath(pathname: string): string | null {
+  const trimmed = pathname.replace(/\/+$/, "") || "/";
+  const match = trimmed.match(/\/projects\/([a-f0-9]{7})(?=\/|$)/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
 type RouteRule = {
   pattern: RegExp;
   methods: readonly string[];
@@ -470,8 +480,18 @@ export async function authorizeCliRoute(
     }
   }
 
-  if (route.projectScoped && input.projectHash) {
-    const scoped = await assertMcpProjectScope(db, auth, input.projectHash);
+  if (route.projectScoped) {
+    const projectHash =
+      input.projectHash?.trim() || extractCliProjectHashFromPath(input.pathname);
+    if (!projectHash) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Project hash is required for this MCP route.",
+        code: "mcp_project_scope_required",
+      };
+    }
+    const scoped = await assertMcpProjectScope(db, auth, projectHash);
     if (!scoped.ok) {
       return { ok: false, status: scoped.status, error: scoped.error };
     }
