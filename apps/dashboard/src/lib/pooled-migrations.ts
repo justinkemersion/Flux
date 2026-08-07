@@ -10,6 +10,10 @@ import {
   selectMigrationChecksumSql,
 } from "@flux/core/sql-migrations";
 import {
+  rewriteV2TenantPushSql,
+  tenantRoleFromApiSchema,
+} from "@flux/core/v2-push-sql-rewrite";
+import {
   buildRepeatableLedgerEnsureSql,
   buildRepeatablePushSql,
   resolveRepeatableLedgerAction,
@@ -47,6 +51,13 @@ function rowToRecord(row: Record<string, unknown>): FluxMigrationRecord {
         ? { appliedAt: String(row.applied_at) }
         : {}),
   };
+}
+
+function rewriteTenantUserSql(schema: string, userSql: string): string {
+  return rewriteV2TenantPushSql(normalizePushSql(userSql), {
+    tenantSchema: schema,
+    tenantRole: tenantRoleFromApiSchema(schema),
+  });
 }
 
 export async function listPooledAppliedMigrations(input: {
@@ -124,7 +135,7 @@ export async function executePooledMigrationPush(
 
       const wrapped = buildMigrationPushSql({
         tenantSchema: input.schema,
-        userSql: normalizePushSql(input.userSql),
+        userSql: rewriteTenantUserSql(input.schema, input.userSql),
         migration: input.migration,
       });
       await client.query(wrapped);
@@ -218,7 +229,7 @@ export async function executePooledRepeatablePush(
       const previousChecksum = existing?.checksum;
       const wrapped = buildRepeatablePushSql({
         tenantSchema: input.schema,
-        userSql: normalizePushSql(input.userSql),
+        userSql: rewriteTenantUserSql(input.schema, input.userSql),
         meta: input.repeatable,
       });
       await client.query(wrapped);

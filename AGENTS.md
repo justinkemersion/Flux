@@ -44,6 +44,7 @@ v2_shared provisions an isolated schema per tenant, e.g. `t_5ecfa3ab72d1_api` (n
 - SQL pushed via `flux push` must **`CREATE TABLE`** (and policies, indexes) **in that schema**, or you get  
   **`42501` / `permission denied for schema t_…_api`** when PostgREST evaluates requests.
 - **`public.mytab`** is wrong for pooled PostgREST unless your migration explicitly targets pooled layout and the control plane moves objects (do not assume `public`).
+- **Foundry / app-facing SQL:** on **v2_shared**, `flux push` runs migrations inside `SET LOCAL search_path TO t_<shortId>_api, public` and rewrites explicit **`authenticated`** role grants and **`public` / `api` schema** references to the tenant schema/role before execution. Unqualified `CREATE TABLE` / `CREATE POLICY` names resolve via `search_path`. Migration checksums use the **app-facing** SQL in your repo (not the rewritten form).
 
 **Discover the schema name:** Postgres error text, operator notes, or (when going through the gateway) the **`Accept-Profile`** / **`Content-Profile`** values the gateway injects (see README *JWT and schema isolation handshake*).
 

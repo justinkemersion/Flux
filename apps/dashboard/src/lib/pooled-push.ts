@@ -1,3 +1,7 @@
+import {
+  rewriteV2TenantPushSql,
+  tenantRoleFromApiSchema,
+} from "@flux/core/v2-push-sql-rewrite";
 import pg from "pg";
 
 /** Wall-clock cap for the entire connect → COMMIT cycle. */
@@ -55,6 +59,11 @@ function defaultClientFactory(): PushPgClient {
 export async function executePooledPush(input: ExecutePushInput): Promise<void> {
   const factory = input.clientFactory ?? defaultClientFactory;
   const timeoutMs = input.timeoutMs ?? PUSH_TIMEOUT_MS;
+  const tenantRole = tenantRoleFromApiSchema(input.schema);
+  const sql = rewriteV2TenantPushSql(input.sql, {
+    tenantSchema: input.schema,
+    tenantRole,
+  });
   const client = factory();
   let timer: NodeJS.Timeout | undefined;
   const work = (async () => {
@@ -65,7 +74,7 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
       await client.query(
         `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
       );
-      await client.query(input.sql);
+      await client.query(sql);
       // Shared pool: refresh PostgREST’s cached schema list in-process (same
       // pattern as v1 per-tenant Docker; channel/payload are PostgREST’s API).
       await client.query("NOTIFY pgrst, 'reload schema';");

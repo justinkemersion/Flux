@@ -89,10 +89,10 @@ class FakePgClient implements PushPgClient {
 test("executePooledMigrationPush skips when checksum matches", async () => {
   const client = new FakePgClient();
   const checksum = "b".repeat(64);
-  client.seedVersion("t_test_api", "001_a.sql", checksum);
+  client.seedVersion("t_aabbccddeeff_api", "001_a.sql", checksum);
   const factory = () => client;
   const result = await executePooledMigrationPush({
-    schema: "t_test_api",
+    schema: "t_aabbccddeeff_api",
     userSql: "SELECT 1;",
     migration: {
       version: "001_a.sql",
@@ -111,7 +111,7 @@ test("executePooledMigrationPush applies when version missing", async () => {
   const checksum = "c".repeat(64);
   const factory = () => client;
   const result = await executePooledMigrationPush({
-    schema: "t_test_api",
+    schema: "t_aabbccddeeff_api",
     userSql: "SELECT 2;",
     migration: {
       version: "002_b.sql",
@@ -127,12 +127,12 @@ test("executePooledMigrationPush applies when version missing", async () => {
 
 test("executePooledMigrationPush rejects checksum conflict", async () => {
   const client = new FakePgClient();
-  client.seedVersion("t_test_api", "003_c.sql", "a".repeat(64));
+  client.seedVersion("t_aabbccddeeff_api", "003_c.sql", "a".repeat(64));
   const factory = () => client;
   await assert.rejects(
     () =>
       executePooledMigrationPush({
-        schema: "t_test_api",
+        schema: "t_aabbccddeeff_api",
         userSql: "SELECT 3;",
         migration: {
           version: "003_c.sql",
@@ -150,10 +150,10 @@ test("same migration version is isolated per tenant_schema", async () => {
   const client = new FakePgClient();
   const checksumA = "a".repeat(64);
   const checksumB = "b".repeat(64);
-  client.seedVersion("t_tenant_a_api", "001_init.sql", checksumA);
+  client.seedVersion("t_aaaaaaaaaaaa_api", "001_init.sql", checksumA);
   const factory = () => client;
   const result = await executePooledMigrationPush({
-    schema: "t_tenant_b_api",
+    schema: "t_bbbbbbbbbbbb_api",
     userSql: "SELECT 1;",
     migration: {
       version: "001_init.sql",
@@ -170,10 +170,10 @@ test("same migration version is isolated per tenant_schema", async () => {
 test("executePooledRepeatablePush skips when checksum matches", async () => {
   const client = new FakePgClient();
   const checksum = "e".repeat(64);
-  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", checksum);
+  client.seedRepeatable("t_aabbccddeeff_api", "flux/scripts/seed.sql", checksum);
   const factory = () => client;
   const result = await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: "t_aabbccddeeff_api",
     userSql: "SELECT 1;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -196,7 +196,7 @@ test("executePooledRepeatablePush applies with run_count on first insert", async
   const checksum = "f".repeat(64);
   const factory = () => client;
   const result = await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: "t_aabbccddeeff_api",
     userSql: "SELECT 2;",
     repeatable: {
       scriptId: "flux/scripts/new.sql",
@@ -213,10 +213,10 @@ test("executePooledRepeatablePush applies with run_count on first insert", async
 test("executePooledRepeatablePush force applies unchanged checksum", async () => {
   const client = new FakePgClient();
   const checksum = "0".repeat(64);
-  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", checksum);
+  client.seedRepeatable("t_aabbccddeeff_api", "flux/scripts/seed.sql", checksum);
   const factory = () => client;
   const result = await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: "t_aabbccddeeff_api",
     userSql: "SELECT 3;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -233,10 +233,10 @@ test("executePooledRepeatablePush force applies unchanged checksum", async () =>
 
 test("executePooledRepeatablePush returns previousChecksum when content changed", async () => {
   const client = new FakePgClient();
-  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", "a".repeat(64));
+  client.seedRepeatable("t_aabbccddeeff_api", "flux/scripts/seed.sql", "a".repeat(64));
   const factory = () => client;
   const result = await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: "t_aabbccddeeff_api",
     userSql: "SELECT 4;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -255,7 +255,7 @@ test("executePooledRepeatablePush uses same transactional envelope as migrations
   const checksum = "1".repeat(64);
   const factory = () => client;
   await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: "t_aabbccddeeff_api",
     userSql: "SELECT 5;",
     repeatable: {
       scriptId: "flux/scripts/x.sql",
@@ -268,7 +268,7 @@ test("executePooledRepeatablePush uses same transactional envelope as migrations
   assert.ok(client.queries[0]?.includes("BEGIN"));
   assert.ok(
     client.queries.some((q) =>
-      q.includes("SET LOCAL search_path TO \"t_test_api\", public"),
+      q.includes("SET LOCAL search_path TO \"t_aabbccddeeff_api\", public"),
     ),
   );
   assert.ok(client.queries.some((q) => q.includes("NOTIFY pgrst")));
@@ -277,10 +277,10 @@ test("executePooledRepeatablePush uses same transactional envelope as migrations
 test("listPooledAppliedMigrations ensures tenant-scoped ledger before listing", async () => {
   const client = new FakePgClient();
   const checksum = "d".repeat(64);
-  client.seedVersion("t_test_api", "001_a.sql", checksum);
+  client.seedVersion("t_aabbccddeeff_api", "001_a.sql", checksum);
   const factory = () => client;
   const applied = await listPooledAppliedMigrations({
-    tenantSchema: "t_test_api",
+    tenantSchema: "t_aabbccddeeff_api",
     clientFactory: factory,
   });
   assert.equal(applied.length, 1);

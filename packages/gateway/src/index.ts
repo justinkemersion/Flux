@@ -5,7 +5,11 @@
  * Use `src/server.ts` as the standalone entry point.
  */
 
-export { createApp } from "./app.ts";
+export { createApp, type GatewayAppDeps } from "./app.ts";
+export {
+  FLUX_GATEWAY_CONTRACT_VERSION,
+  FLUX_GATEWAY_CONTRACT_INVARIANTS,
+} from "./gateway-contract.ts";
 export {
   resolveTenant,
   evictHostname,

@@ -38,7 +38,7 @@ flux push db/migrations/0001_moods.sql --mode versioned --project percept --hash
 
 Replace **`percept`** / **`b915ec8`** with the values from your listing.
 
-Author SQL idempotently where possible (`IF NOT EXISTS`, defensive guards). For pooled tenants, set `search_path` or schema-qualify objects explicitly.
+Author SQL idempotently where possible (`IF NOT EXISTS`, defensive guards). For pooled tenants, unqualified DDL resolves via push `search_path`; explicit **`GRANT … TO authenticated`** and **`ON SCHEMA public`** (Foundry-style app SQL) are rewritten to the tenant role/schema at execution time. You may also schema-qualify with `t_<shortId>_api` directly.
 
 Use **`flux push migrations/ --plan`**, **`--dry-run`**, and **`flux migrations list`** to inspect pending work and the ledger before applying.
 

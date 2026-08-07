@@ -38,6 +38,22 @@ class RecordingClient implements PushPgClient {
   }
 }
 
+test("executePooledPush rewrites app-facing grants before execution", async () => {
+  const client = new RecordingClient();
+  await executePooledPush({
+    schema: "t_aabbccddeeff_api",
+    sql: "GRANT USAGE ON SCHEMA public TO authenticated;",
+    clientFactory: () => client,
+  });
+
+  const grantStatement = client.statements.find((s) => s.includes("GRANT USAGE"));
+  assert.ok(grantStatement);
+  assert.match(
+    grantStatement!,
+    /GRANT USAGE ON SCHEMA t_aabbccddeeff_api TO t_aabbccddeeff_role/u,
+  );
+});
+
 test("executePooledPush issues BEGIN, search_path, user SQL, COMMIT in order", async () => {
   const client = new RecordingClient();
   await executePooledPush({
