@@ -26,7 +26,7 @@ function unwrapSubscriptionId(
 
 async function setUserPlanByStripeCustomer(
   stripeCustomerId: string,
-  plan: "free" | "pro",
+  plan: "hobby" | "pro",
   stripeSubscriptionId: string | null,
 ): Promise<void> {
   await initSystemDb();
@@ -103,7 +103,7 @@ export async function POST(req: Request): Promise<Response> {
     const isPro = activeStatuses.has(subscription.status);
     await setUserPlanByStripeCustomer(
       stripeCustomerId,
-      isPro ? "pro" : "free",
+      isPro ? "pro" : "hobby",
       isPro ? subscription.id : null,
     );
   }

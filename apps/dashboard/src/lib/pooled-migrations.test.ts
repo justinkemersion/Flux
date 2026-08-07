@@ -7,6 +7,11 @@ import {
   listPooledAppliedMigrations,
 } from "./pooled-migrations";
 
+const TENANT_SCHEMA = "t_aabbccddeeff_api";
+const TENANT_ROLE = "t_aabbccddeeff_role";
+const TENANT_B_SCHEMA = "t_bbccddeeff00_api";
+const TENANT_B_ROLE = "t_bbccddeeff00_role";
+
 type Row = Record<string, unknown>;
 
 class FakePgClient implements PushPgClient {
@@ -89,10 +94,11 @@ class FakePgClient implements PushPgClient {
 test("executePooledMigrationPush skips when checksum matches", async () => {
   const client = new FakePgClient();
   const checksum = "b".repeat(64);
-  client.seedVersion("t_test_api", "001_a.sql", checksum);
+  client.seedVersion(TENANT_SCHEMA, "001_a.sql", checksum);
   const factory = () => client;
   const result = await executePooledMigrationPush({
-    schema: "t_test_api",
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
     userSql: "SELECT 1;",
     migration: {
       version: "001_a.sql",
@@ -111,7 +117,8 @@ test("executePooledMigrationPush applies when version missing", async () => {
   const checksum = "c".repeat(64);
   const factory = () => client;
   const result = await executePooledMigrationPush({
-    schema: "t_test_api",
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
     userSql: "SELECT 2;",
     migration: {
       version: "002_b.sql",
@@ -127,12 +134,13 @@ test("executePooledMigrationPush applies when version missing", async () => {
 
 test("executePooledMigrationPush rejects checksum conflict", async () => {
   const client = new FakePgClient();
-  client.seedVersion("t_test_api", "003_c.sql", "a".repeat(64));
+  client.seedVersion(TENANT_SCHEMA, "003_c.sql", "a".repeat(64));
   const factory = () => client;
   await assert.rejects(
     () =>
       executePooledMigrationPush({
-        schema: "t_test_api",
+        schema: TENANT_SCHEMA,
+        role: TENANT_ROLE,
         userSql: "SELECT 3;",
         migration: {
           version: "003_c.sql",
@@ -150,10 +158,11 @@ test("same migration version is isolated per tenant_schema", async () => {
   const client = new FakePgClient();
   const checksumA = "a".repeat(64);
   const checksumB = "b".repeat(64);
-  client.seedVersion("t_tenant_a_api", "001_init.sql", checksumA);
+  client.seedVersion("t_ccccddeeff00_api", "001_init.sql", checksumA);
   const factory = () => client;
   const result = await executePooledMigrationPush({
-    schema: "t_tenant_b_api",
+    schema: TENANT_B_SCHEMA,
+    role: TENANT_B_ROLE,
     userSql: "SELECT 1;",
     migration: {
       version: "001_init.sql",
@@ -170,10 +179,11 @@ test("same migration version is isolated per tenant_schema", async () => {
 test("executePooledRepeatablePush skips when checksum matches", async () => {
   const client = new FakePgClient();
   const checksum = "e".repeat(64);
-  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", checksum);
+  client.seedRepeatable(TENANT_SCHEMA, "flux/scripts/seed.sql", checksum);
   const factory = () => client;
   const result = await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
     userSql: "SELECT 1;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -196,7 +206,8 @@ test("executePooledRepeatablePush applies with run_count on first insert", async
   const checksum = "f".repeat(64);
   const factory = () => client;
   const result = await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
     userSql: "SELECT 2;",
     repeatable: {
       scriptId: "flux/scripts/new.sql",
@@ -213,10 +224,11 @@ test("executePooledRepeatablePush applies with run_count on first insert", async
 test("executePooledRepeatablePush force applies unchanged checksum", async () => {
   const client = new FakePgClient();
   const checksum = "0".repeat(64);
-  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", checksum);
+  client.seedRepeatable(TENANT_SCHEMA, "flux/scripts/seed.sql", checksum);
   const factory = () => client;
   const result = await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
     userSql: "SELECT 3;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -233,10 +245,11 @@ test("executePooledRepeatablePush force applies unchanged checksum", async () =>
 
 test("executePooledRepeatablePush returns previousChecksum when content changed", async () => {
   const client = new FakePgClient();
-  client.seedRepeatable("t_test_api", "flux/scripts/seed.sql", "a".repeat(64));
+  client.seedRepeatable(TENANT_SCHEMA, "flux/scripts/seed.sql", "a".repeat(64));
   const factory = () => client;
   const result = await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
     userSql: "SELECT 4;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -255,7 +268,8 @@ test("executePooledRepeatablePush uses same transactional envelope as migrations
   const checksum = "1".repeat(64);
   const factory = () => client;
   await executePooledRepeatablePush({
-    schema: "t_test_api",
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
     userSql: "SELECT 5;",
     repeatable: {
       scriptId: "flux/scripts/x.sql",
@@ -268,19 +282,20 @@ test("executePooledRepeatablePush uses same transactional envelope as migrations
   assert.ok(client.queries[0]?.includes("BEGIN"));
   assert.ok(
     client.queries.some((q) =>
-      q.includes("SET LOCAL search_path TO \"t_test_api\", public"),
+      q.includes(`SET LOCAL search_path TO "${TENANT_SCHEMA}"`),
     ),
   );
+  assert.ok(client.queries.some((q) => q.includes("SET LOCAL ROLE")));
   assert.ok(client.queries.some((q) => q.includes("NOTIFY pgrst")));
 });
 
 test("listPooledAppliedMigrations ensures tenant-scoped ledger before listing", async () => {
   const client = new FakePgClient();
   const checksum = "d".repeat(64);
-  client.seedVersion("t_test_api", "001_a.sql", checksum);
+  client.seedVersion(TENANT_SCHEMA, "001_a.sql", checksum);
   const factory = () => client;
   const applied = await listPooledAppliedMigrations({
-    tenantSchema: "t_test_api",
+    tenantSchema: TENANT_SCHEMA,
     clientFactory: factory,
   });
   assert.equal(applied.length, 1);

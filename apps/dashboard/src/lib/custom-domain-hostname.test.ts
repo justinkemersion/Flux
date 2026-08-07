@@ -24,7 +24,7 @@ test("isFluxManagedPlatformHostname matches legacy dotted API host", () => {
 test("validateCustomDomainHostname rejects platform hosts", () => {
   process.env.FLUX_DOMAIN = "vsl-base.com";
   const result = validateCustomDomainHostname(
-    "api--victim--deadbeef.vsl-base.com",
+    "api--victim--abc1234.vsl-base.com",
   );
   assert.equal(result.ok, false);
   if (!result.ok) {

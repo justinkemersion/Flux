@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { join } from "node:path";
 import "server-only";
+import { resolveDocPageFile, tryDocRepoRoots } from "@/src/lib/docs-content-path";
 
 export type DocsFrontmatter = {
   title?: string;
@@ -28,30 +29,7 @@ const REPO_DOC_ALIASES: Record<string, string> = {};
 const REPO_DOC_ALIAS_METADATA: Record<string, DocsFrontmatter> = {};
 
 function tryRepoRoots(): string[] {
-  return [join(process.cwd(), "..", ".."), process.cwd()];
-}
-
-function isSafeDocSlugSegment(segment: string): boolean {
-  return (
-    segment.length > 0 &&
-    segment !== "." &&
-    segment !== ".." &&
-    !segment.includes("\\")
-  );
-}
-
-function resolveDocPageFile(root: string, slug: string[]): string | null {
-  if (slug.some((segment) => !isSafeDocSlugSegment(segment))) {
-    return null;
-  }
-  const rel = slug.length === 0 ? "index.md" : `${slug.join("/")}.md`;
-  const pagesRoot = resolve(root, "docs", "pages");
-  const filePath = resolve(pagesRoot, rel);
-  const prefix = pagesRoot.endsWith(sep) ? pagesRoot : `${pagesRoot}${sep}`;
-  if (!filePath.startsWith(prefix)) {
-    return null;
-  }
-  return filePath;
+  return tryDocRepoRoots();
 }
 
 function parseFrontmatter(raw: string): LoadedDocPage {
