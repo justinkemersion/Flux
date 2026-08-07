@@ -5,11 +5,11 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Deferred** — none (Pass 5b complete) |
+| **Active phase** | **Deferred** — Pass 6 complete (emergency automation audit) |
 | **Pass 1** | **Complete** (code + docs; server e2e smoke verified 2026-05-29) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
-| **Last updated** | 2026-05-30 (Pass 2 smoke script + v2 handshake docs) |
+| **Last updated** | 2026-08-07 (Pass 6 emergency automation audit) |
 
 ---
 
@@ -89,9 +89,28 @@
 
 ---
 
+## Pass 6 — emergency automation audit (2026-08-07)
+
+**Goal:** Close validated CRITICAL/HIGH findings from the 2026-08-07 security automation report without weakening Pass 1–5 guarantees.
+
+| Item | Status | Notes |
+|------|--------|--------|
+| Pooled push runs tenant SQL as `t_<id>_role` | Done | `SET LOCAL ROLE` + privilege-escape rejection; ledger stays control-plane |
+| Force-orphan DELETE blocked when global catalog row exists | Done | `(slug, hash)` lookup before orphan infra wipe |
+| Custom domain claim rejects Flux platform hostnames | Done | `api--*` / legacy dotted / slug-hash patterns |
+| Demo sessions read-only on mutating `/api/*` | Done | Next.js middleware + JWT `isDemo` |
+| Gateway strips `x-tenant-id` / `x-tenant-role` from client responses | Done | Upstream-only tenant headers |
+| MCP intent list/get/patch scoped to token `projectIds` | Done | CLI keys unchanged |
+| Docs loader path containment | Done | Rejects `.` / `..` segments |
+| CLI admin email match uses verified email only | Done | Display `name` no longer grants admin |
+| Stripe subscription cancel/downgrade sync | Done | `customer.subscription.deleted` / `updated` |
+| Project create/init quota serialization | Done | `pg_advisory_lock(hashtext(userId))` around quota+provision |
+
+---
+
 ## Deferred
 
-- (none — audit #10 large-file splits complete)
+- Custom domain DNS proof-of-control (hostname pattern deny-list shipped; full DNS verification still operator follow-up)
 
 ---
 

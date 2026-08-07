@@ -234,6 +234,11 @@ export type CliProjectDeleteDeps = {
     userId: string,
     hash: string,
   ) => Promise<DestructiveProjectRow | null>;
+  /** Any catalog row for slug+hash, regardless of owner — blocks cross-tenant orphan wipe. */
+  findAnyCatalogProjectBySlugAndHash: (
+    slug: string,
+    hash: string,
+  ) => Promise<{ userId: string } | null>;
   assertDestructiveBackupAllowed: (
     projectId: string,
   ) => Promise<BackupTrustClassification>;
@@ -314,6 +319,13 @@ export async function runCliProjectDelete(
       return jsonError(
         err instanceof Error ? err.message : "Invalid slug query parameter",
         400,
+      );
+    }
+    const globalRow = await deps.findAnyCatalogProjectBySlugAndHash(slug, hash);
+    if (globalRow) {
+      return jsonError(
+        "A catalog row exists for this slug and hash (possibly owned by another user). Orphan force delete is not allowed.",
+        409,
       );
     }
     try {

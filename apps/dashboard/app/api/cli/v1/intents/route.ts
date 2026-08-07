@@ -4,7 +4,10 @@
  */
 
 import { extractBearerToken } from "@/src/lib/cli-api-auth";
-import { controlPlaneAuthIdentity } from "@/src/lib/control-plane-auth";
+import {
+  controlPlaneAuthIdentity,
+  isMcpControlPlaneAuth,
+} from "@/src/lib/control-plane-auth";
 import type { SystemDb } from "@/src/lib/db";
 import {
   insertMcpIntent,
@@ -50,7 +53,9 @@ export async function runCliIntentGet(
     return jsonError(parsed.error, 400);
   }
 
-  const listed = await listMcpIntentsForUser(db, auth.userId, parsed.filters);
+  const listed = await listMcpIntentsForUser(db, auth.userId, parsed.filters, {
+    allowedProjectIds: isMcpControlPlaneAuth(auth) ? auth.projectIds : null,
+  });
   if (!listed.ok) {
     return jsonError(listed.error, listed.status);
   }

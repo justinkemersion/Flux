@@ -88,6 +88,8 @@ test("proxy forwards internal auth token and POST body", async () => {
     assert.equal(seenTenantId, tenant.tenantId);
     assert.equal(seenAcceptProfile, expectedProfile);
     assert.equal(seenContentProfile, expectedProfile);
+    assert.equal(response.headers.get("x-tenant-id"), null);
+    assert.equal(response.headers.get("x-tenant-role"), null);
 
     seenMethod = undefined;
     seenContentType = undefined;

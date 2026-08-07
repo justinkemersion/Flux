@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import type { FluxProjectSummary } from "@flux/core/standalone";
 import {
   fluxApiUrlForCatalog,
@@ -69,6 +69,19 @@ export function describeProvisionError(err: unknown): string {
   }
   if (typeof e?.message === "string") return e.message;
   return String(err);
+}
+
+export async function withUserProjectCreateLock<T>(
+  db: ReturnType<typeof getDb>,
+  userId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  await db.execute(sql`SELECT pg_advisory_lock(hashtext(${userId}))`);
+  try {
+    return await fn();
+  } finally {
+    await db.execute(sql`SELECT pg_advisory_unlock(hashtext(${userId}))`);
+  }
 }
 
 export async function allocateUniqueProjectHash(

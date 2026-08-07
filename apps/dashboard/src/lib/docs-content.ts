@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import "server-only";
 
 export type DocsFrontmatter = {
@@ -29,6 +29,29 @@ const REPO_DOC_ALIAS_METADATA: Record<string, DocsFrontmatter> = {};
 
 function tryRepoRoots(): string[] {
   return [join(process.cwd(), "..", ".."), process.cwd()];
+}
+
+function isSafeDocSlugSegment(segment: string): boolean {
+  return (
+    segment.length > 0 &&
+    segment !== "." &&
+    segment !== ".." &&
+    !segment.includes("\\")
+  );
+}
+
+function resolveDocPageFile(root: string, slug: string[]): string | null {
+  if (slug.some((segment) => !isSafeDocSlugSegment(segment))) {
+    return null;
+  }
+  const rel = slug.length === 0 ? "index.md" : `${slug.join("/")}.md`;
+  const pagesRoot = resolve(root, "docs", "pages");
+  const filePath = resolve(pagesRoot, rel);
+  const prefix = pagesRoot.endsWith(sep) ? pagesRoot : `${pagesRoot}${sep}`;
+  if (!filePath.startsWith(prefix)) {
+    return null;
+  }
+  return filePath;
 }
 
 function parseFrontmatter(raw: string): LoadedDocPage {
@@ -78,10 +101,9 @@ export async function loadDocPage(slug: string[]): Promise<LoadedDocPage | null>
     return null;
   }
 
-  const rel =
-    slug.length === 0 ? "index.md" : `${slug.join("/")}.md`;
   for (const root of tryRepoRoots()) {
-    const filePath = join(root, "docs", "pages", rel);
+    const filePath = resolveDocPageFile(root, slug);
+    if (!filePath) continue;
     try {
       const raw = await readFile(filePath, "utf8");
       return parseFrontmatter(raw);

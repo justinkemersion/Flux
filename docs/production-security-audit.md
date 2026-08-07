@@ -37,6 +37,19 @@ Customer tenant **Postgres** is on a per-project **internal** bridge (`flux-<has
 - **`GET /api/projects`** returns project metadata and status only — **not** connection strings or API keys.
 - **`GET /api/projects/[slug]/credentials`** (authenticated, owner-only) returns sensitive credentials for the Reveal Keys flow.
 
+### v2 pooled push privilege isolation (Pass 6)
+
+- **`POST /api/cli/v1/push`** and dashboard pooled push execute user SQL under the tenant DB role (`SET LOCAL ROLE t_<shortId>_role`), not the shared-cluster admin connection. Trusted migration/repeatable ledger writes remain on the control-plane role between tenant-scoped user SQL and commit.
+- Static rejection of `SET ROLE` / `RESET ROLE` / `SET SESSION AUTHORIZATION` in push bodies.
+
+### Custom domains (Pass 6)
+
+- Dashboard domain claims reject Flux-managed platform API hostname patterns (`api--slug--hash`, legacy dotted hosts, slug-hash labels). Unrelated custom hostnames still require operator DNS routing outside Flux; automated DNS proof-of-control is not yet enforced in-app.
+
+### Demo mode (Pass 6)
+
+- When `FLUX_DEMO_ENABLED=1`, demo JWT sessions (`isDemo`) may read the dashboard but mutating `/api/*` routes return **403**.
+
 ## Related code
 
 - `@flux/core` — `provisionProject`, `FLUX_DOCKER_IMAGES`, `getProjectCredentials`, `getProjectSummariesForSlugs`, `fluxTenantStatusFromContainerPair`, `listProjects`.

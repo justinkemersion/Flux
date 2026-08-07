@@ -305,25 +305,31 @@ ORDER BY version ASC;
  * Wraps user SQL for a migration-mode push: ensure ledger, run user SQL, insert row.
  * Caller must run {@link resolveMigrationLedgerAction} first (separate query) to skip or conflict.
  */
+export function buildMigrationLedgerInsertSql(input: {
+  tenantSchema: string;
+  migration: MigrationPushMeta;
+}): string {
+  const { tenantSchema, migration } = input;
+  const ts = sqlLiteral(tenantSchema);
+  const v = sqlLiteral(migration.version);
+  const f = sqlLiteral(migration.filename);
+  const c = sqlLiteral(migration.checksum);
+  return `
+INSERT INTO flux.flux_migrations (tenant_schema, version, filename, checksum)
+VALUES (${ts}, ${v}, ${f}, ${c});`.trim();
+}
+
 export function buildMigrationPushSql(input: {
   tenantSchema: string;
   userSql: string;
   migration: MigrationPushMeta;
 }): string {
   const { tenantSchema, userSql, migration } = input;
-  const ts = sqlLiteral(tenantSchema);
-  const v = sqlLiteral(migration.version);
-  const f = sqlLiteral(migration.filename);
-  const c = sqlLiteral(migration.checksum);
-
-  const insert = `
-INSERT INTO flux.flux_migrations (tenant_schema, version, filename, checksum)
-VALUES (${ts}, ${v}, ${f}, ${c});`.trim();
 
   return [
     buildFluxMigrationsLedgerEnsureSql(tenantSchema),
     normalizePushSql(userSql).trim(),
-    insert,
+    buildMigrationLedgerInsertSql({ tenantSchema, migration }),
   ]
     .filter((s) => s.length > 0)
     .join("\n\n");

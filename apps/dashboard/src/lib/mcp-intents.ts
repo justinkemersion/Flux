@@ -2,7 +2,7 @@
  * MCP intent validation + persistence for POST/GET /api/cli/v1/intents.
  */
 
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { mcpIntents, projects } from "@/src/db/schema";
 import type { SystemDb } from "@/src/lib/db";
 import {
@@ -170,11 +170,22 @@ export async function listMcpIntentsForUser(
   db: SystemDb,
   userId: string,
   filters: ListMcpIntentsFilters,
+  options?: { allowedProjectIds?: readonly string[] | null },
 ): Promise<
   | { ok: true; result: ListMcpIntentsResult }
   | { ok: false; status: number; error: string }
 > {
   const conditions = [eq(mcpIntents.userId, userId)];
+
+  if (options?.allowedProjectIds) {
+    const allowed = options.allowedProjectIds.filter(Boolean);
+    if (allowed.length === 0) {
+      return { ok: true, result: { intents: [] } };
+    }
+    conditions.push(
+      or(isNull(mcpIntents.projectId), inArray(mcpIntents.projectId, [...allowed]))!,
+    );
+  }
 
   if (filters.projectHash) {
     conditions.push(eq(mcpIntents.projectHash, filters.projectHash));
@@ -474,6 +485,7 @@ export async function getMcpIntentById(
   db: SystemDb,
   auth: { userId: string },
   intentId: string,
+  options?: { allowedProjectIds?: readonly string[] | null },
 ): Promise<McpIntentGetResult> {
   const id = intentId.trim();
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
@@ -488,6 +500,7 @@ export async function getMcpIntentById(
       intentClass: mcpIntents.intentClass,
       riskLevel: mcpIntents.riskLevel,
       projectHash: mcpIntents.projectHash,
+      projectId: mcpIntents.projectId,
       planId: mcpIntents.planId,
       planHash: mcpIntents.planHash,
       policyDecision: mcpIntents.policyDecision,
@@ -504,6 +517,12 @@ export async function getMcpIntentById(
 
   if (!row) {
     return { ok: false, status: 404, error: "Intent not found." };
+  }
+
+  if (options?.allowedProjectIds && row.projectId) {
+    if (!options.allowedProjectIds.includes(row.projectId)) {
+      return { ok: false, status: 403, error: "Intent is outside MCP token scope." };
+    }
   }
 
   return {
@@ -604,10 +623,18 @@ export async function updateMcpIntentById(
   auth: { userId: string },
   intentId: string,
   input: McpIntentUpdateInput,
+  options?: { allowedProjectIds?: readonly string[] | null },
 ): Promise<McpIntentUpdateResult> {
   const id = intentId.trim();
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
     return { ok: false, status: 400, error: "Invalid intent id." };
+  }
+
+  if (options?.allowedProjectIds) {
+    const existing = await getMcpIntentById(db, auth, id, options);
+    if (!existing.ok) {
+      return { ok: false, status: existing.status, error: existing.error };
+    }
   }
 
   const now = new Date();

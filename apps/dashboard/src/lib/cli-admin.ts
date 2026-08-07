@@ -33,10 +33,5 @@ export function resolveCliRoleForUser(input: {
     return "admin";
   }
 
-  const name = input.name?.trim().toLowerCase();
-  if (name && adminEmails.has(name)) {
-    return "admin";
-  }
-
   return "operator";
 }

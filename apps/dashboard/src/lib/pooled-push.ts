@@ -26,6 +26,8 @@ export type PushPgClientFactory = () => PushPgClient;
 
 export type ExecutePushInput = {
   schema: string;
+  /** Per-tenant non-superuser role (`t_<shortId>_role`). */
+  role: string;
   sql: string;
   /** Override for tests / non-`pg.Client` implementations. */
   clientFactory?: PushPgClientFactory;
@@ -45,7 +47,7 @@ function defaultClientFactory(): PushPgClient {
 
 /**
  * Executes a tenant SQL push against the shared cluster inside a single
- * transaction, scoped to the tenant schema via `SET LOCAL search_path`.
+ * transaction, scoped to the tenant role via `SET LOCAL ROLE` (not search_path alone).
  *
  * `statement_timeout` caps individual statements; the outer Promise.race
  * caps the total request including connect / commit hangs.
@@ -53,6 +55,16 @@ function defaultClientFactory(): PushPgClient {
  * On failure the transaction is rolled back; the original error is rethrown.
  */
 export async function executePooledPush(input: ExecutePushInput): Promise<void> {
+  const {
+    beginPooledPushTransaction,
+    finishPooledPushTransaction,
+    rejectPooledPushPrivilegeEscape,
+    resetPooledPushRole,
+    setPooledPushTenantContext,
+  } = await import("./pooled-push-session.ts");
+
+  rejectPooledPushPrivilegeEscape(input.sql);
+
   const factory = input.clientFactory ?? defaultClientFactory;
   const timeoutMs = input.timeoutMs ?? PUSH_TIMEOUT_MS;
   const client = factory();
@@ -60,16 +72,14 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
   const work = (async () => {
     await client.connect();
     try {
-      await client.query("BEGIN");
-      await client.query("SET LOCAL statement_timeout = '30s'");
-      await client.query(
-        `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
-      );
+      await beginPooledPushTransaction(client);
+      await setPooledPushTenantContext(client, {
+        schema: input.schema,
+        role: input.role,
+      });
       await client.query(input.sql);
-      // Shared pool: refresh PostgREST’s cached schema list in-process (same
-      // pattern as v1 per-tenant Docker; channel/payload are PostgREST’s API).
-      await client.query("NOTIFY pgrst, 'reload schema';");
-      await client.query("COMMIT");
+      await resetPooledPushRole(client);
+      await finishPooledPushTransaction(client);
     } catch (err) {
       try {
         await client.query("ROLLBACK");

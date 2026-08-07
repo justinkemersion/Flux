@@ -4,7 +4,7 @@
  */
 
 import { extractBearerToken } from "@/src/lib/cli-api-auth";
-import { controlPlaneAuthIdentity } from "@/src/lib/control-plane-auth";
+import { controlPlaneAuthIdentity, isMcpControlPlaneAuth } from "@/src/lib/control-plane-auth";
 import type { SystemDb } from "@/src/lib/db";
 import {
   getMcpIntentById,
@@ -42,9 +42,12 @@ export async function runCliIntentGet(
     return cliRouteAuthJsonError(authResult);
   }
   const auth = controlPlaneAuthIdentity(authResult.auth);
+  const scopeOptions = isMcpControlPlaneAuth(authResult.auth)
+    ? { allowedProjectIds: authResult.auth.projectIds }
+    : undefined;
 
   const { id } = await context.params;
-  const result = await getMcpIntentById(db, auth, id ?? "");
+  const result = await getMcpIntentById(db, auth, id ?? "", scopeOptions);
   if (!result.ok) {
     return jsonError(result.error, result.status);
   }
@@ -71,10 +74,13 @@ export async function runCliIntentPatch(
     return cliRouteAuthJsonError(authResult);
   }
   const auth = controlPlaneAuthIdentity(authResult.auth);
+  const scopeOptions = isMcpControlPlaneAuth(authResult.auth)
+    ? { allowedProjectIds: authResult.auth.projectIds }
+    : undefined;
 
   const { id } = await context.params;
   const intentId = id ?? "";
-  const existing = await getMcpIntentById(db, auth, intentId);
+  const existing = await getMcpIntentById(db, auth, intentId, scopeOptions);
   if (!existing.ok) {
     return jsonError(existing.error, existing.status);
   }
@@ -91,7 +97,13 @@ export async function runCliIntentPatch(
     return jsonError(validated.error, 400);
   }
 
-  const updated = await updateMcpIntentById(db, auth, intentId, validated.input);
+  const updated = await updateMcpIntentById(
+    db,
+    auth,
+    intentId,
+    validated.input,
+    scopeOptions,
+  );
   if (!updated.ok) {
     return jsonError(updated.error, updated.status);
   }
