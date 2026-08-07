@@ -1,3 +1,4 @@
+import { adaptPooledPushSql, pooledPushSearchPathList } from "@flux/core";
 import pg from "pg";
 
 /** Wall-clock cap for the entire connect → COMMIT cycle. */
@@ -27,6 +28,8 @@ export type PushPgClientFactory = () => PushPgClient;
 export type ExecutePushInput = {
   schema: string;
   sql: string;
+  /** Tenant DB role for Supabase-style GRANT rewrite; defaults from schema name. */
+  tenantRole?: string;
   /** Override for tests / non-`pg.Client` implementations. */
   clientFactory?: PushPgClientFactory;
   /** Override the wall-clock timeout (ms). Defaults to {@link PUSH_TIMEOUT_MS}. */
@@ -43,6 +46,15 @@ function defaultClientFactory(): PushPgClient {
   return new pg.Client({ connectionString: sharedUrl });
 }
 
+function tenantRoleFromSchema(schema: string): string {
+  if (!schema.endsWith("_api")) {
+    throw new Error(
+      `Expected tenant API schema name ending in _api, got "${schema}"`,
+    );
+  }
+  return `${schema.slice(0, -4)}_role`;
+}
+
 /**
  * Executes a tenant SQL push against the shared cluster inside a single
  * transaction, scoped to the tenant schema via `SET LOCAL search_path`.
@@ -55,6 +67,11 @@ function defaultClientFactory(): PushPgClient {
 export async function executePooledPush(input: ExecutePushInput): Promise<void> {
   const factory = input.clientFactory ?? defaultClientFactory;
   const timeoutMs = input.timeoutMs ?? PUSH_TIMEOUT_MS;
+  const tenantRole = input.tenantRole ?? tenantRoleFromSchema(input.schema);
+  const adaptedSql = adaptPooledPushSql(input.sql, {
+    tenantSchema: input.schema,
+    tenantRole,
+  });
   const client = factory();
   let timer: NodeJS.Timeout | undefined;
   const work = (async () => {
@@ -63,9 +80,9 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
       await client.query("BEGIN");
       await client.query("SET LOCAL statement_timeout = '30s'");
       await client.query(
-        `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
+        `SET LOCAL search_path TO ${pooledPushSearchPathList(input.schema)}`,
       );
-      await client.query(input.sql);
+      await client.query(adaptedSql);
       // Shared pool: refresh PostgREST’s cached schema list in-process (same
       // pattern as v1 per-tenant Docker; channel/payload are PostgREST’s API).
       await client.query("NOTIFY pgrst, 'reload schema';");

@@ -38,11 +38,11 @@ class RecordingClient implements PushPgClient {
   }
 }
 
-test("executePooledPush issues BEGIN, search_path, user SQL, COMMIT in order", async () => {
+test("executePooledPush issues BEGIN, search_path, adapted user SQL, COMMIT in order", async () => {
   const client = new RecordingClient();
   await executePooledPush({
     schema: "t_aabbccddeeff_api",
-    sql: "CREATE TABLE foo (id int);",
+    sql: "CREATE TABLE foo (id int);\nGRANT SELECT ON foo TO authenticated;",
     clientFactory: () => client,
   });
 
@@ -51,7 +51,7 @@ test("executePooledPush issues BEGIN, search_path, user SQL, COMMIT in order", a
     "BEGIN",
     "SET LOCAL statement_timeout = '30s'",
     'SET LOCAL search_path TO "t_aabbccddeeff_api", public',
-    "CREATE TABLE foo (id int);",
+    'CREATE TABLE foo (id int);\nGRANT SELECT ON foo TO "t_aabbccddeeff_role";',
     "NOTIFY pgrst, 'reload schema';",
     "COMMIT",
   ]);

@@ -113,6 +113,26 @@ flux migrations list              # show flux.flux_migrations for the project
 
 In CI, use non-interactive tokens, pinned **`FLUX_API_BASE`**, and either the same flags or a checked-in **`flux.json`** with **`slug`** + **`hash`** so pipelines do not drift.
 
+### Foundry / Supabase-style SQL on v2_shared
+
+Foundry repos often ship **unqualified** DDL (`CREATE TABLE profiles …`) and privilege boilerplate (`GRANT … TO authenticated`, `GRANT USAGE ON SCHEMA public …`). On **v2_shared**, `flux push` applies SQL inside a transaction with:
+
+```sql
+SET LOCAL search_path TO t_<shortId>_api, public;
+```
+
+**Object placement:** Unqualified `CREATE TABLE` / indexes / policies resolve in **`t_<shortId>_api`** first (not `public`).
+
+**Role rewrite (execution-time only):** The control plane adapts privilege statements before execution:
+
+- `authenticated` → `t_<shortId>_role` (the same role the gateway mints on bridge JWTs)
+- `GRANT|REVOKE … ON SCHEMA public` → tenant API schema
+- `ALTER DEFAULT PRIVILEGES IN SCHEMA public` → tenant API schema
+
+Migration **checksums** and ledger rows remain on normalized file content (no rewrite in Git). **`anon`** grants are preserved when present (cluster-global role).
+
+**Runtime JWTs:** Apps still mint project JWTs with `role: "authenticated"`; the gateway maps that to `t_<shortId>_role` before PostgREST — see [Bridge JWTs](/docs/architecture/bridge-jwts).
+
 ### Legacy pooled ledger (operators)
 
 On **v2_shared**, the migration ledger is **`flux.flux_migrations`** with primary key **`(tenant_schema, version)`**. Shared Postgres clusters that ran migrations before Pass 1B may still have a **legacy global ledger** ( **`version`** only). Directory **`flux push`** inspects that table before applying files.

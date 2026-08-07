@@ -226,6 +226,8 @@ flux migrations list -p my-app --hash <7hex>
 
 v2 directory push uses tenant-scoped ledger. Legacy global ledger: [`bin/migrate-pooled-ledger.sh`](bin/migrate-pooled-ledger.sh).
 
+**Foundry-style pooled push:** Unqualified DDL resolves via `search_path` into `t_<shortId>_api`; `GRANT … TO authenticated` and `ON SCHEMA public` are rewritten at execution to the tenant role/schema (checksums use file content). Gateway maps app JWT `role: authenticated` → `t_<shortId>_role`. Unauthenticated API calls fail closed with HTTP **401** `{ "error": "authorization required" }`.
+
 ### Inspect DB / schema
 
 ```bash

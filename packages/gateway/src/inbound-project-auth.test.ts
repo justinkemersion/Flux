@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SignJWT } from "jose";
+import { SignJWT, jwtVerify } from "jose";
+import { V2_GATEWAY_AUTH_REQUIRED_ERROR } from "@flux/core";
+import { defaultTenantRoleFromProjectId } from "@flux/core/api-schema-strategy";
 import type { TenantResolution } from "./types.ts";
 
 const PROJECT_SECRET = "project-secret-for-tests-32-characters";
@@ -45,7 +47,7 @@ test("verifyInboundProjectBearer rejects missing Authorization", async () => {
   assert.equal(result.ok, false);
   if (!result.ok) {
     assert.equal(result.status, 401);
-    assert.equal(result.error, "authorization required");
+    assert.equal(result.error, V2_GATEWAY_AUTH_REQUIRED_ERROR);
   }
 });
 
@@ -66,12 +68,20 @@ test("verifyInboundProjectBearer rejects invalid JWT", async () => {
   if (!result.ok) assert.equal(result.status, 401);
 });
 
-test("verifyInboundProjectBearer mints bridge JWT for valid project token", async () => {
+test("verifyInboundProjectBearer mints bridge JWT with tenant role for authenticated project token", async () => {
   const { verifyInboundProjectBearer } = await loadInboundAuth();
   const token = await signProjectJwt();
   const result = await verifyInboundProjectBearer(`Bearer ${token}`, TENANT);
   assert.equal(result.ok, true);
   if (result.ok) {
     assert.ok(result.downstreamJwt.length > 0);
+    const verified = await jwtVerify(
+      result.downstreamJwt,
+      new TextEncoder().encode(process.env.FLUX_GATEWAY_JWT_SECRET!),
+      { algorithms: ["HS256"] },
+    );
+    assert.equal(verified.payload.role, defaultTenantRoleFromProjectId(TENANT_ID));
+    assert.equal(verified.payload.sub, "user_test");
+    assert.equal(verified.payload.tenant_id, TENANT_ID);
   }
 });

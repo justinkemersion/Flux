@@ -69,6 +69,16 @@ Omitting these when `db-schemas` lists multiple schemas (or default is not where
 
 ---
 
+## 4b) Foundry migrations on v2_shared (`flux push` rewrite)
+
+Foundry ships Supabase-style SQL: unqualified tables, `GRANT … TO authenticated`, and sometimes `ON SCHEMA public`. On **v2_shared**:
+
+- **`flux push`** runs inside `SET LOCAL search_path TO t_<shortId>_api, public` — unqualified objects land in the tenant schema.
+- Before execution, Flux rewrites **`authenticated`** → **`t_<shortId>_role`** and schema **`public`** in privilege statements to the tenant API schema. Git file checksums are unchanged.
+- At request time, the gateway performs the same role mapping on JWTs (`authenticated` in → `t_<shortId>_role` on the bridge JWT).
+
+---
+
 ## 5) RLS is not enough — **`GRANT`**
 
 Policies filter rows **after** the DB role is allowed to touch the table. Without:

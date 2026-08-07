@@ -1,3 +1,4 @@
+import { adaptPooledPushSql, pooledPushSearchPathList } from "@flux/core";
 import {
   buildFluxMigrationsLedgerEnsureSql,
   buildMigrationPushSql,
@@ -17,8 +18,25 @@ import {
   type RepeatablePushMeta,
 } from "@flux/core/sql-repeatable-scripts";
 import type { PushPgClient, PushPgClientFactory } from "@/src/lib/pooled-push";
-import { quoteIdent, PUSH_TIMEOUT_MS } from "@/src/lib/pooled-push";
+import { PUSH_TIMEOUT_MS } from "@/src/lib/pooled-push";
 import pg from "pg";
+
+function tenantRoleFromSchema(schema: string): string {
+  if (!schema.endsWith("_api")) {
+    throw new Error(
+      `Expected tenant API schema name ending in _api, got "${schema}"`,
+    );
+  }
+  return `${schema.slice(0, -4)}_role`;
+}
+
+function adaptUserSqlForPooledPush(schema: string, userSql: string): string {
+  const tenantRole = tenantRoleFromSchema(schema);
+  return adaptPooledPushSql(normalizePushSql(userSql), {
+    tenantSchema: schema,
+    tenantRole,
+  });
+}
 
 function defaultClientFactory(): PushPgClient {
   const sharedUrl = process.env.FLUX_SHARED_POSTGRES_URL?.trim();
@@ -96,7 +114,7 @@ export async function executePooledMigrationPush(
       await client.query("BEGIN");
       await client.query("SET LOCAL statement_timeout = '30s'");
       await client.query(
-        `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
+        `SET LOCAL search_path TO ${pooledPushSearchPathList(input.schema)}`,
       );
       await client.query(buildFluxMigrationsLedgerEnsureSql(input.schema));
 
@@ -124,7 +142,7 @@ export async function executePooledMigrationPush(
 
       const wrapped = buildMigrationPushSql({
         tenantSchema: input.schema,
-        userSql: normalizePushSql(input.userSql),
+        userSql: adaptUserSqlForPooledPush(input.schema, input.userSql),
         migration: input.migration,
       });
       await client.query(wrapped);
@@ -193,7 +211,7 @@ export async function executePooledRepeatablePush(
       await client.query("BEGIN");
       await client.query("SET LOCAL statement_timeout = '30s'");
       await client.query(
-        `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
+        `SET LOCAL search_path TO ${pooledPushSearchPathList(input.schema)}`,
       );
       await client.query(buildRepeatableLedgerEnsureSql(input.schema));
 
@@ -218,7 +236,7 @@ export async function executePooledRepeatablePush(
       const previousChecksum = existing?.checksum;
       const wrapped = buildRepeatablePushSql({
         tenantSchema: input.schema,
-        userSql: normalizePushSql(input.userSql),
+        userSql: adaptUserSqlForPooledPush(input.schema, input.userSql),
         meta: input.repeatable,
       });
       await client.query(wrapped);
