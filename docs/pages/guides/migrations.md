@@ -133,6 +133,31 @@ COMMENT ON TABLE t_<shortId>_api.audit_log IS 'flux:no-force-rls — append-only
 
 Tables **without** RLS enabled are never modified. A push is rejected if the runtime role is found owning objects in the tenant schema, since that would disable RLS for that role.
 
+### Foundry / Supabase-style SQL on v2_shared
+
+Foundry repos often ship **unqualified** DDL (`CREATE TABLE profiles …`) and privilege boilerplate (`GRANT … TO authenticated`, `GRANT USAGE ON SCHEMA public …`). On **v2_shared**, `flux push` applies SQL inside a transaction with:
+
+```sql
+SET LOCAL ROLE t_<shortId>_ddl;
+SET LOCAL search_path TO t_<shortId>_api;
+```
+
+**Object placement:** Unqualified `CREATE TABLE` / indexes / policies resolve in **`t_<shortId>_api`** (not `public`).
+
+**Privileges:** Your SQL runs as the per-tenant owner role, not the control-plane role. Statements needing superuser — most commonly **`CREATE EXTENSION`** — are rejected; ask an operator to install extensions cluster-wide. Ledger writes happen after `RESET ROLE` so the migration record cannot be forged by pushed SQL.
+
+**Role rewrite (execution-time only):** The control plane adapts privilege statements before execution:
+
+- `authenticated` → `t_<shortId>_role` (the same role the gateway mints on bridge JWTs)
+- `GRANT|REVOKE … ON SCHEMA public` → tenant API schema
+- `ALTER DEFAULT PRIVILEGES IN SCHEMA public` → tenant API schema
+
+Qualified **`public.<object>`** references are deliberately left alone, since `public` holds the PostgREST hook functions and any operator-installed extensions.
+
+Migration **checksums** and ledger rows remain on normalized file content (no rewrite in Git). **`anon`** grants are preserved when present (cluster-global role).
+
+**Runtime JWTs:** Apps still mint project JWTs with `role: "authenticated"`; the gateway maps that to `t_<shortId>_role` before PostgREST — see [Bridge JWTs](/docs/architecture/bridge-jwts).
+
 ### Legacy pooled ledger (operators)
 
 On **v2_shared**, the migration ledger is **`flux.flux_migrations`** with primary key **`(tenant_schema, version)`**. Shared Postgres clusters that ran migrations before Pass 1B may still have a **legacy global ledger** ( **`version`** only). Directory **`flux push`** inspects that table before applying files.

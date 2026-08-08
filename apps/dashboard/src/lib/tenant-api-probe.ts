@@ -1,6 +1,7 @@
 import {
   type FluxCatalogProjectMode,
   fluxApiUrlForCatalog,
+  V2_GATEWAY_AUTH_REQUIRED_ERROR,
 } from "@flux/core";
 import { SignJWT } from "jose";
 import http from "node:http";
@@ -52,11 +53,8 @@ function tenantProbeGatewayBases(): string[] {
   return bases;
 }
 
-/**
- * 401 body when the v2 gateway resolved the tenant but no project Bearer was sent.
- * Keep aligned with `packages/gateway/src/inbound-project-auth.ts`.
- */
-export const V2_GATEWAY_AUTH_REQUIRED_ERROR = "authorization required";
+/** Re-export for dashboard tests and fleet probes — canonical in `@flux/core/v2-api-contract`. */
+export { V2_GATEWAY_AUTH_REQUIRED_ERROR };
 
 /**
  * Fleet / lifecycle probes treat HTTP status as reachability, not full API auth.

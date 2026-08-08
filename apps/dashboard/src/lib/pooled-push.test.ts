@@ -46,13 +46,13 @@ const TENANT_SCHEMA = "t_aabbccddeeff_api";
 const TENANT_ROLE = "t_aabbccddeeff_role";
 const TENANT_DDL_ROLE = "t_aabbccddeeff_ddl";
 
-test("executePooledPush issues BEGIN, SET LOCAL ROLE (DDL role), search_path, user SQL, RLS invariants, COMMIT in order", async () => {
+test("executePooledPush issues BEGIN, SET LOCAL ROLE (DDL role), search_path, adapted user SQL, RLS invariants, COMMIT in order", async () => {
   const client = new RecordingClient();
   await executePooledPush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
     ddlRole: TENANT_DDL_ROLE,
-    sql: "CREATE TABLE foo (id int);",
+    sql: "CREATE TABLE foo (id int);\nGRANT SELECT ON foo TO authenticated;",
     clientFactory: () => client,
   });
 
@@ -62,7 +62,7 @@ test("executePooledPush issues BEGIN, SET LOCAL ROLE (DDL role), search_path, us
     "SET LOCAL statement_timeout = '30s'",
     'SET LOCAL ROLE "t_aabbccddeeff_ddl"',
     'SET LOCAL search_path TO "t_aabbccddeeff_api"',
-    "CREATE TABLE foo (id int);",
+    'CREATE TABLE foo (id int);\nGRANT SELECT ON foo TO "t_aabbccddeeff_role";',
     "RESET ROLE",
     buildForceRlsInvariantSql(TENANT_SCHEMA),
     buildAssertRuntimeRoleOwnsNothingSql(TENANT_SCHEMA, TENANT_ROLE),
