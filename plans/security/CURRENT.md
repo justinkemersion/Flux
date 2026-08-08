@@ -5,11 +5,17 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Deferred** — Pass 6 complete (emergency automation audit) |
+| **Active phase** | **Pass 6b** — [tenant DDL/owner role](pass-6b-tenant-ddl-role.md). **Blocks v2_shared deploy.** |
 | **Pass 1** | **Complete** (code + docs; server e2e smoke verified 2026-05-29) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
-| **Last updated** | 2026-08-07 (Pass 6 emergency automation audit) |
+| **Pass 6** | **Merged, not deployable alone** — see Pass 6b |
+| **Last updated** | 2026-08-08 (Pass 6b opened after production preflight) |
+
+> **Do not deploy `main` to v2_shared production.** Pass 6 runs pooled push as
+> `t_<12hex>_role`, which has no `CREATE` on its own schema on the production cluster —
+> every tenant migration push would fail. Fix and deploy ordering:
+> [`pass-6b-tenant-ddl-role.md`](pass-6b-tenant-ddl-role.md).
 
 ---
 
