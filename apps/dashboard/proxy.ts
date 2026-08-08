@@ -1,4 +1,5 @@
 import { auth } from "@/src/lib/auth";
+import { demoReadOnlyMiddleware } from "@/src/lib/demo-readonly-middleware";
 import { applyCliRateLimitIfNeeded } from "@/src/lib/flux-proxy";
 import { NextResponse } from "next/server";
 import type { NextFetchEvent, NextMiddleware, NextRequest } from "next/server";
@@ -8,15 +9,21 @@ type AuthMiddleware = (request: NextRequest, event: NextFetchEvent) => ReturnTyp
 /**
  * Next.js 16 proxy (formerly middleware).
  *
- * Must export a function named `proxy`.
+ * Must export a function named `proxy`. Next 16 refuses to build when a
+ * `middleware.ts` also exists, so every edge concern belongs here.
  *
  * Important: `auth(callback)` returns a route-handler object, not middleware.
  * Use the base `auth` export for session gating; apply CLI rate limits separately.
  *
+ * - Any `/api/*`: demo sessions are blocked from mutating requests first, so the
+ *   guard applies to CLI routes too (they never reach the Auth.js branch below).
  * - `/api/cli/v1/*`: rate limit → `NextResponse.next()` (Bearer auth in route handlers).
  * - Other matched paths: Auth.js `auth()` + `authorized` callback in `auth.ts`.
  */
-export function proxy(request: NextRequest, event: NextFetchEvent) {
+export async function proxy(request: NextRequest, event: NextFetchEvent) {
+  const blocked = await demoReadOnlyMiddleware(request);
+  if (blocked) return blocked;
+
   if (request.nextUrl.pathname.startsWith("/api/cli/v1")) {
     const limited = applyCliRateLimitIfNeeded(request);
     if (limited) return limited;
@@ -27,6 +34,9 @@ export function proxy(request: NextRequest, event: NextFetchEvent) {
 
 export const config = {
   matcher: [
+    // Superset of the CLI pattern below, so the demo read-only guard sees every
+    // API request. v1 is the only CLI version, so no CLI route changes branch.
+    "/api/:path*",
     "/api/cli/v1/:path*",
     /*
      * Match all request paths except for the ones starting with:
