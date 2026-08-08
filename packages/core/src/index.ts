@@ -30,6 +30,15 @@ export {
   FLUX_PUSH_SQL_TARGET_MAJOR,
   normalizePushSql,
 } from "./sql-migrations.ts";
+export {
+  adaptPooledPushSql,
+  type PooledPushSqlAdaptInput,
+} from "./pooled-push-sql-adapt.ts";
+export {
+  V2_GATEWAY_AUTH_REQUIRED_ERROR,
+  V2_GATEWAY_AUTH_REQUIRED_STATUS,
+  type V2BridgeJwtRoleClaim,
+} from "./v2-api-contract.ts";
 export { embedSqlStatement, sqlStatement } from "./sql-compose.ts";
 export { queryPsqlJsonRows, queryPsqlScalar } from "./postgres-internal-exec.ts";
 export {

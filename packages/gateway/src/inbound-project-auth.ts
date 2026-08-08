@@ -1,3 +1,4 @@
+import { V2_GATEWAY_AUTH_REQUIRED_ERROR } from "@flux/core";
 import { mintBridgeJwt, mintBridgedTenantJwt } from "./jwt-issuer.ts";
 import { fetchProjectJwtSecret } from "./tenant-resolver.ts";
 import type { TenantResolution } from "./types.ts";
@@ -17,11 +18,11 @@ export async function verifyInboundProjectBearer(
 ): Promise<InboundProjectAuthResult> {
   const authz = authorizationHeader?.trim();
   if (!authz?.toLowerCase().startsWith("bearer ")) {
-    return { ok: false, status: 401, error: "authorization required" };
+    return { ok: false, status: 401, error: V2_GATEWAY_AUTH_REQUIRED_ERROR };
   }
   const token = authz.slice(7).trim();
   if (!token) {
-    return { ok: false, status: 401, error: "authorization required" };
+    return { ok: false, status: 401, error: V2_GATEWAY_AUTH_REQUIRED_ERROR };
   }
 
   let projectSecret = tenant.jwtSecret;

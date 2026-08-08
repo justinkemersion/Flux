@@ -11,8 +11,10 @@ import {
 } from "./lifecycle-gate.ts";
 import { acquireRateSlot } from "./rate-limiter.ts";
 import { verifyInboundProjectBearer } from "./inbound-project-auth.ts";
+import type { InboundProjectAuthResult } from "./inbound-project-auth.ts";
 import { trackActivity } from "./activity-tracker.ts";
 import { proxyRequest } from "./proxy.ts";
+import type { TenantResolution } from "./types.ts";
 import { pingDb } from "./db.ts";
 import { getRedis } from "./redis.ts";
 import { absorbStaticAssets } from "./static-asset-filter.ts";
@@ -25,7 +27,25 @@ import {
 } from "./inflight-limiter.ts";
 import { env } from "./env.ts";
 
-export function createApp(): Hono {
+export type GatewayAppDeps = {
+  resolveTenant?: typeof resolveTenant;
+  verifyInboundProjectBearer?: (
+    authorizationHeader: string | undefined,
+    tenant: TenantResolution,
+  ) => Promise<InboundProjectAuthResult>;
+  proxyRequest?: typeof proxyRequest;
+  acquireRateSlot?: typeof acquireRateSlot;
+  trackActivity?: typeof trackActivity;
+};
+
+export function createApp(deps: GatewayAppDeps = {}): Hono {
+  const resolveTenantFn = deps.resolveTenant ?? resolveTenant;
+  const verifyInboundFn =
+    deps.verifyInboundProjectBearer ?? verifyInboundProjectBearer;
+  const proxyRequestFn = deps.proxyRequest ?? proxyRequest;
+  const acquireRateSlotFn = deps.acquireRateSlot ?? acquireRateSlot;
+  const trackActivityFn = deps.trackActivity ?? trackActivity;
+
   const app = new Hono();
 
   /**
@@ -120,7 +140,7 @@ export function createApp(): Hono {
     const rawHost = c.req.header("host") ?? "";
 
     // 1. Resolve tenant
-    const resolved = await resolveTenant(rawHost).catch((err) => {
+    const resolved = await resolveTenantFn(rawHost).catch((err) => {
       logger.error({ host: rawHost, err }, "tenant resolution error");
       return null;
     });
@@ -198,7 +218,7 @@ export function createApp(): Hono {
     }
 
     // 2b. Inbound Bearer — required project JWT (HS256 with per-project jwt_secret).
-    const authResult = await verifyInboundProjectBearer(
+    const authResult = await verifyInboundFn(
       c.req.header("authorization"),
       tenant,
     );
@@ -227,7 +247,7 @@ export function createApp(): Hono {
     );
 
     // 3. Rate limit
-    const allowed = await acquireRateSlot(tenant.tenantId);
+    const allowed = await acquireRateSlotFn(tenant.tenantId);
     if (!allowed) {
       log({
         host: rawHost,
@@ -265,8 +285,8 @@ export function createApp(): Hono {
     // 5. Activity tracking + 6. Proxy (bridge JWT minted above)
     const proxyStart = Date.now();
     try {
-      trackActivity(tenant.tenantId);
-      const res = await proxyRequest(c, downstreamJwt, tenant);
+      trackActivityFn(tenant.tenantId);
+      const res = await proxyRequestFn(c, downstreamJwt, tenant);
       log({
         host: rawHost,
         tenantId: tenant.tenantId,

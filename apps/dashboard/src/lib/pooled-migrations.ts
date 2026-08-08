@@ -1,3 +1,4 @@
+import { adaptPooledPushSql } from "@flux/core/pooled-push-sql-adapt";
 import {
   buildFluxMigrationsLedgerEnsureSql,
   buildMigrationLedgerInsertSql,
@@ -27,6 +28,17 @@ import {
   setPooledPushTenantContext,
 } from "@/src/lib/pooled-push-session";
 import pg from "pg";
+
+function adaptUserSqlForPooledPush(
+  schema: string,
+  role: string,
+  userSql: string,
+): string {
+  return adaptPooledPushSql(normalizePushSql(userSql), {
+    tenantSchema: schema,
+    tenantRole: role,
+  });
+}
 
 function defaultClientFactory(): PushPgClient {
   const sharedUrl = process.env.FLUX_SHARED_POSTGRES_URL?.trim();
@@ -158,7 +170,9 @@ export async function executePooledMigrationPush(
         schema: input.schema,
         ddlRole: input.ddlRole,
       });
-      await client.query(normalizePushSql(input.userSql));
+      await client.query(
+        adaptUserSqlForPooledPush(input.schema, input.role, input.userSql),
+      );
       await resetPooledPushRole(client);
       await enforcePooledPushRlsInvariants(client, {
         schema: input.schema,
@@ -243,7 +257,9 @@ export async function executePooledRepeatablePush(
         schema: input.schema,
         ddlRole: input.ddlRole,
       });
-      await client.query(normalizePushSql(input.userSql));
+      await client.query(
+        adaptUserSqlForPooledPush(input.schema, input.role, input.userSql),
+      );
       await resetPooledPushRole(client);
       await enforcePooledPushRlsInvariants(client, {
         schema: input.schema,

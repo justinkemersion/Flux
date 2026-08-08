@@ -1,3 +1,4 @@
+import { adaptPooledPushSql } from "@flux/core/pooled-push-sql-adapt";
 import pg from "pg";
 
 /** Wall-clock cap for the entire connect → COMMIT cycle. */
@@ -70,6 +71,10 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
 
   const factory = input.clientFactory ?? defaultClientFactory;
   const timeoutMs = input.timeoutMs ?? PUSH_TIMEOUT_MS;
+  const adaptedSql = adaptPooledPushSql(input.sql, {
+    tenantSchema: input.schema,
+    tenantRole: input.role,
+  });
   const client = factory();
   let timer: NodeJS.Timeout | undefined;
   const work = (async () => {
@@ -80,7 +85,7 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
         schema: input.schema,
         ddlRole: input.ddlRole,
       });
-      await client.query(input.sql);
+      await client.query(adaptedSql);
       await resetPooledPushRole(client);
       await enforcePooledPushRlsInvariants(client, {
         schema: input.schema,
