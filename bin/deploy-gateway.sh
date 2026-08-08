@@ -13,6 +13,9 @@
 #   FLUX_GATEWAY_SKIP_DB_PREFLIGHT=1 — skip catalog DB connectivity check (not recommended).
 #   FLUX_GATEWAY_HEALTH_WARMUP_SECS — liveness retry window after container cycle (default: 60).
 #   FLUX_GATEWAY_HEALTH_INTERVAL_SECS — seconds between liveness attempts (default: 3).
+#   FLUX_GATEWAY_CANARY_TENANT_HOST — tenant API host the canary asserts returns 401 unauthenticated.
+#   FLUX_GATEWAY_CANARY_PORT     — loopback port for the canary probe (default: 4099).
+#   FLUX_GATEWAY_SKIP_CANARY=1   — skip the pre-cutover canary (not recommended; see below).
 #
 # Prerequisites:
 #   - packages/gateway/.env exists on the host (do not commit it)
@@ -33,6 +36,9 @@ PREFLIGHT_PG_IMAGE="${FLUX_GATEWAY_PREFLIGHT_PG_IMAGE:-postgres:17-alpine}"
 PREFLIGHT_NETWORK="${FLUX_GATEWAY_PREFLIGHT_NETWORK:-flux-network}"
 HEALTH_WARMUP_SECS="${FLUX_GATEWAY_HEALTH_WARMUP_SECS:-60}"
 HEALTH_INTERVAL_SECS="${FLUX_GATEWAY_HEALTH_INTERVAL_SECS:-3}"
+CANARY_NAME="${FLUX_GATEWAY_CANARY_NAME:-flux-node-gateway-canary}"
+CANARY_PORT="${FLUX_GATEWAY_CANARY_PORT:-4099}"
+CANARY_TENANT_HOST="${FLUX_GATEWAY_CANARY_TENANT_HOST:-}"
 
 GATEWAY_TAG="Deploy"
 [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]] && GATEWAY_TAG="Restart"
@@ -155,6 +161,94 @@ wait_for_gateway_liveness() {
   exit 1
 }
 
+# ---------------------------------------------------------------------------
+# Canary: prove the freshly built image serves BEFORE it replaces the live one.
+#
+# `compose up -d` recreates the container in place, so a bad image takes the route
+# down the moment it starts and the health check afterwards only tells you how long
+# the outage has already lasted. A crash-looping bundle did exactly that on
+# 2026-08-08. The canary runs the same image and env on the same network, with no
+# Traefik labels, so it is never routed; failures abort the deploy untouched.
+# ---------------------------------------------------------------------------
+canary_cleanup() {
+  docker rm -f "$CANARY_NAME" >/dev/null 2>&1 || true
+}
+
+gateway_canary_probe() {
+  if [[ "${FLUX_GATEWAY_SKIP_CANARY:-}" == "1" ]]; then
+    echo "  skip: FLUX_GATEWAY_SKIP_CANARY=1 (the deploy can now break the live route)"
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "  WARN: curl not found; cannot canary-probe before cutover."
+    return 0
+  fi
+
+  local image
+  image="$($COMPOSE config --images 2>/dev/null | head -1)"
+  if [[ -z "$image" ]]; then
+    echo "  ERROR: could not resolve the gateway image name from compose." >&2
+    exit 1
+  fi
+
+  canary_cleanup
+  trap canary_cleanup EXIT
+
+  if ! docker run -d --name "$CANARY_NAME" \
+      --network "$PREFLIGHT_NETWORK" \
+      --env-file "$GATEWAY_ENV_FILE" \
+      -p "127.0.0.1:${CANARY_PORT}:4000" \
+      "$image" >/dev/null 2>&1; then
+    echo "  ERROR: canary container failed to start from ${image}." >&2
+    exit 1
+  fi
+
+  local base="http://127.0.0.1:${CANARY_PORT}"
+  local deadline=$((SECONDS + HEALTH_WARMUP_SECS)) code="000" attempt=0
+  while [[ $SECONDS -lt $deadline ]]; do
+    attempt=$((attempt + 1))
+    code="$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 3 "${base}/health" 2>/dev/null || echo "000")"
+    [[ "$code" == "200" ]] && break
+    if [[ "$(docker inspect -f '{{.State.Status}}' "$CANARY_NAME" 2>/dev/null || echo missing)" == "exited" ]]; then
+      break
+    fi
+    sleep "$HEALTH_INTERVAL_SECS"
+  done
+
+  if [[ "$code" != "200" ]]; then
+    echo "  ERROR: new image failed liveness in canary (last HTTP ${code}) — live route untouched." >&2
+    docker logs --tail 40 "$CANARY_NAME" 2>&1 | sed 's/^/    /' >&2 || true
+    exit 1
+  fi
+  echo "  canary liveness: OK (attempt=${attempt})"
+
+  code="$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 5 "${base}/health/deep" 2>/dev/null || echo "000")"
+  if [[ "$code" != "200" ]]; then
+    echo "  ERROR: new image failed readiness in canary (HTTP ${code}) — live route untouched." >&2
+    docker logs --tail 40 "$CANARY_NAME" 2>&1 | sed 's/^/    /' >&2 || true
+    exit 1
+  fi
+  echo "  canary readiness: OK"
+
+  # Auth contract: a real tenant host with no Bearer must be rejected, not served or 404ed.
+  # Catches tenant-resolution and inbound-auth regressions that /health cannot see.
+  if [[ -n "$CANARY_TENANT_HOST" ]]; then
+    code="$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 5 \
+      -H "Host: ${CANARY_TENANT_HOST}" "${base}/" 2>/dev/null || echo "000")"
+    if [[ "$code" != "401" ]]; then
+      echo "  ERROR: unauthenticated tenant request returned HTTP ${code}, expected 401." >&2
+      echo "         Host=${CANARY_TENANT_HOST} — live route untouched." >&2
+      exit 1
+    fi
+    echo "  canary tenant auth contract: OK (401 without Bearer)"
+  else
+    echo "  WARN: set FLUX_GATEWAY_CANARY_TENANT_HOST to also assert the 401 auth contract."
+  fi
+
+  canary_cleanup
+  trap - EXIT
+}
+
 gateway_preflight_system_db
 
 if [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]]; then
@@ -163,6 +257,9 @@ if [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]]; then
 else
   echo "--- Gateway ${GATEWAY_TAG}: Building ($CONTAINER_NAME) ---"
   $COMPOSE build --pull
+
+  echo "--- Gateway ${GATEWAY_TAG}: Canary probe before cutover ---"
+  gateway_canary_probe
 
   echo "--- Gateway ${GATEWAY_TAG}: Cycling container ---"
   $COMPOSE up -d --remove-orphans

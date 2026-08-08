@@ -34,6 +34,16 @@ jobs:
       - name: Typecheck dashboard
         run: pnpm --filter dashboard exec tsc --noEmit
 
+      # tsc does not run the framework build. A duplicate middleware.ts/proxy.ts shipped
+      # an unbuildable dashboard for a full release cycle because nothing here built it.
+      - name: Build dashboard (next build)
+        run: pnpm --filter dashboard exec next build
+
+      # tsc does not bundle. A root-barrel import pulled dockerode into the gateway
+      # bundle and crash-looped the container on a missing ssh2.
+      - name: Gateway bundle guardrail
+        run: ./scripts/check-gateway-bundle.sh
+
       - name: Run workspace tests
         run: pnpm test
 

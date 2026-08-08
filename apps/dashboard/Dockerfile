@@ -38,6 +38,17 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/standalone .
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/public ./apps/dashboard/public
 
+# Read from disk at request time, so they must exist in the runner, not just the builder:
+# docs pages back /docs/*, and the CLI bundle is what /api/install/cli streams.
+COPY --from=builder --chown=nextjs:nodejs /app/docs ./docs
+COPY --from=builder --chown=nextjs:nodejs /app/packages/cli/dist ./packages/cli/dist
+
+# Missing runtime assets surface only as 404/503 on live requests, which is how both of
+# these shipped broken. Fail the image build instead.
+RUN test -f /app/packages/cli/dist/index.cjs \
+  && test -f /app/docs/pages/index.md \
+  && test -f /app/docs/pages/guides/nextjs.md
+
 COPY docker/web/flux-web-entrypoint.sh /flux-web-entrypoint.sh
 RUN chmod +x /flux-web-entrypoint.sh
 

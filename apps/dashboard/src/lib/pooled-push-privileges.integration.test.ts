@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import pg from "pg";
 import { buildDeprovisionSql, buildTenantBootstrapSql, deriveTenantIdentity } from "@flux/engine-v2";
+import { adaptPooledPushSql } from "@flux/core/pooled-push-sql-adapt";
 import {
   beginPooledPushTransaction,
   enforcePooledPushRlsInvariants,
@@ -68,6 +69,16 @@ async function ensureClusterPrereqs(client: pg.Client): Promise<void> {
     END
     $$;
     CREATE SCHEMA IF NOT EXISTS auth;
+
+    -- Mirrors bin/deploy-v2-shared.sh. Omitting this is what let the DDL role ship
+    -- without USAGE on auth: the fixture's handcrafted policies never called auth.uid(),
+    -- so the first real migration to use the documented pattern failed in production.
+    CREATE OR REPLACE FUNCTION auth.uid() RETURNS text
+    LANGUAGE sql STABLE AS $flux$
+      SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::text;
+    $flux$;
+
+    GRANT USAGE ON SCHEMA auth TO anon, authenticator;
   `);
 }
 
@@ -270,6 +281,79 @@ test(
         const { rows } = await runtime.query("SELECT user_id, body FROM notes ORDER BY user_id");
         assert.deepEqual(rows, [{ user_id: "user-1", body: "mine" }]);
       });
+    });
+
+    await t.test("a Foundry-shaped migration using auth.uid() works end to end", async () => {
+      // Deliberately shaped like SQL a real app ships: unqualified names, Supabase's
+      // `authenticated` role, and auth.uid() policies — the combination the handcrafted
+      // fixtures above never produced, and the one that broke in production.
+      const authored = `
+        CREATE TABLE documents (
+          id bigserial PRIMARY KEY,
+          owner_id text NOT NULL DEFAULT auth.uid(),
+          title text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX documents_owner_idx ON documents (owner_id);
+        ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY documents_select ON documents
+          FOR SELECT USING (owner_id = auth.uid());
+        CREATE POLICY documents_insert ON documents
+          FOR INSERT WITH CHECK (owner_id = auth.uid());
+        GRANT SELECT, INSERT ON documents TO authenticated;
+        GRANT USAGE, SELECT ON SEQUENCE documents_id_seq TO authenticated;
+      `;
+      await push(
+        client,
+        a,
+        adaptPooledPushSql(authored, { tenantSchema: a.schema, tenantRole: a.role }),
+      );
+
+      const { rows: meta } = await client.query(
+        `SELECT pg_get_userbyid(c.relowner) AS owner, c.relforcerowsecurity AS forced
+         FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE n.nspname=$1 AND c.relname='documents'`,
+        [a.schema],
+      );
+      assert.equal(meta[0].owner, a.ddlRole);
+      assert.equal(meta[0].forced, true, "the RLS invariant must force RLS on pushed tables");
+
+      // `authenticated` must have been rewritten to the tenant role, or the app's own
+      // JWT identity would have no privileges on the table it just created.
+      const { rows: granted } = await client.query(
+        `SELECT has_table_privilege($1, format('%I.%I', $2::text, 'documents'), 'INSERT') AS ins`,
+        [a.role, a.schema],
+      );
+      assert.equal(granted[0].ins, true);
+
+      // The payoff: the policy resolves auth.uid() against the bridged JWT claims.
+      await asRuntimeRole(runtime, a, async () => {
+        await runtime.query(`SELECT set_config('request.jwt.claims', '{"sub":"user-1"}', true)`);
+        await runtime.query("INSERT INTO documents (title) VALUES ('mine')");
+        await runtime.query(`SELECT set_config('request.jwt.claims', '{"sub":"user-2"}', true)`);
+        await runtime.query("INSERT INTO documents (title) VALUES ('theirs')");
+
+        const { rows: seenByTwo } = await runtime.query("SELECT title FROM documents");
+        assert.deepEqual(seenByTwo, [{ title: "theirs" }]);
+
+        await runtime.query(`SELECT set_config('request.jwt.claims', '{"sub":"user-1"}', true)`);
+        const { rows: seenByOne } = await runtime.query("SELECT title FROM documents");
+        assert.deepEqual(seenByOne, [{ title: "mine" }]);
+      });
+    });
+
+    await t.test("a migration may not write rows it could not read back", async () => {
+      // FORCE RLS applies to the DDL role too, so seed data in a migration is filtered
+      // unless a policy admits it. This is the documented trade-off of Pass 6b.
+      await expectError(
+        () =>
+          push(
+            client,
+            a,
+            `INSERT INTO documents (owner_id, title) VALUES ('someone-else','seeded');`,
+          ),
+        /row-level security|violates row-level security policy/i,
+      );
     });
 
     await t.test("a tenant cannot push DDL into another tenant's schema", async () => {
