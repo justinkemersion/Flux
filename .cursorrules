@@ -25,7 +25,8 @@ Flux also exposes an **AI-assistable MCP interface** (`@flux/mcp`) for coding ag
 3. **Idempotency:** Infrastructure scripts must be idempotent.
 4. **Error Handling:** Wrap Docker/infrastructure calls in try/catch with actionable logs.
 5. **No Hallucinated DBs:** Raw PostgreSQL for tenants — no ORMs on tenant databases.
-6. **Documentation freshness:** Platform surface area changes → update README/docs in the same commit. See [`docs/README-MAINTENANCE-CONTRACT.md`](docs/README-MAINTENANCE-CONTRACT.md) and [`.cursor/rules/documentation-freshness.mdc`](.cursor/rules/documentation-freshness.mdc). Do not document aspirational features as shipped.
+6. **Test at the enforcing layer:** Every security or infrastructure invariant needs a check where it is actually enforced — real Postgres for privileges/RLS, the built bundle for bundling, `next build` for the framework, the runner image for shipped files, a real request for edge behavior. Assert as the identity that will be constrained (a superuser bypasses RLS), and prove the guard fails on the defect. See [`docs/ARCHITECTURE-CONTRACT.md`](docs/ARCHITECTURE-CONTRACT.md).
+7. **Documentation freshness:** Platform surface area changes → update README/docs in the same commit. See [`docs/README-MAINTENANCE-CONTRACT.md`](docs/README-MAINTENANCE-CONTRACT.md) and [`.cursor/rules/documentation-freshness.mdc`](.cursor/rules/documentation-freshness.mdc). Do not document aspirational features as shipped.
 
 ## Code Style
 

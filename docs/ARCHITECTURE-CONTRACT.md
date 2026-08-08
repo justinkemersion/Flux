@@ -104,6 +104,28 @@ Server routes and `apps/dashboard/src/lib/*` (except client-boundary copy module
 
 These names do not say what changes when the file changes. Pick a name by reason to change instead — `env-file.ts`, `tenant-suffix.ts`, `terminal.ts`. If a file genuinely needs an exception, add it to the allowlist in `scripts/check-architecture.ts` with a comment explaining why.
 
+## Test invariants at the layer that enforces them
+
+Every security or infrastructure invariant must have at least one check at the layer where
+it is actually enforced. A test one layer above proves only that we emit the right strings.
+
+| Invariant is enforced by | Verify with | Not sufficient |
+|---|---|---|
+| Postgres (privileges, ownership, RLS) | Real cluster, connected as the role that hits it | Asserting the SQL we emit |
+| The esbuild bundle | Build the bundle and inspect it | `tsc`, imports "looking right" |
+| The framework build | Run `next build` | `tsc --noEmit` |
+| The container image | `RUN test -f` in the runner stage | The file existing in the repo |
+| A live request | A real request through the real edge | A unit test of the handler |
+
+Two rules follow. **Assert as the identity that will be constrained** — a superuser can
+`SET ROLE` to anything and bypasses RLS, so privilege limits asserted from the control
+plane pass vacuously. And **prove the guard fails on the defect**, not just that it passes
+once the defect is fixed; a check that cannot fail is not a check.
+
+This rule exists because on 2026-08-08 three invariants shipped broken through a green
+gate, one of them causing an outage. See
+[`docs/incidents/2026-08-08-deploy-and-privilege-failures.md`](incidents/2026-08-08-deploy-and-privilege-failures.md).
+
 ## File size warning
 
 Source files over 800 lines emit a warning (not a failure). Treat the warning as a prompt to split by responsibility on the next change that touches the file.
