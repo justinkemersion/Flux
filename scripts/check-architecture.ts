@@ -241,11 +241,46 @@ function checkDashboardClientCoreImports(): void {
   }
 }
 
+/**
+ * The gateway ships as a single esbuild bundle on a slim image with no Docker or SSH
+ * dependencies installed. Importing the @flux/core root barrel drags dockerode and
+ * docker-modem in, and the container then crash-loops on `Cannot find module 'ssh2'`
+ * at startup — invisible to tsc and to unit tests, which never build the bundle.
+ */
+export function findGatewayCoreBarrelImports(
+  relPosix: string,
+  content: string,
+): string[] {
+  if (relPosix.endsWith(".test.ts")) return [];
+
+  const violations: string[] = [];
+  for (const match of content.matchAll(CORE_IMPORT_RE)) {
+    if (match[1]) continue;
+    violations.push(
+      `${relPosix}: gateway must not import the root @flux/core barrel — it bundles ` +
+        `dockerode/docker-modem, which require ssh2 at runtime. Use a subpath export.`,
+    );
+  }
+  return violations;
+}
+
+function checkGatewayCoreImports(): void {
+  const gatewaySrc = join(REPO_ROOT, "packages/gateway/src");
+  for (const file of walkSourceFiles(gatewaySrc)) {
+    if (!SOURCE_EXTENSIONS.has(extname(file))) continue;
+    const rel = toPosix(relative(REPO_ROOT, file));
+    for (const violation of findGatewayCoreBarrelImports(rel, readFileSync(file, "utf8"))) {
+      errors.push(violation);
+    }
+  }
+}
+
 function runArchitectureChecks(): void {
   checkCoreIndexIsReexportsOnly();
   checkCliIndexStaysThin();
   checkSourceTree();
   checkDashboardClientCoreImports();
+  checkGatewayCoreImports();
 
   for (const w of warnings) {
     console.warn(`warn: ${w}`);

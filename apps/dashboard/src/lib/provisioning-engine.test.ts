@@ -305,6 +305,25 @@ test("buildTenantBootstrapSql separates the DDL owner role from the runtime role
   );
 });
 
+test("buildTenantBootstrapSql grants the DDL role usage on the auth schema", () => {
+  const TENANT_ID = "11111111-2222-4333-8444-555555555555";
+  const identity = deriveTenantIdentity(TENANT_ID);
+  const sql = buildTenantBootstrapSql(identity, TENANT_ID);
+
+  // Without this, CREATE POLICY ... USING (col = auth.uid()) fails with
+  // "permission denied for schema auth" — the pattern the Auth.js/Clerk guides teach.
+  assert.match(
+    sql,
+    new RegExp(`GRANT USAGE ON SCHEMA auth TO "${identity.ddlRole}"`),
+    "pushed migrations run as the DDL role and must be able to resolve auth.uid()",
+  );
+  assert.match(
+    sql,
+    new RegExp(`GRANT USAGE ON SCHEMA auth TO "${identity.role}"`),
+    "the runtime role still needs it to evaluate those policies at request time",
+  );
+});
+
 // ---------------------------------------------------------------------------
 // T-4: Rollback on System DB Failure
 //

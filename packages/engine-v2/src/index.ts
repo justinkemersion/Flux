@@ -177,6 +177,10 @@ $flux$;
 ALTER SCHEMA ${schema} OWNER TO ${ddlRole};
 GRANT USAGE ON SCHEMA ${schema} TO ${role};
 GRANT USAGE ON SCHEMA auth TO ${role};
+-- The DDL role needs it too: pushed migrations reference auth.uid() in RLS policies
+-- (the pattern the Auth.js/Clerk guides teach), and CREATE POLICY resolves the schema
+-- as the executing role. Before Pass 6b, push ran as a superuser and never needed this.
+GRANT USAGE ON SCHEMA auth TO ${ddlRole};
 -- Pool PostgREST roles need schema access: anon (unauthenticated) and
 -- authenticator (login role that may SET ROLE before a tenant context).
 GRANT USAGE ON SCHEMA ${schema} TO ${anon};

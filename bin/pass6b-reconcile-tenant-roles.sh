@@ -71,7 +71,10 @@ SELECT p.nspname,
           AND pg_get_userbyid(k.relowner) = p.prefix || 'role'),
        (SELECT count(*) FROM pg_class k WHERE k.relnamespace = p.oid AND k.relkind = 'r'
           AND k.relrowsecurity AND NOT k.relforcerowsecurity),
-       (SELECT count(*) FROM pg_class k WHERE k.relnamespace = p.oid AND k.relkind = 'r')
+       (SELECT count(*) FROM pg_class k WHERE k.relnamespace = p.oid AND k.relkind = 'r'),
+       -- Pushed DDL runs as the DDL role, so it must resolve auth.uid() in policies.
+       CASE WHEN EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname = p.prefix || 'ddl')
+            THEN has_schema_privilege(p.prefix || 'ddl', 'auth', 'USAGE') END
 FROM present p
 LEFT JOIN catalogued c ON c.nspname = p.nspname
 ORDER BY 1;"
@@ -85,15 +88,17 @@ if [[ "$MODE" == "--backfill-set" ]]; then
   exit 0
 fi
 
-printf '%-22s %-11s %-8s %-8s %-20s %6s %9s %7s\n' \
-  SCHEMA CATALOG RUNTIME DDLROLE OWNER TABLES RT_OWNED UNFORCED
+printf '%-22s %-11s %-8s %-8s %-20s %6s %9s %7s %8s\n' \
+  SCHEMA CATALOG RUNTIME DDLROLE OWNER TABLES RT_OWNED UNFORCED AUTHUSG
 printf '%s\n' "$rows" | awk -F'|' '{
-  printf "%-22s %-11s %-8s %-8s %-20s %6s %9s %7s\n",
-    $1, $2, ($3=="t"?"yes":"NO"), ($4=="t"?"yes":"NO"), $5, $8, $6, $7
+  printf "%-22s %-11s %-8s %-8s %-20s %6s %9s %7s %8s\n",
+    $1, $2, ($3=="t"?"yes":"NO"), ($4=="t"?"yes":"NO"), $5, $8, $6, $7,
+    ($9==""?"-":($9=="t"?"yes":"NO"))
 }'
 
 echo
 echo "RT_OWNED must be 0 everywhere: an object owned by the runtime role bypasses RLS"
 echo "for that same role at request time. UNFORCED counts RLS tables without FORCE."
+echo "AUTHUSG must be yes wherever a DDL role exists, or pushed auth.uid() policies fail."
 printf 'catalogued=%s present=%s\n' \
   "${#CATALOGUED[@]}" "$(printf '%s\n' "$rows" | grep -c .)"

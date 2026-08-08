@@ -106,6 +106,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "${ddl}" IN SCHEMA "${schema}" GRANT SELECT ON
 ALTER DEFAULT PRIVILEGES FOR ROLE "${ddl}" IN SCHEMA "${schema}" GRANT SELECT ON TABLES TO anon;
 ALTER DEFAULT PRIVILEGES FOR ROLE "${ddl}" IN SCHEMA "${schema}" GRANT USAGE, SELECT ON SEQUENCES TO "${runtime}";
 GRANT USAGE ON SCHEMA "${schema}" TO "${runtime}";
+-- Pushed migrations run as the DDL role and reference auth.uid() in RLS policies;
+-- without this, CREATE POLICY fails with "permission denied for schema auth".
+GRANT USAGE ON SCHEMA auth TO "${ddl}";
 GRANT "${ddl}" TO CURRENT_USER;
 
 -- Defence in depth: the owner/runtime split already restores RLS, but forcing it keeps

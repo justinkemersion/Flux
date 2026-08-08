@@ -230,6 +230,27 @@ The backfill was rehearsed against a legacy-shaped tenant (schema and tables own
 `postgres`, runtime role present, no DDL role): ownership transferred, RLS forced, the
 script is idempotent across repeated runs, and a subsequent push succeeded.
 
+### Follow-up found by the live smoke (2026-08-08, post-deploy)
+
+The integration test builds its own policies and never referenced `auth.uid()`, so it
+missed this: the DDL role had no `USAGE` on schema `auth`. Bootstrap granted it to the
+runtime role only, and before Pass 6 push ran as a superuser, which needs no grant. The
+first real migration through the deployed control plane failed with
+**`permission denied for schema auth`** on
+
+```sql
+CREATE POLICY … USING (owner_sub = auth.uid());
+```
+
+That is the pattern `docs/pages/guides/authjs.md` and `clerk.md` teach, and the Supabase
+import path depends on it, so it blocked the documented onboarding flow. No *existing*
+tenant policy was affected — zero of 1,110 production policies reference `auth.uid()`,
+and serving traffic evaluates policies as the runtime role, which always had the grant.
+
+Bootstrap and the backfill script now grant `USAGE ON SCHEMA auth` to the DDL role, the
+reconcile script reports it as `AUTHUSG`, and a unit test covers it. Same root cause as
+Pass 6 itself: the privilege model was not fully re-derived for the new executing identity.
+
 ### Fixed along the way
 
 `buildDeprovisionSql` could never drop a tenant: `DROP ROLE` failed with *"role … cannot be
