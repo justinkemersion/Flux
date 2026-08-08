@@ -1,4 +1,4 @@
-import { defaultTenantApiSchemaFromProjectId, defaultTenantRoleFromProjectId, FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
+import { defaultTenantApiSchemaFromProjectId, defaultTenantDdlRoleFromProjectId, defaultTenantRoleFromProjectId, FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import {
   buildMigrationPushSql,
   type MigrationPushMeta,
@@ -211,13 +211,14 @@ export function tenantApiSchemaFromProjectId(projectId: string):
  * Resolves tenant schema + DB role from the catalog project UUID for pooled push execution.
  */
 export function tenantPushContextFromProjectId(projectId: string):
-  | { ok: true; schema: string; role: string }
+  | { ok: true; schema: string; role: string; ddlRole: string }
   | { ok: false; error: string } {
   try {
     return {
       ok: true,
       schema: defaultTenantApiSchemaFromProjectId(projectId),
       role: defaultTenantRoleFromProjectId(projectId),
+      ddlRole: defaultTenantDdlRoleFromProjectId(projectId),
     };
   } catch {
     return {

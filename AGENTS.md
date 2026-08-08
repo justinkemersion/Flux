@@ -80,6 +80,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE t_<shortId>_api.<table> TO t_<shor
 
 (Grant to the same role your JWT `role` claim uses — on v2_shared that is **`t_<shortId>_role`**, not `authenticated`.) Without grants, PostgREST returns **403** / **`42501`**, not an empty array.
 
+**Your migrations do not run as your JWT role.** On v2_shared, Flux executes pushed SQL as a separate per-tenant owner role, **`t_<shortId>_ddl`**, because a table owner bypasses RLS in PostgreSQL — if DDL ran as `t_<shortId>_role`, every table it created would stop enforcing policies for your own app. So tables you create are owned by `t_<shortId>_ddl`; `SELECT` is granted to your runtime role automatically, and **writes still require the explicit `GRANT` above**. Flux also applies `FORCE ROW LEVEL SECURITY` to tenant tables that already have RLS enabled (opt out with a table comment containing `flux:no-force-rls`). See [`docs/pages/guides/migrations.md`](docs/pages/guides/migrations.md).
+
 ---
 
 ## 6) TLS from Node / serverless **`fetch`**

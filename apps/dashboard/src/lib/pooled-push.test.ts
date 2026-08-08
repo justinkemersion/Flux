@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildAssertRuntimeRoleOwnsNothingSql,
+  buildForceRlsInvariantSql,
+} from "@flux/core/tenant-rls-invariants";
+import {
   executePooledPush,
   quoteIdent,
   type PushPgClient,
@@ -40,12 +44,14 @@ class RecordingClient implements PushPgClient {
 
 const TENANT_SCHEMA = "t_aabbccddeeff_api";
 const TENANT_ROLE = "t_aabbccddeeff_role";
+const TENANT_DDL_ROLE = "t_aabbccddeeff_ddl";
 
-test("executePooledPush issues BEGIN, SET LOCAL ROLE, search_path, user SQL, COMMIT in order", async () => {
+test("executePooledPush issues BEGIN, SET LOCAL ROLE (DDL role), search_path, user SQL, RLS invariants, COMMIT in order", async () => {
   const client = new RecordingClient();
   await executePooledPush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
     sql: "CREATE TABLE foo (id int);",
     clientFactory: () => client,
   });
@@ -54,10 +60,12 @@ test("executePooledPush issues BEGIN, SET LOCAL ROLE, search_path, user SQL, COM
     "__connect__",
     "BEGIN",
     "SET LOCAL statement_timeout = '30s'",
-    'SET LOCAL ROLE "t_aabbccddeeff_role"',
+    'SET LOCAL ROLE "t_aabbccddeeff_ddl"',
     'SET LOCAL search_path TO "t_aabbccddeeff_api"',
     "CREATE TABLE foo (id int);",
     "RESET ROLE",
+    buildForceRlsInvariantSql(TENANT_SCHEMA),
+    buildAssertRuntimeRoleOwnsNothingSql(TENANT_SCHEMA, TENANT_ROLE),
     "NOTIFY pgrst, 'reload schema';",
     "COMMIT",
   ]);
@@ -76,6 +84,7 @@ test("executePooledPush rolls back and rethrows on user SQL error", async () => 
       executePooledPush({
         schema: TENANT_SCHEMA,
         role: TENANT_ROLE,
+        ddlRole: TENANT_DDL_ROLE,
         sql: "CREATE TABLE foo (id int);",
         clientFactory: () => client,
       }),
@@ -105,6 +114,7 @@ test("executePooledPush rejects privilege escalation SQL before connecting", asy
       executePooledPush({
         schema: TENANT_SCHEMA,
         role: TENANT_ROLE,
+        ddlRole: TENANT_DDL_ROLE,
         sql: "SET ROLE postgres; SELECT 1;",
         clientFactory: () => client,
       }),
@@ -129,6 +139,7 @@ test("executePooledPush enforces wall-clock timeout", async () => {
       executePooledPush({
         schema: TENANT_SCHEMA,
         role: TENANT_ROLE,
+        ddlRole: TENANT_DDL_ROLE,
         sql: "SELECT 1",
         clientFactory: () => hangingClient,
         timeoutMs: 25,

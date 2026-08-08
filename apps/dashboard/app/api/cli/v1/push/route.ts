@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { defaultTenantRoleFromProjectId, FLUX_PROJECT_HASH_HEX_LEN, resolveTenantApiSchemaName } from "@flux/core";
+import { defaultTenantDdlRoleFromProjectId, defaultTenantRoleFromProjectId, FLUX_PROJECT_HASH_HEX_LEN, resolveTenantApiSchemaName } from "@flux/core";
 import { projects } from "@/src/db/schema";
 import { extractBearerToken } from "@/src/lib/cli-api-auth";
 import { getDb, initSystemDb } from "@/src/lib/db";
@@ -144,6 +144,7 @@ export async function POST(req: Request): Promise<Response> {
     apiSchemaStrategy: row.apiSchemaStrategy as "legacy_api" | "tenant_schema" | null,
   });
   const tenantRole = defaultTenantRoleFromProjectId(row.id);
+  const tenantDdlRole = defaultTenantDdlRoleFromProjectId(row.id);
 
   if (pooledPushEffectiveSqlBytes(sql, migration, apiSchema, repeatable) > MAX_SQL_BYTES) {
     return jsonError("sql exceeds maximum size", 413);
@@ -156,6 +157,7 @@ export async function POST(req: Request): Promise<Response> {
         const result = await executePooledMigrationPush({
           schema: apiSchema,
           role: tenantRole,
+          ddlRole: tenantDdlRole,
           userSql: sql,
           migration,
         });
@@ -181,6 +183,7 @@ export async function POST(req: Request): Promise<Response> {
       const result = await executePooledRepeatablePush({
         schema: apiSchema,
         role: tenantRole,
+        ddlRole: tenantDdlRole,
         userSql: sql,
         repeatable,
       });
@@ -198,7 +201,12 @@ export async function POST(req: Request): Promise<Response> {
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
-    await executePooledPush({ schema: apiSchema, role: tenantRole, sql });
+    await executePooledPush({
+      schema: apiSchema,
+      role: tenantRole,
+      ddlRole: tenantDdlRole,
+      sql,
+    });
       return Response.json(
         {
           ok: true,

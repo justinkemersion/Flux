@@ -142,7 +142,7 @@ export async function runPooledPushPost(
   if (!tenantCtx.ok) {
     return jsonError(tenantCtx.error, 500);
   }
-  const { schema, role } = tenantCtx;
+  const { schema, role, ddlRole } = tenantCtx;
 
   const maxSql = deps.maxSqlBytes ?? POOLED_PUSH_MAX_SQL_BYTES;
   const sqlCheck = validatePooledPushSqlPayload(
@@ -166,6 +166,7 @@ export async function runPooledPushPost(
       const result = await runMigration({
         schema,
         role,
+        ddlRole,
         userSql: sql,
         migration,
       });
@@ -183,6 +184,7 @@ export async function runPooledPushPost(
       const result = await runRepeatable({
         schema,
         role,
+        ddlRole,
         userSql: sql,
         repeatable,
       });
@@ -198,7 +200,7 @@ export async function runPooledPushPost(
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
-    await deps.executePooledPush({ schema, role, sql });
+    await deps.executePooledPush({ schema, role, ddlRole, sql });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/exceeded .* timeout/.test(msg)) {

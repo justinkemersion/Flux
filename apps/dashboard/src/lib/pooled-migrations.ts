@@ -21,6 +21,7 @@ import { PUSH_TIMEOUT_MS } from "@/src/lib/pooled-push";
 import {
   beginPooledPushTransaction,
   finishPooledPushTransaction,
+  enforcePooledPushRlsInvariants,
   rejectPooledPushPrivilegeEscape,
   resetPooledPushRole,
   setPooledPushTenantContext,
@@ -104,6 +105,7 @@ export async function listPooledAppliedMigrations(input: {
 export type ExecuteMigrationPushInput = {
   schema: string;
   role: string;
+  ddlRole: string;
   userSql: string;
   migration: MigrationPushMeta;
   clientFactory?: PushPgClientFactory;
@@ -154,10 +156,14 @@ export async function executePooledMigrationPush(
 
       await setPooledPushTenantContext(client, {
         schema: input.schema,
-        role: input.role,
+        ddlRole: input.ddlRole,
       });
       await client.query(normalizePushSql(input.userSql));
       await resetPooledPushRole(client);
+      await enforcePooledPushRlsInvariants(client, {
+        schema: input.schema,
+        runtimeRole: input.role,
+      });
       await client.query(
         buildMigrationLedgerInsertSql({
           tenantSchema: input.schema,
@@ -184,6 +190,7 @@ export async function executePooledMigrationPush(
 export type ExecuteRepeatablePushInput = {
   schema: string;
   role: string;
+  ddlRole: string;
   userSql: string;
   repeatable: RepeatablePushMeta;
   clientFactory?: PushPgClientFactory;
@@ -234,10 +241,14 @@ export async function executePooledRepeatablePush(
       const previousChecksum = existing?.checksum;
       await setPooledPushTenantContext(client, {
         schema: input.schema,
-        role: input.role,
+        ddlRole: input.ddlRole,
       });
       await client.query(normalizePushSql(input.userSql));
       await resetPooledPushRole(client);
+      await enforcePooledPushRlsInvariants(client, {
+        schema: input.schema,
+        runtimeRole: input.role,
+      });
       await client.query(
         buildRepeatableLedgerUpsertSql({
           tenantSchema: input.schema,

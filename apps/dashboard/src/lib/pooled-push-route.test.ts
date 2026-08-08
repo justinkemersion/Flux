@@ -10,6 +10,7 @@ const VALID_HASH = "abcd123";
 const TENANT_PROJECT_ID = "5ecfa3ab-72d1-4b3a-9c8e-111111111111";
 const EXPECTED_SCHEMA = "t_5ecfa3ab72d1_api";
 const EXPECTED_ROLE = "t_5ecfa3ab72d1_role";
+const EXPECTED_DDL_ROLE = "t_5ecfa3ab72d1_ddl";
 
 function ctx(slug: string) {
   return { params: Promise.resolve({ slug }) };
@@ -229,6 +230,7 @@ test("successful v2_shared dispatch invokes executePooledPush with tenant schema
   assert.deepEqual(executed, {
     schema: EXPECTED_SCHEMA,
     role: EXPECTED_ROLE,
+    ddlRole: EXPECTED_DDL_ROLE,
     sql: "select 2",
   });
 });

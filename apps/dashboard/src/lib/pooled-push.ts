@@ -26,8 +26,10 @@ export type PushPgClientFactory = () => PushPgClient;
 
 export type ExecutePushInput = {
   schema: string;
-  /** Per-tenant non-superuser role (`t_<shortId>_role`). */
+  /** Runtime PostgREST role (`t_<shortId>_role`) — never runs DDL, never owns objects. */
   role: string;
+  /** Per-tenant owner role (`t_<shortId>_ddl`) that pushed DDL executes as. */
+  ddlRole: string;
   sql: string;
   /** Override for tests / non-`pg.Client` implementations. */
   clientFactory?: PushPgClientFactory;
@@ -47,7 +49,7 @@ function defaultClientFactory(): PushPgClient {
 
 /**
  * Executes a tenant SQL push against the shared cluster inside a single
- * transaction, scoped to the tenant role via `SET LOCAL ROLE` (not search_path alone).
+ * transaction, scoped to the tenant owner role via `SET LOCAL ROLE` (not search_path alone).
  *
  * `statement_timeout` caps individual statements; the outer Promise.race
  * caps the total request including connect / commit hangs.
@@ -57,6 +59,7 @@ function defaultClientFactory(): PushPgClient {
 export async function executePooledPush(input: ExecutePushInput): Promise<void> {
   const {
     beginPooledPushTransaction,
+    enforcePooledPushRlsInvariants,
     finishPooledPushTransaction,
     rejectPooledPushPrivilegeEscape,
     resetPooledPushRole,
@@ -75,10 +78,14 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
       await beginPooledPushTransaction(client);
       await setPooledPushTenantContext(client, {
         schema: input.schema,
-        role: input.role,
+        ddlRole: input.ddlRole,
       });
       await client.query(input.sql);
       await resetPooledPushRole(client);
+      await enforcePooledPushRlsInvariants(client, {
+        schema: input.schema,
+        runtimeRole: input.role,
+      });
       await finishPooledPushTransaction(client);
     } catch (err) {
       try {

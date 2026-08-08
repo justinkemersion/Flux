@@ -113,6 +113,26 @@ flux migrations list              # show flux.flux_migrations for the project
 
 In CI, use non-interactive tokens, pinned **`FLUX_API_BASE`**, and either the same flags or a checked-in **`flux.json`** with **`slug`** + **`hash`** so pipelines do not drift.
 
+### Who runs your SQL on v2_shared
+
+On pooled projects, Flux executes pushed SQL as a per-tenant **owner role**, `t_<shortId>_ddl`, with `search_path` set to your tenant schema only. That is deliberately **not** the role your JWT uses at request time (`t_<shortId>_role`): in PostgreSQL a table owner bypasses row-level security, so if migrations ran as the runtime role, every table it created would silently stop enforcing RLS for your own app.
+
+Two consequences for your migrations:
+
+- **Objects you create are owned by `t_<shortId>_ddl`, not by your JWT role.** `SELECT` is granted automatically; **writes still need an explicit grant**, exactly as before:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE t_<shortId>_api.notes TO t_<shortId>_role;
+```
+
+- **RLS is forced.** After each push, any tenant table that has RLS enabled but not forced gets `FORCE ROW LEVEL SECURITY`. This changes nothing for normal app traffic. If you need a table readable by its owner regardless of policy, mark it explicitly:
+
+```sql
+COMMENT ON TABLE t_<shortId>_api.audit_log IS 'flux:no-force-rls — append-only, read via view';
+```
+
+Tables **without** RLS enabled are never modified. A push is rejected if the runtime role is found owning objects in the tenant schema, since that would disable RLS for that role.
+
 ### Legacy pooled ledger (operators)
 
 On **v2_shared**, the migration ledger is **`flux.flux_migrations`** with primary key **`(tenant_schema, version)`**. Shared Postgres clusters that ran migrations before Pass 1B may still have a **legacy global ledger** ( **`version`** only). Directory **`flux push`** inspects that table before applying files.

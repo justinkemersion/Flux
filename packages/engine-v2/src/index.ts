@@ -7,6 +7,7 @@
 import pg from "pg";
 import {
   defaultTenantApiSchemaFromProjectId,
+  defaultTenantDdlRoleFromProjectId,
   defaultTenantRoleFromProjectId,
   deriveTenantSchemaShortId,
   FLUX_AUTH_SCHEMA_AND_UID_SQL,
@@ -61,6 +62,8 @@ export type TenantIdentity = {
   shortId: string;
   schema: string;
   role: string;
+  /** Owner role for the schema and everything pushed into it; never a runtime role. */
+  ddlRole: string;
 };
 
 function quoteIdent(value: string): string {
@@ -91,6 +94,7 @@ export function deriveTenantIdentity(tenantId: string): TenantIdentity {
     shortId,
     schema: defaultTenantApiSchemaFromProjectId(tenantId),
     role: defaultTenantRoleFromProjectId(tenantId),
+    ddlRole: defaultTenantDdlRoleFromProjectId(tenantId),
   };
 }
 
@@ -101,6 +105,8 @@ export function buildTenantBootstrapSql(
   const schema = quoteIdent(identity.schema);
   const role = quoteIdent(identity.role);
   const roleLiteral = identity.role.replaceAll("'", "''");
+  const ddlRole = quoteIdent(identity.ddlRole);
+  const ddlRoleLiteral = identity.ddlRole.replaceAll("'", "''");
   const authenticator = quoteIdent(DEFAULT_AUTHENTICATOR_ROLE);
   const anon = quoteIdent("anon");
   const connectionLimit = parsePositiveIntEnv(
@@ -152,8 +158,23 @@ BEGIN
       -- Concurrent repair/provision attempts may race role creation.
       NULL;
   END;
+  BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '${ddlRoleLiteral}'
+    ) THEN
+      -- Owner role for pushed DDL. NOLOGIN and never granted to the authenticator,
+      -- so no JWT can resolve to it and the runtime role stays a non-owner (RLS applies).
+      CREATE ROLE ${ddlRole} NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE;
+    END IF;
+  EXCEPTION
+    WHEN duplicate_object THEN
+      NULL;
+  END;
 END
 $flux$;
+-- The tenant schema is owned by the DDL role: ownership confers CREATE, so pushed
+-- migrations need no separate grant, and the runtime role cannot create objects at all.
+ALTER SCHEMA ${schema} OWNER TO ${ddlRole};
 GRANT USAGE ON SCHEMA ${schema} TO ${role};
 GRANT USAGE ON SCHEMA auth TO ${role};
 -- Pool PostgREST roles need schema access: anon (unauthenticated) and
@@ -168,6 +189,15 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} GRANT SELECT ON TABLES TO ${anon};
 GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${role};
 GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${anon};
 ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} GRANT SELECT ON TABLES TO ${role};
+-- Objects pushed after Pass 6b are created by the DDL role, so the default privileges
+-- above (which apply FOR ROLE current_user) would not fire for them. These do.
+ALTER DEFAULT PRIVILEGES FOR ROLE ${ddlRole} IN SCHEMA ${schema} GRANT SELECT ON TABLES TO ${role};
+ALTER DEFAULT PRIVILEGES FOR ROLE ${ddlRole} IN SCHEMA ${schema} GRANT SELECT ON TABLES TO ${anon};
+ALTER DEFAULT PRIVILEGES FOR ROLE ${ddlRole} IN SCHEMA ${schema} GRANT USAGE, SELECT ON SEQUENCES TO ${role};
+-- The control plane assumes the DDL role via SET LOCAL ROLE. Superusers may do this
+-- unconditionally; the explicit membership keeps it working if the control-plane
+-- connection is ever de-privileged.
+GRANT ${ddlRole} TO CURRENT_USER;
 ALTER ROLE ${role} SET search_path = ${schema};
 ALTER ROLE ${role} CONNECTION LIMIT ${String(connectionLimit)};
 ALTER ROLE ${role} IN DATABASE ${roleDatabase} SET statement_timeout = '${String(statementTimeoutMs)}ms';
@@ -379,7 +409,9 @@ export async function bootstrapSharedCluster(): Promise<void> {
 export function buildDeprovisionSql(identity: TenantIdentity): string {
   const schema = quoteIdent(identity.schema);
   const role = quoteIdent(identity.role);
+  const ddlRole = quoteIdent(identity.ddlRole);
   const roleLiteral = identity.role.replaceAll("'", "''");
+  const ddlRoleLiteral = identity.ddlRole.replaceAll("'", "''");
 
   return `
 DROP SCHEMA IF EXISTS ${schema} CASCADE;
@@ -388,7 +420,18 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '${roleLiteral}'
   ) THEN
+    -- Required: the role retains grants outside the dropped schema (USAGE on auth),
+    -- and lingering privileges block DROP ROLE. It owns no objects by construction.
+    DROP OWNED BY ${role};
     DROP ROLE ${role};
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '${ddlRoleLiteral}'
+  ) THEN
+    -- CASCADE above removes owned objects, but ALTER DEFAULT PRIVILEGES entries remain
+    -- as role dependencies and would block DROP ROLE.
+    DROP OWNED BY ${ddlRole};
+    DROP ROLE ${ddlRole};
   END IF;
 END
 $flux_drop$;

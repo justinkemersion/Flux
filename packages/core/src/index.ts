@@ -41,6 +41,7 @@ export {
 export {
   assertFluxApiSchemaIdentifier,
   defaultTenantApiSchemaFromProjectId,
+  defaultTenantDdlRoleFromProjectId,
   defaultTenantRoleFromProjectId,
   deriveTenantSchemaShortId,
   fluxV1TenantSchemaEnabled,
