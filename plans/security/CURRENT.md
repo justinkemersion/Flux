@@ -5,18 +5,18 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Pass 6b** — [tenant DDL/owner role](pass-6b-tenant-ddl-role.md). Implemented (PR #6); **production backfill not yet run.** |
+| **Active phase** | **Pass 6b** — [tenant DDL/owner role](pass-6b-tenant-ddl-role.md). Merged; **production backfill applied 2026-08-08**. Awaiting dashboard deploy. |
 | **Pass 1** | **Complete** (code + docs; server e2e smoke verified 2026-05-29) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
 | **Pass 6** | **Merged, not deployable alone** — see Pass 6b |
-| **Last updated** | 2026-08-08 (Pass 6b implemented; awaiting backfill + deploy) |
+| **Last updated** | 2026-08-08 (Pass 6b merged + backfilled; deploy pending) |
 
-> **Do not deploy `main` to v2_shared production.** Pass 6 runs pooled push as
-> `t_<12hex>_role`, which has no `CREATE` on its own schema on the production cluster —
-> every tenant migration push would fail. Pass 6b fixes this by running DDL as a separate
-> per-tenant owner role, but the code alone is not enough: the **backfill must run against
-> the shared cluster before the dashboard is deployed**. Ordering and commands:
+> **`main` is now deployable to v2_shared production.** Pass 6 alone was not: it ran pooled
+> push as `t_<12hex>_role`, which has no `CREATE` on its own schema. Pass 6b runs DDL as a
+> separate per-tenant owner role, and the **production backfill was applied on 2026-08-08**
+> (17 catalogued tenant schemas; both the old and new push paths verified against the live
+> cluster). Deploy the dashboard to complete the pass:
 > [`pass-6b-tenant-ddl-role.md`](pass-6b-tenant-ddl-role.md).
 
 ---

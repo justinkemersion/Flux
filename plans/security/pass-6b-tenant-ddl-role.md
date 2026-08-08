@@ -1,7 +1,6 @@
 # Pass 6b — tenant DDL/owner role (blocks v2_shared deploy)
 
-**Status:** Implemented (PR #6) — **not yet deployed.** The production backfill has **not** been run.
-**Pass 6 must not be deployed to v2_shared production until the backfill completes.**
+**Status:** Merged (#6). **Production backfill applied 2026-08-08.** Dashboard deploy still pending.
 
 Pass 6 (PR #2, merged as `d995291`) made pooled push execute user SQL under
 `SET LOCAL ROLE t_<12hex>_role`. Production preflight on 2026-08-08 showed that role
@@ -109,7 +108,8 @@ the role and would sweep unrelated objects.
 | 7 | Docs: app-facing note that DDL runs as an owner role distinct from the JWT role | `AGENTS.md`, `docs/pages/guides/migrations.md` | done |
 | 8 | Post-push `FORCE ROW LEVEL SECURITY` + runtime-ownership assertion | `packages/core/src/tenant-rls-invariants.ts` | done |
 | 9 | Real-Postgres integration test | `apps/dashboard/src/lib/pooled-push-privileges.integration.test.ts` | done |
-| 10 | **Run the production backfill** | operator | **pending** |
+| 10 | Run the production backfill | operator | done (2026-08-08) |
+| 11 | **Deploy the dashboard carrying Pass 6 + 6b** | operator | **pending** |
 
 ---
 
@@ -136,6 +136,29 @@ export FLUX_SYSTEM_PG_CONTAINER=flux-<hash>-flux-system-db
 Baseline captured 2026-08-08 (read-only): 27 schemas present, 19 catalog rows, 17 in the
 backfill set, `DDLROLE = NO` everywhere, `RT_OWNED = 0` everywhere (no RLS-bypass drift
 today), 226 RLS tables of which 4 are forced.
+
+### Backfill result (applied 2026-08-08)
+
+All 17 catalogued schemas: `DDLROLE = yes`, owner is `t_<id>_ddl`, `RT_OWNED = 0`,
+`UNFORCED = 0`. The ten orphans are untouched and still owned by `postgres`.
+
+Verified against the live cluster afterwards (all transactions rolled back):
+
+- The **currently deployed pre-Pass-6 executor** still works — it runs as `postgres`, and a
+  superuser can alter objects it does not own, so the ownership transfer is transparent to it.
+- The **Pass 6b executor** works: `SET LOCAL ROLE t_<id>_ddl` + `CREATE TABLE` succeeds. This
+  is the exact statement that failed with `permission denied for schema` during preflight.
+- **RLS still filters correctly** for the runtime role: a live tenant table returned 1 row with
+  the matching `sub` claim and 0 without. Forcing RLS changed nothing for serving traffic,
+  because the runtime role was already a non-owner — `FORCE` only constrains the owner.
+
+### Consequence to watch after deploy
+
+With `FORCE ROW LEVEL SECURITY` applied, the DDL role is itself subject to policy on those
+tables. A migration or repeatable script that seeds rows into an RLS-protected table will
+now be filtered unless a policy permits the insert — previously it ran as `postgres` and
+bypassed RLS. Seed scripts that break this way should either gain an appropriate policy or
+use the documented `flux:no-force-rls` exemption.
 
 ---
 
