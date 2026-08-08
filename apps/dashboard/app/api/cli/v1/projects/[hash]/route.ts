@@ -128,6 +128,15 @@ export async function DELETE(
         mode: row.mode,
       };
     },
+    findAnyCatalogProjectBySlugAndHash: async (slug, hash) => {
+      const db = getDb();
+      const [row] = await db
+        .select({ userId: projects.userId })
+        .from(projects)
+        .where(and(eq(projects.slug, slug), eq(projects.hash, hash)))
+        .limit(1);
+      return row ?? null;
+    },
     assertDestructiveBackupAllowed,
     deleteProjectInfrastructure: async (slug, hash) =>
       pm.deleteProjectInfrastructure(slug, hash),

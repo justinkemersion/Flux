@@ -53,3 +53,21 @@ test("resolveCliRoleForUser matches admin email case-insensitively", () => {
     else process.env.FLUX_CLI_ADMIN_EMAILS = prev;
   }
 });
+
+test("resolveCliRoleForUser does not treat display name as admin email", () => {
+  const prev = process.env.FLUX_CLI_ADMIN_EMAILS;
+  process.env.FLUX_CLI_ADMIN_EMAILS = "admin@example.com";
+  try {
+    assert.equal(
+      resolveCliRoleForUser({
+        userId: "u1",
+        email: "attacker@example.com",
+        name: "admin@example.com",
+      }),
+      "operator",
+    );
+  } finally {
+    if (prev === undefined) delete process.env.FLUX_CLI_ADMIN_EMAILS;
+    else process.env.FLUX_CLI_ADMIN_EMAILS = prev;
+  }
+});

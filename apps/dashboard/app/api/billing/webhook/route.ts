@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type Stripe from "stripe";
 import { users } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
@@ -22,6 +22,22 @@ function unwrapSubscriptionId(
   if (value == null) return null;
   if (typeof value === "string") return value;
   return value.id;
+}
+
+async function setUserPlanByStripeCustomer(
+  stripeCustomerId: string,
+  plan: "hobby" | "pro",
+  stripeSubscriptionId: string | null,
+): Promise<void> {
+  await initSystemDb();
+  const db = getDb();
+  await db
+    .update(users)
+    .set({
+      plan,
+      stripeSubscriptionId,
+    })
+    .where(eq(users.stripeCustomerId, stripeCustomerId));
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -71,6 +87,25 @@ export async function POST(req: Request): Promise<Response> {
         stripeSubscriptionId,
       })
       .where(eq(users.id, userId));
+  }
+
+  if (
+    event.type === "customer.subscription.deleted" ||
+    event.type === "customer.subscription.updated"
+  ) {
+    const subscription = event.data.object as Stripe.Subscription;
+    const stripeCustomerId = unwrapId(subscription.customer);
+    if (!stripeCustomerId) {
+      return Response.json({ received: true });
+    }
+
+    const activeStatuses = new Set(["active", "trialing", "past_due"]);
+    const isPro = activeStatuses.has(subscription.status);
+    await setUserPlanByStripeCustomer(
+      stripeCustomerId,
+      isPro ? "pro" : "hobby",
+      isPro ? subscription.id : null,
+    );
   }
 
   return Response.json({ received: true });

@@ -9,7 +9,7 @@ import {
   extractPooledPushBearer,
   isValidFluxProjectHash,
   parsePooledPushJsonBody,
-  tenantApiSchemaFromProjectId,
+  tenantPushContextFromProjectId,
   validatePooledPushServiceRole,
   validatePooledPushSqlPayload,
 } from "@/src/lib/pooled-push-validators";
@@ -138,11 +138,11 @@ export async function runPooledPushPost(
     return jsonError(roleCheck.error, 403);
   }
 
-  const schemaRes = tenantApiSchemaFromProjectId(project.id);
-  if (!schemaRes.ok) {
-    return jsonError(schemaRes.error, 500);
+  const tenantCtx = tenantPushContextFromProjectId(project.id);
+  if (!tenantCtx.ok) {
+    return jsonError(tenantCtx.error, 500);
   }
-  const { schema } = schemaRes;
+  const { schema, role } = tenantCtx;
 
   const maxSql = deps.maxSqlBytes ?? POOLED_PUSH_MAX_SQL_BYTES;
   const sqlCheck = validatePooledPushSqlPayload(
@@ -165,6 +165,7 @@ export async function runPooledPushPost(
         });
       const result = await runMigration({
         schema,
+        role,
         userSql: sql,
         migration,
       });
@@ -181,6 +182,7 @@ export async function runPooledPushPost(
         });
       const result = await runRepeatable({
         schema,
+        role,
         userSql: sql,
         repeatable,
       });
@@ -196,7 +198,7 @@ export async function runPooledPushPost(
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
-    await deps.executePooledPush({ schema, sql });
+    await deps.executePooledPush({ schema, role, sql });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/exceeded .* timeout/.test(msg)) {

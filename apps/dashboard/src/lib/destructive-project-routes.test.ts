@@ -377,6 +377,7 @@ test("cli delete: unauthorized skips gate and delete", async () => {
       initSystemDb: async () => undefined,
       authenticateCli: async () => null,
       findOwnedProjectByHash: async () => PROJECT,
+      findAnyCatalogProjectBySlugAndHash: async () => null,
       assertDestructiveBackupAllowed: async () => {
         gateCalls++;
         return gateAllowed()();
@@ -406,6 +407,7 @@ test("cli delete: blocked backup returns 412 without delete", async () => {
       initSystemDb: async () => undefined,
       authenticateCli: async () => ({ userId: "user-1" }),
       findOwnedProjectByHash: async () => PROJECT,
+      findAnyCatalogProjectBySlugAndHash: async () => null,
       assertDestructiveBackupAllowed: gateBlocked(),
       deleteProjectInfrastructure: async () => {
         deleteCalls++;
@@ -435,6 +437,7 @@ test("cli delete: skipBackupCheck bypasses gate", async () => {
       initSystemDb: async () => undefined,
       authenticateCli: async () => ({ userId: "user-1" }),
       findOwnedProjectByHash: async () => PROJECT,
+      findAnyCatalogProjectBySlugAndHash: async () => null,
       assertDestructiveBackupAllowed: async () => {
         gateCalls++;
         return gateBlocked()();
@@ -464,6 +467,7 @@ test("cli delete: allowed gate deletes catalog row", async () => {
       initSystemDb: async () => undefined,
       authenticateCli: async () => ({ userId: "user-1" }),
       findOwnedProjectByHash: async () => PROJECT,
+      findAnyCatalogProjectBySlugAndHash: async () => null,
       assertDestructiveBackupAllowed: gateAllowed(),
       deleteProjectInfrastructure: async () => mockDeleteResult(),
       deleteCatalogRow: async () => {
@@ -474,4 +478,33 @@ test("cli delete: allowed gate deletes catalog row", async () => {
   );
   assert.equal(res.status, 200);
   assert.equal(catalogDeletes, 1);
+});
+
+test("cli delete: force orphan blocked when global catalog row exists for slug+hash", async () => {
+  let orphanDeletes = 0;
+  const res = await runCliProjectDelete(
+    new Request(
+      "http://test.local/api/cli/v1/projects/abc1234?force=1&slug=victim",
+      {
+        method: "DELETE",
+        headers: { authorization: "Bearer test-key" },
+      },
+    ),
+    ctx("abc1234"),
+    {
+      initSystemDb: async () => undefined,
+      authenticateCli: async () => ({ userId: "attacker-1" }),
+      findOwnedProjectByHash: async () => null,
+      findAnyCatalogProjectBySlugAndHash: async () => ({ userId: "victim-1" }),
+      assertDestructiveBackupAllowed: gateAllowed(),
+      deleteProjectInfrastructure: async () => mockDeleteResult(),
+      deleteCatalogRow: async () => undefined,
+      deleteOrphanInfrastructure: async () => {
+        orphanDeletes++;
+        return mockDeleteResult();
+      },
+    },
+  );
+  assert.equal(res.status, 409);
+  assert.equal(orphanDeletes, 0);
 });

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import "server-only";
+import { resolveDocPageFile, tryDocRepoRoots } from "@/src/lib/docs-content-path";
 
 export type DocsFrontmatter = {
   title?: string;
@@ -28,7 +29,7 @@ const REPO_DOC_ALIASES: Record<string, string> = {};
 const REPO_DOC_ALIAS_METADATA: Record<string, DocsFrontmatter> = {};
 
 function tryRepoRoots(): string[] {
-  return [join(process.cwd(), "..", ".."), process.cwd()];
+  return tryDocRepoRoots();
 }
 
 function parseFrontmatter(raw: string): LoadedDocPage {
@@ -78,10 +79,9 @@ export async function loadDocPage(slug: string[]): Promise<LoadedDocPage | null>
     return null;
   }
 
-  const rel =
-    slug.length === 0 ? "index.md" : `${slug.join("/")}.md`;
   for (const root of tryRepoRoots()) {
-    const filePath = join(root, "docs", "pages", rel);
+    const filePath = resolveDocPageFile(root, slug);
+    if (!filePath) continue;
     try {
       const raw = await readFile(filePath, "utf8");
       return parseFrontmatter(raw);

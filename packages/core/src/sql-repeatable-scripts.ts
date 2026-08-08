@@ -63,18 +63,16 @@ export function selectRepeatableChecksumSql(
  * Wraps user SQL for a repeatable push: ensure ledger, run user SQL, upsert row.
  * Caller must run {@link resolveRepeatableLedgerAction} first to skip when unchanged.
  */
-export function buildRepeatablePushSql(input: {
+export function buildRepeatableLedgerUpsertSql(input: {
   tenantSchema: string;
-  userSql: string;
   meta: RepeatablePushMeta;
 }): string {
-  const { tenantSchema, userSql, meta } = input;
+  const { tenantSchema, meta } = input;
   const ts = sqlLiteral(tenantSchema);
   const id = sqlLiteral(meta.scriptId);
   const fn = sqlLiteral(meta.filename);
   const cs = sqlLiteral(meta.checksum);
-
-  const upsert = `
+  return `
 INSERT INTO flux.flux_repeatable_scripts
   (tenant_schema, script_id, filename, checksum, run_count, last_applied_at)
 VALUES
@@ -84,11 +82,19 @@ ON CONFLICT (tenant_schema, script_id) DO UPDATE SET
   filename = EXCLUDED.filename,
   run_count = flux.flux_repeatable_scripts.run_count + 1,
   last_applied_at = now();`.trim();
+}
+
+export function buildRepeatablePushSql(input: {
+  tenantSchema: string;
+  userSql: string;
+  meta: RepeatablePushMeta;
+}): string {
+  const { tenantSchema, userSql, meta } = input;
 
   return [
     buildRepeatableLedgerEnsureSql(tenantSchema),
     normalizePushSql(userSql).trim(),
-    upsert,
+    buildRepeatableLedgerUpsertSql({ tenantSchema, meta }),
   ]
     .filter((s) => s.length > 0)
     .join("\n\n");

@@ -1,4 +1,4 @@
-import { defaultTenantApiSchemaFromProjectId, FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
+import { defaultTenantApiSchemaFromProjectId, defaultTenantRoleFromProjectId, FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
 import {
   buildMigrationPushSql,
   type MigrationPushMeta,
@@ -204,5 +204,25 @@ export function tenantApiSchemaFromProjectId(projectId: string):
     return { ok: true, schema: defaultTenantApiSchemaFromProjectId(projectId) };
   } catch {
     return { ok: false, error: "Derived shortId is malformed; refusing push" };
+  }
+}
+
+/**
+ * Resolves tenant schema + DB role from the catalog project UUID for pooled push execution.
+ */
+export function tenantPushContextFromProjectId(projectId: string):
+  | { ok: true; schema: string; role: string }
+  | { ok: false; error: string } {
+  try {
+    return {
+      ok: true,
+      schema: defaultTenantApiSchemaFromProjectId(projectId),
+      role: defaultTenantRoleFromProjectId(projectId),
+    };
+  } catch {
+    return {
+      ok: false,
+      error: "Derived tenant identity is malformed; refusing push",
+    };
   }
 }

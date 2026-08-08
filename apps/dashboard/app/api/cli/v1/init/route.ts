@@ -14,6 +14,7 @@ import {
   provisionProjectForUser,
   resolveCreateModeForPlan,
   slugifyProjectName,
+  withUserProjectCreateLock,
 } from "@/src/lib/cli-project-provision";
 import { assertWithinActiveProjectLimit } from "@flux/core/project-lifecycle-state";
 import { countUserActiveProjects } from "@/src/lib/project-lifecycle-state";
@@ -92,50 +93,52 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
-  const plan = await loadUserPlan(db, auth.userId);
-  const projectCount = await countUserProjects(db, auth.userId);
-  const unlimited = await loadUserUnlimitedProjects(db, auth.userId);
-  const limitCheck = assertWithinProjectLimit(plan, projectCount, { unlimited });
-  if (!limitCheck.ok) {
-    return jsonError(limitCheck.message, 403);
-  }
+  return withUserProjectCreateLock(db, auth.userId, async () => {
+    const plan = await loadUserPlan(db, auth.userId);
+    const projectCount = await countUserProjects(db, auth.userId);
+    const unlimited = await loadUserUnlimitedProjects(db, auth.userId);
+    const limitCheck = assertWithinProjectLimit(plan, projectCount, { unlimited });
+    if (!limitCheck.ok) {
+      return jsonError(limitCheck.message, 403);
+    }
 
-  const activeCount = await countUserActiveProjects(db, auth.userId);
-  const activeLimitCheck = assertWithinActiveProjectLimit(plan, activeCount, {
-    unlimited,
-  });
-  if (!activeLimitCheck.ok) {
-    return jsonError(activeLimitCheck.message, 403);
-  }
+    const activeCount = await countUserActiveProjects(db, auth.userId);
+    const activeLimitCheck = assertWithinActiveProjectLimit(plan, activeCount, {
+      unlimited,
+    });
+    if (!activeLimitCheck.ok) {
+      return jsonError(activeLimitCheck.message, 403);
+    }
 
-  const modePolicy = resolveCreateModeForPlan({ requestedMode: parsedMode, plan });
-  if (!modePolicy.ok) {
-    return jsonError(modePolicy.message, 403);
-  }
+    const modePolicy = resolveCreateModeForPlan({ requestedMode: parsedMode, plan });
+    if (!modePolicy.ok) {
+      return jsonError(modePolicy.message, 403);
+    }
 
-  const result = await provisionProjectForUser({
-    db,
-    userId: auth.userId,
-    projectName: rawSlug,
-    slug,
-    mode: modePolicy.mode,
-    stripSupabaseRestPrefix,
-    isProduction,
-  });
+    const result = await provisionProjectForUser({
+      db,
+      userId: auth.userId,
+      projectName: rawSlug,
+      slug,
+      mode: modePolicy.mode,
+      stripSupabaseRestPrefix,
+      isProduction,
+    });
 
-  if (!result.ok) {
-    return jsonError(result.message, result.status);
-  }
+    if (!result.ok) {
+      return jsonError(result.message, result.status);
+    }
 
-  const payload = buildInitPayloadFromProvision(
-    result.summary,
-    result.mode,
-    result.tenantId,
-    initialApiSchemaStrategy(result.mode),
-  );
+    const payload = buildInitPayloadFromProvision(
+      result.summary,
+      result.mode,
+      result.tenantId,
+      initialApiSchemaStrategy(result.mode),
+    );
 
-  return Response.json(payload, {
-    status: 200,
-    headers: { "Cache-Control": "private, no-store" },
+    return Response.json(payload, {
+      status: 200,
+      headers: { "Cache-Control": "private, no-store" },
+    });
   });
 }

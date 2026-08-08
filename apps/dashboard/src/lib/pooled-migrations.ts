@@ -1,6 +1,6 @@
 import {
   buildFluxMigrationsLedgerEnsureSql,
-  buildMigrationPushSql,
+  buildMigrationLedgerInsertSql,
   listFluxMigrationsSql,
   migrationConflictMessage,
   normalizePushSql,
@@ -11,13 +11,20 @@ import {
 } from "@flux/core/sql-migrations";
 import {
   buildRepeatableLedgerEnsureSql,
-  buildRepeatablePushSql,
+  buildRepeatableLedgerUpsertSql,
   resolveRepeatableLedgerAction,
   selectRepeatableChecksumSql,
   type RepeatablePushMeta,
 } from "@flux/core/sql-repeatable-scripts";
 import type { PushPgClient, PushPgClientFactory } from "@/src/lib/pooled-push";
-import { quoteIdent, PUSH_TIMEOUT_MS } from "@/src/lib/pooled-push";
+import { PUSH_TIMEOUT_MS } from "@/src/lib/pooled-push";
+import {
+  beginPooledPushTransaction,
+  finishPooledPushTransaction,
+  rejectPooledPushPrivilegeEscape,
+  resetPooledPushRole,
+  setPooledPushTenantContext,
+} from "@/src/lib/pooled-push-session";
 import pg from "pg";
 
 function defaultClientFactory(): PushPgClient {
@@ -49,6 +56,31 @@ function rowToRecord(row: Record<string, unknown>): FluxMigrationRecord {
   };
 }
 
+async function runWithPushTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `SQL push exceeded ${String(timeoutMs / 1000)}s timeout`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function listPooledAppliedMigrations(input: {
   tenantSchema: string;
   clientFactory?: PushPgClientFactory;
@@ -71,6 +103,7 @@ export async function listPooledAppliedMigrations(input: {
 
 export type ExecuteMigrationPushInput = {
   schema: string;
+  role: string;
   userSql: string;
   migration: MigrationPushMeta;
   clientFactory?: PushPgClientFactory;
@@ -80,24 +113,21 @@ export type ExecuteMigrationPushInput = {
 export type ExecuteMigrationPushResult = { skipped: boolean };
 
 /**
- * Migration-mode pooled push: ledger in `flux` schema, user SQL under tenant search_path.
+ * Migration-mode pooled push: trusted ledger ops as control-plane role; user SQL under tenant role.
  */
 export async function executePooledMigrationPush(
   input: ExecuteMigrationPushInput,
 ): Promise<ExecuteMigrationPushResult> {
+  rejectPooledPushPrivilegeEscape(input.userSql);
+
   const factory = input.clientFactory ?? defaultClientFactory;
   const timeoutMs = input.timeoutMs ?? PUSH_TIMEOUT_MS;
   const client = factory();
-  let timer: NodeJS.Timeout | undefined;
 
   const work = (async () => {
     await client.connect();
     try {
-      await client.query("BEGIN");
-      await client.query("SET LOCAL statement_timeout = '30s'");
-      await client.query(
-        `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
-      );
+      await beginPooledPushTransaction(client);
       await client.query(buildFluxMigrationsLedgerEnsureSql(input.schema));
 
       const lookup = await client.query(
@@ -122,14 +152,19 @@ export async function executePooledMigrationPush(
         return { skipped: true as const };
       }
 
-      const wrapped = buildMigrationPushSql({
-        tenantSchema: input.schema,
-        userSql: normalizePushSql(input.userSql),
-        migration: input.migration,
+      await setPooledPushTenantContext(client, {
+        schema: input.schema,
+        role: input.role,
       });
-      await client.query(wrapped);
-      await client.query("NOTIFY pgrst, 'reload schema';");
-      await client.query("COMMIT");
+      await client.query(normalizePushSql(input.userSql));
+      await resetPooledPushRole(client);
+      await client.query(
+        buildMigrationLedgerInsertSql({
+          tenantSchema: input.schema,
+          migration: input.migration,
+        }),
+      );
+      await finishPooledPushTransaction(client);
       return { skipped: false as const };
     } catch (err) {
       try {
@@ -143,28 +178,12 @@ export async function executePooledMigrationPush(
     }
   })();
 
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(
-              new Error(
-                `SQL push exceeded ${String(timeoutMs / 1000)}s timeout`,
-              ),
-            ),
-          timeoutMs,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  return runWithPushTimeout(work, timeoutMs);
 }
 
 export type ExecuteRepeatablePushInput = {
   schema: string;
+  role: string;
   userSql: string;
   repeatable: RepeatablePushMeta;
   clientFactory?: PushPgClientFactory;
@@ -177,24 +196,21 @@ export type ExecuteRepeatablePushResult = {
 };
 
 /**
- * Repeatable-mode pooled push: ledger in `flux.flux_repeatable_scripts`, user SQL under tenant search_path.
+ * Repeatable-mode pooled push: trusted ledger ops as control-plane role; user SQL under tenant role.
  */
 export async function executePooledRepeatablePush(
   input: ExecuteRepeatablePushInput,
 ): Promise<ExecuteRepeatablePushResult> {
+  rejectPooledPushPrivilegeEscape(input.userSql);
+
   const factory = input.clientFactory ?? defaultClientFactory;
   const timeoutMs = input.timeoutMs ?? PUSH_TIMEOUT_MS;
   const client = factory();
-  let timer: NodeJS.Timeout | undefined;
 
   const work = (async () => {
     await client.connect();
     try {
-      await client.query("BEGIN");
-      await client.query("SET LOCAL statement_timeout = '30s'");
-      await client.query(
-        `SET LOCAL search_path TO ${quoteIdent(input.schema)}, public`,
-      );
+      await beginPooledPushTransaction(client);
       await client.query(buildRepeatableLedgerEnsureSql(input.schema));
 
       const lookup = await client.query(
@@ -216,14 +232,19 @@ export async function executePooledRepeatablePush(
       }
 
       const previousChecksum = existing?.checksum;
-      const wrapped = buildRepeatablePushSql({
-        tenantSchema: input.schema,
-        userSql: normalizePushSql(input.userSql),
-        meta: input.repeatable,
+      await setPooledPushTenantContext(client, {
+        schema: input.schema,
+        role: input.role,
       });
-      await client.query(wrapped);
-      await client.query("NOTIFY pgrst, 'reload schema';");
-      await client.query("COMMIT");
+      await client.query(normalizePushSql(input.userSql));
+      await resetPooledPushRole(client);
+      await client.query(
+        buildRepeatableLedgerUpsertSql({
+          tenantSchema: input.schema,
+          meta: input.repeatable,
+        }),
+      );
+      await finishPooledPushTransaction(client);
       return {
         skipped: false as const,
         ...(previousChecksum && previousChecksum !== input.repeatable.checksum
@@ -242,22 +263,5 @@ export async function executePooledRepeatablePush(
     }
   })();
 
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(
-              new Error(
-                `SQL push exceeded ${String(timeoutMs / 1000)}s timeout`,
-              ),
-            ),
-          timeoutMs,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  return runWithPushTimeout(work, timeoutMs);
 }

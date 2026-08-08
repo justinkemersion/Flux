@@ -9,6 +9,7 @@ const JWT_SECRET = "pooled-route-test-secret-32chars!!";
 const VALID_HASH = "abcd123";
 const TENANT_PROJECT_ID = "5ecfa3ab-72d1-4b3a-9c8e-111111111111";
 const EXPECTED_SCHEMA = "t_5ecfa3ab72d1_api";
+const EXPECTED_ROLE = "t_5ecfa3ab72d1_role";
 
 function ctx(slug: string) {
   return { params: Promise.resolve({ slug }) };
@@ -225,7 +226,11 @@ test("successful v2_shared dispatch invokes executePooledPush with tenant schema
   );
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { ok: true, schema: EXPECTED_SCHEMA });
-  assert.deepEqual(executed, { schema: EXPECTED_SCHEMA, sql: "select 2" });
+  assert.deepEqual(executed, {
+    schema: EXPECTED_SCHEMA,
+    role: EXPECTED_ROLE,
+    sql: "select 2",
+  });
 });
 
 test("invalid JSON body returns 400", async () => {

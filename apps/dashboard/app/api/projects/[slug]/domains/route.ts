@@ -3,6 +3,7 @@ import { auth } from "@/src/lib/auth";
 import { domains, projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { evictHostname } from "@/src/lib/gateway-cache";
+import { validateCustomDomainHostname } from "@/src/lib/custom-domain-hostname";
 
 export const runtime = "nodejs";
 
@@ -65,7 +66,11 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
     return jsonError('Expected JSON body with a non-empty "hostname" string field', 400);
   }
 
-  const hostname = normalizeHost(rawHostname.trim());
+  const hostnameCheck = validateCustomDomainHostname(rawHostname.trim());
+  if (!hostnameCheck.ok) {
+    return jsonError(hostnameCheck.error, 400);
+  }
+  const hostname = hostnameCheck.hostname;
   const db = getDb();
   const [created] = await db
     .insert(domains)

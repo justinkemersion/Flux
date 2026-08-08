@@ -38,10 +38,14 @@ class RecordingClient implements PushPgClient {
   }
 }
 
-test("executePooledPush issues BEGIN, search_path, user SQL, COMMIT in order", async () => {
+const TENANT_SCHEMA = "t_aabbccddeeff_api";
+const TENANT_ROLE = "t_aabbccddeeff_role";
+
+test("executePooledPush issues BEGIN, SET LOCAL ROLE, search_path, user SQL, COMMIT in order", async () => {
   const client = new RecordingClient();
   await executePooledPush({
-    schema: "t_aabbccddeeff_api",
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
     sql: "CREATE TABLE foo (id int);",
     clientFactory: () => client,
   });
@@ -50,8 +54,10 @@ test("executePooledPush issues BEGIN, search_path, user SQL, COMMIT in order", a
     "__connect__",
     "BEGIN",
     "SET LOCAL statement_timeout = '30s'",
-    'SET LOCAL search_path TO "t_aabbccddeeff_api", public',
+    'SET LOCAL ROLE "t_aabbccddeeff_role"',
+    'SET LOCAL search_path TO "t_aabbccddeeff_api"',
     "CREATE TABLE foo (id int);",
+    "RESET ROLE",
     "NOTIFY pgrst, 'reload schema';",
     "COMMIT",
   ]);
@@ -68,7 +74,8 @@ test("executePooledPush rolls back and rethrows on user SQL error", async () => 
   await assert.rejects(
     () =>
       executePooledPush({
-        schema: "t_aabbccddeeff_api",
+        schema: TENANT_SCHEMA,
+        role: TENANT_ROLE,
         sql: "CREATE TABLE foo (id int);",
         clientFactory: () => client,
       }),
@@ -91,6 +98,21 @@ test("executePooledPush rolls back and rethrows on user SQL error", async () => 
   assert.equal(client.ended, true, "client.end() must run in finally");
 });
 
+test("executePooledPush rejects privilege escalation SQL before connecting", async () => {
+  const client = new RecordingClient();
+  await assert.rejects(
+    () =>
+      executePooledPush({
+        schema: TENANT_SCHEMA,
+        role: TENANT_ROLE,
+        sql: "SET ROLE postgres; SELECT 1;",
+        clientFactory: () => client,
+      }),
+    /privilege escalation/,
+  );
+  assert.deepEqual(client.statements, []);
+});
+
 test("executePooledPush enforces wall-clock timeout", async () => {
   const hangingClient: PushPgClient = {
     connect: async () => {
@@ -105,7 +127,8 @@ test("executePooledPush enforces wall-clock timeout", async () => {
   await assert.rejects(
     () =>
       executePooledPush({
-        schema: "t_aabbccddeeff_api",
+        schema: TENANT_SCHEMA,
+        role: TENANT_ROLE,
         sql: "SELECT 1",
         clientFactory: () => hangingClient,
         timeoutMs: 25,
