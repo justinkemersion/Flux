@@ -12,6 +12,9 @@ build/
 # Local ad-hoc scripts / scratch work (not part of the Traefik or gateway stacks)
 scratch/
 
+# Per-checkout state for the bug-finding automation, not repo content
+MEMORIES.md
+
 # Traefik ACME store (path next to docker/traefik/docker-compose.yml)
 docker/traefik/letsencrypt/
 
