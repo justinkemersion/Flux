@@ -272,7 +272,10 @@ test("create applies read-only default and max expiry", async () => {
   const expectedDefault = defaultMcpTokenExpiresAt(READ_ONLY_CAPS);
   assert.ok(Math.abs(expiresAt.getTime() - expectedDefault.getTime()) < 60_000);
 
-  const tooFar = daysFromNow(MCP_TOKEN_EXPIRY_DAYS.readOnly.max + 1, now).toISOString();
+  const tooFar = daysFromNow(
+    MCP_TOKEN_EXPIRY_DAYS.readOnly.max + 1,
+    new Date(),
+  ).toISOString();
   const rejected = await createMcpTokenForUser(db as never, USER_A, {
     projectIds: [PROJECT_A],
     capabilities: [...READ_ONLY_CAPS],
