@@ -1,4 +1,7 @@
-import { V2_GATEWAY_AUTH_REQUIRED_ERROR } from "@flux/core";
+// Subpath, never the "@flux/core" barrel: the barrel re-exports Docker-backed helpers,
+// and esbuild would pull dockerode/docker-modem into the gateway bundle, which then
+// requires ssh2 at runtime — absent from the slim gateway image.
+import { V2_GATEWAY_AUTH_REQUIRED_ERROR } from "@flux/core/v2-api-contract";
 import { mintBridgeJwt, mintBridgedTenantJwt } from "./jwt-issuer.ts";
 import { fetchProjectJwtSecret } from "./tenant-resolver.ts";
 import type { TenantResolution } from "./types.ts";

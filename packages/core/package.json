@@ -14,6 +14,7 @@
     "./offsite-storage": "./src/offsite-storage/index.ts",
     "./sql-migrations": "./src/sql-migrations.ts",
     "./tenant-rls-invariants": "./src/tenant-rls-invariants.ts",
+    "./v2-api-contract": "./src/v2-api-contract.ts",
     "./pooled-push-sql-adapt": "./src/pooled-push-sql-adapt.ts",
     "./sql-ddl-classify": "./src/sql-ddl-classify.ts",
     "./sql-repeatable-scripts": "./src/sql-repeatable-scripts.ts",
