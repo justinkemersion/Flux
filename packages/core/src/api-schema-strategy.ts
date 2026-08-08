@@ -61,6 +61,20 @@ export function defaultTenantRoleFromProjectId(projectId: string): string {
 }
 
 /**
+ * Per-tenant owner/DDL role on the shared cluster.
+ *
+ * Owns the tenant schema and every object pushed into it, and is the role pooled
+ * `flux push` assumes via `SET LOCAL ROLE`. Deliberately distinct from
+ * {@link defaultTenantRoleFromProjectId}: a table owner bypasses RLS unless the table
+ * is `FORCE ROW LEVEL SECURITY`, so the runtime PostgREST role must never own tenant
+ * objects. This role is `NOLOGIN` and is never granted to `authenticator`, so no JWT
+ * can resolve to it.
+ */
+export function defaultTenantDdlRoleFromProjectId(projectId: string): string {
+  return `t_${deriveTenantSchemaShortId(projectId)}_ddl`;
+}
+
+/**
  * Resolves the schema PostgREST exposes as the primary API schema (first entry in PGRST_DB_SCHEMAS).
  */
 export function resolveTenantApiSchemaName(

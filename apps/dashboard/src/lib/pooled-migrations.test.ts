@@ -9,8 +9,10 @@ import {
 
 const TENANT_SCHEMA = "t_aabbccddeeff_api";
 const TENANT_ROLE = "t_aabbccddeeff_role";
+const TENANT_DDL_ROLE = "t_aabbccddeeff_ddl";
 const TENANT_B_SCHEMA = "t_bbccddeeff00_api";
 const TENANT_B_ROLE = "t_bbccddeeff00_role";
+const TENANT_B_DDL_ROLE = "t_bbccddeeff00_ddl";
 
 type Row = Record<string, unknown>;
 
@@ -99,6 +101,7 @@ test("executePooledMigrationPush skips when checksum matches", async () => {
   const result = await executePooledMigrationPush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
     userSql: "SELECT 1;",
     migration: {
       version: "001_a.sql",
@@ -119,6 +122,7 @@ test("executePooledMigrationPush applies when version missing", async () => {
   const result = await executePooledMigrationPush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
     userSql: "SELECT 2;",
     migration: {
       version: "002_b.sql",
@@ -141,6 +145,7 @@ test("executePooledMigrationPush rejects checksum conflict", async () => {
       executePooledMigrationPush({
         schema: TENANT_SCHEMA,
         role: TENANT_ROLE,
+        ddlRole: TENANT_DDL_ROLE,
         userSql: "SELECT 3;",
         migration: {
           version: "003_c.sql",
@@ -163,6 +168,7 @@ test("same migration version is isolated per tenant_schema", async () => {
   const result = await executePooledMigrationPush({
     schema: TENANT_B_SCHEMA,
     role: TENANT_B_ROLE,
+    ddlRole: TENANT_B_DDL_ROLE,
     userSql: "SELECT 1;",
     migration: {
       version: "001_init.sql",
@@ -184,6 +190,7 @@ test("executePooledRepeatablePush skips when checksum matches", async () => {
   const result = await executePooledRepeatablePush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
     userSql: "SELECT 1;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -208,6 +215,7 @@ test("executePooledRepeatablePush applies with run_count on first insert", async
   const result = await executePooledRepeatablePush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
     userSql: "SELECT 2;",
     repeatable: {
       scriptId: "flux/scripts/new.sql",
@@ -229,6 +237,7 @@ test("executePooledRepeatablePush force applies unchanged checksum", async () =>
   const result = await executePooledRepeatablePush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
     userSql: "SELECT 3;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -250,6 +259,7 @@ test("executePooledRepeatablePush returns previousChecksum when content changed"
   const result = await executePooledRepeatablePush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
     userSql: "SELECT 4;",
     repeatable: {
       scriptId: "flux/scripts/seed.sql",
@@ -270,6 +280,7 @@ test("executePooledRepeatablePush uses same transactional envelope as migrations
   await executePooledRepeatablePush({
     schema: TENANT_SCHEMA,
     role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
     userSql: "SELECT 5;",
     repeatable: {
       scriptId: "flux/scripts/x.sql",

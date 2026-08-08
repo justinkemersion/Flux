@@ -264,6 +264,47 @@ test("buildDeprovisionSql has no double statement terminators", () => {
   assertNoDoubleStatementTerminator(sql);
 });
 
+test("buildDeprovisionSql clears role privileges so DROP ROLE cannot be blocked", () => {
+  const identity = deriveTenantIdentity("550e8400-e29b-41d4-a716-446655440000");
+  const sql = buildDeprovisionSql(identity);
+  // Both roles retain grants outside the dropped schema (USAGE on auth, default
+  // privileges), which block DROP ROLE unless the dependencies are cleared first.
+  assert.match(sql, new RegExp(`DROP OWNED BY "${identity.role}"`));
+  assert.match(sql, new RegExp(`DROP OWNED BY "${identity.ddlRole}"`));
+  assert.match(sql, new RegExp(`DROP ROLE "${identity.ddlRole}"`));
+});
+
+test("buildTenantBootstrapSql separates the DDL owner role from the runtime role", () => {
+  const TENANT_ID = "11111111-2222-4333-8444-555555555555";
+  const identity = deriveTenantIdentity(TENANT_ID);
+  const sql = buildTenantBootstrapSql(identity, TENANT_ID);
+
+  assert.notEqual(identity.ddlRole, identity.role);
+  assert.match(sql, new RegExp(`CREATE ROLE "${identity.ddlRole}" NOLOGIN`));
+  assert.match(
+    sql,
+    new RegExp(`ALTER SCHEMA "${identity.schema}" OWNER TO "${identity.ddlRole}"`),
+    "the DDL role must own the tenant schema so pushed DDL needs no CREATE grant",
+  );
+  assert.match(
+    sql,
+    new RegExp(
+      `ALTER DEFAULT PRIVILEGES FOR ROLE "${identity.ddlRole}" IN SCHEMA "${identity.schema}" GRANT SELECT ON TABLES TO "${identity.role}"`,
+    ),
+    "tables created by the DDL role must stay readable by the runtime role",
+  );
+  assert.doesNotMatch(
+    sql,
+    new RegExp(`GRANT CREATE ON SCHEMA "${identity.schema}" TO "${identity.role}"`),
+    "granting CREATE to the runtime role would make it own tables and bypass RLS",
+  );
+  assert.doesNotMatch(
+    sql,
+    new RegExp(`GRANT "${identity.ddlRole}" TO "${identity.role}"`),
+    "the runtime role must not be able to assume the DDL role",
+  );
+});
+
 // ---------------------------------------------------------------------------
 // T-4: Rollback on System DB Failure
 //

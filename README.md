@@ -141,8 +141,10 @@ Compose: [`docker/v2-shared/docker-compose.yml`](docker/v2-shared/docker-compose
 ### Tenant schema and role isolation (v2)
 
 - Schema: `t_<shortId>_api` — tables, policies, grants for the tenant.
-- Role: `t_<shortId>_role` — JWT `role` claim on v2_shared (not `authenticated`).
+- Role: `t_<shortId>_role` — JWT `role` claim on v2_shared (not `authenticated`). Runtime only: it owns nothing and cannot run DDL.
+- Owner role: `t_<shortId>_ddl` — `NOLOGIN`, owns the schema and everything pushed into it. Pooled `flux push` runs DDL as this role via `SET LOCAL ROLE`. Keeping the owner distinct from the runtime role is what keeps RLS in force, since a table owner bypasses RLS; pushes additionally apply `FORCE ROW LEVEL SECURITY` to RLS-enabled tenant tables and abort if the runtime role is found owning anything.
 - Provisioned by `@flux/engine-v2`; collision guard via schema `COMMENT` ownership marker.
+- Operator checks: `bin/pass6b-reconcile-tenant-roles.sh` (read-only) and `bin/pass6b-backfill-tenant-ddl-roles.sh` (idempotent backfill for tenants provisioned before the owner role existed).
 
 ### Why Postgres is not publicly exposed
 

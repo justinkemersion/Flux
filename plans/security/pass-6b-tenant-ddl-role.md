@@ -1,6 +1,7 @@
 # Pass 6b — tenant DDL/owner role (blocks v2_shared deploy)
 
-**Status:** Planned — not implemented. **Pass 6 must not be deployed to v2_shared production until this lands.**
+**Status:** Implemented (PR #6) — **not yet deployed.** The production backfill has **not** been run.
+**Pass 6 must not be deployed to v2_shared production until the backfill completes.**
 
 Pass 6 (PR #2, merged as `d995291`) made pooled push execute user SQL under
 `SET LOCAL ROLE t_<12hex>_role`. Production preflight on 2026-08-08 showed that role
@@ -97,20 +98,18 @@ the role and would sweep unrelated objects.
 
 ## Work items
 
-| # | Item | Where |
-|---|------|-------|
-| 1 | Emit `t_<12hex>_ddl` role, schema ownership, and `FOR ROLE` default privileges in tenant bootstrap | `packages/engine-v2/src/index.ts` |
-| 2 | Canonical name helper + validator for the DDL role | `packages/core/src/api-schema-strategy.ts` |
-| 3 | Accept the DDL role in push session assertions; push runs as DDL role, not runtime role | `apps/dashboard/src/lib/pooled-push-session.ts` |
-| 4 | Pass the derived DDL role through the push routes | `apps/dashboard/app/api/cli/v1/push/route.ts` |
-| 5 | Idempotent backfill script for the 16 existing tenants (create role, transfer schema + object ownership, default privileges) | `bin/` |
-| 6 | Reconciliation query as a repeatable operator check | `bin/` |
-| 7 | Docs: app-facing note that DDL runs as an owner role distinct from the JWT role | `AGENTS.md`, `docs/pages/guides/migrations.md` |
-
-Tests must include a case proving the runtime role is **not** the owner of objects created
-by a push, since that is the property preventing the RLS bypass. The current pooled-push
-tests use a fake client that cannot catch privilege errors, so at least one integration-style
-check against a real Postgres is needed before deploy.
+| # | Item | Where | Status |
+|---|------|-------|--------|
+| 1 | Emit `t_<12hex>_ddl` role, schema ownership, and `FOR ROLE` default privileges in tenant bootstrap | `packages/engine-v2/src/index.ts` | done |
+| 2 | Canonical name helper + validator for the DDL role | `packages/core/src/api-schema-strategy.ts` | done |
+| 3 | Accept the DDL role in push session assertions; push runs as DDL role, not runtime role | `apps/dashboard/src/lib/pooled-push-session.ts` | done |
+| 4 | Pass the derived DDL role through the push routes | `pooled-push-validators.ts`, `pooled-push-route.ts`, `app/api/cli/v1/push/route.ts` | done |
+| 5 | Idempotent backfill script (create role, transfer schema + object ownership, default privileges) | `bin/pass6b-backfill-tenant-ddl-roles.sh` | done |
+| 6 | Reconciliation query as a repeatable operator check | `bin/pass6b-reconcile-tenant-roles.sh` | done |
+| 7 | Docs: app-facing note that DDL runs as an owner role distinct from the JWT role | `AGENTS.md`, `docs/pages/guides/migrations.md` | done |
+| 8 | Post-push `FORCE ROW LEVEL SECURITY` + runtime-ownership assertion | `packages/core/src/tenant-rls-invariants.ts` | done |
+| 9 | Real-Postgres integration test | `apps/dashboard/src/lib/pooled-push-privileges.integration.test.ts` | done |
+| 10 | **Run the production backfill** | operator | **pending** |
 
 ---
 
@@ -124,15 +123,103 @@ check against a real Postgres is needed before deploy.
 
 Deploying the code first, or in the same step, reintroduces the push outage window.
 
+```bash
+export DOCKER_HOST=ssh://root@<flux-host>
+export FLUX_SYSTEM_PG_CONTAINER=flux-<hash>-flux-system-db
+
+./bin/pass6b-reconcile-tenant-roles.sh                       # before: DDLROLE = NO
+./bin/pass6b-reconcile-tenant-roles.sh --backfill-set \
+  | ./bin/pass6b-backfill-tenant-ddl-roles.sh
+./bin/pass6b-reconcile-tenant-roles.sh                       # after: DDLROLE = yes, RT_OWNED = 0
+```
+
+Baseline captured 2026-08-08 (read-only): 27 schemas present, 19 catalog rows, 17 in the
+backfill set, `DDLROLE = NO` everywhere, `RT_OWNED = 0` everywhere (no RLS-bypass drift
+today), 226 RLS tables of which 4 are forced.
+
 ---
 
-## Open questions for the operator
+## Resolved decisions (operator, 2026-08-08)
 
-- Ten tenant schemas on the cluster have no catalog row. Backfill them too, or leave them
-  untouched and clean up separately? They are not reachable through the control plane.
+### Orphan schemas: classified, then excluded
+
+All ten uncatalogued schemas were classified read-only before deciding. Nine contain zero
+tables, views, and sequences. The tenth, `t_b86da057199a_api`, holds two tables
+(`products`, `profiles`) with **zero live rows, zero lifetime writes, and no autovacuum
+history** — an abandoned provisioning attempt that duplicates the table shape of the live
+`t_485382535699_api` (bloom-atelier).
+
+None qualify as live or intentionally retained, so **none are backfilled**. They are left
+untouched pending a separate cleanup decision. Dead infrastructure does not get a
+privilege model.
+
+The backfill set is therefore the **17 schemas that have a catalog row**, derived from the
+catalog rather than from the cluster, so an orphan can never enter it by accident:
+
+```
+./bin/pass6b-reconcile-tenant-roles.sh --backfill-set | ./bin/pass6b-backfill-tenant-ddl-roles.sh
+```
+
+Sixteen are `v2_shared`. The seventeenth, `t_485382535699_api` (bloom-atelier), is a
+`v1_dedicated` project with a live tenant schema on the shared cluster; pooled push never
+targets it today, but it is retained and carries real data, so it is backfilled for
+consistency rather than left in a third state.
+
+### FORCE ROW LEVEL SECURITY: scoped, not blanket
+
+Applied to tables that **already have RLS enabled** and are missing `FORCE`. Tables without
+RLS are untouched — forcing them would change behavior the tenant never asked for.
+
+Documented exemption: a table whose comment contains `flux:no-force-rls` is skipped, for
+deliberately owner-readable tables.
+
+```sql
+COMMENT ON TABLE t_<id>_api.audit_log IS 'flux:no-force-rls — append-only, read via view';
+```
+
+This runs post-push (after `RESET ROLE`, inside the same transaction) and also during
+backfill. Production currently has 226 RLS-enabled tenant tables, of which only 4 are
+forced, so the first push per tenant will force the rest.
+
+### Ownership assertion
+
+Every push also asserts, in-transaction, that the runtime role owns nothing in the tenant
+schema, and rolls back if it does. This catches ownership drift at the moment it would
+start bypassing RLS instead of at the next audit.
+
+---
+
+## Verification
+
+`apps/dashboard/src/lib/pooled-push-privileges.integration.test.ts` runs against a real
+cluster (opt-in: `FLUX_RUN_PG_INTEGRATION=1` + `FLUX_TEST_POSTGRES_URL`). Privilege limits
+are asserted through an **`authenticator` login connection**, mirroring PostgREST — a
+superuser session can `SET ROLE` to anything and bypasses RLS, so asserting them from the
+control-plane connection would prove nothing.
+
+All ten sub-assertions pass, including the Pass 6 regression itself (a migration can create
+a table), plus: pushed tables are owned by the DDL role; RLS is enabled *and* forced; the
+runtime role cannot create, alter, drop, or `SET ROLE` to the DDL role; RLS still filters
+rows; cross-tenant DDL fails; a failed push leaves no artifacts; and a push aborts if the
+runtime role owns a tenant object.
+
+The backfill was rehearsed against a legacy-shaped tenant (schema and tables owned by
+`postgres`, runtime role present, no DDL role): ownership transferred, RLS forced, the
+script is idempotent across repeated runs, and a subsequent push succeeded.
+
+### Fixed along the way
+
+`buildDeprovisionSql` could never drop a tenant: `DROP ROLE` failed with *"role … cannot be
+dropped because some objects depend on it — privileges for schema auth"*, because
+provisioning grants the runtime role `USAGE ON SCHEMA auth`. Deprovision now issues
+`DROP OWNED BY` for both roles first. Pre-existing bug, surfaced by the integration test's
+teardown.
+
+---
+
+## Still open (not blocking)
+
 - `public` on the shared cluster carries four leftover debug helpers (`_debug_cu`,
-  `_debug_jwt_role`, `_test_set_config`, `flux_ctx_debug`) alongside the two PostgREST
-  hook functions. Unrelated to this pass; worth a separate cleanup.
-- Should Pass 6b also set `FORCE ROW LEVEL SECURITY` on tenant tables as defence in depth?
-  Not required once the owner is distinct from the runtime role, but it would make the
-  guarantee independent of future ownership drift.
+  `_debug_jwt_role`, `_test_set_config`, `flux_ctx_debug`) alongside the two PostgREST hook
+  functions. Unrelated to this pass; worth a separate cleanup.
+- The ten orphaned schemas need a drop/retain decision.
