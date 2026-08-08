@@ -24,6 +24,30 @@ The behavior above is versioned as **`FLUX_GATEWAY_CONTRACT_VERSION`** (currentl
 
 Short TTLs limit exposure if a token were mis-issued; clients should refresh external tokens normally.
 
+## Pooled push SQL adaptation
+
+The same contract version covers how pooled push adapts application SQL, so there is one version to assert against rather than two.
+
+`authenticated` is an **app-source compatibility token**, not a role that exists on the shared cluster. Write migrations against it and v2_shared pooled push maps it to the tenant runtime role at execution time:
+
+| Source SQL | Executed as |
+| --- | --- |
+| `GRANT … TO authenticated` | `GRANT … TO "t_<shortId>_role"` |
+| `REVOKE … FROM authenticated` | `REVOKE … FROM "t_<shortId>_role"` |
+| `ALTER DEFAULT PRIVILEGES … TO authenticated` | `… TO "t_<shortId>_role"` |
+| `CREATE POLICY … TO authenticated` | `CREATE POLICY … TO "t_<shortId>_role"` |
+| `GRANT/REVOKE … ON SCHEMA public` | `… ON SCHEMA "t_<shortId>_api"` |
+| `ALTER DEFAULT PRIVILEGES IN SCHEMA public` | `… IN SCHEMA "t_<shortId>_api"` |
+
+Rules that follow from this:
+
+- **Prefer `TO authenticated` over omitting the `TO` clause.** A policy with no `TO` clause is `TO PUBLIC`: still valid, but broader than intended, and it is not the canonical pattern.
+- **Do not create role-membership bridges.** `GRANT authenticated TO t_<shortId>_role` is unnecessary — adaptation already targets the runtime role, and the shared cluster does not provision an `authenticated` role. Historical migrations that added such a bridge are ledgered and must stay immutable; do not edit or re-run them.
+- **Adaptation only touches executable SQL.** Line comments, block comments, single-quoted strings, quoted identifiers and dollar-quoted bodies are never rewritten, so `EXECUTE format('grant authenticated to %I', r)` and prose in `--` comments keep their original text.
+- **Dynamic DDL must resolve the role itself.** Because function bodies and string literals are left alone, SQL built inside a `DO` block should use `current_schema()` / `%I` to derive `t_<shortId>_role` rather than relying on the adapter reaching inside the literal.
+- Qualified `public.<object>` references are left intact: on the shared cluster `public` holds PostgREST hook functions and operator-installed extensions.
+- Checksums and ledger rows are computed on pre-adapt file content; adaptation runs at execution only.
+
 ## How it works
 
 ```txt

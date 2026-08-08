@@ -75,6 +75,9 @@ Foundry ships Supabase-style SQL: unqualified tables, `GRANT … TO authenticate
 
 - **`flux push`** runs inside `SET LOCAL ROLE t_<shortId>_role` and `SET LOCAL search_path TO t_<shortId>_api` — unqualified objects land in the tenant schema, and your SQL executes with tenant privileges, never the control-plane role.
 - Before execution, Flux rewrites **`authenticated`** → **`t_<shortId>_role`** and schema **`public`** in privilege statements to the tenant API schema. Git file checksums are unchanged.
+- **`authenticated` is an app-source compatibility token**, not a role on the shared cluster. Write `GRANT … TO authenticated` and `CREATE POLICY … TO authenticated`; do **not** add a `GRANT authenticated TO t_<shortId>_role` membership bridge. Historical migrations that added one are ledgered — leave them immutable rather than editing them.
+- Prefer **`TO authenticated`** over omitting the `TO` clause. A policy with no `TO` is `TO PUBLIC` — valid, but broader than intended and not the canonical pattern.
+- Rewriting is **lexical**: it applies only to executable SQL. Comments, single-quoted strings, quoted identifiers and dollar-quoted bodies are left byte-for-byte intact. SQL you build inside a `DO` block must therefore derive the role itself (`replace(current_schema(), '_api', '_role')` with `%I`) — `EXECUTE format('grant … to authenticated')` will **not** be adapted.
 - Qualified **`public.<object>`** references are **not** rewritten — `public` still holds cluster-wide objects such as operator-installed extensions.
 - Because SQL runs as the tenant role, statements requiring superuser (notably **`CREATE EXTENSION`**) are rejected; ask an operator to install extensions cluster-wide.
 - At request time, the gateway performs the same role mapping on JWTs (`authenticated` in → `t_<shortId>_role` on the bridge JWT).
