@@ -19,6 +19,17 @@ flux version --json   # expect provenanceStatus: verified (or unverifiable for a
   If blocked, rebuild with `pnpm --filter @flux/cli build`. See
   [CLI build provenance](./CLI-BUILD-PROVENANCE.md).
 
+- [ ] **Confirm the deployed control plane is the reviewed build** — required before any pooled
+      (`v2_shared`) migration, because the pooled push SQL adapter runs there, not in the CLI.
+
+```bash
+flux control-plane verify   # exit 0 = READY; reports both controls and the reasons
+```
+
+  Production migration readiness requires **both** a verified CLI artifact and a verified
+  compatible deployed control plane. See
+  [control-plane provenance](./CONTROL-PLANE-PROVENANCE.md).
+
 - [ ] **Generate a master symmetric key (hex)** — one secret for this rotation; you will paste the same value into Clerk and Flux.
 
 ```bash

@@ -17,6 +17,16 @@ services:
     build:
       context: ../..
       dockerfile: apps/dashboard/Dockerfile
+      # Build provenance: the context excludes `.git`, so the commit must be passed in.
+      # `bin/deploy-web.sh` exports these from the host checkout and refuses a dirty tree.
+      # Empty means the artifact reports unknown provenance and refuses production mutations.
+      args:
+        FLUX_BUILD_SOURCE_SHA: ${FLUX_BUILD_SOURCE_SHA:-}
+        FLUX_BUILD_DIRTY: ${FLUX_BUILD_DIRTY:-}
+        FLUX_BUILD_TIMESTAMP: ${FLUX_BUILD_TIMESTAMP:-}
+    # Stable tag so `--no-build` restarts always resolve. `bin/deploy-web.sh` additionally
+    # tags each build `flux-web:<sha>`, giving an immutable identifier and a rollback target
+    # that survives `docker image prune`.
     image: flux-web:latest
     container_name: flux-web
     restart: unless-stopped

@@ -36,8 +36,19 @@ jobs:
 
       # tsc does not run the framework build. A duplicate middleware.ts/proxy.ts shipped
       # an unbuildable dashboard for a full release cycle because nothing here built it.
+      # Provenance build args mirror bin/deploy-web.sh so the artifact check below is real.
       - name: Build dashboard (next build)
         run: pnpm --filter dashboard exec next build
+        env:
+          FLUX_BUILD_SOURCE_SHA: ${{ github.sha }}
+          FLUX_BUILD_DIRTY: "0"
+          FLUX_BUILD_TIMESTAMP: ${{ github.event.repository.pushed_at }}
+
+      # Unit tests cannot show that `next build` inlined the commit. If it were read at
+      # runtime instead, a container env var could impersonate the deployed control plane
+      # and the deploy guard would verify nothing.
+      - name: Control-plane provenance guardrail (real artifact)
+        run: node apps/dashboard/scripts/verify-build-provenance.mjs "${{ github.sha }}"
 
       # tsc does not bundle. A root-barrel import pulled dockerode into the gateway
       # bundle and crash-looped the container on a missing ssh2.

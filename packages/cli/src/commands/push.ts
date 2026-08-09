@@ -27,6 +27,7 @@ import { getApiClient } from "../api-client";
 import { sectionBanner } from "../cli-layout";
 import { resolveDashboardBase } from "../dashboard-base";
 import type { FluxJson } from "../flux-config";
+import { assertControlPlaneReadyForPooledMigration } from "../lib/control-plane-preflight";
 import {
   fetchAppliedMigrations,
   formatV2ServerError,
@@ -118,6 +119,13 @@ export async function cmdPush(
   const hash = resolveHash(options.hash, flux);
   const client = getApiClient();
   const metadata = await client.getProjectMetadata(hash);
+
+  // Pooled pushes are adapted by the deployed control plane, so a verified CLI artifact does
+  // not establish which code rewrites the SQL. Check the other half of the boundary before
+  // applying anything.
+  if (options.pushMode === "apply" && metadata.mode === "v2_shared") {
+    await assertControlPlaneReadyForPooledMigration();
+  }
 
   if (target.kind === "directory") {
     if (options.force) {
