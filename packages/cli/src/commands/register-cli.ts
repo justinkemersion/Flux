@@ -16,6 +16,7 @@ import { registerProjectBriefCommands } from "./register-cli/project-brief";
 import { registerProjectSummarizeCommands } from "./register-cli/project-summarize";
 import { registerProjectLifecycleCommands } from "./register-cli/project-lifecycle-state";
 import { registerMcpCommands } from "./register-cli/mcp";
+import { registerControlPlaneCommands } from "./register-cli/control-plane";
 
 export function registerFluxCliCommands(program: Command): void {
   program
@@ -41,4 +42,5 @@ export function registerFluxCliCommands(program: Command): void {
   registerProjectSummarizeCommands(program);
   registerProjectLifecycleCommands(program);
   registerMcpCommands(program);
+  registerControlPlaneCommands(program);
 }

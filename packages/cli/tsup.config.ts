@@ -18,22 +18,42 @@ function git(args: string[]): string | null {
   }
 }
 
+function envOrNull(name: string): string | null {
+  const raw = process.env[name];
+  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+}
+
 /**
  * Provenance embedded in the bundle so the runnable artifact can be checked against the
  * source it was produced from. Deterministic inputs (commit, repo root, package version)
  * come from git and package.json at build time; nothing is inferred from mtime at runtime.
  * Dirtiness ignores untracked files, matching `readSourceCheckoutState`.
+ *
+ * Container builds fall back to `FLUX_BUILD_*`: the dashboard image build context excludes
+ * `.git`, so git is unavailable there and the caller supplies the commit as a build arg.
+ * `buildRepoRoot` stays null in that case, which is correct — the resulting bundle is a
+ * distributable release with no local checkout to compare against.
  */
 function buildProvenanceJson(): string {
   const pkg = JSON.parse(
     readFileSync(`${packageDir}/package.json`, "utf8"),
   ) as { version?: unknown };
-  const status = git(["status", "--porcelain", "--untracked-files=no"]);
+  const gitSha = git(["rev-parse", "HEAD"]);
+  const gitStatus = gitSha == null
+    ? null
+    : git(["status", "--porcelain", "--untracked-files=no"]);
+  const envDirty = envOrNull("FLUX_BUILD_DIRTY");
   return JSON.stringify({
     version: typeof pkg.version === "string" ? pkg.version : null,
-    sourceSha: git(["rev-parse", "HEAD"]),
-    sourceDirtyAtBuild: status == null ? null : status !== "",
-    buildTimestamp: new Date().toISOString(),
+    sourceSha: gitSha ?? envOrNull("FLUX_BUILD_SOURCE_SHA"),
+    sourceDirtyAtBuild:
+      gitStatus != null
+        ? gitStatus !== ""
+        : envDirty == null
+          ? null
+          : envDirty === "1" || envDirty === "true",
+    buildTimestamp:
+      envOrNull("FLUX_BUILD_TIMESTAMP") ?? new Date().toISOString(),
     buildRepoRoot: git(["rev-parse", "--show-toplevel"]),
   });
 }
@@ -66,6 +86,8 @@ export default defineConfig({
   // Do not bundle `@flux/core` (root): it pulls dockerode / native addons. Use `@flux/core/standalone` only.
   noExternal: [
     "@flux/core/backup-trust",
+    "@flux/core/contract-versions",
+    "@flux/core/control-plane-provenance",
     "@flux/core/standalone",
     "@flux/sdk",
     "chalk",

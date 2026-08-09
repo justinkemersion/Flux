@@ -116,9 +116,15 @@ The pooled-push SQL adaptation (`adaptPooledPushSql`) runs in the **control plan
 inference, migration ledger and checksum handling, backup gates, confirmation prompts — but
 **not** the deployed dashboard's adapter version.
 
-Which adapter rewrites tenant SQL is determined by the **deployed control plane**, and that
-artifact has no equivalent provenance check yet. Treat control-plane freshness as a separate
-pre-flight until that gap is closed.
+That second boundary has its own contract:
+[control-plane build provenance](./CONTROL-PLANE-PROVENANCE.md). **Production migration
+readiness requires both a verified CLI artifact and a verified compatible deployed control
+plane.** Check both with:
+
+```bash
+flux version --json          # this artifact
+flux control-plane verify    # both controls, single READY / NOT READY verdict
+```
 
 ## Related documentation
 

@@ -10,6 +10,18 @@ FROM base AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
+# Build provenance. The build context excludes `.git` (see repo-root .dockerignore), so the
+# build cannot discover its own commit — the caller must pass it. `bin/deploy-web.sh` derives
+# these from the host checkout and refuses a dirty tree for production. Without them the
+# artifacts report unknown provenance and refuse production mutations, which is the intended
+# fail-closed behavior rather than a guess.
+ARG FLUX_BUILD_SOURCE_SHA=""
+ARG FLUX_BUILD_DIRTY=""
+ARG FLUX_BUILD_TIMESTAMP=""
+ENV FLUX_BUILD_SOURCE_SHA=${FLUX_BUILD_SOURCE_SHA}
+ENV FLUX_BUILD_DIRTY=${FLUX_BUILD_DIRTY}
+ENV FLUX_BUILD_TIMESTAMP=${FLUX_BUILD_TIMESTAMP}
+
 # Full monorepo (see repo-root .dockerignore); CLI dist must exist before dashboard
 # build so /api/install/cli can stream packages/cli/dist/index.cjs from the image.
 COPY . .

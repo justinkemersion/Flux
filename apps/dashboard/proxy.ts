@@ -17,10 +17,18 @@ type AuthMiddleware = (request: NextRequest, event: NextFetchEvent) => ReturnTyp
  *
  * - Any `/api/*`: demo sessions are blocked from mutating requests first, so the
  *   guard applies to CLI routes too (they never reach the Auth.js branch below).
+ * - `/api/health`: bypassed entirely (liveness + build provenance; no session, no rate limit).
  * - `/api/cli/v1/*`: rate limit → `NextResponse.next()` (Bearer auth in route handlers).
  * - Other matched paths: Auth.js `auth()` + `authorized` callback in `auth.ts`.
  */
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
+  // Liveness and build provenance must not depend on session machinery: the deploy guard
+  // probes an unrouted candidate container and `flux` probes before authenticating, and a
+  // health endpoint that fails when auth config is incomplete cannot be used to diagnose that.
+  if (request.nextUrl.pathname === "/api/health") {
+    return NextResponse.next();
+  }
+
   const blocked = await demoReadOnlyMiddleware(request);
   if (blocked) return blocked;
 

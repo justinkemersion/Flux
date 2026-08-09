@@ -1,11 +1,11 @@
 /**
  * Flux gateway public contract version (semver).
  *
- * Downstream doctor/integration tooling (e.g. Flux Foundry) may validate host
- * routing, inbound project JWT requirements, bridge JWT role mapping, and
- * fail-closed anonymous access against this version.
+ * Canonical definition lives in `@flux/core/contract-versions` so the control plane can
+ * advertise it and the CLI can assert it without depending on `@flux/gateway`. Re-exported
+ * here to keep this module the gateway's public contract surface.
  */
-export const FLUX_GATEWAY_CONTRACT_VERSION = "1.0.0";
+export { FLUX_GATEWAY_CONTRACT_VERSION } from "@flux/core/contract-versions";
 
 /** Human-readable invariants for the v1.0.0 gateway contract. */
 export const FLUX_GATEWAY_CONTRACT_INVARIANTS = [
