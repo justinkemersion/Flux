@@ -4,6 +4,10 @@ import {
   cmdDbReset,
   ensureRestoreVerifiedLatestBackup,
 } from "../../cli-handlers";
+import {
+  assertCliArtifactFreshForProduction,
+  warnIfCliArtifactStale,
+} from "../../lib/production-artifact-guard";
 import { resolveHash, resolveProjectSlug } from "../../project-resolve";
 import { cmdMigrationsList } from "../migrations";
 import { cmdPush } from "../push";
@@ -95,6 +99,11 @@ Examples:
         : opts.plan
           ? ("plan" as const)
           : ("apply" as const);
+      if (pushMode === "apply") {
+        await assertCliArtifactFreshForProduction("push");
+      } else {
+        await warnIfCliArtifactStale();
+      }
       await cmdPush(
         target,
         opts.project ?? "",
@@ -136,6 +145,7 @@ Examples:
         project?: string;
         hash?: string;
       }>();
+      await warnIfCliArtifactStale();
       await cmdMigrationsList(opts.project ?? "", opts, flux);
     }),
   );
@@ -197,6 +207,11 @@ Examples:
       }>();
       if (opts.to !== "v1_dedicated") {
         throw new Error("Only --to v1_dedicated is supported today.");
+      }
+      if (opts.dryRun) {
+        await warnIfCliArtifactStale();
+      } else {
+        await assertCliArtifactFreshForProduction("migrate");
       }
       const slug = resolveProjectSlug(
         opts.project ?? "",
@@ -267,6 +282,7 @@ Examples:
         skipBackupCheck: boolean;
         hash?: string;
       }>();
+      await assertCliArtifactFreshForProduction("db-reset");
       await cmdDbReset(
         opts.project ?? "",
         opts.yes,

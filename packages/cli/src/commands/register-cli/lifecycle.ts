@@ -6,6 +6,7 @@ import {
   cmdStart,
   cmdStop,
 } from "../../cli-handlers";
+import { assertCliArtifactFreshForProduction } from "../../lib/production-artifact-guard";
 import { cliAction, cliActionWithFlux, HASH_FLAG_DESC } from "./shared";
 
 export function registerLifecycleCommands(program: Command): void {
@@ -91,6 +92,7 @@ export function registerLifecycleCommands(program: Command): void {
         skipBackupCheck: boolean;
         hash?: string;
       }>();
+      await assertCliArtifactFreshForProduction("nuke");
       await cmdNuke(
         name,
         opts.yes,
@@ -115,6 +117,7 @@ export function registerLifecycleCommands(program: Command): void {
         if (!Number.isFinite(hours) || hours <= 0) {
           throw new Error("--hours must be a positive number.");
         }
+        await assertCliArtifactFreshForProduction("reap");
         await cmdReap(hours);
       }),
     );
