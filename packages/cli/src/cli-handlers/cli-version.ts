@@ -1,8 +1,8 @@
 import chalk from "chalk";
 import { resolveDashboardBase } from "../dashboard-base";
-
-/** Pinned in source; must match `packages/cli/package.json` and server `/api/install/cli/version` when published. */
-const CLI_VERSION = "2.0.1";
+import { CLI_VERSION } from "../lib/cli-build-version";
+import { inspectCliProvenance } from "../lib/cli-provenance-runtime";
+import { allowsProductionMutation } from "../lib/cli-provenance";
 
 /** Same origin as the dashboard; used for install bundle and version checks. */
 const resolveInstallOrigin = resolveDashboardBase;
@@ -37,12 +37,41 @@ async function fetchRemoteCliVersion(): Promise<string | null> {
   }
 }
 
-export async function runVersionOutput(): Promise<void> {
+/** Machine-readable build provenance for operators and preflight scripts. */
+export function buildVersionJson(): string {
+  const { provenance, checkout, verdict } = inspectCliProvenance();
+  return JSON.stringify(
+    {
+      version: provenance.version,
+      runtime: provenance.runtime,
+      sourceSha: provenance.sourceSha,
+      sourceDirtyAtBuild: provenance.sourceDirtyAtBuild,
+      buildTimestamp: provenance.buildTimestamp,
+      buildRepoRoot: provenance.buildRepoRoot,
+      sourceCheckout: checkout,
+      provenanceStatus: verdict.status,
+      provenanceDetail: verdict.detail,
+      productionMutationAllowed: allowsProductionMutation(verdict.status),
+    },
+    null,
+    2,
+  );
+}
+
+export async function runVersionOutput(
+  options: { json?: boolean } = {},
+): Promise<void> {
+  if (options.json === true) {
+    console.log(buildVersionJson());
+    return;
+  }
   const { cliDimHint } = await import("../utils/cli-audience");
-  console.log(CLI_VERSION);
+  const { provenance, verdict } = inspectCliProvenance();
+  console.log(provenance.version);
+  cliDimHint(`build: ${verdict.status} — ${verdict.detail}`);
   const remote = await fetchRemoteCliVersion();
-  if (remote && isRemoteVersionNewer(remote, CLI_VERSION)) {
-    cliDimHint(`Update available: ${remote} (current ${CLI_VERSION})`);
+  if (remote && isRemoteVersionNewer(remote, provenance.version)) {
+    cliDimHint(`Update available: ${remote} (current ${provenance.version})`);
   }
 }
 

@@ -18,6 +18,7 @@ export {
 import { Command } from "commander";
 import { fatalString, runVersionOutput } from "./cli-handlers";
 import { registerFluxCliCommands } from "./commands/register-cli";
+import { parseVersionInvocation } from "./lib/version-invocation";
 import { printErrorAndExit } from "./output/cli-errors";
 import { hydrateProcessEnvFromProjectFiles } from "./utils/env-file";
 
@@ -33,13 +34,10 @@ async function main(): Promise<void> {
 
   await hydrateProcessEnvFromProjectFiles(process.cwd());
 
-  const argv = process.argv.slice(2);
-  if (
-    argv.length === 1 &&
-    (argv[0] === "-V" || argv[0] === "--version" || argv[0] === "version")
-  ) {
+  const versionInvocation = parseVersionInvocation(process.argv.slice(2));
+  if (versionInvocation) {
     try {
-      await runVersionOutput();
+      await runVersionOutput(versionInvocation);
     } catch (e) {
       printErrorAndExit(e);
     }

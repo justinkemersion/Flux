@@ -8,6 +8,17 @@ Technical runbook for recreating a **namespaced** Flux project (for example **Ye
 
 ## Phase 1: The Pre-Flight Check
 
+- [ ] **Confirm the CLI you are about to run matches its source.**
+
+```bash
+flux version --json   # expect provenanceStatus: verified (or unverifiable for a released install)
+```
+
+  `flux push`, `flux migrate`, `flux db-reset`, `flux db restore`, `flux nuke` and `flux reap`
+  refuse to run when the compiled bundle cannot be matched to the checkout it was built from.
+  If blocked, rebuild with `pnpm --filter @flux/cli build`. See
+  [CLI build provenance](./CLI-BUILD-PROVENANCE.md).
+
 - [ ] **Generate a master symmetric key (hex)** — one secret for this rotation; you will paste the same value into Clerk and Flux.
 
 ```bash

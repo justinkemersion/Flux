@@ -66,7 +66,13 @@ If you develop Flux from a git checkout and **`flux`** is linked to **`packages/
 cd /path/to/flux
 git pull
 pnpm --filter @flux/cli run build
+flux version --json   # expect provenanceStatus: verified
 ```
+
+Forgetting the rebuild used to mean silently running the previous commit's logic. The CLI now
+embeds the commit it was built from and **refuses** production-mutating commands (`push`,
+`migrate`, `db-reset`, `db restore`, `nuke`, `reap`) when that commit no longer matches the
+checkout. See [CLI build provenance](../../CLI-BUILD-PROVENANCE.md).
 
 Until **`flux db password`** exists locally, v1 operators can paste the password with:
 

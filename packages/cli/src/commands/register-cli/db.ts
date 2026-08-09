@@ -18,6 +18,7 @@ import {
   cmdDbCounts,
   type DbInspectOptions,
 } from "../../commands/db-inspect";
+import { assertCliArtifactFreshForProduction } from "../../lib/production-artifact-guard";
 import { cliActionWithFlux, HASH_FLAG_DESC } from "./shared";
 
 function collectDbAccessOptions(cmd: Command): DbAccessCommonOptions {
@@ -211,6 +212,7 @@ export function registerDbCommands(program: Command): void {
           skipBackupCheck?: boolean;
           yesIKnowThisCanOverwriteData?: boolean;
         }>();
+        await assertCliArtifactFreshForProduction("db restore");
         await cmdDbRestore(
           name,
           {
