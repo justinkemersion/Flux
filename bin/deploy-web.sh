@@ -96,7 +96,8 @@ fi
 # Candidate probe: prove the freshly built image serves AND reports the expected commit
 # BEFORE it replaces the live one. `compose up -d` recreates in place, so verifying after
 # cutover only measures how long an outage or a mystery build has already been live.
-# The candidate runs the same image and env with no Traefik labels, so it is never routed.
+# The candidate runs the same image, isolated from the platform networks and the Docker
+# socket, so it can neither be routed nor touch production state.
 # ---------------------------------------------------------------------------
 canary_cleanup() {
   docker rm -f "$CANARY_NAME" >/dev/null 2>&1 || true
@@ -123,9 +124,14 @@ web_candidate_probe() {
   canary_cleanup
   trap canary_cleanup EXIT
 
-  # No Traefik labels and no docker.sock: this candidate only has to answer /api/health.
+  # The candidate must be inert. It gets no Traefik labels (never routed), no docker.sock,
+  # and no flux-network, so it cannot reach the flux-system catalog or the shared cluster.
+  # That matters: instrumentation.ts runs idempotent bootstrap DDL against the production
+  # system database and starts the backup scheduler on its first tick. Isolated, that
+  # initialisation fails and is caught, the schedulers never start, and the container does the
+  # one thing it is here to do — report which commit it was built from.
   if ! docker run -d --name "$CANARY_NAME" \
-      --network flux-network \
+      --network bridge \
       --env-file "$REPO_ROOT/docker/web/.env" \
       -e NODE_ENV=production \
       -e AUTH_TRUST_HOST=true \

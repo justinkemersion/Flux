@@ -119,9 +119,12 @@ readiness, so it belongs on liveness. Deep readiness for the data plane remains 
    the resulting build is refused by `flux` for pooled migrations anyway;
 3. refuses a non-git checkout outright;
 4. builds the image with provenance build args;
-5. starts an **unrouted candidate** on `127.0.0.1:3099` (no Traefik labels, no docker.sock),
-   waits for `/api/health`, and **aborts the deploy if the candidate's `sourceSha` is not
-   `EXPECTED_SHA`** — the live route is never touched on failure;
+5. starts an **inert candidate** on `127.0.0.1:3099`, waits for `/api/health`, and **aborts the
+   deploy if the candidate's `sourceSha` is not `EXPECTED_SHA`** — the live route is never
+   touched on failure. The candidate gets no Traefik labels (never routed), no Docker socket and
+   no platform networks, because `instrumentation.ts` runs idempotent bootstrap DDL against the
+   production `flux-system` catalog and starts the backup scheduler on its first tick. Isolated,
+   that initialisation fails and is caught, and the container only reports its build identity;
 6. tags the image `flux-web:<sha>` for identification and rollback;
 7. cuts over;
 8. re-reads `/api/health` from inside the **live** container and fails the deploy if the serving

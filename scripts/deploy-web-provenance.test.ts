@@ -151,6 +151,24 @@ test("restart-only skips the build gate and never claims a verified commit", () 
   });
 });
 
+test("the candidate is isolated from production state and never routed", () => {
+  const source = execFileSync("cat", [deployScript], { encoding: "utf8" });
+  const run = source.slice(
+    source.indexOf('docker run -d --name "$CANARY_NAME"'),
+    source.indexOf('"$image" >/dev/null 2>&1'),
+  );
+  assert.ok(run.length > 0, "candidate docker run must be present");
+
+  // instrumentation.ts runs bootstrap DDL against the production flux-system catalog and
+  // starts the backup scheduler. A candidate that can reach those is not a dry run.
+  assert.match(run, /--network bridge/u);
+  assert.ok(!run.includes("flux-network"), "candidate must not join the platform network");
+  assert.ok(!run.includes("flux-v2-shared"), "candidate must not join the shared data network");
+  assert.ok(!run.includes("docker.sock"), "candidate must not receive the Docker socket");
+  assert.ok(!/-l\s|--label/u.test(run), "candidate must carry no Traefik labels");
+  assert.match(run, /-p "127\.0\.0\.1:\$\{CANARY_PORT\}:3000"/u, "loopback-only publish");
+});
+
 test("the script verifies provenance over HTTP, never by image or file timestamps", () => {
   const source = execFileSync("cat", [deployScript], { encoding: "utf8" });
   assert.match(source, /api\/health/u);
