@@ -4,7 +4,7 @@ import { getApiClient } from "../api-client";
 import { resolveDashboardBase } from "../dashboard-base";
 import { formatV2ServerError, mintServiceRoleJwt } from "../lib/migrations-remote";
 import { buildGauntletSchemaSql } from "./schema-fixtures";
-import type { GauntletProjectCtx } from "./types";
+import type { GauntletMode, GauntletProjectCtx } from "./types";
 
 const MAX_SQL_BYTES = 4 * 1024 * 1024;
 
@@ -12,10 +12,11 @@ const MAX_SQL_BYTES = 4 * 1024 * 1024;
 export async function writeSchemaArtifact(
   reportDir: string,
   apiSchema: string,
+  mode: GauntletMode,
 ): Promise<string> {
   await mkdir(reportDir, { recursive: true });
   const schemaSqlPath = join(reportDir, "schema.sql");
-  const sql = buildGauntletSchemaSql(apiSchema);
+  const sql = buildGauntletSchemaSql(apiSchema, mode);
   await writeFile(schemaSqlPath, `${sql}\n`, "utf8");
   return schemaSqlPath;
 }
@@ -105,8 +106,12 @@ async function pushSchemaV2(
 export async function pushGauntletSchema(
   ctx: GauntletProjectCtx,
 ): Promise<PushSchemaResult> {
-  const schemaSqlPath = await writeSchemaArtifact(ctx.reportDir, ctx.apiSchema);
-  const sql = buildGauntletSchemaSql(ctx.apiSchema);
+  const schemaSqlPath = await writeSchemaArtifact(
+    ctx.reportDir,
+    ctx.apiSchema,
+    ctx.mode,
+  );
+  const sql = buildGauntletSchemaSql(ctx.apiSchema, ctx.mode);
 
   if (ctx.mode === "v1_dedicated") {
     return pushSchemaV1(ctx, schemaSqlPath);

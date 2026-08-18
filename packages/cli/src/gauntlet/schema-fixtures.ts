@@ -1,5 +1,6 @@
 import { buildApiSchemaPrivilegesSql } from "@flux/core";
 import { assertFluxApiSchemaIdentifier } from "@flux/core/api-schema-strategy";
+import type { GauntletMode } from "./types";
 
 function qSchema(schema: string): string {
   assertFluxApiSchemaIdentifier(schema);
@@ -7,9 +8,19 @@ function qSchema(schema: string): string {
 }
 
 /** Tiny but meaningful schema for gauntlet API + introspection checks. */
-export function buildGauntletSchemaSql(apiSchema: string): string {
+export function buildGauntletSchemaSql(
+  apiSchema: string,
+  mode: GauntletMode,
+): string {
   const s = qSchema(apiSchema);
-  const privileges = buildApiSchemaPrivilegesSql(apiSchema);
+  const privileges =
+    mode === "v2_shared"
+      ? `GRANT USAGE ON SCHEMA ${s} TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${s} TO authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${s} TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA ${s} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA ${s} GRANT USAGE, SELECT ON SEQUENCES TO authenticated;`
+      : buildApiSchemaPrivilegesSql(apiSchema);
   return `
 CREATE TABLE IF NOT EXISTS ${s}.gauntlet_notes (
   id bigserial PRIMARY KEY,
