@@ -57,3 +57,4 @@ networks:
 volumes:
   flux-traefik-dynamic:
     name: flux-traefik-dynamic
+    external: true

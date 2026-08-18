@@ -99,3 +99,4 @@ volumes:
   flux-web-backups-offsite:
   flux-traefik-dynamic:
     name: flux-traefik-dynamic
+    external: true
