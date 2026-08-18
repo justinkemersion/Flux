@@ -10,6 +10,9 @@ COMPOSE_FILE="$REPO_ROOT/docker/traefik/docker-compose.yml"
 if ! docker network inspect flux-network >/dev/null 2>&1; then
   docker network create flux-network >/dev/null
 fi
+if ! docker volume inspect flux-traefik-dynamic >/dev/null 2>&1; then
+  docker volume create flux-traefik-dynamic >/dev/null
+fi
 
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
