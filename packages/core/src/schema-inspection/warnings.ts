@@ -72,6 +72,15 @@ export function generateSchemaWarnings(input: {
           { table: table.name },
         ),
       );
+    } else if (table.rls.policyCount === 0) {
+      warnings.push(
+        warning(
+          "rls_enabled_without_policies",
+          "warning",
+          `Row level security is enabled on ${table.name}, but the table has no policies`,
+          { table: table.name },
+        ),
+      );
     }
 
     if (table.columns.length > WIDE_TABLE_COLUMN_THRESHOLD) {

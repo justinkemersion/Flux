@@ -25,6 +25,17 @@ CREATE TABLE IF NOT EXISTS ${s}.gauntlet_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE ${s}.gauntlet_notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ${s}.gauntlet_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS gauntlet_notes_authenticated ON ${s}.gauntlet_notes;
+CREATE POLICY gauntlet_notes_authenticated ON ${s}.gauntlet_notes
+  TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS gauntlet_events_authenticated ON ${s}.gauntlet_events;
+CREATE POLICY gauntlet_events_authenticated ON ${s}.gauntlet_events
+  TO authenticated USING (true) WITH CHECK (true);
+
 ${privileges}
 `.trim();
 }

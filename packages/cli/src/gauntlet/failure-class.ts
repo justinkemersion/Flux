@@ -53,6 +53,7 @@ const V2_HEALTH_STAGES: readonly GauntletStageName[] = [
   "wait_for_health",
   "inspect_schema",
   "api_insert",
+  "api_unauth_inert",
   "api_select",
 ];
 

@@ -61,6 +61,7 @@ function normalizeFkOnly() {
         estimated_rows: 46,
         rls_enabled: true,
         rls_forced: false,
+        policy_count: 1,
       },
     ],
     columns: [],
@@ -97,4 +98,31 @@ test("foreign_key_without_index warning lists each column once", () => {
 
   const cols = (fkWarning.details as { columns: string[] }).columns;
   assert.deepEqual(cols, ["atelier_id", "maker_auth_id"]);
+});
+
+test("RLS enabled without policies is visible as a distinct warning", () => {
+  const { tables, relationships } = normalizeInspectionRows({
+    schema: "api",
+    tableMeta: [
+      {
+        table_name: "locked_notes",
+        estimated_rows: 0,
+        rls_enabled: true,
+        rls_forced: false,
+        policy_count: 0,
+      },
+    ],
+    columns: [],
+    primaryKeys: [],
+    foreignKeys: [],
+    grants: [],
+    indexes: [],
+  });
+  const warnings = generateSchemaWarnings({
+    tables,
+    relationships,
+    indexMap: new Map(),
+  });
+
+  assert.ok(warnings.some((w) => w.code === "rls_enabled_without_policies"));
 });

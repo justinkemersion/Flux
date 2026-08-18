@@ -32,11 +32,12 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-06-30`
+- Last updated: `2026-08-18`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-v2-shared -> deploy-gateway -> deploy-web`
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
 - **Latest ops audit:** `./bin/ops-audit.sh --remote --deep --smoke` — see [Ops cleanup 2026-06-30](#ops-cleanup-2026-06-30) below
+- **Dedicated API RLS invariant (issue #8):** implementation complete locally — transactional `flux push` gate, doctor findings, and cross-engine anonymous read/write gauntlet canary; deployment/live fleet audit pending
 
 ---
 
@@ -258,4 +259,3 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 - `done` — Added v2 rollback deprovision path to prevent orphan schema/role
 - `done` — Added shared gateway cache eviction utility and delete-path eviction
 - `done` — Added dashboard test suite command and rollback-focused tests
-

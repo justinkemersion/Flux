@@ -250,7 +250,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (
-      /not found|not running|HMAC password check failed/i.test(msg) ||
+      /not found|not running|HMAC password check failed|Refusing push: exposed API table/i.test(msg) ||
       msg.includes("No Postgres container")
     ) {
       return jsonError(msg, 400);

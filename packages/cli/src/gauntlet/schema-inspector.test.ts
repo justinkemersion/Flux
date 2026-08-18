@@ -26,12 +26,14 @@ const gauntletTablesMeta: RawTableMetaRow[] = [
     estimated_rows: 1,
     rls_enabled: false,
     rls_forced: false,
+    policy_count: 0,
   },
   {
     table_name: "gauntlet_events",
     estimated_rows: 1,
     rls_enabled: false,
     rls_forced: false,
+    policy_count: 0,
   },
 ];
 

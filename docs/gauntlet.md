@@ -32,11 +32,7 @@ Ring 1: Smoke / Lifecycle / Backup spine — GREEN (2026-06-20 soak: 25/25 PASS)
 
 Soak checkpoint: [`packages/cli/reports/gauntlet/ring1-soak-2026-06-20/soak-summary.md`](../packages/cli/reports/gauntlet/ring1-soak-2026-06-20/soak-summary.md)
 
-v2_shared stays parked — honest gap, not fake green:
-
-```txt
-v2_shared: honest gap — gateway JWT probe model not implemented
-```
+`v2_shared` health, push, and API probes are implemented when project JWT credentials are available, but there is no recorded live GREEN checkpoint yet. Missing credentials or routes remain explicit skips/failure classifications, never a synthetic pass.
 
 ## What it does
 
@@ -48,7 +44,7 @@ Each `flux gauntlet run` cycle:
 4. **Push schema** — writes `schema.sql` to the report dir, pushes via existing CLI/dashboard routes
 5. **Inspect schema** — OpenAPI cache exposes `gauntlet_notes` and `gauntlet_events`
 6. **Inspect schema (deep)** — Postgres catalog introspection (tables, columns, FKs, RLS, grants, warnings)
-7. **API insert / select** — PostgREST insert + select through the tenant API URL
+7. **API insert / anonymous inertness / select** — inserts a known row with credentials, proves anonymous reads and writes are inert, then verifies authenticated selection
 8. **Backup create / verify** — uses `flux backup` CLI API paths (v1 full DB; v2 tenant export when supported)
 9. **Cleanup** — deletes only projects created by this process and matching the strict gauntlet slug marker
 10. **Report finalization** — writes artifacts (not counted as a validation stage)
@@ -158,13 +154,11 @@ Failed runs include `failureClass` and `failureClassDetail` in `report.json` and
 | Stage | v1_dedicated | v2_shared |
 |-------|--------------|-----------|
 | Create / delete | Full support | Full support via CLI API |
-| Health / API | Full support (`anonJwt` + `serviceRoleJwt`) | **Blocked** — gateway bridge JWT model not in gauntlet yet |
+| Health / API | Full support (`serviceRoleJwt`; anonymous RLS canary) | Full support when project JWT credentials are returned; gateway rejection is the anonymous canary |
 | Push schema | CLI `/cli/v1/push` via file | Dashboard push when `projectJwt` present; otherwise **skipped** |
 | Backup | Full support | Same CLI backup API (`tenant_export`) when available |
 
-```txt
-v2_shared: honest gap — gateway JWT probe model not implemented
-```
+If a v2 project JWT or push route is unavailable, the report marks that path as skipped/unsupported instead of claiming a security pass.
 
 ## Ring 2: CLI Matrix Lite (v1 only)
 
@@ -273,11 +267,14 @@ pnpm run flux gauntlet matrix --mode v1_dedicated
 | `table_without_primary_key` | warning | Table has no PK |
 | `foreign_key_without_index` | warning | FK columns lack supporting index |
 | `rls_disabled` | warning | RLS off on API table |
+| `rls_enabled_without_policies` | warning | RLS on, but no explicit policies exist |
 | `empty_schema` | warning | No user tables in schema |
 | `wide_table` | info | More than 25 columns |
 | `nullable_foreign_key` | info | Nullable FK column |
 
-Warnings are informational — they do not fail Ring 1 unless a stage explicitly asserts otherwise.
+Warnings are informational — they do not fail Ring 1 unless a stage explicitly asserts otherwise. Dedicated `flux push` separately fails closed on either RLS warning because that engine has no gateway auth layer.
+
+The `api_unauth_inert` stage runs on both engines after inserting a known row with credentials. It proves an anonymous caller cannot read that row and cannot insert another one. A v2 gateway `401`/`403` and a dedicated RLS-filtered `200 []` are both valid read outcomes; anonymous writes must return `401` or `403`.
 
 Ring 2 uses deep inspection only in `push_invalid_sql` (`schema_still_intact` stage).
 

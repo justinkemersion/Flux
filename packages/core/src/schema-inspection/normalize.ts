@@ -184,6 +184,7 @@ export function normalizeInspectionRows(input: {
       rls: {
         enabled: asBool(meta.rls_enabled),
         forced: asBool(meta.rls_forced),
+        policyCount: asNumber(meta.policy_count) ?? 0,
       },
       ...(grantsByTable.has(name)
         ? { grants: grantsByTable.get(name)! }

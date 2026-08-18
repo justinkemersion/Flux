@@ -113,6 +113,24 @@ flux migrations list              # show flux.flux_migrations for the project
 
 In CI, use non-interactive tokens, pinned **`FLUX_API_BASE`**, and either the same flags or a checked-in **`flux.json`** with **`slug`** + **`hash`** so pipelines do not drift.
 
+### Dedicated projects: the push-time RLS gate
+
+`v1_dedicated` APIs route from Traefik directly to the project's PostgREST container; they do not pass through the pooled Flux gateway. Every base or partitioned table in the exposed API schema must therefore have RLS enabled and at least one explicit policy.
+
+After applying your SQL, `flux push` audits the live catalog **inside the same transaction**. If it finds RLS disabled or RLS enabled with zero policies, it raises `42501`, rolls back the user SQL and migration-ledger write, and does not reload PostgREST.
+
+The repair belongs in a new migration. The audit runs after that migration's SQL, so one push can enable RLS and add the missing policies. For an intentionally inaccessible table, use an explicit deny-all policy:
+
+```sql
+ALTER TABLE api.internal_queue ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY internal_queue_deny_all ON api.internal_queue
+  USING (false)
+  WITH CHECK (false);
+```
+
+Run `flux doctor <project>` to audit an existing dedicated project. The **API schema RLS** check names tables that are disabled or policyless. `flux db inspect` exposes the same facts as table-level warnings.
+
 ### Who runs your SQL on v2_shared
 
 On pooled projects, Flux executes pushed SQL as a per-tenant **owner role**, `t_<shortId>_ddl`, with `search_path` set to your tenant schema only. That is deliberately **not** the role your JWT uses at request time (`t_<shortId>_role`): in PostgreSQL a table owner bypasses row-level security, so if migrations ran as the runtime role, every table it created would silently stop enforcing RLS for your own app.
