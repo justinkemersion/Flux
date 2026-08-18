@@ -38,7 +38,7 @@ Not intended for public docs or marketing consumption.
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
 - **Latest ops audit:** `./bin/ops-audit.sh --remote --deep --smoke` — see [Ops cleanup 2026-06-30](#ops-cleanup-2026-06-30) below
 - **Dedicated API RLS invariant (issue #8):** `done` — transactional `flux push` gate, doctor findings, cross-engine anonymous read/write gauntlet canary, production deploy, and live v1 fleet audit complete
-- **Pooled TLS provisioning:** `done` — catalog-derived exact-host Traefik routers reconcile atomically on startup and v2 lifecycle changes; disposable live gauntlet is the release gate
+- **Pooled TLS provisioning:** `done` — catalog-derived exact-host Traefik routers reconcile atomically on startup and v2 lifecycle changes; full disposable v2 gauntlet passed live on 2026-08-18 (trusted TLS, push, API isolation, restore verify, cleanup)
 
 ---
 
