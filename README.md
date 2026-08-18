@@ -576,7 +576,7 @@ curl -fsS http://127.0.0.1:4000/health/deep
 
 Set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` for reliable in-container v2 mesh probes.
 
-`docker/web/docker-compose.yml` sets `FLUX_TRAEFIK_DYNAMIC_CONFIG_PATH` and shares the named `flux-traefik-dynamic` volume with Traefik. Do not hand-edit the generated `v2-tenants.json`; `flux-web` replaces it atomically from the catalog at startup and after pooled create/delete/migration events. `bin/sync-v2-gateway-tls-domains.sh` remains a legacy rollout fallback, not a normal provisioning step.
+`docker/web/docker-compose.yml` sets `FLUX_TRAEFIK_DYNAMIC_CONFIG_PATH` and shares the named `flux-traefik-dynamic` volume with Traefik. Do not hand-edit the generated `v2-tenants.yml`; `flux-web` replaces it atomically from the catalog at startup and after pooled create/delete/migration events. The file uses JSON syntax, which is valid YAML, and the `.yml` extension is required for Traefik file-provider discovery. `bin/sync-v2-gateway-tls-domains.sh` remains a legacy rollout fallback, not a normal provisioning step.
 
 ### When to run ops audit
 

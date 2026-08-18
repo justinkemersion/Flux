@@ -42,7 +42,9 @@ services:
       # (websecure + myresolver via fluxTraefikCertResolverName).
       FLUX_DOMAIN: ${FLUX_DOMAIN:-vsl-base.com}
       # Catalog-derived exact-host routers watched by Traefik's file provider.
-      FLUX_TRAEFIK_DYNAMIC_CONFIG_PATH: /srv/flux/traefik-dynamic/v2-tenants.json
+      # Traefik's file provider discovers .yml/.yaml/.toml files. The renderer
+      # emits JSON syntax (a YAML subset) into this .yml path for safe escaping.
+      FLUX_TRAEFIK_DYNAMIC_CONFIG_PATH: /srv/flux/traefik-dynamic/v2-tenants.yml
       # Forward host DOCKER_GID when set in `.env`. When empty, entrypoint uses stat(1) on the socket
       # (avoids stale default 996 after host `docker` group GID changes).
       FLUX_DOCKER_SUPPLEMENTARY_GID: ${DOCKER_GID:-}

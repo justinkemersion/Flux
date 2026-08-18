@@ -31,7 +31,7 @@ curl -fsS http://127.0.0.1:4000/health/deep && echo
 
 Optional: `pnpm --filter dashboard test` from the repo checkout on a dev machine or CI host.
 
-The canonical full deploy order is `deploy-traefik` → `deploy-v2-shared` → `deploy-gateway` → `deploy-web`. The first stage enables the watched `flux-traefik-dynamic` volume; the last stage populates it from the catalog. Do not edit `v2-tenants.json` manually.
+The canonical full deploy order is `deploy-traefik` → `deploy-v2-shared` → `deploy-gateway` → `deploy-web`. The first stage enables the watched `flux-traefik-dynamic` volume; the last stage populates it from the catalog. Do not edit `v2-tenants.yml` manually; its `.yml` extension is required for Traefik file-provider discovery (the JSON-formatted contents are valid YAML).
 
 ## Ops audit
 
