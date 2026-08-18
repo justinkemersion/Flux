@@ -201,21 +201,34 @@ export async function stageInspectSchema(
 ): Promise<void> {
   const project = requireProject(state);
 
-  const health = await assertPostgrestHealthy({
-    apiUrl: project.apiUrl,
-    apiSchema: project.apiSchema,
-    mode: project.mode,
-    hash: project.hash,
-    maxAttempts: 20,
-    ...(project.serviceRoleJwt ? { serviceRoleJwt: project.serviceRoleJwt } : {}),
-    ...(project.projectJwt ? { projectJwt: project.projectJwt } : {}),
-  });
-  project.openapiSnapshot = health.openapi;
+  // A successful pooled push commits NOTIFY pgrst, but PostgREST applies the
+  // schema reload asynchronously. Poll for the new paths rather than treating
+  // the first still-valid pre-push OpenAPI document as a permanent failure.
+  const maxSchemaAttempts = 20;
+  let intro: ReturnType<typeof inspectOpenApiSchema> | undefined;
+  for (let attempt = 1; attempt <= maxSchemaAttempts; attempt++) {
+    const health = await assertPostgrestHealthy({
+      apiUrl: project.apiUrl,
+      apiSchema: project.apiSchema,
+      mode: project.mode,
+      hash: project.hash,
+      maxAttempts: 1,
+      ...(project.serviceRoleJwt
+        ? { serviceRoleJwt: project.serviceRoleJwt }
+        : {}),
+      ...(project.projectJwt ? { projectJwt: project.projectJwt } : {}),
+    });
+    project.openapiSnapshot = health.openapi;
+    intro = inspectOpenApiSchema(health.openapi);
+    if (intro.hasGauntletNotes && intro.hasGauntletEvents) break;
+    if (attempt < maxSchemaAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
 
-  const intro = inspectOpenApiSchema(health.openapi);
-  if (!intro.hasGauntletNotes || !intro.hasGauntletEvents) {
+  if (!intro?.hasGauntletNotes || !intro.hasGauntletEvents) {
     throw new Error(
-      `PostgREST cache missing tables: notes=${String(intro.hasGauntletNotes)} events=${String(intro.hasGauntletEvents)}`,
+      `PostgREST cache missing tables after ${String(maxSchemaAttempts)} attempts: notes=${String(intro?.hasGauntletNotes ?? false)} events=${String(intro?.hasGauntletEvents ?? false)}`,
     );
   }
 

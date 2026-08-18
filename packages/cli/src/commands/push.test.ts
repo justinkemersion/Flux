@@ -23,6 +23,7 @@ test("mintServiceRoleJwt produces a valid HS256 token (header, payload, signatur
   assert.equal(header.typ, "JWT");
 
   const payload = JSON.parse(base64UrlDecode(payloadB64).toString("utf8")) as Record<string, unknown>;
+  assert.equal(payload.sub, `flux-cli:${hash}`);
   assert.equal(payload.role, "service_role");
   assert.equal(payload.hash, hash);
   assert.equal(typeof payload.iat, "number");
