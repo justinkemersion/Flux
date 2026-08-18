@@ -12,13 +12,15 @@ section: security
 
 - GRANT vs policy order of operations
 - Failure modes: empty results vs errors
-- When Flux’s baseline v2 model does not enable RLS by default
+- Why dedicated projects require RLS while pooled projects have another platform boundary
 
 ## The idea
 
 Postgres evaluates privileges **before** RLS filters. If the role cannot `SELECT` the table, you see **`42501`**, not “zero rows”.
 
-On **v2**, the architecture spec notes RLS is **not required initially** for the baseline threat model—schema + role separation carries much of the isolation story. Adding RLS is an **application** choice with performance and complexity tradeoffs.
+On **v2**, the architecture spec notes RLS is **not required initially** for the baseline threat model—gateway authentication plus schema and role separation carry the platform isolation story. Adding RLS is an **application** choice with performance and complexity tradeoffs.
+
+On **v1 dedicated**, Traefik routes directly to the project's PostgREST container. There is no Flux gateway authentication layer, so RLS is mandatory on every table in the exposed API schema. `flux push` enforces that invariant transactionally, and `flux doctor` audits existing projects. RLS enabled with no policies denies access, but Flux still requires an explicit policy so an accidental incomplete migration is visible; use a deny-all policy when that behavior is intentional.
 
 ## How it works
 

@@ -38,6 +38,7 @@ import {
   selectRepeatableChecksumSql,
   type RepeatablePushMeta,
 } from "../../sql-repeatable-scripts.ts";
+import { buildAssertExposedApiSchemaHasRlsSql } from "../../api-schema-rls-invariant.ts";
 import { POSTGRES_USER } from "../../docker/docker-constants.ts";
 import { postgrestContainerName } from "../../docker/docker-names.ts";
 import type { FluxCoreContext } from "../../runtime/context.ts";
@@ -270,8 +271,9 @@ export async function pushSqlFromCli(
     }
   }
 
+  const rlsGuardSql = buildAssertExposedApiSchemaHasRlsSql(tenantSchema);
   if (!skipped) {
-    const wrapped = `BEGIN;\nSET LOCAL search_path TO ${pathList};\n${userSql}\nNOTIFY pgrst, 'reload schema';\nCOMMIT;\n`;
+    const wrapped = `BEGIN;\nSET LOCAL search_path TO ${pathList};\n${userSql}\n${rlsGuardSql}\nNOTIFY pgrst, 'reload schema';\nCOMMIT;\n`;
     await runPsqlSqlInsideContainer(
       ctx.docker,
       creds.containerId,
@@ -290,6 +292,16 @@ export async function pushSqlFromCli(
       }
       throw err;
     }
+  } else {
+    // A no-op versioned push is still an explicit health boundary. Audit the
+    // live schema so an existing unsafe table cannot hide behind the ledger.
+    await runPsqlSqlInsideContainer(
+      ctx.docker,
+      creds.containerId,
+      creds.password,
+      rlsGuardSql,
+      POSTGRES_USER,
+    );
   }
   return { skipped, ...(previousChecksum ? { previousChecksum } : {}) };
 }

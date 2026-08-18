@@ -63,7 +63,7 @@ function apiHeaders(
   if (ctx.mode === "v1_dedicated") {
     const token =
       method === "GET"
-        ? (ctx.anonJwt ?? ctx.serviceRoleJwt)
+        ? (ctx.serviceRoleJwt ?? ctx.anonJwt)
         : ctx.serviceRoleJwt;
     if (!token?.trim()) {
       throw new Error(
@@ -87,6 +87,21 @@ function apiHeaders(
   return headers;
 }
 
+function unauthenticatedHeaders(
+  ctx: ApiProbeContext,
+  method: "GET" | "POST",
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  if (ctx.mode === "v1_dedicated" && ctx.apiSchema !== "api") {
+    headers[method === "GET" ? "Accept-Profile" : "Content-Profile"] =
+      ctx.apiSchema;
+  }
+  return headers;
+}
+
 async function parseJsonResponse(res: Response): Promise<unknown> {
   const text = await res.text();
   if (!text.trim()) return null;
@@ -97,6 +112,60 @@ async function parseJsonResponse(res: Response): Promise<unknown> {
       `API response was not JSON (HTTP ${String(res.status)}): ${text.slice(0, 200)}`,
     );
   }
+}
+
+/**
+ * Cross-engine security canary. v2 is expected to reject at the gateway;
+ * dedicated PostgREST may return an empty array under anon RLS. Both engines
+ * must hide a row known to exist and reject an anonymous insert.
+ */
+export async function probeUnauthenticatedAccessIsInert(
+  ctx: ApiProbeContext,
+  knownNoteId: number,
+): Promise<{ readStatus: number; writeStatus: number }> {
+  const base = ctx.apiUrl.replace(/\/$/, "");
+  const read = await fetch(
+    `${base}/gauntlet_notes?id=eq.${String(knownNoteId)}&select=id`,
+    {
+      method: "GET",
+      headers: unauthenticatedHeaders(ctx, "GET"),
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  const readBody = await parseJsonResponse(read);
+  const readRejected = read.status === 401 || read.status === 403;
+  const readFiltered = read.ok && Array.isArray(readBody) && readBody.length === 0;
+  if (!readRejected && !readFiltered) {
+    throw new Error(
+      `Unauthenticated GET exposed known row or returned an unsafe response: HTTP ${String(read.status)} ${JSON.stringify(readBody).slice(0, 300)}`,
+    );
+  }
+
+  const write = await fetch(`${base}/gauntlet_notes`, {
+    method: "POST",
+    headers: {
+      ...unauthenticatedHeaders(ctx, "POST"),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify({
+      title: "unauthenticated gauntlet canary",
+      body: "this insert must be rejected",
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const writeBody = await parseJsonResponse(write);
+  if (write.ok) {
+    throw new Error(
+      `Unauthenticated POST unexpectedly succeeded: HTTP ${String(write.status)} ${JSON.stringify(writeBody).slice(0, 300)}`,
+    );
+  }
+  if (write.status !== 401 && write.status !== 403) {
+    throw new Error(
+      `Unauthenticated POST did not fail closed: HTTP ${String(write.status)} ${JSON.stringify(writeBody).slice(0, 300)}`,
+    );
+  }
+
+  return { readStatus: read.status, writeStatus: write.status };
 }
 
 export async function probeInsertNote(

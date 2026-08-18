@@ -30,6 +30,23 @@ Keep entries short. If a single entry needs more than a screen, it probably want
 
 ---
 
+## 2026-08-18 — Dedicated API RLS became an enforced invariant
+
+**Context.** A live audit found dedicated PostgREST tables reachable without credentials because schema-wide grants assumed RLS was present while several tables had RLS disabled. Dedicated traffic does not pass through the pooled gateway.
+
+### Decisions of record
+
+| Topic | Decision |
+|-------|----------|
+| Dedicated push boundary | Audit the live Postgres catalog after user SQL and before commit; roll back on RLS-disabled or policyless exposed tables |
+| Intentional deny-all | Require an explicit deny-all policy rather than treating zero policies as a complete configuration |
+| Pooled behavior | Keep RLS optional for the v2 platform boundary; gateway authentication plus schema/role isolation remain load-bearing |
+| Regression proof | Gauntlet checks a known row and an actual anonymous insert on both engines, not only status-code reachability |
+
+**Status:** implementation and local tests complete; production deployment and live fleet audit remain before issue #8 closes.
+
+---
+
 ## 2026-06-17 — Pooled migration ledger operator script
 
 **Context.** Directory **`flux push`** on shared Postgres failed when **`flux.flux_migrations`** still used the pre–Pass 1B global ledger (version-only PK) with existing rows. Listing applied migrations now runs ledger ensure first; non-empty legacy tables still fail closed. Added **`bin/migrate-pooled-ledger.sh`** and **`buildPooledLedgerUpgradeSql`** in **`@flux/core`**.

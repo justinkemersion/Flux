@@ -5,6 +5,7 @@ import {
   inspectOpenApiSchema,
   probeInsertEvent,
   probeInsertNote,
+  probeUnauthenticatedAccessIsInert,
   probeSelectEventByNoteId,
   probeSelectNote,
 } from "./api-probe";
@@ -291,6 +292,23 @@ export async function stageApiSelect(
   stage.artifacts = { noteId, eventId };
 }
 
+export async function stageApiUnauthInert(
+  state: GauntletRunnerState,
+  stage: StageRecord,
+): Promise<void> {
+  const project = requireProject(state);
+  const noteId = project.insertedNoteId;
+  if (noteId === undefined) {
+    throw new Error("api_unauth_inert requires insertedNoteId from api_insert");
+  }
+  const result = await probeUnauthenticatedAccessIsInert(
+    probeAuthContext(project),
+    noteId,
+  );
+  stage.summary = `Anonymous read/write inert (GET ${String(result.readStatus)}, POST ${String(result.writeStatus)})`;
+  stage.artifacts = result;
+}
+
 export async function stageBackupCreate(
   state: GauntletRunnerState,
   stage: StageRecord,
@@ -378,6 +396,7 @@ export const STAGE_EXECUTORS: Record<GauntletStageName, StageExecutor> = {
   inspect_schema: stageInspectSchema,
   inspect_schema_deep: stageInspectSchemaDeep,
   api_insert: stageApiInsert,
+  api_unauth_inert: stageApiUnauthInert,
   api_select: stageApiSelect,
   backup_create: stageBackupCreate,
   backup_verify: stageBackupVerify,

@@ -9,9 +9,9 @@ import { inspectProjectSchema } from "./project-schema-inspection";
 import { listPooledAppliedMigrations } from "./pooled-migrations";
 import { probeV2SharedCatalogProject, probeTenantApiUrl } from "./tenant-api-probe";
 import { getDb } from "./db";
-import { getProjectManager } from "./flux";
 import { projectBackups } from "@/src/db/schema";
 import { and, desc, eq } from "drizzle-orm";
+import type { InspectedTable } from "@flux/core/schema-inspection";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -59,6 +59,37 @@ function fail(name: string, detail: string, remediation?: string): DoctorCheck {
   return { name, status: "fail", detail, ...(remediation ? { remediation } : {}) };
 }
 
+export function buildDedicatedRlsDoctorCheck(
+  tables: readonly InspectedTable[],
+): DoctorCheck {
+  const disabled = tables.filter((table) => !table.rls.enabled);
+  const policyless = tables.filter(
+    (table) => table.rls.enabled && (table.rls.policyCount ?? 0) === 0,
+  );
+  if (disabled.length === 0 && policyless.length === 0) {
+    return pass(
+      "API schema RLS",
+      tables.length === 0
+        ? "No exposed tables yet"
+        : `Protected — ${String(tables.length)} table${tables.length === 1 ? "" : "s"} have RLS and policies`,
+    );
+  }
+
+  const details = [
+    disabled.length > 0
+      ? `RLS disabled: ${disabled.map((table) => table.name).join(", ")}`
+      : "",
+    policyless.length > 0
+      ? `RLS enabled with no policies: ${policyless.map((table) => table.name).join(", ")}`
+      : "",
+  ].filter(Boolean);
+  return fail(
+    "API schema RLS",
+    details.join("; "),
+    "Enable row level security and create explicit policies for every table in the exposed API schema, then run `flux push` again.",
+  );
+}
+
 /**
  * Runs all project doctor checks and returns a structured DoctorReport.
  *
@@ -85,6 +116,7 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
     inspectProjectSchema(project).then((r) => ({
       tableCount: r.summary.tableCount,
       schema: r.project.schema,
+      tables: r.tables,
     })),
 
     // Check 2: API reachable
@@ -120,7 +152,7 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
 
   // DB / schema check
   if (schemaResult.status === "fulfilled") {
-    const { tableCount } = schemaResult.value;
+    const { tableCount, tables } = schemaResult.value;
     checks.push(
       pass(
         "Database",
@@ -129,6 +161,9 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
           : `Reachable — ${String(tableCount)} table${tableCount === 1 ? "" : "s"} in ${apiSchema}`,
       ),
     );
+    if (mode === "v1_dedicated") {
+      checks.push(buildDedicatedRlsDoctorCheck(tables));
+    }
   } else {
     const msg = schemaResult.reason instanceof Error
       ? schemaResult.reason.message

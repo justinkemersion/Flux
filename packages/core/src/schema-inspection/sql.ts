@@ -12,7 +12,8 @@ SELECT
   t.table_name,
   COALESCE(c.reltuples, 0)::bigint AS estimated_rows,
   COALESCE(c.relrowsecurity, false) AS rls_enabled,
-  COALESCE(c.relforcerowsecurity, false) AS rls_forced
+  COALESCE(c.relforcerowsecurity, false) AS rls_forced,
+  (SELECT count(*)::int FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid) AS policy_count
 FROM information_schema.tables t
 JOIN pg_catalog.pg_class c ON c.relname = t.table_name
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.table_schema

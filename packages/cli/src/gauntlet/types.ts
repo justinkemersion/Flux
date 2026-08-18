@@ -19,6 +19,7 @@ export type GauntletStageName =
   | "inspect_schema"
   | "inspect_schema_deep"
   | "api_insert"
+  | "api_unauth_inert"
   | "api_select"
   | "backup_create"
   | "backup_verify"
@@ -33,6 +34,7 @@ export const GAUNTLET_STAGE_ORDER: readonly GauntletStageName[] = [
   "inspect_schema",
   "inspect_schema_deep",
   "api_insert",
+  "api_unauth_inert",
   "api_select",
   "backup_create",
   "backup_verify",

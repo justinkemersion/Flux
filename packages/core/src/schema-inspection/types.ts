@@ -6,6 +6,7 @@ export type SchemaWarningCode =
   | "table_without_primary_key"
   | "foreign_key_without_index"
   | "rls_disabled"
+  | "rls_enabled_without_policies"
   | "empty_schema"
   | "wide_table"
   | "nullable_foreign_key";
@@ -52,6 +53,7 @@ export interface InspectedTable {
   rls: {
     enabled: boolean;
     forced?: boolean;
+    policyCount?: number;
   };
   grants?: InspectedGrant[];
 }
@@ -112,6 +114,7 @@ export interface RawTableMetaRow {
   estimated_rows: number | string | null;
   rls_enabled: boolean | string;
   rls_forced: boolean | string;
+  policy_count?: number | string;
 }
 
 export interface RawColumnRow {
