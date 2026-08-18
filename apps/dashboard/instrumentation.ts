@@ -6,9 +6,13 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     try {
-      const { initSystemDb } = await import("./src/lib/db");
+      const { getDb, initSystemDb } = await import("./src/lib/db");
       await initSystemDb();
       console.log("[flux] System DB ready.");
+      const { syncV2TraefikDynamicConfigNonFatal } = await import(
+        "./src/lib/v2-traefik-dynamic-config"
+      );
+      await syncV2TraefikDynamicConfigNonFatal(getDb(), "startup");
       const { startFleetMonitor } = await import("./src/lib/fleet-monitor");
       startFleetMonitor();
       console.log("[flux] Fleet monitor started (2m interval).");

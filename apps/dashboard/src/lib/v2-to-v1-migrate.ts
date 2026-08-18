@@ -28,6 +28,7 @@ import type { SystemDb } from "@/src/lib/db";
 import { generateProjectJwtSecret } from "@/src/lib/provisioning-engine";
 import { evictHostnames, v2SharedGatewayCacheHostnames } from "@/src/lib/gateway-cache";
 import { validateDedicatedPostgrestOpenApi } from "@/src/lib/migrate-postgrest-validate";
+import { syncV2TraefikDynamicConfigNonFatal } from "@/src/lib/v2-traefik-dynamic-config";
 
 export type ProjectRowForMigrate = InferSelectModel<typeof projects>;
 
@@ -367,6 +368,11 @@ export async function runV2SharedToV1DedicatedMigration(input: {
           apiSchemaName: resolvedName,
         })
         .where(eq(projects.id, row.id));
+
+      await syncV2TraefikDynamicConfigNonFatal(
+        db,
+        `v2-to-v1 migration ${hash}`,
+      );
 
       await new Promise((r) => setTimeout(r, 150));
 

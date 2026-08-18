@@ -9,6 +9,7 @@ import { authorizeCliHttpRequest, authorizeCliRoute, cliRouteAuthJsonError } fro
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { assertDestructiveBackupAllowed } from "@/src/lib/destructive-backup-gate";
 import { runCliProjectDelete } from "@/src/lib/destructive-project-routes";
+import { syncV2TraefikDynamicConfigNonFatal } from "@/src/lib/v2-traefik-dynamic-config";
 import { getProjectManager } from "@/src/lib/flux";
 
 export const runtime = "nodejs";
@@ -143,6 +144,10 @@ export async function DELETE(
     deleteCatalogRow: async (projectId) => {
       const db = getDb();
       await db.delete(projects).where(eq(projects.id, projectId));
+      await syncV2TraefikDynamicConfigNonFatal(
+        db,
+        `CLI delete ${projectId}`,
+      );
     },
     deleteOrphanInfrastructure: async (slug, hash) =>
       pm.deleteProjectInfrastructure(slug, hash),

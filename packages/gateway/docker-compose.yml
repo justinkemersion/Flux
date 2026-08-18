@@ -26,7 +26,9 @@ services:
     ports:
       - "${GATEWAY_HOST_PORT:-4000}:${PORT:-4000}"
 # Traefik edge router for v2_shared API hosts (priority 50, below v1 dedicated).
-# tls.domains[*].main entries: run ./bin/sync-v2-gateway-tls-domains.sh after catalog changes.
+# Exact-host certificate discovery is reconciled from the catalog through
+# Traefik's file provider; the tls.domains list below is a rollout fallback for
+# certificates issued before that reconciler shipped.
     labels:
       traefik.enable: "true"
       traefik.docker.network: flux-network

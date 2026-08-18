@@ -16,6 +16,7 @@ import { resolveCreateModeForPlan, type UserPlan } from "@/src/lib/cli-mode-poli
 import { resolveCliRoleForUser } from "@/src/lib/cli-admin";
 import { recordProjectCreatedActivity } from "@/src/lib/project-activity";
 import { mapProvisionProjectError } from "@/src/lib/provision-project-errors";
+import { syncV2TraefikDynamicConfigNonFatal } from "@/src/lib/v2-traefik-dynamic-config";
 
 export const HOBBY_PROJECT_LIMIT = 2;
 export const PRO_PROJECT_LIMIT = 10;
@@ -284,6 +285,12 @@ export async function provisionProjectForUser(input: {
         apiSchemaStrategy: initialApiSchemaStrategy(input.mode),
       })
       .returning({ id: projects.id });
+    if (input.mode === "v2_shared") {
+      await syncV2TraefikDynamicConfigNonFatal(
+        input.db,
+        `CLI create ${project.hash}`,
+      );
+    }
     try {
       await probeSingleProject(dbRow.id);
     } catch (probeErr: unknown) {

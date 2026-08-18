@@ -4,7 +4,11 @@ set -e
 # The process user is `nextjs` (non-root); Docker named volumes are often root-owned until fixed.
 LOCAL="${FLUX_BACKUPS_LOCAL_DIR:-/srv/flux/backups}"
 OFFSITE="${FLUX_BACKUPS_OFFSITE_DIR:-/srv/flux/backups-offsite}"
+DYNAMIC_CONFIG="${FLUX_TRAEFIK_DYNAMIC_CONFIG_PATH:-}"
 mkdir -p "$LOCAL" "$OFFSITE"
+if [ -n "$DYNAMIC_CONFIG" ]; then
+  mkdir -p "$(dirname "$DYNAMIC_CONFIG")"
+fi
 if [ -d /srv/flux ]; then
   chown -R nextjs:nodejs /srv/flux
 fi

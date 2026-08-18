@@ -20,7 +20,7 @@ Understanding request flow prevents mixing concerns: TLS/SNI, tenant resolution,
 
 ```txt
 HTTPS client
-  → Traefik / edge (TLS)
+  → Traefik / edge (TLS; exact pooled host discovered from the catalog)
   → Flux gateway (host → tenant, verify project JWT)
   → PostgREST pool (bridge JWT → role)
   → Postgres (tenant schema, policies)
@@ -38,6 +38,8 @@ HTTPS client
 ## How it works
 
 Each layer refuses with a recognizable signal: **401** before Postgres indicates auth at the edge; **`42501`** indicates database authorization; an **empty array** indicates RLS filtering after the role was already allowed in. The full layer-by-layer map and verification steps live in [Troubleshooting](/docs/reference/troubleshooting).
+
+For pooled projects, the control plane renders exact `Host(...)` routers into Traefik's watched dynamic configuration whenever the catalog changes and again at startup. That exact rule is what lets the ACME resolver request a trusted certificate for a newly created canonical Service URL; the gateway's broader host matcher remains the data-plane routing fallback, not the certificate inventory.
 
 ## Example
 

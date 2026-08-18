@@ -41,6 +41,8 @@ services:
       # Drives Traefik labels on tenants provisioned by the dashboard
       # (websecure + myresolver via fluxTraefikCertResolverName).
       FLUX_DOMAIN: ${FLUX_DOMAIN:-vsl-base.com}
+      # Catalog-derived exact-host routers watched by Traefik's file provider.
+      FLUX_TRAEFIK_DYNAMIC_CONFIG_PATH: /srv/flux/traefik-dynamic/v2-tenants.json
       # Forward host DOCKER_GID when set in `.env`. When empty, entrypoint uses stat(1) on the socket
       # (avoids stale default 996 after host `docker` group GID changes).
       FLUX_DOCKER_SUPPLEMENTARY_GID: ${DOCKER_GID:-}
@@ -50,6 +52,7 @@ services:
       # v1_dedicated backups: named volume → files exist inside Docker volume, not at this host path unless bind-mounted.
       - flux-web-backups:/srv/flux/backups
       - flux-web-backups-offsite:/srv/flux/backups-offsite
+      - flux-traefik-dynamic:/srv/flux/traefik-dynamic
     # The image runs as `nextjs` (non-root). The host socket is root:docker mode 660 — add that
     # group so dockerode can connect. Set DOCKER_GID in `.env` if yours differs (see `.env.example`).
     group_add:
@@ -94,3 +97,5 @@ networks:
 volumes:
   flux-web-backups:
   flux-web-backups-offsite:
+  flux-traefik-dynamic:
+    name: flux-traefik-dynamic

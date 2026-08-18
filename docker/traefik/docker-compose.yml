@@ -22,6 +22,9 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=flux-network"
       - "--providers.docker.httpClientTimeout=300s"
+      # flux-web atomically reconciles exact-host v2 TLS routers here from the catalog.
+      - "--providers.file.directory=/dynamic"
+      - "--providers.file.watch=true"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       # Auto-redirect HTTP to HTTPS
@@ -37,6 +40,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./letsencrypt:/letsencrypt
+      - flux-traefik-dynamic:/dynamic:ro
     networks:
       - flux-network
     # Cap json-file logs (Traefik access logs can grow to GB without rotation).
@@ -49,3 +53,7 @@ services:
 networks:
   flux-network:
     external: true
+
+volumes:
+  flux-traefik-dynamic:
+    name: flux-traefik-dynamic
