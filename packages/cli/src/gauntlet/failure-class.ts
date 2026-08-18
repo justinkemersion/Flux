@@ -84,9 +84,8 @@ export function classifyGauntletFailure(input: {
         failureClass: "auth_handshake_mismatch",
         failureClassDetail:
           "v2_shared health/API probe returned 401 or token rejection. " +
-          "The gauntlet does not yet implement the gateway bridge JWT handshake " +
-          "(project JWT → gateway-minted bridge JWT + Accept-Profile). " +
-          "This is a gauntlet seam gap, not proof that v2 provisioning is broken.",
+          "The CLI probe JWT includes the gateway-required stable sub claim, so " +
+          "verify the project secret, token lifetime, and deployed gateway contract.",
       };
     }
 

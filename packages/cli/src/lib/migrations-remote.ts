@@ -45,6 +45,10 @@ export function mintServiceRoleJwt(secret: string, hash: string): string {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "HS256", typ: "JWT" };
   const payload = {
+    // The v2 gateway requires a stable subject before it will mint a bridge
+    // JWT. Keep this deterministic per project so CLI migrations and gauntlet
+    // probes exercise the same inbound contract as application tokens.
+    sub: `flux-cli:${hash}`,
     role: "service_role",
     hash,
     iat: now,

@@ -32,7 +32,7 @@ Ring 1: Smoke / Lifecycle / Backup spine — GREEN (2026-06-20 soak: 25/25 PASS)
 
 Soak checkpoint: [`packages/cli/reports/gauntlet/ring1-soak-2026-06-20/soak-summary.md`](../packages/cli/reports/gauntlet/ring1-soak-2026-06-20/soak-summary.md)
 
-`v2_shared` health, push, and API probes are implemented when project JWT credentials are available, but there is no recorded live GREEN checkpoint yet. Missing credentials or routes remain explicit skips/failure classifications, never a synthetic pass.
+`v2_shared` health, push, and API probes mint a short-lived project JWT with a stable CLI subject, then exercise the gateway's project-JWT → bridge-JWT handshake. Missing credentials or routes remain explicit skips/failure classifications, never a synthetic pass.
 
 ## What it does
 

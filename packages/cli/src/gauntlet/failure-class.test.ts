@@ -33,7 +33,8 @@ test("v2 wait_for_health 401 is auth_handshake_mismatch", () => {
     stages,
   });
   assert.equal(c?.failureClass, "auth_handshake_mismatch");
-  assert.match(c?.failureClassDetail ?? "", /gauntlet does not yet implement/u);
+  assert.match(c?.failureClassDetail ?? "", /stable sub claim/u);
+  assert.doesNotMatch(c?.failureClassDetail ?? "", /does not yet implement/u);
 });
 
 test("v1 failure is platform_failure", () => {
