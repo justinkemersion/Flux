@@ -2,12 +2,14 @@
 # Orchestrated production deploy for Flux (image build + restart).
 # To recycle containers without rebuilding images, use bin/restart-all.sh instead.
 #
-#   1) v2 shared data plane
-#   2) node gateway
-#   3) dashboard / control plane
+#   1) Traefik edge
+#   2) v2 shared data plane
+#   3) node gateway
+#   4) dashboard / control plane
 #
 # Why this order:
-# - Data plane first so PostgREST/PgBouncer are ready.
+# - Edge first so its watched dynamic-config volume exists before the control plane writes it.
+# - Data plane next so PostgREST/PgBouncer are ready.
 # - Gateway second so routing points to healthy upstreams.
 # - Dashboard last so user-facing control plane comes up after infra is healthy.
 #
@@ -112,6 +114,7 @@ run_stage() {
   fi
 }
 
+run_stage "Traefik edge" "$SCRIPT_DIR/deploy-traefik.sh"
 run_stage "v2 shared data plane" "$SCRIPT_DIR/deploy-v2-shared.sh"
 run_stage "gateway" "$SCRIPT_DIR/deploy-gateway.sh"
 run_stage "dashboard control plane" "$SCRIPT_DIR/deploy-web.sh"

@@ -1,9 +1,13 @@
 #!/bin/bash
-# Stamp Traefik ACME tls.domains[N].main labels for every v2_shared API host on
+# Legacy rollout fallback: stamp Traefik ACME tls.domains[N].main labels for every v2_shared API host on
 # flux-node-gateway. TLS-ALPN (myresolver) cannot issue wildcard *.domain certs;
 # explicit per-host domains are required (see packages/gateway/docker-compose.yml).
 #
 # Usage (from repo root):
+# Normal provisioning no longer calls this script. flux-web reconciles exact-host
+# routers through Traefik's watched dynamic volume. Use this only while rolling
+# out an older edge/control-plane pair.
+#
 #   ./bin/sync-v2-gateway-tls-domains.sh
 #   FLUX_DEPLOY_RESTART_ONLY=1 ./bin/deploy-gateway.sh   # apply labels
 #

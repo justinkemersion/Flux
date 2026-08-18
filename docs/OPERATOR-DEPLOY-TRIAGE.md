@@ -13,6 +13,7 @@ Use this table when a deploy or health check fails. Symptom-first app-developer 
 | `flux-node-gateway` restart loop | Runtime module resolution / env validation crash | `docker logs --since 5m flux-node-gateway` |
 | Gateway `health` fails with reset | Process crashed before listener stabilized | Same logs + `docker inspect … State` |
 | v2 provision fails in dashboard | `FLUX_SHARED_POSTGRES_URL` DNS/network mismatch | Verify `flux-web` attached to `flux-v2-shared` and URL host resolves |
+| New v2 URL presents `TRAEFIK DEFAULT CERT` | Edge file provider or shared dynamic volume was not deployed | Run `./bin/deploy-traefik.sh`, recreate `flux-web`, then confirm its logs report `Traefik v2 tenant config reconciled` |
 | v2 mesh shows **Partial** / **Offline** but curl to tenant works | Public `https://` probe from `flux-web` fails (TLS / DNS) | Set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` and recreate `flux-web` |
 | v2 mesh **Offline** after deep JWT probe deploy | Catalog `jwt_secret` null or JWT probe not 2xx | Run **Repair** on the project; optional `FLUX_TENANT_PROBE_SHALLOW=1` for legacy 401-only probes |
 | `flux backup create` → `EACCES` on backup dir | Control plane runs as non-root `nextjs`; default backup dirs not writable | Redeploy `flux-web` with `docker/web/flux-web-entrypoint.sh` + compose volumes, or set `FLUX_BACKUPS_LOCAL_DIR` / `FLUX_BACKUPS_OFFSITE_DIR` to writable paths |
@@ -29,6 +30,8 @@ curl -fsS http://127.0.0.1:4000/health/deep && echo
 ```
 
 Optional: `pnpm --filter dashboard test` from the repo checkout on a dev machine or CI host.
+
+The canonical full deploy order is `deploy-traefik` → `deploy-v2-shared` → `deploy-gateway` → `deploy-web`. The first stage enables the watched `flux-traefik-dynamic` volume; the last stage populates it from the catalog. Do not edit `v2-tenants.json` manually.
 
 ## Ops audit
 

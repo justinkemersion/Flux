@@ -24,12 +24,14 @@ Redis (when used) is for cache and telemetry—**not authoritative** for correct
 
 At a high level:
 
-1. TLS terminates (or upstream proxy terminates) on the public name.
+1. TLS terminates (or upstream proxy terminates) on the public name. For canonical v2 hosts, the control plane publishes an exact-host router from the catalog so Traefik can discover and renew its ACME certificate without a gateway restart.
 2. Gateway maps host → tenant record.
 3. External JWT verified per project configuration.
 4. Bridge JWT minted with Postgres role and claims PostgREST expects.
 
 Internal probes may use **`FLUX_TENANT_PROBE_GATEWAY_URL`** to avoid relying on public DNS from inside containers—see [Environment variables](/docs/reference/env-vars).
+
+The generated Traefik file is operational state, not source configuration. Startup and every pooled create/delete or v2→v1 cutover reconcile the complete document from the authoritative project catalog, using an atomic replace so Traefik never observes a partial write.
 
 ## Example
 

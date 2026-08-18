@@ -83,7 +83,7 @@ Grouped by area. Status labels: **stable**, **beta**, **operator-only**, **traje
 | **v2_shared / Hobby tier** | Default pooled provisioning; **2 active project cap** on Hobby (`project-lifecycle-state`); tier-aware per-tenant rate limits | stable (limits) / **trajectory** (per-plan gateway rate limits) |
 | **Lifecycle / sleep / archive / reap** | `flux project wake \| sleep \| archive`; `flux reap`; dormant/archived → gateway 503 | stable |
 | **Observability / ops audit** | `flux logs` (v1); fleet monitor + JWT deep probes (v2); `bin/ops-audit.sh` | stable |
-| **Deploy workflow** | `deploy-v2-shared` → `deploy-gateway` → `deploy-web`; `bin/launch-web.sh` for dashboard-only releases | operator-only |
+| **Deploy workflow** | `deploy-traefik` → `deploy-v2-shared` → `deploy-gateway` → `deploy-web`; `bin/launch-web.sh` for dashboard-only releases | operator-only |
 | **Security posture** | Gateway Bearer (v2), migration ledger isolation, backup trust, MCP route allowlist, Docker socket risk documented | stable |
 
 Canonical user docs (when deployed): **`https://flux.vsl-base.com/docs/`** — source in [`docs/pages/`](docs/pages/).
@@ -128,7 +128,7 @@ Client → flux-node-gateway → postgrest-pool → pgbouncer → postgres-v2 (m
 | Edge gateway | `flux-node-gateway` | Tenant resolve, JWT, rate limit, proxy |
 | Control plane | `flux-web` | Catalog, CLI API, dashboard |
 
-Compose: [`docker/v2-shared/docker-compose.yml`](docker/v2-shared/docker-compose.yml), [`packages/gateway`](packages/gateway), [`docker/web/docker-compose.yml`](docker/web/docker-compose.yml).
+Compose: [`docker/traefik/docker-compose.yml`](docker/traefik/docker-compose.yml), [`docker/v2-shared/docker-compose.yml`](docker/v2-shared/docker-compose.yml), [`packages/gateway`](packages/gateway), [`docker/web/docker-compose.yml`](docker/web/docker-compose.yml). The control plane reconciles one exact-host TLS router per pooled catalog project into Traefik's watched `flux-traefik-dynamic` volume. New v2 Service URLs therefore enter ACME certificate discovery automatically; project deletion and v2→v1 cutover remove the pooled router, and startup reconciliation heals missed lifecycle events.
 
 ### JWT and schema isolation (v2 summary)
 
@@ -292,6 +292,7 @@ See [MCP and AI-assistant integration](#mcp-and-ai-assistant-integration). Quick
 On server (canonical order):
 
 ```bash
+./bin/deploy-traefik.sh
 ./bin/deploy-v2-shared.sh
 ./bin/deploy-gateway.sh
 ./bin/deploy-web.sh
@@ -546,6 +547,7 @@ Typical checkout: `/srv/platform/flux` (`FLUX_REMOTE_REPO_ROOT`, `APP_DIR` in de
 ### Deploy order
 
 ```bash
+./bin/deploy-traefik.sh    # edge + watched v2 tenant TLS configuration
 ./bin/deploy-v2-shared.sh   # Postgres, PgBouncer, PostgREST pool
 ./bin/deploy-gateway.sh     # flux-node-gateway
 ./bin/deploy-web.sh         # dashboard + control plane
@@ -573,6 +575,8 @@ curl -fsS http://127.0.0.1:4000/health/deep
 ```
 
 Set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` for reliable in-container v2 mesh probes.
+
+`docker/web/docker-compose.yml` sets `FLUX_TRAEFIK_DYNAMIC_CONFIG_PATH` and shares the named `flux-traefik-dynamic` volume with Traefik. Do not hand-edit the generated `v2-tenants.json`; `flux-web` replaces it atomically from the catalog at startup and after pooled create/delete/migration events. `bin/sync-v2-gateway-tls-domains.sh` remains a legacy rollout fallback, not a normal provisioning step.
 
 ### When to run ops audit
 

@@ -16,6 +16,7 @@ import {
 } from "@/src/lib/destructive-backup-gate";
 import { runDashboardProjectDelete } from "@/src/lib/destructive-project-routes";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
+import { syncV2TraefikDynamicConfigNonFatal } from "@/src/lib/v2-traefik-dynamic-config";
 
 export const runtime = "nodejs";
 
@@ -309,6 +310,10 @@ export async function DELETE(
     deleteCatalogRow: async (projectId) => {
       const db = getDb();
       await db.delete(projects).where(eq(projects.id, projectId));
+      await syncV2TraefikDynamicConfigNonFatal(
+        db,
+        `dashboard delete ${projectId}`,
+      );
     },
   });
 }

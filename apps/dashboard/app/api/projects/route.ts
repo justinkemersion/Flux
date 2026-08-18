@@ -36,6 +36,7 @@ import { loadLastActivityByProjectIds } from "@/src/lib/project-portfolio";
 import { resolveCreateModeForPlan } from "@/src/lib/cli-mode-policy";
 import { statusFromV2CatalogHealth } from "@/src/lib/v2-project-status";
 import { recordProjectCreatedActivity } from "@/src/lib/project-activity";
+import { syncV2TraefikDynamicConfigNonFatal } from "@/src/lib/v2-traefik-dynamic-config";
 
 export const runtime = "nodejs";
 
@@ -370,6 +371,13 @@ export async function POST(req: Request): Promise<Response> {
         apiSchemaStrategy: initialApiSchemaStrategy(mode),
       })
       .returning();
+
+    if (mode === "v2_shared") {
+      await syncV2TraefikDynamicConfigNonFatal(
+        db,
+        `dashboard create ${dbProject.hash}`,
+      );
+    }
 
     try {
       await probeSingleProject(dbProject.id);
