@@ -3,11 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { useCallback, useEffect, useState } from "react";
-import {
-  errorMessageFromJsonBody,
-  readResponseJson,
-} from "@/src/lib/fetch-json";
+import { useEffect, useState } from "react";
+import { readResponseJson } from "@/src/lib/fetch-json";
 
 function formatUtc(d: Date): string {
   const p = (n: number) => n.toString().padStart(2, "0");
@@ -78,46 +75,60 @@ function useFleetBarStatus(): { fleetLine: string; fleetDegraded: boolean } {
   const [fleetLine, setFleetLine] = useState("Operational");
   const [fleetDegraded, setFleetDegraded] = useState(false);
 
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/projects", { cache: "no-store" });
-      const payload: unknown = await readResponseJson(res, {
-        apiLabel: "projects API",
-      });
-      if (!res.ok) {
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const refresh = async () => {
+      try {
+        const res = await fetch("/api/projects", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload: unknown = await readResponseJson(res, {
+          apiLabel: "projects API",
+        });
+        if (controller.signal.aborted) return;
+        if (!res.ok) {
+          setFleetLine("Fleet error");
+          setFleetDegraded(true);
+          return;
+        }
+        const projects = Array.isArray(payload)
+          ? payload
+          : payload &&
+              typeof payload === "object" &&
+              "projects" in payload &&
+              Array.isArray((payload as { projects: unknown }).projects)
+            ? (payload as { projects: FleetProjectRow[] }).projects
+            : [];
+        const bad = projects.some(
+          (p) => p.status === "missing" || p.status === "corrupted",
+        );
+        if (bad) {
+          setFleetLine("Needs attention");
+          setFleetDegraded(true);
+          return;
+        }
+        setFleetLine("All projects healthy");
+        setFleetDegraded(false);
+      } catch {
+        if (controller.signal.aborted) return;
         setFleetLine("Fleet error");
         setFleetDegraded(true);
-        return;
       }
-      const projects = Array.isArray(payload)
-        ? payload
-        : payload &&
-            typeof payload === "object" &&
-            "projects" in payload &&
-            Array.isArray((payload as { projects: unknown }).projects)
-          ? (payload as { projects: FleetProjectRow[] }).projects
-          : [];
-      const bad = projects.some(
-        (p) => p.status === "missing" || p.status === "corrupted",
-      );
-      if (bad) {
-        setFleetLine("Needs attention");
-        setFleetDegraded(true);
-        return;
-      }
-      setFleetLine("All projects healthy");
-      setFleetDegraded(false);
-    } catch {
-      setFleetLine("Fleet error");
-      setFleetDegraded(true);
-    }
-  }, []);
+    };
 
-  useEffect(() => {
-    void refresh();
-    const id = setInterval(() => void refresh(), 15000);
-    return () => clearInterval(id);
-  }, [refresh]);
+    // Timer callbacks make this effect a polling subscription rather than a
+    // synchronous state cascade. A zero-delay first tick preserves the
+    // previous immediate-refresh behavior.
+    const initialId = setTimeout(() => void refresh(), 0);
+    const intervalId = setInterval(() => void refresh(), 15000);
+    return () => {
+      controller.abort();
+      clearTimeout(initialId);
+      clearInterval(intervalId);
+    };
+  }, []);
 
   return { fleetLine, fleetDegraded };
 }
