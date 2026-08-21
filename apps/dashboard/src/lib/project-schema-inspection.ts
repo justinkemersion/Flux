@@ -1,4 +1,9 @@
-import { resolveTenantApiSchemaName } from "@flux/core";
+import {
+  buildInspectExposedTableSecuritySql,
+  parseExposedTableSecurityFacts,
+  resolveTenantApiSchemaName,
+  type ExposedTableSecurityFact,
+} from "@flux/core";
 import type { SchemaInspectionResult } from "@flux/core/schema-inspection";
 import { getProjectManager } from "./flux";
 import { createPooledTenantCatalogQueryFn } from "./pooled-schema-inspection";
@@ -52,4 +57,29 @@ export async function inspectProjectSchema(
     },
     queryRows,
   );
+}
+
+/**
+ * Effective-privilege inspection used by `flux doctor` for dedicated projects.
+ * Uses the same SQL as the v1 push assertion so classification cannot drift.
+ */
+export async function inspectProjectExposedTableSecurity(
+  project: ProjectLookupRow,
+): Promise<ExposedTableSecurityFact[]> {
+  const apiSchema = resolveTenantApiSchemaName({
+    id: project.id,
+    mode: project.mode as "v1_dedicated" | "v2_shared",
+    apiSchemaName: project.apiSchemaName,
+    apiSchemaStrategy: project.apiSchemaStrategy as
+      | "legacy_api"
+      | "tenant_schema"
+      | null,
+  });
+  const pm = getProjectManager();
+  const rows = await pm.queryTenantJsonRows(
+    project.slug,
+    project.hash,
+    buildInspectExposedTableSecuritySql(apiSchema),
+  );
+  return parseExposedTableSecurityFacts(rows);
 }

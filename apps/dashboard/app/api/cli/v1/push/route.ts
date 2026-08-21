@@ -240,6 +240,9 @@ export async function POST(req: Request): Promise<Response> {
           ...(pushResult.previousChecksum
             ? { previousChecksum: pushResult.previousChecksum }
             : {}),
+          ...(pushResult.warnings && pushResult.warnings.length > 0
+            ? { warnings: pushResult.warnings }
+            : {}),
           tablesMoved: 0,
           sequencesMoved: 0,
           viewsMoved: 0,
@@ -247,24 +250,27 @@ export async function POST(req: Request): Promise<Response> {
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
+    return Response.json(
+      {
+        ok: true,
+        skipped: pushResult.skipped,
+        ...(pushResult.warnings && pushResult.warnings.length > 0
+          ? { warnings: pushResult.warnings }
+          : {}),
+        tablesMoved: 0,
+        sequencesMoved: 0,
+        viewsMoved: 0,
+      } as const,
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (
-      /not found|not running|HMAC password check failed|Refusing push: exposed API table/i.test(msg) ||
+      /not found|not running|HMAC password check failed|Refusing push:/i.test(msg) ||
       msg.includes("No Postgres container")
     ) {
       return jsonError(msg, 400);
     }
     return jsonError(msg, 500);
   }
-
-  return Response.json(
-    {
-      ok: true,
-      tablesMoved: 0,
-      sequencesMoved: 0,
-      viewsMoved: 0,
-    } as const,
-    { headers: { "Cache-Control": "private, no-store" } },
-  );
 }

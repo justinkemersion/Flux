@@ -30,6 +30,25 @@ Keep entries short. If a single entry needs more than a screen, it probably want
 
 ---
 
+## 2026-08-20 — Dedicated push gate became privilege-aware
+
+**Context.** The first dedicated RLS gate treated every RLS-disabled or policyless exposed table as a push failure. Issue #8’s remaining defect is more specific: bootstrap grants assume RLS, so the dangerous case is **RLS off plus effective PostgREST writes**.
+
+### Decisions of record
+
+| Topic | Decision |
+|-------|----------|
+| Hard failure | RLS disabled **and** `anon` / `authenticated` / `PUBLIC` has effective `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` (direct, inherited, or `PUBLIC`) |
+| Warnings | RLS disabled with read-only or no PostgREST privileges; RLS enabled with zero policies |
+| Inspection | Shared TypeScript classifier plus `has_table_privilege` / `aclexplode` SQL; push and doctor must not diverge |
+| HTTP status | Unauthenticated `200` is not itself a defect; safety is determined from privileges, RLS, and policies |
+| Auto-repair | Do not enable RLS, create policies, or revoke grants automatically |
+| Issue closure | Live fleet audit and per-engine canary remain after deploy; merging does not close #8 |
+
+**Status:** implementation in review; production deployment and live verification remain.
+
+---
+
 ## 2026-08-18 — Dedicated API RLS became an enforced invariant
 
 **Context.** A live audit found dedicated PostgREST tables reachable without credentials because schema-wide grants assumed RLS was present while several tables had RLS disabled. Dedicated traffic does not pass through the pooled gateway.

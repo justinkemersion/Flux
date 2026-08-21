@@ -48,6 +48,28 @@ export {
   buildDisableRowLevelSecurityForSchemaSql,
 } from "./api-schema-privileges.ts";
 export {
+  buildAssertExposedApiSchemaHasRlsSql,
+  buildAssertExposedTableSecuritySql,
+  buildDedicatedPushTransactionSql,
+  buildInspectExposedTableSecuritySql,
+  classifyExposedSchemaSecurity,
+  classifyExposedTableSecurity,
+  extractFluxSecurityWarnings,
+  formatEffectivePrivileges,
+  formatSecurityWarningMessages,
+  formatUnrestrictedWriteError,
+  isUnrestrictedWritePushError,
+  parseExposedTableSecurityFacts,
+  POSTGREST_REQUEST_ROLES,
+  SECURITY_WARNING_PREFIX,
+  UNRESTRICTED_WRITE_ERROR_PREFIX,
+  WRITE_PRIVILEGES,
+  type EffectiveTablePrivilege,
+  type ExposedSchemaSecurityReport,
+  type ExposedTableSecurityFact,
+  type ExposedTableSecurityFinding,
+} from "./exposed-table-security.ts";
+export {
   assertFluxApiSchemaIdentifier,
   defaultTenantApiSchemaFromProjectId,
   defaultTenantDdlRoleFromProjectId,

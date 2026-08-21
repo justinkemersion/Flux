@@ -18,6 +18,7 @@ import {
   queryPsqlScalar,
   runPsqlHostFileInsideContainer,
   runPsqlSqlInsideContainer,
+  runPsqlSqlInsideContainerDetailed,
 } from "../../postgres-internal-exec.ts";
 import { runMovePublicSchemaToTargetWithDockerExec } from "../../schema-move-public-to-api.ts";
 import {
@@ -38,7 +39,11 @@ import {
   selectRepeatableChecksumSql,
   type RepeatablePushMeta,
 } from "../../sql-repeatable-scripts.ts";
-import { buildAssertExposedApiSchemaHasRlsSql } from "../../api-schema-rls-invariant.ts";
+import {
+  buildDedicatedPushTransactionSql,
+  buildAssertExposedTableSecuritySql,
+  extractFluxSecurityWarnings,
+} from "../../exposed-table-security.ts";
 import { POSTGRES_USER } from "../../docker/docker-constants.ts";
 import { postgrestContainerName } from "../../docker/docker-names.ts";
 import type { FluxCoreContext } from "../../runtime/context.ts";
@@ -124,6 +129,12 @@ export async function listAppliedSqlMigrations(
   }
 }
 
+export type DedicatedPushResult = {
+  skipped: boolean;
+  previousChecksum?: string;
+  warnings?: string[];
+};
+
 /**
  * Data-plane SQL push (CLI / control plane): runs the script in a **single** transaction, ends with
  * `NOTIFY pgrst, 'reload schema'`, then `SIGUSR1` on the PostgREST API container. Uses `psql` via
@@ -143,7 +154,7 @@ export async function pushSqlFromCli(
     migration?: MigrationPushMeta;
     repeatable?: RepeatablePushMeta;
   },
-): Promise<{ skipped: boolean; previousChecksum?: string }> {
+): Promise<DedicatedPushResult> {
   const creds = await resolveRunningPostgresCredentials(ctx, projectName, hash);
   const secret =
     process.env.FLUX_PROJECT_PASSWORD_SECRET?.trim() ||
@@ -271,15 +282,23 @@ export async function pushSqlFromCli(
     }
   }
 
-  const rlsGuardSql = buildAssertExposedApiSchemaHasRlsSql(tenantSchema);
+  const warnings: string[] = [];
+  const rlsGuardSql = buildAssertExposedTableSecuritySql(tenantSchema);
   if (!skipped) {
-    const wrapped = `BEGIN;\nSET LOCAL search_path TO ${pathList};\n${userSql}\n${rlsGuardSql}\nNOTIFY pgrst, 'reload schema';\nCOMMIT;\n`;
-    await runPsqlSqlInsideContainer(
+    const wrapped = buildDedicatedPushTransactionSql({
+      searchPath: pathList,
+      userSql,
+      apiSchema: tenantSchema,
+    });
+    const exec = await runPsqlSqlInsideContainerDetailed(
       ctx.docker,
       creds.containerId,
       creds.password,
       wrapped,
       POSTGRES_USER,
+    );
+    warnings.push(
+      ...extractFluxSecurityWarnings(`${exec.stderr}\n${exec.stdout}`),
     );
     await new Promise((resolve) => setTimeout(resolve, 500));
     const apiName = postgrestContainerName(hash, creds.slug);
@@ -288,22 +307,37 @@ export async function pushSqlFromCli(
     } catch (err: unknown) {
       const code = getDockerEngineHttpStatus(err);
       if (code === 404 || code === 409) {
-        return { skipped, ...(previousChecksum ? { previousChecksum } : {}) };
+        return dedicatedPushResult(skipped, previousChecksum, warnings);
       }
       throw err;
     }
   } else {
     // A no-op versioned push is still an explicit health boundary. Audit the
     // live schema so an existing unsafe table cannot hide behind the ledger.
-    await runPsqlSqlInsideContainer(
+    const exec = await runPsqlSqlInsideContainerDetailed(
       ctx.docker,
       creds.containerId,
       creds.password,
       rlsGuardSql,
       POSTGRES_USER,
     );
+    warnings.push(
+      ...extractFluxSecurityWarnings(`${exec.stderr}\n${exec.stdout}`),
+    );
   }
-  return { skipped, ...(previousChecksum ? { previousChecksum } : {}) };
+  return dedicatedPushResult(skipped, previousChecksum, warnings);
+}
+
+function dedicatedPushResult(
+  skipped: boolean,
+  previousChecksum: string | undefined,
+  warnings: string[],
+): DedicatedPushResult {
+  return {
+    skipped,
+    ...(previousChecksum ? { previousChecksum } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
 }
 
 /**
