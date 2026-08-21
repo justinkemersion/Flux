@@ -20,7 +20,7 @@ Postgres evaluates privileges **before** RLS filters. If the role cannot `SELECT
 
 On **v2**, the architecture spec notes RLS is **not required initially** for the baseline threat model—gateway authentication plus schema and role separation carry the platform isolation story. Adding RLS is an **application** choice with performance and complexity tradeoffs.
 
-On **v1 dedicated**, Traefik routes directly to the project's PostgREST container. There is no Flux gateway authentication layer, so RLS is mandatory on every table in the exposed API schema. `flux push` enforces that invariant transactionally, and `flux doctor` audits existing projects. RLS enabled with no policies denies access, but Flux still requires an explicit policy so an accidental incomplete migration is visible; use a deny-all policy when that behavior is intentional.
+On **v1 dedicated**, Traefik routes directly to the project's PostgREST container. There is no Flux gateway authentication layer, so an RLS-disabled table that still grants write access to `anon`, `authenticated`, or `PUBLIC` is world-writable. `flux push` enforces that unrestricted-write invariant transactionally (effective privileges, including inherited and `PUBLIC` grants). RLS disabled with only reads, and RLS enabled with no policies, are warnings — the latter is secure by default in Postgres but usually unintentional. `flux doctor` uses the same classification.
 
 ## How it works
 

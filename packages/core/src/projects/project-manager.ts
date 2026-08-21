@@ -261,7 +261,11 @@ export class ProjectManager {
       migration?: MigrationPushMeta;
       repeatable?: RepeatablePushMeta;
     },
-  ): Promise<{ skipped: boolean; previousChecksum?: string }> {
+  ): Promise<{
+    skipped: boolean;
+    previousChecksum?: string;
+    warnings?: string[];
+  }> {
     return pushSqlFromCli(this.ctx, projectName, hash, sql, options);
   }
 

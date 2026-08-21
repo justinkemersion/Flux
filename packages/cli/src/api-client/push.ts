@@ -12,6 +12,7 @@ import { pushSqlResponseSchema } from "./schemas";
 export type PushSqlResult = ImportSqlFileResult & {
   skipped?: boolean;
   previousChecksum?: string;
+  warnings?: string[];
 };
 
 export async function pushSql(
@@ -73,6 +74,9 @@ export async function pushSql(
           previousChecksum: (raw as { previousChecksum: string })
             .previousChecksum,
         }
+      : {}),
+    ...(parsed.data.warnings && parsed.data.warnings.length > 0
+      ? { warnings: parsed.data.warnings }
       : {}),
   };
 }

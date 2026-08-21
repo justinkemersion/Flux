@@ -86,10 +86,11 @@ Foundry ships Supabase-style SQL: unqualified tables, `GRANT … TO authenticate
 
 `v1_dedicated` PostgREST endpoints do **not** pass through the Flux gateway. The database roles, grants, and RLS policies are the request-time authorization boundary.
 
-- `flux push` rejects and rolls back the entire transaction if any table in the exposed API schema has RLS disabled or has RLS enabled with zero policies.
-- A migration that repairs existing unsafe tables is allowed because the audit runs after the migration SQL and before commit. Repair every flagged table in the same migration.
-- If a table is intentionally inaccessible, create an explicit deny-all policy (`USING (false) WITH CHECK (false)`) rather than leaving it policyless.
-- `flux doctor` reports this condition as a failed **API schema RLS** check for dedicated projects. `flux db inspect` reports table-level `rls_disabled` and `rls_enabled_without_policies` warnings.
+- `flux push` inspects **effective** privileges (`has_table_privilege`, including grants inherited through role membership and `PUBLIC`) after your SQL and before commit.
+- It **rejects and rolls back** the entire transaction — and does not advance the migration ledger — if any exposed table has RLS disabled **and** `anon`, `authenticated`, or `PUBLIC` has effective `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`.
+- RLS disabled with only read access, and RLS enabled with zero policies, are **warnings**. They stay visible (`flux doctor`, push NOTICE/WARNING output) but do not block the migration. A policyless RLS table is secure by default in Postgres; add an explicit deny-all policy (`USING (false) WITH CHECK (false)`) if that unused state is intentional.
+- Internal or ungranted tables do not create a hard failure.
+- `flux doctor` uses the same inspection: **FAIL** for unrestricted writes, **WARN** for read-only RLS-disabled exposure and policyless RLS. `flux db inspect` still reports table-level `rls_disabled` and `rls_enabled_without_policies` warnings.
 
 This dedicated-only push gate does not change the v2 baseline: `v2_shared` has gateway authentication plus schema/role isolation, and RLS remains an optional application-level control there.
 

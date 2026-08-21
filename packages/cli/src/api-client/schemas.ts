@@ -128,6 +128,7 @@ export const pushSqlResponseSchema = z.object({
   tablesMoved: z.number(),
   sequencesMoved: z.number(),
   viewsMoved: z.number(),
+  warnings: z.array(z.string()).optional(),
 });
 
 export const platformMinimumBackupFreshnessSchema = z.object({

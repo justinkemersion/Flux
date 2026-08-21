@@ -110,8 +110,8 @@ Client → Traefik (flux-gateway) → flux-<hash>-<slug>-api (PostgREST) → flu
 - Per-project **internal** network `flux-<hash>-<slug>-net` isolates Postgres.
 - PostgREST attaches to `flux-network` for Traefik routing.
 - Bootstrap SQL creates `api` + `auth` schemas, `auth.uid()`, JWT roles.
-- Dedicated PostgREST is reached directly through Traefik; there is no Flux gateway authentication layer in front of it. RLS is therefore mandatory on every exposed API table.
-- `flux push` audits the live API schema inside the same transaction as user SQL and rolls the push back if any table has RLS disabled or RLS enabled with zero policies.
+- Dedicated PostgREST is reached directly through Traefik; there is no Flux gateway authentication layer in front of it. RLS plus grants are the request-time authorization boundary for every exposed API table.
+- `flux push` audits effective PostgREST privileges inside the same transaction as user SQL. It rolls the push back if an exposed table has RLS disabled **and** `anon`, `authenticated`, or `PUBLIC` can write. Read-only RLS-disabled exposure and RLS-without-policies are warnings, not migration failures.
 - Schema changes: `NOTIFY pgrst, 'reload schema'` + SIGUSR1 to PostgREST after a successful `flux push`.
 
 ### v2_shared topology
@@ -652,4 +652,4 @@ Summary:
 
 ---
 
-- Last reviewed: `2026-08-18`
+- Last reviewed: `2026-08-20`

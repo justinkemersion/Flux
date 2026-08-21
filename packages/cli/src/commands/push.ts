@@ -24,6 +24,7 @@ import type { ImportSqlFileResult } from "@flux/core/standalone";
 import chalk from "chalk";
 import ora from "ora";
 import { getApiClient } from "../api-client";
+import type { PushSqlResult } from "../api-client";
 import { sectionBanner } from "../cli-layout";
 import { resolveDashboardBase } from "../dashboard-base";
 import type { FluxJson } from "../flux-config";
@@ -49,6 +50,13 @@ import {
 import { resolveHash, resolveProjectSlug } from "../project-resolve";
 
 export { mintServiceRoleJwt } from "../lib/migrations-remote";
+
+function printPushSecurityWarnings(warnings?: readonly string[]): void {
+  if (!warnings || warnings.length === 0) return;
+  for (const warning of warnings) {
+    console.log(chalk.yellow("⚠"), chalk.white(warning));
+  }
+}
 
 const MAX_SQL_BYTES = 4 * 1024 * 1024;
 
@@ -260,7 +268,7 @@ export async function cmdPush(
       ),
     );
     try {
-      const skipped = await pushMigrationFile({
+      const result = await pushMigrationFile({
         slug,
         hash,
         mode: metadata.mode,
@@ -268,7 +276,7 @@ export async function cmdPush(
         migration,
         options,
       });
-      if (skipped) {
+      if (result.skipped) {
         console.log(
           chalk.green("✓"),
           chalk.white(`${filename} already applied`),
@@ -276,6 +284,7 @@ export async function cmdPush(
       } else {
         console.log(chalk.green("✓"), chalk.white(`${filename} applied`));
       }
+      printPushSecurityWarnings(result.warnings);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (/checksum conflict|different checksum/i.test(msg)) {
@@ -333,6 +342,7 @@ export async function cmdPush(
   }
 
   console.log(chalk.green(repeatableAppliedMessage(scriptId, checksum)));
+  printPushSecurityWarnings(result.warnings);
 }
 
 async function cmdPushMigrationsDir(input: {
@@ -410,7 +420,7 @@ async function cmdPushMigrationsDir(input: {
       filename: file.filename,
       checksum: file.checksum,
     };
-    const skipped = await pushMigrationFile({
+    const result = await pushMigrationFile({
       slug: input.slug,
       hash: input.hash,
       mode: input.mode,
@@ -418,7 +428,7 @@ async function cmdPushMigrationsDir(input: {
       migration,
       options: input.options,
     });
-    if (skipped) {
+    if (result.skipped) {
       console.log(
         chalk.green("✓"),
         chalk.white(`${file.filename} already applied`),
@@ -428,6 +438,7 @@ async function cmdPushMigrationsDir(input: {
       console.log(chalk.green("✓"), chalk.white(`${file.filename} applied`));
       appliedCount += 1;
     }
+    printPushSecurityWarnings(result.warnings);
   }
 
   printMigrationPlanSummary({
@@ -447,19 +458,20 @@ async function pushMigrationFile(input: {
   content: string;
   migration: MigrationPushMeta;
   options: CmdPushOptions;
-}): Promise<boolean> {
+}): Promise<{ skipped: boolean; warnings?: string[] }> {
   if (Buffer.byteLength(input.content, "utf8") > MAX_SQL_BYTES) {
     throw new Error(
       `${input.migration.filename} is larger than 4 MiB (server limit for flux push).`,
     );
   }
   if (input.mode === "v2_shared") {
-    return pushSqlV2Migration({
+    const skipped = await pushSqlV2Migration({
       slug: input.slug,
       hash: input.hash,
       sql: input.content,
       migration: input.migration,
     });
+    return { skipped };
   }
   const client = getApiClient();
   const result = await client.pushSql({
@@ -468,7 +480,12 @@ async function pushMigrationFile(input: {
     sql: input.content,
     migration: input.migration,
   });
-  return result.skipped === true;
+  return {
+    skipped: result.skipped === true,
+    ...(result.warnings && result.warnings.length > 0
+      ? { warnings: result.warnings }
+      : {}),
+  };
 }
 
 async function pushRepeatableFile(input: {
@@ -478,7 +495,7 @@ async function pushRepeatableFile(input: {
   content: string;
   repeatable: RepeatablePushMeta;
   options: CmdPushOptions;
-}): Promise<{ skipped: boolean; previousChecksum?: string }> {
+}): Promise<{ skipped: boolean; previousChecksum?: string; warnings?: string[] }> {
   if (Buffer.byteLength(input.content, "utf8") > MAX_SQL_BYTES) {
     throw new Error(
       `${input.repeatable.filename} is larger than 4 MiB (server limit for flux push).`,
@@ -502,6 +519,9 @@ async function pushRepeatableFile(input: {
   return {
     skipped: result.skipped === true,
     ...(result.previousChecksum ? { previousChecksum: result.previousChecksum } : {}),
+    ...(result.warnings && result.warnings.length > 0
+      ? { warnings: result.warnings }
+      : {}),
   };
 }
 
@@ -518,7 +538,7 @@ async function pushSqlV1(input: {
     sequencesMoved: 0,
     viewsMoved: 0,
   };
-  let result: ImportSqlFileResult = emptyReport;
+  let result: PushSqlResult = emptyReport;
   try {
     if (input.options.supabaseCompat) {
       spinner.stop();
@@ -546,6 +566,7 @@ async function pushSqlV1(input: {
     spinner.stop();
   }
   console.log(chalk.green("✓"), chalk.white("SQL applied successfully."));
+  printPushSecurityWarnings(result.warnings);
   if (input.options.supabaseCompat) {
     sectionBanner("Post-migration report");
     console.log(

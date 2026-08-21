@@ -5,12 +5,12 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Issue #8 / dedicated API RLS invariant** — implementation and local verification complete; deployment and live fleet audit pending. |
+| **Active phase** | **Issue #8 / dedicated API unrestricted-write invariant** — implementation ready for review; deployment and live fleet audit pending. |
 | **Pass 1** | **Complete** (code + docs; server e2e smoke verified 2026-05-29) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
 | **Pass 6** | **Merged, not deployable alone** — see Pass 6b |
-| **Last updated** | 2026-08-18 (issue #8 implementation: push gate, doctor, gauntlet canary) |
+| **Last updated** | **2026-08-20** (issue #8 narrow privilege-aware push gate + doctor) |
 
 > **`main` is now deployable to v2_shared production.** Pass 6 alone was not: it ran pooled
 > push as `t_<12hex>_role`, which has no `CREATE` on its own schema. Pass 6b runs DDL as a
@@ -19,16 +19,24 @@
 > cluster). The Pass 6b dashboard changes were subsequently deployed. Historical detail:
 > [`pass-6b-tenant-ddl-role.md`](pass-6b-tenant-ddl-role.md).
 
-## Issue #8 — dedicated API RLS invariant (implementation complete; deploy pending)
+## Issue #8 — dedicated unrestricted-write invariant (code complete; deploy pending)
 
-- [x] Dedicated `flux push` audits the exposed schema after user SQL and before commit.
-- [x] Push rolls back when RLS is disabled or enabled with zero policies.
-- [x] Schema inspection reports `rls_enabled_without_policies` in addition to `rls_disabled`.
-- [x] `flux doctor` fails the **API schema RLS** check and names unsafe dedicated tables.
-- [x] Gauntlet proves a known row is unreadable and inserts are rejected without credentials on both engines.
+- [x] Dedicated `flux push` audits effective PostgREST privileges after user SQL and before commit.
+- [x] Push rolls back when RLS is disabled **and** `anon` / `authenticated` / `PUBLIC` has effective write privileges (direct, inherited, or `PUBLIC`).
+- [x] RLS-disabled read-only exposure and RLS-enabled-without-policies are warnings, not push failures.
+- [x] `flux doctor` uses the same classifier: **FAIL** unrestricted writes, **WARN** the other two cases, and names tables/roles/privileges.
+- [x] Gauntlet still proves a known row is unreadable and inserts are rejected without credentials on both engines.
 - [ ] Deploy the dashboard/control plane and rebuilt CLI.
-- [ ] Run doctor against existing dedicated projects and repair every finding with new migrations.
-- [ ] Run one live gauntlet per engine and attach the reports before closing GitHub issue #8.
+- [ ] Run doctor against existing dedicated projects (especially `mailpilot-ai` and `logos-engine`) and repair unrestricted-write findings with new migrations.
+- [ ] Run one live canary per engine proving unauthenticated writes are inert (no required HTTP status) before closing GitHub issue #8.
+
+Opt-in Postgres integration (throwaway cluster only; skipped in ordinary CI):
+
+```bash
+FLUX_RUN_PG_INTEGRATION=1 \
+FLUX_TEST_POSTGRES_URL=postgres://postgres:pw@127.0.0.1:5432/postgres \
+pnpm --filter dashboard exec tsx --tsconfig tsconfig.json --test src/lib/dedicated-push-security.integration.test.ts
+```
 
 ---
 

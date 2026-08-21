@@ -4,14 +4,21 @@ import {
   formatBackupTrustSummary,
   type BackupKind,
 } from "@flux/core/backup-trust";
-import { resolveTenantApiSchemaName } from "@flux/core";
-import { inspectProjectSchema } from "./project-schema-inspection";
+import {
+  classifyExposedSchemaSecurity,
+  formatEffectivePrivileges,
+  resolveTenantApiSchemaName,
+  type ExposedTableSecurityFact,
+} from "@flux/core";
+import {
+  inspectProjectExposedTableSecurity,
+  inspectProjectSchema,
+} from "./project-schema-inspection";
 import { listPooledAppliedMigrations } from "./pooled-migrations";
 import { probeV2SharedCatalogProject, probeTenantApiUrl } from "./tenant-api-probe";
 import { getDb } from "./db";
 import { projectBackups } from "@/src/db/schema";
 import { and, desc, eq } from "drizzle-orm";
-import type { InspectedTable } from "@flux/core/schema-inspection";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -60,33 +67,40 @@ function fail(name: string, detail: string, remediation?: string): DoctorCheck {
 }
 
 export function buildDedicatedRlsDoctorCheck(
-  tables: readonly InspectedTable[],
+  facts: readonly ExposedTableSecurityFact[],
 ): DoctorCheck {
-  const disabled = tables.filter((table) => !table.rls.enabled);
-  const policyless = tables.filter(
-    (table) => table.rls.enabled && (table.rls.policyCount ?? 0) === 0,
-  );
-  if (disabled.length === 0 && policyless.length === 0) {
+  const report = classifyExposedSchemaSecurity(facts);
+  if (report.overall === "pass") {
     return pass(
       "API schema RLS",
-      tables.length === 0
+      facts.length === 0
         ? "No exposed tables yet"
-        : `Protected — ${String(tables.length)} table${tables.length === 1 ? "" : "s"} have RLS and policies`,
+        : `Protected — ${String(facts.length)} table${facts.length === 1 ? "" : "s"} have RLS and policies`,
     );
   }
 
-  const details = [
-    disabled.length > 0
-      ? `RLS disabled: ${disabled.map((table) => table.name).join(", ")}`
-      : "",
-    policyless.length > 0
-      ? `RLS enabled with no policies: ${policyless.map((table) => table.name).join(", ")}`
-      : "",
-  ].filter(Boolean);
-  return fail(
+  const failDetails = report.failures.map((finding) => {
+    const privs = formatEffectivePrivileges(finding.privileges);
+    return privs
+      ? `${finding.qualifiedName} (${privs})`
+      : finding.qualifiedName;
+  });
+  const warnDetails = report.warnings.map((finding) => finding.message);
+
+  if (report.overall === "fail") {
+    const extra =
+      warnDetails.length > 0 ? `; warnings: ${warnDetails.join("; ")}` : "";
+    return fail(
+      "API schema RLS",
+      `Unrestricted write on RLS-disabled table(s): ${failDetails.join("; ")}${extra}`,
+      "Enable row level security and add policies, or revoke INSERT/UPDATE/DELETE/TRUNCATE from anon, authenticated, and PUBLIC. Flux does not rewrite the schema automatically.",
+    );
+  }
+
+  return warn(
     "API schema RLS",
-    details.join("; "),
-    "Enable row level security and create explicit policies for every table in the exposed API schema, then run `flux push` again.",
+    warnDetails.join("; "),
+    "Review RLS-disabled read exposure and tables that have RLS enabled without policies. Unrestricted reads may be intentional; add an explicit deny-all policy if a table should stay unused.",
   );
 }
 
@@ -152,7 +166,7 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
 
   // DB / schema check
   if (schemaResult.status === "fulfilled") {
-    const { tableCount, tables } = schemaResult.value;
+    const { tableCount } = schemaResult.value;
     checks.push(
       pass(
         "Database",
@@ -162,7 +176,19 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
       ),
     );
     if (mode === "v1_dedicated") {
-      checks.push(buildDedicatedRlsDoctorCheck(tables));
+      try {
+        const facts = await inspectProjectExposedTableSecurity(project);
+        checks.push(buildDedicatedRlsDoctorCheck(facts));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push(
+          fail(
+            "API schema RLS",
+            `Inspection failed: ${msg.slice(0, 160)}`,
+            "Confirm the dedicated Postgres container is running, then retry `flux doctor`.",
+          ),
+        );
+      }
     }
   } else {
     const msg = schemaResult.reason instanceof Error

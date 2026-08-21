@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAssertExposedApiSchemaHasRlsSql } from "./api-schema-rls-invariant.ts";
+import { UNRESTRICTED_WRITE_ERROR_PREFIX } from "./exposed-table-security.ts";
 
-test("dedicated API RLS guard rejects disabled and policyless tables", () => {
+test("legacy dedicated API RLS export delegates to privilege-aware assertion", () => {
   const sql = buildAssertExposedApiSchemaHasRlsSql("api");
-  assert.match(sql, /NOT c\.relrowsecurity/u);
-  assert.match(sql, /pg_catalog\.pg_policy/u);
-  assert.match(sql, /Refusing push: exposed API table\(s\)/u);
+  assert.match(sql, /has_table_privilege/u);
+  assert.match(sql, new RegExp(UNRESTRICTED_WRITE_ERROR_PREFIX.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
   assert.match(sql, /ERRCODE = '42501'/u);
 });
 
-test("dedicated API RLS guard validates the schema identifier", () => {
+test("legacy dedicated API RLS export validates the schema identifier", () => {
   assert.throws(() => buildAssertExposedApiSchemaHasRlsSql("api; DROP SCHEMA public"));
 });

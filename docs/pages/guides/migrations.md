@@ -113,13 +113,18 @@ flux migrations list              # show flux.flux_migrations for the project
 
 In CI, use non-interactive tokens, pinned **`FLUX_API_BASE`**, and either the same flags or a checked-in **`flux.json`** with **`slug`** + **`hash`** so pipelines do not drift.
 
-### Dedicated projects: the push-time RLS gate
+### Dedicated projects: the push-time security gate
 
-`v1_dedicated` APIs route from Traefik directly to the project's PostgREST container; they do not pass through the pooled Flux gateway. Every base or partitioned table in the exposed API schema must therefore have RLS enabled and at least one explicit policy.
+`v1_dedicated` APIs route from Traefik directly to the project's PostgREST container; they do not pass through the pooled Flux gateway. Bootstrap grants PostgREST roles access to exposed tables on the assumption that RLS will restrict that access. `flux push` now checks that assumption against **effective** database privileges, not HTTP status codes.
 
-After applying your SQL, `flux push` audits the live catalog **inside the same transaction**. If it finds RLS disabled or RLS enabled with zero policies, it raises `42501`, rolls back the user SQL and migration-ledger write, and does not reload PostgREST.
+After applying your SQL, the audit runs **inside the same transaction**. It rejects the push (`42501`), rolls back the user SQL, and does not record the migration ledger when an exposed table has RLS disabled **and** `anon`, `authenticated`, or `PUBLIC` has effective `INSERT`, `UPDATE`, `DELETE`, or `TRUNCATE` (directly, through role membership, or through `PUBLIC`).
 
-The repair belongs in a new migration. The audit runs after that migration's SQL, so one push can enable RLS and add the missing policies. For an intentionally inaccessible table, use an explicit deny-all policy:
+These conditions are warnings, not failures:
+
+- RLS disabled with only `SELECT` or with no PostgREST privileges (unrestricted reads may be intentional or sensitive)
+- RLS enabled with zero policies (Postgres denies non-owner access by default, so this is secure but likely unusable)
+
+A migration that repairs an existing unrestricted-write table is allowed because the audit runs after that migration's SQL and before commit. For an intentionally inaccessible table, use an explicit deny-all policy so Flux does not warn about a policyless table:
 
 ```sql
 ALTER TABLE api.internal_queue ENABLE ROW LEVEL SECURITY;
@@ -129,7 +134,9 @@ CREATE POLICY internal_queue_deny_all ON api.internal_queue
   WITH CHECK (false);
 ```
 
-Run `flux doctor <project>` to audit an existing dedicated project. The **API schema RLS** check names tables that are disabled or policyless. `flux db inspect` exposes the same facts as table-level warnings.
+Run `flux doctor <project>` to audit an existing dedicated project. The **API schema RLS** check **FAIL**s unrestricted-write tables (naming tables, roles, and privileges) and **WARN**s on read-only RLS-disabled exposure and policyless RLS. `flux db inspect` still exposes RLS state as table-level warnings. Flux does not automatically enable RLS, create policies, or revoke grants.
+
+Live `v1_dedicated` fleet audits remain a rollout step after this gate ships; merging the code does not by itself close GitHub issue #8.
 
 ### Who runs your SQL on v2_shared
 

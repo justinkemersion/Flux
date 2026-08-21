@@ -242,7 +242,7 @@ async function putTarSqlAndRunPsql(
   password: string,
   sql: string,
   pgUser: string,
-): Promise<void> {
+): Promise<ContainerExecResult> {
   const remoteName = `flux-${randomBytes(8).toString("hex")}.sql`;
   const remotePath = `/tmp/${remoteName}`;
   const tarBuf = await packSingleFileTar(remoteName, sql);
@@ -270,6 +270,7 @@ async function putTarSqlAndRunPsql(
         `psql failed (exit ${String(run.exitCode)}): ${run.stderr || run.stdout}`,
       );
     }
+    return run;
   } finally {
     await dockerContainerExec(docker, containerId, {
       Cmd: ["rm", "-f", remotePath],
@@ -281,14 +282,15 @@ const PSQL_INLINE_MAX = 12_000;
 
 /**
  * Runs arbitrary SQL inside Postgres via `psql` in the container (tar upload for large batches).
+ * Returns stdout/stderr so callers can surface NOTICE/WARNING diagnostics.
  */
-export async function runPsqlSqlInsideContainer(
+export async function runPsqlSqlInsideContainerDetailed(
   docker: Docker,
   containerId: string,
   password: string,
   sql: string,
   pgUser: string,
-): Promise<void> {
+): Promise<ContainerExecResult> {
   const trimmed = sql.trim();
   if (trimmed.length <= PSQL_INLINE_MAX && !trimmed.includes("\x00")) {
     const r = await dockerContainerExec(docker, containerId, {
@@ -310,9 +312,25 @@ export async function runPsqlSqlInsideContainer(
         `psql failed (exit ${String(r.exitCode)}): ${r.stderr || r.stdout}`,
       );
     }
-    return;
+    return r;
   }
-  await putTarSqlAndRunPsql(docker, containerId, password, sql, pgUser);
+  return putTarSqlAndRunPsql(docker, containerId, password, sql, pgUser);
+}
+
+export async function runPsqlSqlInsideContainer(
+  docker: Docker,
+  containerId: string,
+  password: string,
+  sql: string,
+  pgUser: string,
+): Promise<void> {
+  await runPsqlSqlInsideContainerDetailed(
+    docker,
+    containerId,
+    password,
+    sql,
+    pgUser,
+  );
 }
 
 function stripTrailingSemicolon(sql: string): string {
