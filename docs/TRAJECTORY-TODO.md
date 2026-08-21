@@ -32,12 +32,12 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-08-18`
+- Last updated: `2026-08-21`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-traefik -> deploy-v2-shared -> deploy-gateway -> deploy-web`
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
 - **Latest ops audit:** `./bin/ops-audit.sh --remote --deep --smoke` — see [Ops cleanup 2026-06-30](#ops-cleanup-2026-06-30) below
-- **Dedicated API RLS invariant (issue #8):** `done` — transactional `flux push` gate, doctor findings, cross-engine anonymous read/write gauntlet canary, production deploy, and live v1 fleet audit complete
+- **Dedicated API unrestricted-write invariant (issue #8):** `merged to main; rollout pending` — the privilege-aware transactional `flux push` gate and matching doctor classification merged in PR #18; dashboard/control-plane and CLI deployment, the dedicated-project fleet audit, and one live canary per engine remain pending
 - **Pooled TLS provisioning:** `done` — catalog-derived exact-host Traefik routers reconcile atomically on startup and v2 lifecycle changes; full disposable v2 gauntlet passed live on 2026-08-18 (trusted TLS, push, API isolation, restore verify, cleanup)
 
 ---

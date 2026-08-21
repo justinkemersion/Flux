@@ -5,12 +5,12 @@
 
 | Field | Value |
 |-------|--------|
-| **Active phase** | **Issue #8 / dedicated API unrestricted-write invariant** — implementation ready for review; deployment and live fleet audit pending. |
+| **Active phase** | **Issue #8 / dedicated API unrestricted-write invariant** — merged to `main`; deployment, dedicated-project fleet audit, and one live canary per engine remain pending. |
 | **Pass 1** | **Complete** (code + docs; server e2e smoke verified 2026-05-29) |
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
 | **Pass 6** | **Merged, not deployable alone** — see Pass 6b |
-| **Last updated** | **2026-08-20** (issue #8 narrow privilege-aware push gate + doctor) |
+| **Last updated** | **2026-08-21** (issue #8 merged to `main`; rollout pending) |
 
 > **`main` is now deployable to v2_shared production.** Pass 6 alone was not: it ran pooled
 > push as `t_<12hex>_role`, which has no `CREATE` on its own schema. Pass 6b runs DDL as a
@@ -19,7 +19,7 @@
 > cluster). The Pass 6b dashboard changes were subsequently deployed. Historical detail:
 > [`pass-6b-tenant-ddl-role.md`](pass-6b-tenant-ddl-role.md).
 
-## Issue #8 — dedicated unrestricted-write invariant (code complete; deploy pending)
+## Issue #8 — dedicated unrestricted-write invariant (merged to `main`; rollout pending)
 
 - [x] Dedicated `flux push` audits effective PostgREST privileges after user SQL and before commit.
 - [x] Push rolls back when RLS is disabled **and** `anon` / `authenticated` / `PUBLIC` has effective write privileges (direct, inherited, or `PUBLIC`).
