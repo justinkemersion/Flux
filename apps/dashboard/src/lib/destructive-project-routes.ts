@@ -246,6 +246,8 @@ export type CliProjectDeleteDeps = {
     slug: string,
     hash: string,
   ) => Promise<DeleteProjectInfrastructureResult>;
+  /** v2_shared cluster teardown (schema + roles + tenant ledger). */
+  deprovisionSharedTenant: (projectId: string) => Promise<void>;
   deleteCatalogRow: (projectId: string) => Promise<void>;
   deleteOrphanInfrastructure: (
     slug: string,
@@ -292,11 +294,22 @@ export async function runCliProjectDelete(
           throw err;
         }
       }
+      if (row.mode === "v2_shared") {
+        await deps.deprovisionSharedTenant(row.id);
+        await deps.deleteCatalogRow(row.id);
+        return Response.json({
+          ok: true,
+          mode: "catalog" as const,
+          engine: "v2_shared" as const,
+          hash: row.hash,
+        });
+      }
       const result = await deps.deleteProjectInfrastructure(row.slug, row.hash);
       await deps.deleteCatalogRow(row.id);
       return Response.json({
         ok: true,
         mode: "catalog" as const,
+        engine: "v1_dedicated" as const,
         hash: row.hash,
         removed: result.removed,
       });

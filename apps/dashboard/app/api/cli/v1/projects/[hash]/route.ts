@@ -3,6 +3,7 @@ import {
   FLUX_PROJECT_HASH_HEX_LEN,
   resolveTenantApiSchemaName,
 } from "@flux/core";
+import { deprovisionProject } from "@flux/engine-v2";
 import { projects } from "@/src/db/schema";
 import { extractBearerToken } from "@/src/lib/cli-api-auth";
 import { authorizeCliHttpRequest, authorizeCliRoute, cliRouteAuthJsonError } from "@/src/lib/mcp-route-auth";
@@ -94,8 +95,9 @@ export async function GET(
  * DELETE /api/cli/v1/projects/:hash
  * Bearer CLI key, ownership: catalog row for this (user, hash) when not forcing orphan cleanup.
  * Query: `?force=1&slug=...` — nuke Docker only if no catalog row (ghost / drift).
- * Sequence: `deleteProjectInfrastructure` → delete `projects` row (telemetry cascades) when a row
- * exists.
+ * Sequence: engine teardown (`deprovisionProject` for v2_shared, Docker purge for
+ * v1_dedicated) → delete `projects` row (telemetry cascades) when a row exists.
+ * Catalog is removed only after teardown succeeds so a failed nuke stays catalogued.
  */
 export async function DELETE(
   req: Request,
@@ -141,6 +143,7 @@ export async function DELETE(
     assertDestructiveBackupAllowed,
     deleteProjectInfrastructure: async (slug, hash) =>
       pm.deleteProjectInfrastructure(slug, hash),
+    deprovisionSharedTenant: async (projectId) => deprovisionProject(projectId),
     deleteCatalogRow: async (projectId) => {
       const db = getDb();
       await db.delete(projects).where(eq(projects.id, projectId));

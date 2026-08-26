@@ -36,6 +36,7 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux db restore` | **v1 dedicated** `pg_restore` via tunnel (restore-verified backup gate). **v2_shared** refused for production pooled schemas |
 | `flux db access-plan` / `flux db gui-config` | Redacted mode-aware metadata and copy-friendly GUI fields |
 | `flux dump` | Legacy project export (see flags locally; distinct from `flux db dump`) |
+| `flux nuke` | Destroy a project. **v1_dedicated** → Docker stack (API + DB + volume + net). **v2_shared** → shared-cluster schema, roles, and tenant ledger rows. Catalog row is removed only after teardown succeeds. Backup gate unless `--skip-backup-check` / `--force` orphan purge |
 | `flux migrate` | Orchestrate **v2_shared** → **v1_dedicated** via the control plane (see [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate)) |
 | `flux logs` | Tail project logs when wired |
 | `flux backup create` | Both engines — control plane streams `pg_dump -Fc`. v1: full project DB. v2: tenant API schema (`--schema=t_<short>_api --no-owner --no-acl`). See [Backups workflow](/docs/guides/backups) |

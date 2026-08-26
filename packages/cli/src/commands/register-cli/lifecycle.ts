@@ -61,7 +61,7 @@ export function registerLifecycleCommands(program: Command): void {
   const nukeCmd = program
     .command("nuke")
     .description(
-      "Atomic nuke: remove project catalog row, telemetry, and Docker stack (API + DB + data volume + net)",
+      "Atomic nuke: remove catalog row and engine resources (v1: Docker stack; v2: shared-cluster schema, roles, ledger)",
     )
     .argument(
       "[name]",

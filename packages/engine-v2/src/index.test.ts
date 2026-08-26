@@ -78,6 +78,21 @@ test("buildDeprovisionSql drops tenant schema and role idempotently", () => {
   assert.match(sql, /rolname = 't_cccccccccccc_role'/);
 });
 
+test("buildDeprovisionSql deletes tenant-scoped push ledger rows", () => {
+  const id = deriveTenantIdentity("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  const sql = buildDeprovisionSql(id);
+  assert.match(
+    sql,
+    /DELETE FROM flux\.flux_migrations WHERE tenant_schema = 't_cccccccccccc_api'/,
+  );
+  assert.match(
+    sql,
+    /DELETE FROM flux\.flux_repeatable_scripts WHERE tenant_schema = 't_cccccccccccc_api'/,
+  );
+  assert.match(sql, /table_name = 'flux_migrations'/);
+  assert.match(sql, /table_name = 'flux_repeatable_scripts'/);
+});
+
 test("buildTenantBootstrapSql escapes single quotes in tenant COMMENT literal", () => {
   const tenantId = "dddddddd-dddd-4ddd-8ddd-dd'dddddddddd";
   const id = deriveTenantIdentity(tenantId);

@@ -403,12 +403,18 @@ export async function bootstrapSharedCluster(): Promise<void> {
 }
 
 /**
- * Pure SQL for `deprovisionProject` — DROP SCHEMA CASCADE + guarded DROP ROLE.
- * Exposed for unit tests and operator review without opening a DB connection.
+ * Pure SQL for `deprovisionProject` — tenant ledger rows, DROP SCHEMA CASCADE,
+ * and guarded DROP ROLE. Exposed for unit tests and operator review without
+ * opening a DB connection.
  *
- * `deprovisionProject` removes all PostgreSQL resources created for a tenant.
- * Intended for rollback when the catalog insert fails after provisioning.
- * DROP SCHEMA … CASCADE is irreversible; idempotent for DROP IF EXISTS + guarded DROP ROLE.
+ * Used by operator nuke/delete for `v2_shared` tenants, and as rollback when
+ * the catalog insert fails after provisioning. DROP SCHEMA … CASCADE is
+ * irreversible. Idempotent: ledger DELETEs no-op when the `flux` tables are
+ * absent; schema/role drops use IF EXISTS / guarded DROP ROLE.
+ *
+ * `flux.flux_migrations` / `flux.flux_repeatable_scripts` live in the cluster
+ * `flux` schema (not the tenant schema), so DROP SCHEMA CASCADE cannot remove
+ * them — they must be deleted explicitly.
  */
 export function buildDeprovisionSql(identity: TenantIdentity): string {
   const schema = quoteIdent(identity.schema);
@@ -416,8 +422,25 @@ export function buildDeprovisionSql(identity: TenantIdentity): string {
   const ddlRole = quoteIdent(identity.ddlRole);
   const roleLiteral = identity.role.replaceAll("'", "''");
   const ddlRoleLiteral = identity.ddlRole.replaceAll("'", "''");
+  const schemaLiteral = identity.schema.replaceAll("'", "''");
 
   return `
+DO $flux_ledger$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'flux' AND table_name = 'flux_migrations'
+  ) THEN
+    DELETE FROM flux.flux_migrations WHERE tenant_schema = '${schemaLiteral}';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'flux' AND table_name = 'flux_repeatable_scripts'
+  ) THEN
+    DELETE FROM flux.flux_repeatable_scripts WHERE tenant_schema = '${schemaLiteral}';
+  END IF;
+END
+$flux_ledger$;
 DROP SCHEMA IF EXISTS ${schema} CASCADE;
 DO $flux_drop$
 BEGIN

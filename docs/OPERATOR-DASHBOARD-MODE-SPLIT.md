@@ -30,7 +30,8 @@ Every project row in `flux-system.projects` carries a `mode` column (`v1_dedicat
 | `GET /api/cli/v1/projects/[hash]/db-access` | Redacted access plan (tunnel target, capabilities, SSH defaults) | Supported plan + temp-credential capability |
 | `POST /api/cli/v1/projects/[hash]/db-access/temporary-credential` | — (v2 only route; v1 returns error) | Creates short-lived readonly login role; password returned once |
 | `GET /api/projects/[slug]/manifest` | Reads Postgres superuser password from container env | `{ apiUrl, postgresPassword: "", passwordSource: "unavailable" }` |
-| `DELETE /api/projects/[slug]` | `nukeProject` (Docker containers + volume) | `deprovisionProject` (drop shared-cluster schema + role) |
+| `DELETE /api/projects/[slug]` | `nukeProject` (Docker containers + volume) | `deprovisionProject` (drop shared-cluster schema + roles + tenant ledger) |
+| `DELETE /api/cli/v1/projects/:hash` (`flux nuke`) | `deleteProjectInfrastructure` (Docker) | `deprovisionProject` (same SQL as dashboard delete). Catalog row is removed only after teardown succeeds. `--force` orphan purge remains Docker-only (no catalog row). |
 
 ## Fleet monitor (`apps/dashboard/src/lib/fleet-monitor.ts`)
 
