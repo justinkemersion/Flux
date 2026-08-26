@@ -49,7 +49,9 @@ openssl rand -hex 32
 
 ## Phase 2: The Clean Sweep (Nuking)
 
-`flux nuke` removes the tenant **Postgres and PostgREST containers**, **deletes the project’s Postgres data volume**, and removes the per-tenant **internal** Docker network (`flux-<hash>-<slug>-net`) when present. That is intentional: you want an empty cluster for a clean provision and import.
+This runbook is for **v1_dedicated** namespaced rebuilds. On **v1_dedicated**, `flux nuke` removes the tenant **Postgres and PostgREST containers**, **deletes the project’s Postgres data volume**, and removes the per-tenant **internal** Docker network (`flux-<hash>-<slug>-net`) when present. That is intentional: you want an empty cluster for a clean provision and import.
+
+On **v2_shared**, `flux nuke` does **not** touch Docker. It runs pooled deprovision (`DROP SCHEMA CASCADE`, tenant roles, tenant ledger rows) and then deletes the catalog row. Do not use this Hetzner Docker sweep against a pooled tenant.
 
 - [ ] Point the CLI at the **remote** Docker engine (SSH URL to your Hetzner host).
 

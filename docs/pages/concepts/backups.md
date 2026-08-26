@@ -59,7 +59,7 @@ Flux backups are infrastructure for **your** business continuity decisions; they
 
 ## Backups and destructive actions
 
-Flux uses the trust state to gate a small number of destructive CLI actions. The most prominent is `flux nuke`, which refuses to remove a project unless the latest backup is restore-verified:
+Flux uses the trust state to gate a small number of destructive CLI actions. The most prominent is `flux nuke`, which refuses to remove a project unless the latest backup is restore-verified. Teardown is **mode-aware**: dedicated projects lose their Docker stack; pooled projects are deprovisioned from the shared cluster (schema, roles, tenant ledger) and only then dropped from the catalog.
 
 ```bash
 flux nuke bloom-atelier --hash 0a1b2c3

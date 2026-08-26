@@ -335,7 +335,7 @@ flux
 ├── backup create | list | download | verify
 ├── db access-plan | gui-config | password | tunnel | shell | dump | restore
 │      inspect | tables | describe | counts
-├── keys | stop | start | nuke    # nuke: backup gate
+├── keys | stop | start | nuke    # nuke: backup gate; v1 Docker / v2 cluster deprovision
 ├── reap --hours <n>
 ├── env set | list
 ├── doctor | activity
@@ -352,6 +352,8 @@ flux
 | `flux migrate` | `--skip-backup-check` (not when `--dry-run`) |
 | `flux db-reset` | `--skip-backup-check` |
 | `flux db restore` | `--skip-backup-check` |
+
+`flux nuke` is **mode-aware**. **v1_dedicated** removes the Docker stack (API + DB + data volume + net). **v2_shared** runs pooled deprovision: `DROP SCHEMA CASCADE`, tenant roles, and that tenant's `flux.flux_migrations` / `flux.flux_repeatable_scripts` rows. The catalog row is deleted only after teardown succeeds, so a failed nuke stays catalogued. `--force` still purges orphaned Docker resources when no catalog row exists.
 
 Requires `-y` / `--yes` or explicit overwrite flags as documented in help.
 
@@ -652,4 +654,4 @@ Summary:
 
 ---
 
-- Last reviewed: `2026-08-20`
+- Last reviewed: `2026-08-26`

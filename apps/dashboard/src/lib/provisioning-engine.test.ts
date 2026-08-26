@@ -272,6 +272,10 @@ test("buildDeprovisionSql clears role privileges so DROP ROLE cannot be blocked"
   assert.match(sql, new RegExp(`DROP OWNED BY "${identity.role}"`));
   assert.match(sql, new RegExp(`DROP OWNED BY "${identity.ddlRole}"`));
   assert.match(sql, new RegExp(`DROP ROLE "${identity.ddlRole}"`));
+  assert.match(
+    sql,
+    new RegExp(`DELETE FROM flux\\.flux_migrations WHERE tenant_schema = '${identity.schema}'`),
+  );
 });
 
 test("buildTenantBootstrapSql separates the DDL owner role from the runtime role", () => {

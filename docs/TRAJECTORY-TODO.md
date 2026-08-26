@@ -32,7 +32,7 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-08-21`
+- Last updated: `2026-08-26`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-traefik -> deploy-v2-shared -> deploy-gateway -> deploy-web`
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
@@ -258,5 +258,6 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 - `done` — Introduced ordered orchestrator deploy script (`bin/deploy-all.sh`)
 - `done` — Added collision guard and ownership markers in engine-v2 provisioning
 - `done` — Added v2 rollback deprovision path to prevent orphan schema/role
+- `done` — **Issue #12:** `flux nuke` / CLI DELETE on `v2_shared` calls `deprovisionProject` (schema + roles + tenant ledger) instead of the dedicated Docker purge; catalog row is removed only after teardown succeeds. Dedicated Docker nuke is unchanged.
 - `done` — Added shared gateway cache eviction utility and delete-path eviction
 - `done` — Added dashboard test suite command and rollback-focused tests

@@ -48,6 +48,23 @@ function mockDeleteResult(): {
   };
 }
 
+function baseCliDeleteDeps(
+  overrides: Partial<Parameters<typeof runCliProjectDelete>[2]> = {},
+): Parameters<typeof runCliProjectDelete>[2] {
+  return {
+    initSystemDb: async () => undefined,
+    authenticateCli: async () => ({ userId: "user-1" }),
+    findOwnedProjectByHash: async () => PROJECT,
+    findAnyCatalogProjectBySlugAndHash: async () => null,
+    assertDestructiveBackupAllowed: gateAllowed(),
+    deleteProjectInfrastructure: async () => mockDeleteResult(),
+    deprovisionSharedTenant: async () => undefined,
+    deleteCatalogRow: async () => undefined,
+    deleteOrphanInfrastructure: async () => mockDeleteResult(),
+    ...overrides,
+  };
+}
+
 function ctx(slugOrHash: string) {
   return { params: Promise.resolve({ slug: slugOrHash, hash: slugOrHash }) };
 }
@@ -364,146 +381,255 @@ test("cli migrate: non-backup gate error is not converted to 412", async () => {
   );
 });
 
+test("dashboard delete: infrastructure failure leaves catalog row", async () => {
+  let catalogDeletes = 0;
+  const res = await runDashboardProjectDelete(
+    new NextRequest("http://test.local/api/projects/demo", { method: "DELETE" }),
+    ctx("demo"),
+    {
+      initSystemDb: async () => undefined,
+      auth: async () => ({ userId: "user-1" }),
+      resolveOwnedProject: async () => PROJECT,
+      assertDestructiveBackupAllowed: gateAllowed(),
+      listProjectHostnames: async () => [],
+      evictHostnames: async () => undefined,
+      deleteProjectInfrastructure: async () => {
+        throw new Error("cluster deprovision failed");
+      },
+      deleteCatalogRow: async () => {
+        catalogDeletes++;
+      },
+    },
+  );
+  assert.equal(res.status, 500);
+  assert.equal(await readError(res), "cluster deprovision failed");
+  assert.equal(catalogDeletes, 0);
+});
+
+const CLI_NUKE_URL = "http://test.local/api/cli/v1/projects/abc1234";
+
 test("cli delete: unauthorized skips gate and delete", async () => {
   let gateCalls = 0;
-  let deleteCalls = 0;
+  let deprovisionCalls = 0;
   const res = await runCliProjectDelete(
-    new Request("http://test.local/api/cli/v1/projects/abc1234", {
+    new Request(CLI_NUKE_URL, {
       method: "DELETE",
       headers: { authorization: "Bearer test-key" },
     }),
     ctx("abc1234"),
-    {
-      initSystemDb: async () => undefined,
+    baseCliDeleteDeps({
       authenticateCli: async () => null,
-      findOwnedProjectByHash: async () => PROJECT,
-      findAnyCatalogProjectBySlugAndHash: async () => null,
       assertDestructiveBackupAllowed: async () => {
         gateCalls++;
         return gateAllowed()();
       },
-      deleteProjectInfrastructure: async () => {
-        deleteCalls++;
-        return mockDeleteResult();
+      deprovisionSharedTenant: async () => {
+        deprovisionCalls++;
       },
-      deleteCatalogRow: async () => undefined,
-      deleteOrphanInfrastructure: async () => mockDeleteResult(),
-    },
+    }),
   );
   assert.equal(res.status, 401);
   assert.equal(gateCalls, 0);
-  assert.equal(deleteCalls, 0);
+  assert.equal(deprovisionCalls, 0);
 });
 
 test("cli delete: blocked backup returns 412 without delete", async () => {
-  let deleteCalls = 0;
+  let deprovisionCalls = 0;
   const res = await runCliProjectDelete(
-    new Request("http://test.local/api/cli/v1/projects/abc1234", {
+    new Request(CLI_NUKE_URL, {
       method: "DELETE",
       headers: { authorization: "Bearer test-key" },
     }),
     ctx("abc1234"),
-    {
-      initSystemDb: async () => undefined,
-      authenticateCli: async () => ({ userId: "user-1" }),
-      findOwnedProjectByHash: async () => PROJECT,
-      findAnyCatalogProjectBySlugAndHash: async () => null,
+    baseCliDeleteDeps({
       assertDestructiveBackupAllowed: gateBlocked(),
-      deleteProjectInfrastructure: async () => {
-        deleteCalls++;
-        return mockDeleteResult();
+      deprovisionSharedTenant: async () => {
+        deprovisionCalls++;
       },
-      deleteCatalogRow: async () => undefined,
-      deleteOrphanInfrastructure: async () => mockDeleteResult(),
-    },
+    }),
   );
   assert.equal(res.status, DESTRUCTIVE_BACKUP_BLOCKED_STATUS);
-  assert.equal(deleteCalls, 0);
+  assert.equal(deprovisionCalls, 0);
 });
 
 test("cli delete: skipBackupCheck bypasses gate", async () => {
   let gateCalls = 0;
-  let deleteCalls = 0;
+  let deprovisionCalls = 0;
   const res = await runCliProjectDelete(
-    new Request(
-      "http://test.local/api/cli/v1/projects/abc1234?skipBackupCheck=true",
-      {
-        method: "DELETE",
-        headers: { authorization: "Bearer test-key" },
-      },
-    ),
-    ctx("abc1234"),
-    {
-      initSystemDb: async () => undefined,
-      authenticateCli: async () => ({ userId: "user-1" }),
-      findOwnedProjectByHash: async () => PROJECT,
-      findAnyCatalogProjectBySlugAndHash: async () => null,
-      assertDestructiveBackupAllowed: async () => {
-        gateCalls++;
-        return gateBlocked()();
-      },
-      deleteProjectInfrastructure: async () => {
-        deleteCalls++;
-        return mockDeleteResult();
-      },
-      deleteCatalogRow: async () => undefined,
-      deleteOrphanInfrastructure: async () => mockDeleteResult(),
-    },
-  );
-  assert.equal(res.status, 200);
-  assert.equal(gateCalls, 0);
-  assert.equal(deleteCalls, 1);
-});
-
-test("cli delete: allowed gate deletes catalog row", async () => {
-  let catalogDeletes = 0;
-  const res = await runCliProjectDelete(
-    new Request("http://test.local/api/cli/v1/projects/abc1234", {
+    new Request(`${CLI_NUKE_URL}?skipBackupCheck=true`, {
       method: "DELETE",
       headers: { authorization: "Bearer test-key" },
     }),
     ctx("abc1234"),
-    {
-      initSystemDb: async () => undefined,
-      authenticateCli: async () => ({ userId: "user-1" }),
-      findOwnedProjectByHash: async () => PROJECT,
-      findAnyCatalogProjectBySlugAndHash: async () => null,
-      assertDestructiveBackupAllowed: gateAllowed(),
-      deleteProjectInfrastructure: async () => mockDeleteResult(),
+    baseCliDeleteDeps({
+      assertDestructiveBackupAllowed: async () => {
+        gateCalls++;
+        return gateBlocked()();
+      },
+      deprovisionSharedTenant: async () => {
+        deprovisionCalls++;
+      },
+    }),
+  );
+  assert.equal(res.status, 200);
+  assert.equal(gateCalls, 0);
+  assert.equal(deprovisionCalls, 1);
+});
+
+test("cli delete: v2_shared calls pooled deprovision not docker purge", async () => {
+  let dockerCalls = 0;
+  const deprovisionIds: string[] = [];
+  let catalogDeletes = 0;
+  const res = await runCliProjectDelete(
+    new Request(CLI_NUKE_URL, {
+      method: "DELETE",
+      headers: { authorization: "Bearer test-key" },
+    }),
+    ctx("abc1234"),
+    baseCliDeleteDeps({
+      deleteProjectInfrastructure: async () => {
+        dockerCalls++;
+        return mockDeleteResult();
+      },
+      deprovisionSharedTenant: async (projectId) => {
+        deprovisionIds.push(projectId);
+      },
       deleteCatalogRow: async () => {
         catalogDeletes++;
       },
-      deleteOrphanInfrastructure: async () => mockDeleteResult(),
-    },
+    }),
   );
   assert.equal(res.status, 200);
+  const body = (await res.json()) as { ok: boolean; engine: string; mode: string };
+  assert.equal(body.ok, true);
+  assert.equal(body.mode, "catalog");
+  assert.equal(body.engine, "v2_shared");
+  assert.deepEqual(deprovisionIds, [PROJECT.id]);
+  assert.equal(dockerCalls, 0);
   assert.equal(catalogDeletes, 1);
+});
+
+test("cli delete: v1_dedicated calls docker purge not pooled deprovision", async () => {
+  let dockerCalls = 0;
+  let deprovisionCalls = 0;
+  let catalogDeletes = 0;
+  const res = await runCliProjectDelete(
+    new Request(CLI_NUKE_URL, {
+      method: "DELETE",
+      headers: { authorization: "Bearer test-key" },
+    }),
+    ctx("abc1234"),
+    baseCliDeleteDeps({
+      findOwnedProjectByHash: async () => V1_PROJECT,
+      deleteProjectInfrastructure: async () => {
+        dockerCalls++;
+        return mockDeleteResult();
+      },
+      deprovisionSharedTenant: async () => {
+        deprovisionCalls++;
+      },
+      deleteCatalogRow: async () => {
+        catalogDeletes++;
+      },
+    }),
+  );
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as {
+    ok: boolean;
+    engine: string;
+    removed: { apiContainer: string };
+  };
+  assert.equal(body.ok, true);
+  assert.equal(body.engine, "v1_dedicated");
+  assert.equal(body.removed.apiContainer, "api");
+  assert.equal(dockerCalls, 1);
+  assert.equal(deprovisionCalls, 0);
+  assert.equal(catalogDeletes, 1);
+});
+
+test("cli delete: v2 deprovision failure leaves catalog row", async () => {
+  let catalogDeletes = 0;
+  const res = await runCliProjectDelete(
+    new Request(CLI_NUKE_URL, {
+      method: "DELETE",
+      headers: { authorization: "Bearer test-key" },
+    }),
+    ctx("abc1234"),
+    baseCliDeleteDeps({
+      deprovisionSharedTenant: async () => {
+        throw new Error("DROP SCHEMA failed");
+      },
+      deleteCatalogRow: async () => {
+        catalogDeletes++;
+      },
+    }),
+  );
+  assert.equal(res.status, 500);
+  assert.equal(await readError(res), "DROP SCHEMA failed");
+  assert.equal(catalogDeletes, 0);
+});
+
+test("cli delete: v1 docker purge failure leaves catalog row", async () => {
+  let catalogDeletes = 0;
+  const res = await runCliProjectDelete(
+    new Request(CLI_NUKE_URL, {
+      method: "DELETE",
+      headers: { authorization: "Bearer test-key" },
+    }),
+    ctx("abc1234"),
+    baseCliDeleteDeps({
+      findOwnedProjectByHash: async () => V1_PROJECT,
+      deleteProjectInfrastructure: async () => {
+        throw new Error("volume still exists");
+      },
+      deleteCatalogRow: async () => {
+        catalogDeletes++;
+      },
+    }),
+  );
+  assert.equal(res.status, 500);
+  assert.equal(await readError(res), "volume still exists");
+  assert.equal(catalogDeletes, 0);
+});
+
+test("cli delete: allowed gate deletes catalog row after teardown", async () => {
+  const order: string[] = [];
+  const res = await runCliProjectDelete(
+    new Request(CLI_NUKE_URL, {
+      method: "DELETE",
+      headers: { authorization: "Bearer test-key" },
+    }),
+    ctx("abc1234"),
+    baseCliDeleteDeps({
+      deprovisionSharedTenant: async () => {
+        order.push("teardown");
+      },
+      deleteCatalogRow: async () => {
+        order.push("catalog");
+      },
+    }),
+  );
+  assert.equal(res.status, 200);
+  assert.deepEqual(order, ["teardown", "catalog"]);
 });
 
 test("cli delete: force orphan blocked when global catalog row exists for slug+hash", async () => {
   let orphanDeletes = 0;
   const res = await runCliProjectDelete(
-    new Request(
-      "http://test.local/api/cli/v1/projects/abc1234?force=1&slug=victim",
-      {
-        method: "DELETE",
-        headers: { authorization: "Bearer test-key" },
-      },
-    ),
+    new Request(`${CLI_NUKE_URL}?force=1&slug=victim`, {
+      method: "DELETE",
+      headers: { authorization: "Bearer test-key" },
+    }),
     ctx("abc1234"),
-    {
-      initSystemDb: async () => undefined,
+    baseCliDeleteDeps({
       authenticateCli: async () => ({ userId: "attacker-1" }),
       findOwnedProjectByHash: async () => null,
       findAnyCatalogProjectBySlugAndHash: async () => ({ userId: "victim-1" }),
-      assertDestructiveBackupAllowed: gateAllowed(),
-      deleteProjectInfrastructure: async () => mockDeleteResult(),
-      deleteCatalogRow: async () => undefined,
       deleteOrphanInfrastructure: async () => {
         orphanDeletes++;
         return mockDeleteResult();
       },
-    },
+    }),
   );
   assert.equal(res.status, 409);
   assert.equal(orphanDeletes, 0);

@@ -216,15 +216,39 @@ export async function cmdNuke(
   if (!forceOrphan) {
     await ensureRestoreVerifiedLatestBackup(client, hash, skipBackupCheck);
   }
-  const names = fluxTenantDockerResourceNames(slug, hash);
-  for (const r of [names.api, names.db, names.volume, names.network] as const) {
-    console.log(`PURGING: ${r}`);
+
+  let engine: "v1_dedicated" | "v2_shared" | null = null;
+  if (!forceOrphan) {
+    try {
+      const meta = await client.getProjectMetadata(hash);
+      engine = meta.mode;
+    } catch {
+      // DELETE surfaces the real error (missing catalog, auth, etc.).
+    }
   }
+
+  if (engine === "v2_shared") {
+    console.log(
+      `DEPROVISIONING: shared-cluster tenant ${hash} (schema, roles, ledger)`,
+    );
+  } else {
+    const names = fluxTenantDockerResourceNames(slug, hash);
+    for (const r of [names.api, names.db, names.volume, names.network] as const) {
+      console.log(`PURGING: ${r}`);
+    }
+  }
+
   await client.nukeProject(slug, hash, {
     forceOrphan: forceOrphan,
     skipBackupCheck: skipBackupCheck,
   });
-  console.log(
-    `Cleanup Complete: ${hash} infrastructure erased.`,
-  );
+  if (engine === "v2_shared") {
+    console.log(
+      `Cleanup Complete: ${hash} shared-cluster tenant deprovisioned.`,
+    );
+  } else {
+    console.log(
+      `Cleanup Complete: ${hash} infrastructure erased.`,
+    );
+  }
 }
