@@ -28,6 +28,7 @@ import {
   getBackupStorage,
   isR2OffsiteEnabled,
   isR2OffsiteStrict,
+  type BackupStorage,
 } from "@/src/lib/backup-storage";
 import { getDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
@@ -36,6 +37,7 @@ import type { BackupKind } from "@flux/core/backup-trust";
 import {
   buildOffsiteObjectKey,
   formatOffsiteR2Status,
+  isMissingOffsiteObjectError,
   parseOffsiteStorageConfig,
 } from "@flux/core/offsite-storage";
 import {
@@ -1001,11 +1003,46 @@ export async function runPlatformBackupPipeline(
   const retentionDeleted = await sweepProjectBackupRetention(project);
   if (retentionDeleted > 0) {
     logBackupScheduler(
-      `pipeline retention ${label} deleted ${String(retentionDeleted)} local restore-verified row(s)`,
+      `pipeline retention ${label} deleted ${String(retentionDeleted)} restore-verified row(s) (local + offsite)`,
     );
   }
   logBackupScheduler(`pipeline complete ${label} backupId=${backup.id}`);
 }
+
+/**
+ * Remove local dump + offsite replica for a catalog row (best-effort).
+ * Missing files/objects are non-fatal. Catalog delete is the caller's job.
+ */
+export async function purgeBackupArtifacts(
+  row: Pick<BackupRow, "id" | "projectId" | "offsiteKey">,
+  storage: BackupStorage = getBackupStorage(),
+): Promise<void> {
+  const artifactPath = storage.localPathForBackup(row.projectId, row.id);
+  try {
+    await unlink(artifactPath);
+  } catch {
+    // missing local file is ok
+  }
+
+  const offsiteKey = row.offsiteKey?.trim();
+  if (!offsiteKey) return;
+
+  try {
+    await storage.deleteOffsite(offsiteKey);
+  } catch (err: unknown) {
+    if (isMissingOffsiteObjectError(err)) {
+      logBackupScheduler(`offsite object already absent backupId=${row.id}`);
+      return;
+    }
+    logBackupSchedulerError(`offsite delete failed backupId=${row.id}`, err);
+  }
+}
+
+export type SweepProjectBackupRetentionDeps = {
+  listRows?: () => Promise<readonly BackupRow[]>;
+  deleteCatalogRow?: (backupId: string) => Promise<void>;
+  storage?: BackupStorage;
+};
 
 export async function sweepProjectBackupRetention(
   project: Pick<
@@ -1015,14 +1052,17 @@ export async function sweepProjectBackupRetention(
     | "backupRetentionCount"
     | "backupRetentionDays"
   >,
+  deps: SweepProjectBackupRetentionDeps = {},
 ): Promise<number> {
-  const db = getDb();
   const effectivePolicy = effectivePolicyForProjectRow(project);
-  const rows = await db
-    .select()
-    .from(projectBackups)
-    .where(eq(projectBackups.projectId, project.id))
-    .orderBy(desc(projectBackups.createdAt));
+  const storage = deps.storage ?? getBackupStorage();
+  const rows = deps.listRows
+    ? [...(await deps.listRows())]
+    : await getDb()
+        .select()
+        .from(projectBackups)
+        .where(eq(projectBackups.projectId, project.id))
+        .orderBy(desc(projectBackups.createdAt));
 
   const deleteIds = selectRestoreVerifiedBackupsForRetention({
     rows,
@@ -1030,17 +1070,18 @@ export async function sweepProjectBackupRetention(
     retentionDays: effectivePolicy.retentionDays,
   });
 
+  const deleteCatalogRow =
+    deps.deleteCatalogRow ??
+    (async (backupId: string) => {
+      await getDb().delete(projectBackups).where(eq(projectBackups.id, backupId));
+    });
+
   let deleted = 0;
   for (const backupId of deleteIds) {
     const row = rows.find((r) => r.id === backupId);
     if (!row) continue;
-    const artifactPath = absoluteBackupArtifactPath(row);
-    try {
-      await unlink(artifactPath);
-    } catch {
-      // missing file is ok
-    }
-    await db.delete(projectBackups).where(eq(projectBackups.id, backupId));
+    await purgeBackupArtifacts(row, storage);
+    await deleteCatalogRow(backupId);
     deleted += 1;
   }
   return deleted;
