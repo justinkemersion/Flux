@@ -317,7 +317,7 @@ Tier-name decoder:
 |------|---------|
 | `restorable` | Restore-verified. Trustworthy. |
 | `not_restore_verified` | File exists, never restored. Run `flux backup verify --latest`. |
-| `restore_failed` | A `pg_restore` was attempted and failed. Usually the artifact is broken — create a new backup. If stderr mentions `role "t_*_role" does not exist`, the dump may be fine and the verify environment was missing the tenant role (fixed in current control-plane builds); re-run verify after upgrade before re-dumping. |
+| `restore_failed` | A `pg_restore` was attempted and failed. Usually the artifact is broken — create a new backup. If stderr mentions `role "t_*_role" does not exist`, the dump may be fine and the verify environment was missing the tenant role (fixed in current control-plane builds); re-run verify after upgrade before re-dumping. Schema-only **empty v2 tenants** (zero user tables) are a valid verify outcome when the tenant schema restores and the dump TOC is also table-less; they persist as `restore_verified`. A leftover `no user tables found after pg_restore` on an empty `tenant_export` means the control plane is older than that policy — upgrade, then re-verify. |
 | `artifact_pending` | Upload completed; validator still running. Wait briefly. |
 | `pipeline_incomplete` | The artifact validator marked the file invalid (size mismatch, checksum off). Re-create. |
 | `latest_not_complete` | The newest row never finished writing. Re-create. |
