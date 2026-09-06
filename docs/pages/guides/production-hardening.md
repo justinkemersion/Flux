@@ -126,7 +126,9 @@ The same Resend path can page on **host/Docker problems** — never on a healthy
 | `FLUX_OPS_WATCH_ENABLED` | unset (off) | `1` / `true` / `yes` starts the tick. Required to enable. |
 | `FLUX_OPS_WATCH_INTERVAL_MS` | `900000` (15m) | Tick interval. First tick is immediate. |
 | `FLUX_OPS_WATCH_DISK_ALERT_PERCENT` | `90` | Email when `/`, `/srv`, or `/var/lib/docker` is at least this full (ops-audit high watermark). 80% stays an ops-audit WARN only. |
-| `FLUX_OPS_WATCH_LOG_MINUTES` | `15` | Docker log window for named core services |
+| `FLUX_OPS_WATCH_LOG_MINUTES` | `15` | Docker log `--since` window for named core services |
+| `FLUX_OPS_WATCH_LOG_TIMEOUT_MS` | `8000` | Hard timeout for each `docker logs`. Timeout / SIGTERM is a skip, not a page. |
+| `FLUX_OPS_WATCH_LOG_TAIL` | `80` | Max lines per container (bounds noisy json-file tails such as `flux-postgres-v2`) |
 | `FLUX_OPS_WATCH_LOG_CONTAINERS` | `flux-web,flux-gateway,flux-node-gateway,flux-postgres-v2` | Fatal / panic / OOM lines only — not general stderr |
 
 **What it emails** (fingerprint examples; same `FLUX_ALERT_EMAIL_DEDUPE_HOURS`, default 6h):
@@ -138,7 +140,9 @@ The same Resend path can page on **host/Docker problems** — never on a healthy
 
 **Exited-tenant filter** (intentional stops are silent): skip `flux-backup-verify-*`, `flux-ops-watch-*`, `*-canary`; skip exited tenants with no catalog row (orphan / leftover test — same class as `ops-audit` WARN); skip catalog `lifecycle_state` `dormant` / `archived`; skip catalog `health_status=stopped` (dashboard power-off / `flux reap`). Restarting / unhealthy still alert.
 
-Host disk is sampled with a one-shot `docker run --rm -v /:/host:ro` using the running `flux-web` image (`df` on the host bind). `/srv/apps` is **not** checked — there is no control-plane convention for expected compose projects there.
+Host disk is sampled with a one-shot `docker run --rm -v /:/host:ro` using the running `flux-web` image, then **`df -P` on `/host`, `/host/srv`, and `/host/var/lib/docker` only**. A bare `df` walks `/host/run/docker/netns/*` and fails with Permission denied — that is treated as a tooling skip (logged, **not** emailed). `/srv/apps` is **not** checked — there is no control-plane convention for expected compose projects there.
+
+Tooling failures (disk helper permission errors, `docker logs` timeout / exit 143) are **not** findings and do not page. Only real container/disk/log-match problems email Justin.
 
 `bin/ops-watch.sh` is the host/SSH sibling (`--remote`, `--json`): error-only, same filters, **does not send mail**. Use it for a one-shot check. Do not also cron it while the flux-web tick is enabled or you will double-page after a 6h dedupe window (in-memory vs none).
 
