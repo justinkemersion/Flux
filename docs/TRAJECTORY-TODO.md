@@ -41,7 +41,7 @@ Not intended for public docs or marketing consumption.
 - **Pooled TLS provisioning:** `done` — catalog-derived exact-host Traefik routers reconcile atomically on startup and v2 lifecycle changes; full disposable v2 gauntlet passed live on 2026-08-18 (trusted TLS, push, API isolation, restore verify, cleanup)
 - **Empty-tenant restore verify (PR #20):** `done` — schema-only empty v2 `tenant_export` verifies when tenant schema + empty TOC match
 - **Backup-scheduler email alerts:** `done` — optional `FLUX_ALERT_EMAIL_TO` + Resend (`FLUX_RESEND_API_KEY`) primary, generic SMTP fallback; Cloudflare Email Routing is receive-only; no-op when unset; fingerprint dedupe for hourly retries
-- **Error-only host/Docker watcher:** `done` — `FLUX_OPS_WATCH_ENABLED` flux-web tick + `bin/ops-watch.sh`; same Resend/dedupe path; silent when healthy
+- **Error-only host/Docker watcher:** `done` — `FLUX_OPS_WATCH_ENABLED` flux-web tick + `bin/ops-watch.sh`; same Resend/dedupe path; silent when healthy; disk `df` is path-scoped (`/host`, `/host/srv`, `/host/var/lib/docker`) so docker netns Permission denied is a skip, not a page; `docker logs` has an 8s timeout (exit 143 / SIGTERM is a skip)
 
 ---
 

@@ -6,6 +6,15 @@
 export const DEFAULT_OPS_WATCH_INTERVAL_MS = 15 * 60 * 1000;
 export const DEFAULT_OPS_WATCH_DISK_ALERT_PERCENT = 90;
 export const DEFAULT_OPS_WATCH_LOG_MINUTES = 15;
+/** Hard cap for `docker logs` so noisy json-file tails cannot SIGTERM the tick. */
+export const DEFAULT_OPS_WATCH_LOG_TIMEOUT_MS = 8_000;
+export const DEFAULT_OPS_WATCH_LOG_TAIL = 80;
+/**
+ * Host paths sampled from a `/` bind at `/host`. Never run bare `df -P`
+ * (that walks `/host/run/docker/netns/*` and Permission-denies).
+ */
+export const HOST_DF_SHELL =
+  'for p in /host /host/srv /host/var/lib/docker; do [ -e "$p" ] && df -P "$p" || true; done';
 export const DEFAULT_OPS_WATCH_LOG_CONTAINERS = [
   "flux-web",
   "flux-gateway",

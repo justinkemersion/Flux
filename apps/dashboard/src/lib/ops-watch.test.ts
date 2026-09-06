@@ -12,6 +12,7 @@ import {
   classifyContainer,
   classifyDiskSample,
   classifyLogScan,
+  HOST_DF_SHELL,
   isIgnoredOpsWatchContainer,
   mapDiskMount,
   matchOpsWatchLogLine,
@@ -23,7 +24,10 @@ import {
   type ContainerSnapshot,
 } from "./ops-watch-classify.ts";
 import {
+  collectHostDiskSamples,
   collectOpsWatchFindings,
+  isOpsWatchToolingSkip,
+  OpsWatchDockerError,
   parseDockerInspectPayload,
   parseOpsWatchConfig,
   resetOpsWatchStartedForTests,
@@ -70,12 +74,16 @@ test("parseOpsWatchConfig is off by default and reads knobs", () => {
     FLUX_OPS_WATCH_INTERVAL_MS: "600000",
     FLUX_OPS_WATCH_DISK_ALERT_PERCENT: "92",
     FLUX_OPS_WATCH_LOG_MINUTES: "20",
+    FLUX_OPS_WATCH_LOG_TIMEOUT_MS: "5000",
+    FLUX_OPS_WATCH_LOG_TAIL: "40",
     FLUX_OPS_WATCH_LOG_CONTAINERS: "flux-web,flux-gateway",
   });
   assert.equal(cfg.enabled, true);
   assert.equal(cfg.intervalMs, 600_000);
   assert.equal(cfg.diskAlertPercent, 92);
   assert.equal(cfg.logMinutes, 20);
+  assert.equal(cfg.logTimeoutMs, 5_000);
+  assert.equal(cfg.logTail, 40);
   assert.deepEqual(cfg.logContainers, ["flux-web", "flux-gateway"]);
 });
 
@@ -368,6 +376,134 @@ test("runOpsWatchTick stays silent when disabled and emails findings when enable
   assert.equal(transport.sent.length, first.findings.length);
 
   resetOpsAlertStateForTests();
+});
+
+test("HOST_DF_SHELL only dfs explicit host bind paths", () => {
+  assert.match(HOST_DF_SHELL, /df -P "\$p"/);
+  assert.match(HOST_DF_SHELL, /\/host\/srv/);
+  assert.match(HOST_DF_SHELL, /\/host\/var\/lib\/docker/);
+  assert.doesNotMatch(HOST_DF_SHELL, /df -P"/);
+  assert.doesNotMatch(HOST_DF_SHELL, /netns/);
+});
+
+test("collectHostDiskSamples dfs specific /host paths and recovers netns Permission denied stdout", async () => {
+  const dfOut = [
+    "Filesystem     1024-blocks      Used Available Capacity Mounted on",
+    "/dev/sda1        200000000 188000000  12000000      94% /host",
+  ].join("\n");
+  const calls: string[][] = [];
+  const samples = await collectHostDiskSamples(async (args) => {
+    calls.push(args);
+    if (args[0] === "rm") return "";
+    if (args[0] === "inspect") return "sha256:abc\n";
+    if (args[0] === "run") {
+      assert.equal(args.includes("--entrypoint=df"), false);
+      assert.equal(args.includes("-P") && args.at(-1) === "-P", false);
+      assert.ok(args.includes("--entrypoint=sh"));
+      assert.equal(args.at(-1), HOST_DF_SHELL);
+      throw new OpsWatchDockerError(
+        "docker command failed (exit 1): df: /host/run/docker/netns/default: Permission denied",
+        { code: "1", stdout: dfOut, stderr: "df: /host/run/docker/netns/default: Permission denied" },
+      );
+    }
+    throw new Error(`unexpected docker ${args.join(" ")}`);
+  });
+  assert.deepEqual(
+    samples.map((s) => `${s.label}:${s.percent}`),
+    ["root:94"],
+  );
+  assert.ok(calls.some((a) => a[0] === "run"));
+});
+
+test("isOpsWatchToolingSkip treats SIGTERM / 143 as a skip", () => {
+  assert.equal(
+    isOpsWatchToolingSkip(
+      new OpsWatchDockerError("docker command failed (exit 143)", {
+        code: "143",
+        stdout: "",
+        stderr: "",
+        signal: "SIGTERM",
+      }),
+    ),
+    true,
+  );
+  assert.equal(isOpsWatchToolingSkip(new Error("docker command failed (exit 143)")), true);
+  assert.equal(isOpsWatchToolingSkip(new Error("disk is 94% full")), false);
+});
+
+test("collectOpsWatchFindings does not page on disk or log tooling skips", async () => {
+  const inspect = [
+    inspectJson("flux-web", { status: "running", running: true }),
+    inspectJson("flux-gateway", { status: "running", running: true }),
+    inspectJson("flux-node-gateway", { status: "running", running: true }),
+    inspectJson("flux-postgres-v2", { status: "running", running: true, health: "healthy" }),
+    inspectJson("flux-pgbouncer", { status: "running", running: true }),
+    inspectJson("flux-postgrest-pool", { status: "running", running: true }),
+    inspectJson("flux-aabbccd-flux-system-db", { status: "running", running: true }),
+  ];
+  const findings = await collectOpsWatchFindings({
+    env: {
+      FLUX_OPS_WATCH_ENABLED: "1",
+      FLUX_OPS_WATCH_LOG_CONTAINERS: "flux-postgres-v2",
+    },
+    loadCatalog: async () => [],
+    collectDisk: async () => {
+      throw new OpsWatchDockerError(
+        "docker command failed (exit 1): df: /host/run/docker/netns/default: Permission denied",
+        { code: "1", stdout: "", stderr: "Permission denied" },
+      );
+    },
+    runDocker: async (args, options) => {
+      if (args[0] === "ps") {
+        return inspect.map((c) => c.Name.replace(/^\//, "")).join("\n");
+      }
+      if (args[0] === "inspect") return JSON.stringify(inspect);
+      if (args[0] === "logs") {
+        assert.ok((options?.timeoutMs ?? 0) > 0);
+        assert.ok((options?.timeoutMs ?? 0) <= 15_000);
+        throw new OpsWatchDockerError("docker command failed (exit 143)", {
+          code: "143",
+          stdout: "",
+          stderr: "",
+          signal: "SIGTERM",
+        });
+      }
+      throw new Error(`unexpected docker ${args.join(" ")}`);
+    },
+  });
+  assert.deepEqual(findings, []);
+});
+
+test("collectOpsWatchFindings still pages matched fatal lines after a successful log read", async () => {
+  const inspect = [
+    inspectJson("flux-web", { status: "running", running: true }),
+    inspectJson("flux-gateway", { status: "running", running: true }),
+    inspectJson("flux-node-gateway", { status: "running", running: true }),
+    inspectJson("flux-postgres-v2", { status: "running", running: true, health: "healthy" }),
+    inspectJson("flux-pgbouncer", { status: "running", running: true }),
+    inspectJson("flux-postgrest-pool", { status: "running", running: true }),
+    inspectJson("flux-aabbccd-flux-system-db", { status: "running", running: true }),
+  ];
+  const findings = await collectOpsWatchFindings({
+    env: {
+      FLUX_OPS_WATCH_ENABLED: "1",
+      FLUX_OPS_WATCH_LOG_CONTAINERS: "flux-web",
+    },
+    loadCatalog: async () => [],
+    collectDisk: async () => [],
+    runDocker: async (args) => {
+      if (args[0] === "ps") {
+        return inspect.map((c) => c.Name.replace(/^\//, "")).join("\n");
+      }
+      if (args[0] === "inspect") return JSON.stringify(inspect);
+      if (args[0] === "logs") return "fatal: cannot bind 3000\n";
+      throw new Error(`unexpected docker ${args.join(" ")}`);
+    },
+  });
+  assert.deepEqual(
+    findings.map((f) => f.fingerprint),
+    ["log:fatal:flux-web"],
+  );
 });
 
 test("bin/ops-watch.sh stays error-only and documents the exited-tenant filter", () => {
