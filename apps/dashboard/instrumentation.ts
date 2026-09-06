@@ -19,6 +19,8 @@ export async function register(): Promise<void> {
       const { startBackupScheduler } = await import("./src/lib/backup-scheduler");
       startBackupScheduler();
       console.log("[flux] Backup scheduler started (immediate first tick, then 60m interval).");
+      const { startOpsWatch } = await import("./src/lib/ops-watch");
+      startOpsWatch();
       console.log("FLUX_CONTROL_PLANE: V1.0_STABLE_ONLINE");
     } catch (err) {
       console.error(

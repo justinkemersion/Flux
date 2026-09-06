@@ -45,7 +45,7 @@ This is the single most useful one-liner before any destructive action.
 
 When the operator has enabled [R2 offsite replication](/docs/guides/production-hardening#cloudflare-r2-offsite-replication-optional), `flux backup create` also reports offsite upload status. Offsite storage is **not** a substitute for restore verification — always run `flux backup verify` before destructive work.
 
-Self-hosted operators can optionally email backup-scheduler failures (freshness pipeline, offsite, artifact validation, tick hard-fail) via Resend (primary) or SMTP (fallback). See [Email alerts for scheduler / ops failures](/docs/guides/production-hardening#email-alerts-for-scheduler--ops-failures-optional). Unset send provider is a no-op and does not affect backups. Cloudflare Email Routing cannot send outbound mail.
+Self-hosted operators can optionally email backup-scheduler failures (freshness pipeline, offsite, artifact validation, tick hard-fail) via Resend (primary) or SMTP (fallback). The same env can page on host/Docker errors when `FLUX_OPS_WATCH_ENABLED=1`. See [Email alerts for scheduler / ops failures](/docs/guides/production-hardening#email-alerts-for-scheduler--ops-failures-optional). Unset send provider is a no-op and does not affect backups. Cloudflare Email Routing cannot send outbound mail.
 
 ## 2) List backups
 

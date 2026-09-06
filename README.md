@@ -70,7 +70,7 @@ Grouped by area. Status labels: **stable**, **beta**, **operator-only**, **traje
 | **Provisioning** | `flux create` / dashboard create — `v1_dedicated` or `v2_shared`; `flux init` links Foundry repos; `flux list` prints slug, hash, mode, canonical Service URL | stable |
 | **Runtime modes** | `v1_dedicated` (per-tenant containers) vs `v2_shared` (pooled schema + role); `flux migrate` v2→v1 | stable |
 | **SQL & migrations** | `flux push` — file or `migrations/` directory; `--mode raw\|versioned\|repeatable`, `--plan`, `--dry-run`; tenant-scoped ledger `flux.flux_migrations (tenant_schema, version)` on v2; Supabase-compat import | stable |
-| **Backups** | `flux backup create \| list \| verify \| download` — v1 full DB; v2 tenant schema export (schema-only empty tenants verify when the dump TOC is also empty); optional R2 offsite (`FLUX_R2_BACKUPS_*`; retention deletes the matching object); platform scheduler (`FLUX_MIN_BACKUP_*`); optional ops email alerts (`FLUX_ALERT_EMAIL_TO` + `FLUX_RESEND_API_KEY`, SMTP fallback) | stable |
+| **Backups** | `flux backup create \| list \| verify \| download` — v1 full DB; v2 tenant schema export (schema-only empty tenants verify when the dump TOC is also empty); optional R2 offsite (`FLUX_R2_BACKUPS_*`; retention deletes the matching object); platform scheduler (`FLUX_MIN_BACKUP_*`); optional ops email alerts (`FLUX_ALERT_EMAIL_TO` + `FLUX_RESEND_API_KEY`, SMTP fallback) for scheduler failures and (when `FLUX_OPS_WATCH_ENABLED=1`) error-only host/Docker findings | stable |
 | **Restore verification / destructive gates** | Newest backup must be **restore-verified** before `flux nuke`, `flux migrate`, `flux db-reset`, `flux db restore`, dashboard Delete / Factory reset — unless explicit override (`--skip-backup-check` / `?skipBackupCheck=true`); `@flux/core/backup-trust` | stable |
 | **Private database access** | `flux db tunnel \| shell \| dump \| restore \| password \| access-plan \| gui-config` — SSH tunnel; v1: project `postgres` password; v2: temporary scoped roles (readonly default); pooled admin never exposed | stable |
 | **Schema inspection** | `flux db inspect \| tables \| describe \| counts`; dashboard Schema Explorer; `@flux/core/schema-inspection` | stable |
@@ -82,7 +82,7 @@ Grouped by area. Status labels: **stable**, **beta**, **operator-only**, **traje
 | **Gateway** | `@flux/gateway` — host routing, project JWT verify, bridge JWT mint, rate limits, profile headers, lifecycle 503 | stable |
 | **v2_shared / Hobby tier** | Default pooled provisioning; **2 active project cap** on Hobby (`project-lifecycle-state`); tier-aware per-tenant rate limits | stable (limits) / **trajectory** (per-plan gateway rate limits) |
 | **Lifecycle / sleep / archive / reap** | `flux project wake \| sleep \| archive`; `flux reap`; dormant/archived → gateway 503 | stable |
-| **Observability / ops audit** | `flux logs` (v1); fleet monitor + JWT deep probes (v2); `bin/ops-audit.sh` | stable |
+| **Observability / ops audit** | `flux logs` (v1); fleet monitor + JWT deep probes (v2); `bin/ops-audit.sh`; error-only `bin/ops-watch.sh` + optional flux-web tick (`FLUX_OPS_WATCH_ENABLED`) | stable |
 | **Deploy workflow** | `deploy-traefik` → `deploy-v2-shared` → `deploy-gateway` → `deploy-web`; `bin/launch-web.sh` for dashboard-only releases | operator-only |
 | **Security posture** | Gateway Bearer (v2), migration ledger isolation, backup trust, MCP route allowlist, Docker socket risk documented | stable |
 
@@ -177,7 +177,7 @@ Monorepo: [`pnpm-workspace.yaml`](pnpm-workspace.yaml) (`packages/*`, `apps/*`).
 | [`apps/dashboard`](apps/dashboard) | Next.js control-plane UI + `/api/cli/v1/*` + MCP token management |
 | [`docs/pages`](docs/pages) | Rendered product docs (dashboard `/docs/*`) |
 | [`docs/guides`](docs/guides) | Standalone guides (import, v1 SQL workflows) — some mirrored under `docs/pages/guides/` |
-| [`bin`](bin) | Deploy, ops-audit, smoke, ledger migration scripts |
+| [`bin`](bin) | Deploy, ops-audit, ops-watch, smoke, ledger migration scripts |
 | [`plans`](plans) | Security passes, MCP phases, backups, dashboard IA |
 | [`AGENTS.md`](AGENTS.md) | **External** v2_shared app developer footguns |
 | [`docs/TRAJECTORY-TODO.md`](docs/TRAJECTORY-TODO.md) | Internal engineering backlog |
@@ -307,6 +307,7 @@ From laptop (dashboard only): `./bin/launch-web.sh --commit "..."`. See [Product
 ```bash
 ./bin/ops-audit.sh --remote
 ./bin/ops-audit.sh --remote --deep --smoke
+./bin/ops-watch.sh --remote   # error-only; silent when healthy
 ```
 
 ---
@@ -527,8 +528,8 @@ Smoke: `./bin/mcp-smoke.sh` (offline); `./bin/mcp-smoke.sh --hosted` with `FLUX_
 | **Backup trust** | Destructive actions require restore-verified newest backup (`@flux/core/backup-trust`) |
 | **Destructive gates** | CLI + dashboard + MCP apply path; HTTP 412 when blocked |
 | **R2 / offsite backups** | Optional `FLUX_R2_BACKUPS_*` when configured |
-| **Ops email alerts** | Optional Resend (`FLUX_ALERT_EMAIL_TO` + `FLUX_RESEND_API_KEY`) from the backup-scheduler; generic SMTP fallback. Cloudflare Email Routing is receive-only. Unset = no-op. See [Production hardening](docs/pages/guides/production-hardening.md#email-alerts-for-scheduler--ops-failures-optional) |
-| **Ops audit** | `bin/ops-audit.sh` — containers, logs, backup catalog (`--deep`), edge smoke (`--smoke`) |
+| **Ops email alerts** | Optional Resend (`FLUX_ALERT_EMAIL_TO` + `FLUX_RESEND_API_KEY`) from the backup-scheduler and, when `FLUX_OPS_WATCH_ENABLED=1`, the error-only host/Docker watcher; generic SMTP fallback. Cloudflare Email Routing is receive-only. Unset = no-op. See [Production hardening](docs/pages/guides/production-hardening.md#email-alerts-for-scheduler--ops-failures-optional) |
+| **Ops audit** | `bin/ops-audit.sh` — containers, logs, backup catalog (`--deep`), edge smoke (`--smoke`). Error-only sibling: `bin/ops-watch.sh` |
 | **Gateway guardrails** | Rate limit (`FLUX_GATEWAY_RATE_LIMIT`), lifecycle 503, migration drain 503 |
 | **Free / Hobby tier** | Default `v2_shared`; max **2 active** projects; tier-aware gateway rate limits per tenant — **trajectory** (single env limit today) |
 | **Known deferred** | HTTP MCP, approval UI for agents, formal removal of legacy MCP CLI token |
@@ -585,6 +586,7 @@ Set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web
 
 - Weekly: `./bin/ops-audit.sh --remote`
 - Monthly or after incidents: `--deep --smoke`
+- Error-only (silent when healthy): `./bin/ops-watch.sh --remote`
 - Disk pressure: `bin/ops-disk-inventory.sh`, `bin/ops-cleanup-stale-containers.sh`
 
 ---
