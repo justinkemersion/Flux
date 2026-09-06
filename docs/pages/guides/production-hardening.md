@@ -86,6 +86,45 @@ The user-facing trust contract (what backups guarantee, the three trust states) 
 
 **Periodic audit (self-hosted):** from the repo on your laptop or the server checkout, run `bin/ops-audit.sh --remote` (SSH defaults match `bin/sync-env-remote.sh`). Add `--deep` for backup-catalog trust rows and **platform minimum backup freshness** (restore-verified age vs `FLUX_MIN_BACKUP_INTERVAL_DAYS`); add `--smoke` to GET each tenant API through `flux-node-gateway` (see `bin/ops-audit-smoke.projects.example`). The scheduler restore-verifies stale projects automatically; `--deep` still warns when the newest restore-verified backup is missing or overdue. Schema-only empty v2 tenants (zero user tables) can be restore-verified — they are not treated as `restore_failed` once the tenant schema and empty dump TOC match.
 
+#### Email alerts for scheduler / ops failures (optional)
+
+Production currently logs backup-scheduler failures; it does **not** send mail unless you opt in. Set these on the **control plane** (`docker/web/.env`, then recreate `flux-web`).
+
+**Cloudflare Email Routing caveat:** `vsl-base.com` inbound mail uses [Cloudflare Email Routing](https://developers.cloudflare.com/email-routing/). That product is **receive-only** (MX → destination mailbox). It does **not** provide SMTP or an outbound API. Pointing `FLUX_SMTP_HOST` at Cloudflare will not deliver alerts. Use a send provider.
+
+**Primary path — Resend HTTP API** (SMTP not required):
+
+| Variable | Role |
+|----------|------|
+| `FLUX_ALERT_EMAIL_TO` | Recipient list (comma-separated). **Required to enable.** Production destination: `justin@vsl-base.com` |
+| `FLUX_RESEND_API_KEY` | Resend API key (`re_…`). **Required for the primary path.** Create at [resend.com/api-keys](https://resend.com/api-keys) |
+| `FLUX_ALERT_EMAIL_FROM` | Optional From. Default `Flux Alerts <onboarding@resend.dev>` (Resend bootstrap). After DNS verify, use e.g. `alerts@vsl-base.com` |
+| `FLUX_ALERT_EMAIL_DEDUPE_HOURS` | Same fingerprint at most once per this many hours (default **6**). Stops hourly held-in-trust / offsite retries from flooding the inbox |
+| `FLUX_RESEND_TIMEOUT_MS` | Resend HTTP timeout (default **15000**). Send failures are logged and never abort a backup |
+
+**Resend DNS (brief):** In the Resend dashboard add domain `vsl-base.com` (or a dedicated send subdomain). Add the SPF + DKIM TXT records Resend shows in Cloudflare DNS. Do **not** replace the Email Routing **MX** records — those stay for inbound `justin@vsl-base.com`. Until the domain shows verified, keep `FLUX_ALERT_EMAIL_FROM` on `onboarding@resend.dev`. After verify, set From to `alerts@vsl-base.com` (or another address on the verified domain).
+
+**Fallback — generic SMTP** (only if you have a real outbound relay; unused for sending when `FLUX_RESEND_API_KEY` is set):
+
+| Variable | Role |
+|----------|------|
+| `FLUX_SMTP_HOST` / `FLUX_SMTP_PORT` / `FLUX_SMTP_USER` / `FLUX_SMTP_PASS` | Generic SMTP. Port **587** uses STARTTLS when advertised; port **465** uses implicit TLS |
+| `FLUX_SMTP_URL` | Alternative: `smtp://user:pass@host:587` or `smtps://user:pass@host:465` |
+| `FLUX_SMTP_SECURE` | Optional. `true` forces implicit TLS; default is implicit TLS only when the port is `465` |
+| `FLUX_SMTP_TIMEOUT_MS` | SMTP I/O timeout (default **15000**) |
+
+If `FLUX_ALERT_EMAIL_TO` is unset, or neither Resend nor SMTP is configured, alerting is a no-op (one debug log).
+
+The backup-scheduler emails when: a platform freshness pipeline fails (includes `slug:hash` and `restore_failed` / other errors), offsite replication fails (including hourly retries of a held-in-trust upload), artifact validation fails, retention sweep fails, or a scheduler tick hard-fails. Messages are short: project identity when known, error, UTC timestamp.
+
+**Setup**
+
+1. Put `FLUX_ALERT_EMAIL_TO=justin@vsl-base.com` and `FLUX_RESEND_API_KEY=re_…` in `docker/web/.env` (see [`docker/web/.env.example`](../../../docker/web/.env.example)). SMTP vars are optional.
+2. Recreate the control plane so `flux-web` reloads env: `docker compose -f docker/web/docker-compose.yml up -d --force-recreate` (or `./bin/deploy-web.sh` / `./bin/launch-web.sh --sync-env-apply`).
+3. Confirm `docker logs flux-web` has no `ops-alert-email: send failed` after the next scheduler error.
+
+This is **operator-only** visibility. It does not change backup trust tiers or destructive gates.
+
 ## Example
 
 For multi-region or multi-cluster, document **which** Postgres cluster holds a tenant before running destructive maintenance.
