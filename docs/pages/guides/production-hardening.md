@@ -84,7 +84,7 @@ Both `FLUX_BACKUPS_*` paths must exist and be writable by the control-plane proc
 
 The user-facing trust contract (what backups guarantee, the three trust states) is engine-independent and lives in [Backups](/docs/concepts/backups). This section is purely about where bytes physically land on the operator's host.
 
-**Periodic audit (self-hosted):** from the repo on your laptop or the server checkout, run `bin/ops-audit.sh --remote` (SSH defaults match `bin/sync-env-remote.sh`). Add `--deep` for backup-catalog trust rows and **platform minimum backup freshness** (restore-verified age vs `FLUX_MIN_BACKUP_INTERVAL_DAYS`); add `--smoke` to GET each tenant API through `flux-node-gateway` (see `bin/ops-audit-smoke.projects.example`). The scheduler restore-verifies stale projects automatically; `--deep` still warns when the newest restore-verified backup is missing or overdue. Schema-only empty v2 tenants (zero user tables) can be restore-verified — they are not treated as `restore_failed` once the tenant schema and empty dump TOC match.
+**Periodic audit (self-hosted):** from the repo on your laptop or the server checkout, run `bin/ops-audit.sh --remote` (SSH defaults match `bin/sync-env-remote.sh`). Add `--deep` for backup-catalog trust rows and **platform minimum backup freshness** (restore-verified age vs `FLUX_MIN_BACKUP_INTERVAL_DAYS`); add `--smoke` to GET each tenant API through `flux-node-gateway` (see `bin/ops-audit-smoke.projects.example`). The scheduler restore-verifies stale projects automatically; `--deep` still warns when the newest restore-verified backup is missing or overdue. Schema-only empty v2 tenants (zero user tables) can be restore-verified — they are not treated as `restore_failed` once the tenant schema and empty dump TOC match. For unattended paging (error-only), see [Error-only Docker / host watcher](#error-only-docker--host-watcher-optional) and `bin/ops-watch.sh`.
 
 #### Email alerts for scheduler / ops failures (optional)
 
@@ -117,11 +117,39 @@ If `FLUX_ALERT_EMAIL_TO` is unset, or neither Resend nor SMTP is configured, ale
 
 The backup-scheduler emails when: a platform freshness pipeline fails (includes `slug:hash` and `restore_failed` / other errors), offsite replication fails (including hourly retries of a held-in-trust upload), artifact validation fails, retention sweep fails, or a scheduler tick hard-fails. Messages are short: project identity when known, error, UTC timestamp.
 
+#### Error-only Docker / host watcher (optional)
+
+The same Resend path can page on **host/Docker problems** — never on a healthy tick. Enable it on the control plane (`docker/web/.env`), then recreate `flux-web`. Host crontab is empty on the production box; this watcher is an in-process flux-web scheduler (same pattern as backup-scheduler / fleet-monitor) and shells `docker` via the socket already mounted in prod.
+
+| Variable | Default | Role |
+|----------|---------|------|
+| `FLUX_OPS_WATCH_ENABLED` | unset (off) | `1` / `true` / `yes` starts the tick. Required to enable. |
+| `FLUX_OPS_WATCH_INTERVAL_MS` | `900000` (15m) | Tick interval. First tick is immediate. |
+| `FLUX_OPS_WATCH_DISK_ALERT_PERCENT` | `90` | Email when `/`, `/srv`, or `/var/lib/docker` is at least this full (ops-audit high watermark). 80% stays an ops-audit WARN only. |
+| `FLUX_OPS_WATCH_LOG_MINUTES` | `15` | Docker log window for named core services |
+| `FLUX_OPS_WATCH_LOG_CONTAINERS` | `flux-web,flux-gateway,flux-node-gateway,flux-postgres-v2` | Fatal / panic / OOM lines only — not general stderr |
+
+**What it emails** (fingerprint examples; same `FLUX_ALERT_EMAIL_DEDUPE_HOURS`, default 6h):
+
+- Core / v2 stack missing, exited, unhealthy, or restarting — `docker:exited:flux-web`, `docker:unhealthy:flux-postgres-v2`, `docker:restarting:flux-node-gateway`, `docker:missing:flux-gateway`
+- Unexpected tenant-stack exits (`flux-<7hex>-*`)
+- Disk ≥ threshold — `disk:root:94`
+- Core log matches — `log:fatal:flux-web`
+
+**Exited-tenant filter** (intentional stops are silent): skip `flux-backup-verify-*`, `flux-ops-watch-*`, `*-canary`; skip exited tenants with no catalog row (orphan / leftover test — same class as `ops-audit` WARN); skip catalog `lifecycle_state` `dormant` / `archived`; skip catalog `health_status=stopped` (dashboard power-off / `flux reap`). Restarting / unhealthy still alert.
+
+Host disk is sampled with a one-shot `docker run --rm -v /:/host:ro` using the running `flux-web` image (`df` on the host bind). `/srv/apps` is **not** checked — there is no control-plane convention for expected compose projects there.
+
+`bin/ops-watch.sh` is the host/SSH sibling (`--remote`, `--json`): error-only, same filters, **does not send mail**. Use it for a one-shot check. Do not also cron it while the flux-web tick is enabled or you will double-page after a 6h dedupe window (in-memory vs none).
+
+**Limitation:** if `flux-web` itself is down, this tick cannot send. Dashboard down is the signal; `./bin/ops-watch.sh --remote` from a laptop still works.
+
 **Setup**
 
 1. Put `FLUX_ALERT_EMAIL_TO=justin@vsl-base.com` and `FLUX_RESEND_API_KEY=re_…` in `docker/web/.env` (see [`docker/web/.env.example`](../../../docker/web/.env.example)). SMTP vars are optional.
 2. Recreate the control plane so `flux-web` reloads env: `docker compose -f docker/web/docker-compose.yml up -d --force-recreate` (or `./bin/deploy-web.sh` / `./bin/launch-web.sh --sync-env-apply`).
 3. Confirm `docker logs flux-web` has no `ops-alert-email: send failed` after the next scheduler error.
+4. To enable the host/Docker watcher, also set `FLUX_OPS_WATCH_ENABLED=1` in the same `.env`, recreate `flux-web`, and confirm `ops-watch: started` in `docker logs flux-web`. A healthy tick is silent.
 
 This is **operator-only** visibility. It does not change backup trust tiers or destructive gates.
 
