@@ -86,6 +86,32 @@ The user-facing trust contract (what backups guarantee, the three trust states) 
 
 **Periodic audit (self-hosted):** from the repo on your laptop or the server checkout, run `bin/ops-audit.sh --remote` (SSH defaults match `bin/sync-env-remote.sh`). Add `--deep` for backup-catalog trust rows and **platform minimum backup freshness** (restore-verified age vs `FLUX_MIN_BACKUP_INTERVAL_DAYS`); add `--smoke` to GET each tenant API through `flux-node-gateway` (see `bin/ops-audit-smoke.projects.example`). The scheduler restore-verifies stale projects automatically; `--deep` still warns when the newest restore-verified backup is missing or overdue.
 
+#### Email alerts for scheduler / ops failures (optional)
+
+Production currently logs backup-scheduler failures; it does **not** send mail unless you opt in. Set these on the **control plane** (`docker/web/.env`, then recreate `flux-web`):
+
+| Variable | Role |
+|----------|------|
+| `FLUX_ALERT_EMAIL_TO` | Recipient list (comma-separated). **Required to enable.** Production destination: `justin@vsl-base.com` |
+| `FLUX_ALERT_EMAIL_FROM` | Optional From. Default `flux-alerts@vsl-base.com`. Some relays require this to match the authenticated mailbox |
+| `FLUX_SMTP_HOST` / `FLUX_SMTP_PORT` / `FLUX_SMTP_USER` / `FLUX_SMTP_PASS` | Generic SMTP. Port **587** uses STARTTLS when the server advertises it; port **465** uses implicit TLS |
+| `FLUX_SMTP_URL` | Alternative to the discrete fields: `smtp://user:pass@host:587` or `smtps://user:pass@host:465` (overrides host/port/user/pass) |
+| `FLUX_SMTP_SECURE` | Optional. `true` forces implicit TLS; default is implicit TLS only when the port is `465` |
+| `FLUX_ALERT_EMAIL_DEDUPE_HOURS` | Same fingerprint at most once per this many hours (default **6**). Stops hourly held-in-trust / offsite retries from flooding the inbox |
+| `FLUX_SMTP_TIMEOUT_MS` | SMTP I/O timeout (default **15000**). Send failures are logged and never abort a backup |
+
+If `FLUX_ALERT_EMAIL_TO` or SMTP is unset, alerting is a no-op (one debug log at process start / first skip). Mail uses generic SMTP only — point `FLUX_SMTP_*` at whatever hosts `vsl-base.com` mail (no Resend-only API).
+
+The backup-scheduler emails when: a platform freshness pipeline fails (includes `slug:hash` and `restore_failed` / other errors), offsite replication fails (including hourly retries of a held-in-trust upload), artifact validation fails, retention sweep fails, or a scheduler tick hard-fails. Messages are short: project identity when known, error, UTC timestamp.
+
+**Setup**
+
+1. Put the vars in `docker/web/.env` (see [`docker/web/.env.example`](../../../docker/web/.env.example)).
+2. Recreate the control plane so `flux-web` reloads env: `docker compose -f docker/web/docker-compose.yml up -d --force-recreate` (or `./bin/deploy-web.sh` / `./bin/launch-web.sh --sync-env-apply`).
+3. Confirm `docker logs flux-web` has no `ops-alert-email: send failed` after the next scheduler error (or trigger a harmless test by pointing at a local SMTP sink first).
+
+This is **operator-only** visibility. It does not change backup trust tiers or destructive gates.
+
 ## Example
 
 For multi-region or multi-cluster, document **which** Postgres cluster holds a tenant before running destructive maintenance.

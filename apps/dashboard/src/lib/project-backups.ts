@@ -34,7 +34,7 @@ import {
   getPlatformBackupPolicy,
   isSchedulerExcludedProject,
 } from "@/src/lib/backup-platform-policy";
-import { logBackupScheduler } from "@/src/lib/backup-scheduler-log";
+import { logBackupScheduler, logBackupSchedulerError } from "@/src/lib/backup-scheduler-log";
 
 export type BackupEngineMode = "v1_dedicated" | "v2_shared";
 
@@ -458,7 +458,7 @@ async function replicateBackupOffsiteIfEligible(
     if (isR2OffsiteStrict()) {
       throw new Error(`Offsite replication failed (strict mode): ${message}`);
     }
-    console.error(`[flux] offsite replication failed for backup ${backup.id}:`, message);
+    logBackupSchedulerError(`offsite replication failed backupId=${backup.id}`, err);
   }
   const refreshed = await loadBackupRow(backup.id);
   return refreshed ?? backup;

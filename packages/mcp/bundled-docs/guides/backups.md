@@ -45,6 +45,8 @@ This is the single most useful one-liner before any destructive action.
 
 When the operator has enabled [R2 offsite replication](/docs/guides/production-hardening#cloudflare-r2-offsite-replication-optional), `flux backup create` also reports offsite upload status. Offsite storage is **not** a substitute for restore verification — always run `flux backup verify` before destructive work.
 
+Self-hosted operators can optionally email backup-scheduler failures (freshness pipeline, offsite, artifact validation, tick hard-fail) over generic SMTP. See [Email alerts for scheduler / ops failures](/docs/guides/production-hardening#email-alerts-for-scheduler--ops-failures-optional). Unset SMTP is a no-op and does not affect backups.
+
 ## 2) List backups
 
 ```bash

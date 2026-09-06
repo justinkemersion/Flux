@@ -70,7 +70,7 @@ Grouped by area. Status labels: **stable**, **beta**, **operator-only**, **traje
 | **Provisioning** | `flux create` / dashboard create — `v1_dedicated` or `v2_shared`; `flux init` links Foundry repos; `flux list` prints slug, hash, mode, canonical Service URL | stable |
 | **Runtime modes** | `v1_dedicated` (per-tenant containers) vs `v2_shared` (pooled schema + role); `flux migrate` v2→v1 | stable |
 | **SQL & migrations** | `flux push` — file or `migrations/` directory; `--mode raw\|versioned\|repeatable`, `--plan`, `--dry-run`; tenant-scoped ledger `flux.flux_migrations (tenant_schema, version)` on v2; Supabase-compat import | stable |
-| **Backups** | `flux backup create \| list \| verify \| download` — v1 full DB; v2 tenant schema export; optional R2 offsite (`FLUX_R2_BACKUPS_*`); platform scheduler (`FLUX_MIN_BACKUP_*`) | stable |
+| **Backups** | `flux backup create \| list \| verify \| download` — v1 full DB; v2 tenant schema export; optional R2 offsite (`FLUX_R2_BACKUPS_*`); platform scheduler (`FLUX_MIN_BACKUP_*`); optional SMTP ops alerts (`FLUX_ALERT_EMAIL_TO` + `FLUX_SMTP_*`) | stable |
 | **Restore verification / destructive gates** | Newest backup must be **restore-verified** before `flux nuke`, `flux migrate`, `flux db-reset`, `flux db restore`, dashboard Delete / Factory reset — unless explicit override (`--skip-backup-check` / `?skipBackupCheck=true`); `@flux/core/backup-trust` | stable |
 | **Private database access** | `flux db tunnel \| shell \| dump \| restore \| password \| access-plan \| gui-config` — SSH tunnel; v1: project `postgres` password; v2: temporary scoped roles (readonly default); pooled admin never exposed | stable |
 | **Schema inspection** | `flux db inspect \| tables \| describe \| counts`; dashboard Schema Explorer; `@flux/core/schema-inspection` | stable |
@@ -527,6 +527,7 @@ Smoke: `./bin/mcp-smoke.sh` (offline); `./bin/mcp-smoke.sh --hosted` with `FLUX_
 | **Backup trust** | Destructive actions require restore-verified newest backup (`@flux/core/backup-trust`) |
 | **Destructive gates** | CLI + dashboard + MCP apply path; HTTP 412 when blocked |
 | **R2 / offsite backups** | Optional `FLUX_R2_BACKUPS_*` when configured |
+| **Ops email alerts** | Optional SMTP (`FLUX_ALERT_EMAIL_TO`, `FLUX_SMTP_*` / `FLUX_SMTP_URL`) from the backup-scheduler; unset = no-op. See [Production hardening](docs/pages/guides/production-hardening.md#email-alerts-for-scheduler--ops-failures-optional) |
 | **Ops audit** | `bin/ops-audit.sh` — containers, logs, backup catalog (`--deep`), edge smoke (`--smoke`) |
 | **Gateway guardrails** | Rate limit (`FLUX_GATEWAY_RATE_LIMIT`), lifecycle 503, migration drain 503 |
 | **Free / Hobby tier** | Default `v2_shared`; max **2 active** projects; tier-aware gateway rate limits per tenant — **trajectory** (single env limit today) |
@@ -654,4 +655,4 @@ Summary:
 
 ---
 
-- Last reviewed: `2026-08-26`
+- Last reviewed: `2026-09-06`
