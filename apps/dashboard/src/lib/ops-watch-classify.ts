@@ -31,7 +31,7 @@ const SYSTEM_DB_SUFFIX = "flux-system-db";
 const LOG_MATCHERS: ReadonlyArray<{ key: "fatal" | "panic" | "oom"; re: RegExp }> = [
   { key: "oom", re: /\b(oom[- ]?(killed|killer)?|out of memory)\b/i },
   { key: "fatal", re: /\bfatal\b/i },
-  { key: "panic", re: /\bpanic\b/i },
+  { key: "panic", re: /\bpanic(?:ked)?\b/i },
 ];
 
 export type OpsWatchFindingKind =

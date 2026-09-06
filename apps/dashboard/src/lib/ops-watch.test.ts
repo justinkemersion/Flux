@@ -30,7 +30,7 @@ import {
   runOpsWatchTick,
 } from "./ops-watch.ts";
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 
 const ACTIVE: CatalogProjectRef = {
   slug: "shop",
@@ -119,8 +119,8 @@ test("shouldSkipExitedTenant documents intentional stops", () => {
 
 test("classifyContainer alerts restarting, unhealthy, and unexpected exits", () => {
   assert.equal(
-    classifyContainer(container({ name: "nginx", status: "exited", running: false }), []).kind,
-    undefined,
+    classifyContainer(container({ name: "nginx", status: "exited", running: false }), []),
+    null,
   );
 
   const restarting = classifyContainer(

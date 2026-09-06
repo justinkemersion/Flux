@@ -189,16 +189,16 @@ watch_logs() {
     container_running "$name" || continue
     local hits
     hits="$(docker logs --since "${LOG_MINUTES}m" --tail 200 "$name" 2>&1 \
-      | grep -Ei '[[:space:]]fatal[[:space:]]|[[:space:]]panic[[:space:]]|oom[- ]?(killed|killer)?|out of memory' \
+      | grep -Ei '\\bfatal\\b|\\bpanic(ked)?\\b|oom[- ]?(killed|killer)?|out of memory' \
       || true)"
     [[ -z "$hits" ]] && continue
     if echo "$hits" | grep -Eiq 'oom[- ]?(killed|killer)?|out of memory'; then
       emit "log:oom:${name}" "${name} log matched oom"
     fi
-    if echo "$hits" | grep -Eiq '[[:space:]]fatal[[:space:]]|^fatal\b'; then
+    if echo "$hits" | grep -Eiq '\\bfatal\\b'; then
       emit "log:fatal:${name}" "${name} log matched fatal"
     fi
-    if echo "$hits" | grep -Eiq '[[:space:]]panic[[:space:]]|^panic\b'; then
+    if echo "$hits" | grep -Eiq '\\bpanic(ked)?\\b'; then
       emit "log:panic:${name}" "${name} log matched panic"
     fi
   done
