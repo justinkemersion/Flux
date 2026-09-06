@@ -13,6 +13,11 @@ import {
 } from "./ops-alert-email.ts";
 import { logBackupSchedulerError } from "./backup-scheduler-log.ts";
 import {
+  DEFAULT_RESEND_FROM,
+  sendResendMail,
+  summarizeResendError,
+} from "./ops-alert-resend.ts";
+import {
   encodeSmtpAuthPlain,
   formatSmtpData,
   readSmtpReply,
@@ -20,12 +25,18 @@ import {
   smtpDotStuff,
 } from "./ops-alert-smtp.ts";
 
-const ENABLED_ENV = {
+const ENABLED_SMTP_ENV = {
   FLUX_ALERT_EMAIL_TO: "justin@vsl-base.com",
   FLUX_SMTP_HOST: "mail.vsl-base.com",
   FLUX_SMTP_PORT: "587",
   FLUX_SMTP_USER: "flux",
   FLUX_SMTP_PASS: "secret",
+  FLUX_ALERT_EMAIL_DEDUPE_HOURS: "6",
+} as const;
+
+const ENABLED_RESEND_ENV = {
+  FLUX_ALERT_EMAIL_TO: "justin@vsl-base.com",
+  FLUX_RESEND_API_KEY: "re_test_key",
   FLUX_ALERT_EMAIL_DEDUPE_HOURS: "6",
 } as const;
 
@@ -48,7 +59,7 @@ test("parseOpsAlertConfig is null without TO", () => {
   );
 });
 
-test("parseOpsAlertConfig is null without SMTP host or URL", () => {
+test("parseOpsAlertConfig is null without Resend or SMTP", () => {
   assert.equal(
     parseOpsAlertConfig({
       FLUX_ALERT_EMAIL_TO: "justin@vsl-base.com",
@@ -57,16 +68,38 @@ test("parseOpsAlertConfig is null without SMTP host or URL", () => {
   );
 });
 
-test("parseOpsAlertConfig reads discrete SMTP fields and defaults", () => {
-  const cfg = parseOpsAlertConfig({ ...ENABLED_ENV });
+test("parseOpsAlertConfig enables Resend without SMTP", () => {
+  const cfg = parseOpsAlertConfig({ ...ENABLED_RESEND_ENV });
   assert.ok(cfg);
+  assert.equal(cfg!.provider, "resend");
+  assert.equal(cfg!.from, DEFAULT_RESEND_FROM);
+  assert.equal(cfg!.resend?.apiKey, "re_test_key");
+  assert.equal(cfg!.smtp, undefined);
+  assert.deepEqual(cfg!.to, ["justin@vsl-base.com"]);
+});
+
+test("parseOpsAlertConfig prefers Resend when both Resend and SMTP are set", () => {
+  const cfg = parseOpsAlertConfig({
+    ...ENABLED_SMTP_ENV,
+    FLUX_RESEND_API_KEY: "re_test_key",
+    FLUX_ALERT_EMAIL_FROM: "alerts@vsl-base.com",
+  });
+  assert.equal(cfg?.provider, "resend");
+  assert.equal(cfg?.from, "alerts@vsl-base.com");
+  assert.equal(cfg?.smtp?.host, "mail.vsl-base.com");
+});
+
+test("parseOpsAlertConfig reads discrete SMTP fields and defaults", () => {
+  const cfg = parseOpsAlertConfig({ ...ENABLED_SMTP_ENV });
+  assert.ok(cfg);
+  assert.equal(cfg!.provider, "smtp");
   assert.deepEqual(cfg!.to, ["justin@vsl-base.com"]);
   assert.equal(cfg!.from, DEFAULT_ALERT_EMAIL_FROM);
-  assert.equal(cfg!.smtp.host, "mail.vsl-base.com");
-  assert.equal(cfg!.smtp.port, 587);
-  assert.equal(cfg!.smtp.secure, false);
-  assert.equal(cfg!.smtp.user, "flux");
-  assert.equal(cfg!.smtp.pass, "secret");
+  assert.equal(cfg!.smtp?.host, "mail.vsl-base.com");
+  assert.equal(cfg!.smtp?.port, 587);
+  assert.equal(cfg!.smtp?.secure, false);
+  assert.equal(cfg!.smtp?.user, "flux");
+  assert.equal(cfg!.smtp?.pass, "secret");
   assert.equal(cfg!.dedupeMs, 6 * 60 * 60 * 1000);
 });
 
@@ -76,7 +109,7 @@ test("parseOpsAlertConfig uses implicit TLS on port 465", () => {
     FLUX_SMTP_HOST: "mail.vsl-base.com",
     FLUX_SMTP_PORT: "465",
   });
-  assert.equal(cfg?.smtp.secure, true);
+  assert.equal(cfg?.smtp?.secure, true);
 });
 
 test("parseOpsAlertConfig accepts FLUX_SMTP_URL", () => {
@@ -88,11 +121,11 @@ test("parseOpsAlertConfig accepts FLUX_SMTP_URL", () => {
   assert.ok(cfg);
   assert.deepEqual(cfg!.to, ["justin@vsl-base.com", "ops@vsl-base.com"]);
   assert.equal(cfg!.from, "alerts@vsl-base.com");
-  assert.equal(cfg!.smtp.host, "mail.vsl-base.com");
-  assert.equal(cfg!.smtp.port, 465);
-  assert.equal(cfg!.smtp.secure, true);
-  assert.equal(cfg!.smtp.user, "user@vsl-base.com");
-  assert.equal(cfg!.smtp.pass, "p@ss");
+  assert.equal(cfg!.smtp?.host, "mail.vsl-base.com");
+  assert.equal(cfg!.smtp?.port, 465);
+  assert.equal(cfg!.smtp?.secure, true);
+  assert.equal(cfg!.smtp?.user, "user@vsl-base.com");
+  assert.equal(cfg!.smtp?.pass, "p@ss");
 });
 
 test("parseSmtpUrl rejects non-smtp schemes", () => {
@@ -117,7 +150,7 @@ test("formatOpsAlertBody stays short and includes project + timestamp", () => {
   assert.match(body, /detail: restore_failed: no user tables/);
 });
 
-test("sendOpsAlert is a no-op when SMTP env is unset and debug-logs once", async () => {
+test("sendOpsAlert is a no-op when Resend and SMTP are unset and debug-logs once", async () => {
   resetOpsAlertStateForTests();
   const debug: string[] = [];
   const orig = console.debug;
@@ -149,7 +182,7 @@ test("sendOpsAlert is a no-op when SMTP env is unset and debug-logs once", async
 test("sendOpsAlert uses mocked transport and dedupes the same fingerprint", async () => {
   resetOpsAlertStateForTests();
   const transport = mockTransport();
-  const env = { ...ENABLED_ENV };
+  const env = { ...ENABLED_RESEND_ENV };
   const first = await sendOpsAlert(
     {
       fingerprint: "backup-scheduler:offsite replication failed backupId=abc",
@@ -189,7 +222,7 @@ test("sendOpsAlert uses mocked transport and dedupes the same fingerprint", asyn
   assert.equal(other.status, "sent");
   assert.equal(transport.sent.length, 3);
   assert.equal(transport.sent[0]!.to[0], "justin@vsl-base.com");
-  assert.equal(transport.sent[0]!.from, DEFAULT_ALERT_EMAIL_FROM);
+  assert.equal(transport.sent[0]!.from, DEFAULT_RESEND_FROM);
   resetOpsAlertStateForTests();
 });
 
@@ -204,7 +237,7 @@ test("sendOpsAlert swallows transport failures and does not throw", async () => 
     const result = await sendOpsAlert(
       { fingerprint: "x", subject: "s", body: "b" },
       {
-        env: { ...ENABLED_ENV },
+        env: { ...ENABLED_RESEND_ENV },
         transport: {
           async send() {
             throw new Error("relay down");
@@ -224,7 +257,7 @@ test("sendOpsAlert swallows transport failures and does not throw", async () => 
 test("logBackupSchedulerError queues an alert with project context", async () => {
   resetOpsAlertStateForTests();
   const transport = mockTransport();
-  setOpsAlertTestHooks({ env: { ...ENABLED_ENV }, transport });
+  setOpsAlertTestHooks({ env: { ...ENABLED_RESEND_ENV }, transport });
   const origError = console.error;
   console.error = () => {};
   try {
@@ -344,5 +377,95 @@ test("sendSmtpMail talks to a mocked SMTP server", async () => {
     await new Promise<void>((resolve, reject) =>
       server.close((err) => (err ? reject(err) : resolve())),
     );
+  }
+});
+
+test("summarizeResendError prefers JSON message", () => {
+  assert.equal(
+    summarizeResendError('{"statusCode":403,"name":"validation_error","message":"domain not verified"}'),
+    "domain not verified",
+  );
+  assert.equal(summarizeResendError(""), "(empty body)");
+});
+
+test("sendResendMail posts to the Resend API via mocked fetch", async () => {
+  const calls: Array<{ url: string; init: { headers: Record<string, string>; body: string } }> = [];
+  await sendResendMail(
+    { apiKey: "re_test_key", timeoutMs: 2000, endpoint: "https://api.resend.com/emails" },
+    {
+      from: DEFAULT_RESEND_FROM,
+      to: ["justin@vsl-base.com"],
+      subject: "Flux alert",
+      text: "tick failed",
+    },
+    async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return '{"id":"msg_1"}';
+        },
+      };
+    },
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.url, "https://api.resend.com/emails");
+  assert.equal(calls[0]!.init.headers.Authorization, "Bearer re_test_key");
+  const payload = JSON.parse(calls[0]!.init.body) as {
+    from: string;
+    to: string[];
+    subject: string;
+    text: string;
+  };
+  assert.equal(payload.from, DEFAULT_RESEND_FROM);
+  assert.deepEqual(payload.to, ["justin@vsl-base.com"]);
+  assert.equal(payload.subject, "Flux alert");
+  assert.equal(payload.text, "tick failed");
+});
+
+test("sendResendMail surfaces HTTP errors without throwing past sendOpsAlert", async () => {
+  resetOpsAlertStateForTests();
+  const errors: string[] = [];
+  const orig = console.error;
+  console.error = (msg: unknown) => {
+    errors.push(String(msg));
+  };
+  try {
+    const result = await sendOpsAlert(
+      { fingerprint: "resend-fail", subject: "s", body: "b" },
+      {
+        env: { ...ENABLED_RESEND_ENV },
+        transport: {
+          async send() {
+            await sendResendMail(
+              { apiKey: "re_test_key", timeoutMs: 2000 },
+              {
+                from: DEFAULT_RESEND_FROM,
+                to: ["justin@vsl-base.com"],
+                subject: "s",
+                text: "b",
+              },
+              async () => ({
+                ok: false,
+                status: 403,
+                async text() {
+                  return '{"message":"The justin@vsl-base.com domain is not verified"}';
+                },
+              }),
+            );
+          },
+        },
+      },
+    );
+    assert.equal(result.status, "failed");
+    assert.match(
+      result.status === "failed" ? result.error : "",
+      /Resend HTTP 403: The justin@vsl-base.com domain is not verified/,
+    );
+    assert.match(errors.join("\n"), /ops-alert-email: send failed/);
+  } finally {
+    console.error = orig;
+    resetOpsAlertStateForTests();
   }
 });

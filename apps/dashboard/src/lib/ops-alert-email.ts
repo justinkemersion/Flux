@@ -1,8 +1,14 @@
 /**
- * Optional SMTP email alerts for control-plane ops failures.
- * Disabled unless FLUX_ALERT_EMAIL_TO and SMTP (host or URL) are set.
+ * Optional email alerts for control-plane ops failures.
+ * Enabled when FLUX_ALERT_EMAIL_TO plus Resend (primary) or SMTP (fallback) is set.
  */
 
+import {
+  DEFAULT_RESEND_FROM,
+  DEFAULT_RESEND_TIMEOUT_MS,
+  sendResendMail,
+  type ResendTransportConfig,
+} from "./ops-alert-resend.ts";
 import { sendSmtpMail, type SmtpMail, type SmtpTransportConfig } from "./ops-alert-smtp.ts";
 
 export const DEFAULT_ALERT_EMAIL_FROM = "flux-alerts@vsl-base.com";
@@ -13,10 +19,14 @@ export type OpsAlertTransport = {
   send(mail: SmtpMail): Promise<void>;
 };
 
+export type OpsAlertProvider = "resend" | "smtp";
+
 export type OpsAlertConfig = {
   to: string[];
   from: string;
-  smtp: SmtpTransportConfig;
+  provider: OpsAlertProvider;
+  resend?: ResendTransportConfig;
+  smtp?: SmtpTransportConfig;
   dedupeMs: number;
 };
 
@@ -94,14 +104,7 @@ export function parseSmtpUrl(raw: string): {
   return { host, port, secure, user, pass };
 }
 
-export function parseOpsAlertConfig(
-  env: OpsAlertEnv = process.env,
-): OpsAlertConfig | null {
-  const toRaw = readEnv(env, "FLUX_ALERT_EMAIL_TO");
-  if (!toRaw) return null;
-  const to = parseEmailList(toRaw);
-  if (to.length === 0) return null;
-
+function parseSmtpConfig(env: OpsAlertEnv): SmtpTransportConfig | null {
   let host: string | undefined;
   let port = 587;
   let secure = false;
@@ -131,22 +134,52 @@ export function parseOpsAlertConfig(
   }
 
   if (!host) return null;
-
-  const from = readEnv(env, "FLUX_ALERT_EMAIL_FROM") ?? DEFAULT_ALERT_EMAIL_FROM;
-  const dedupeHours = parsePositiveInt(
-    readEnv(env, "FLUX_ALERT_EMAIL_DEDUPE_HOURS"),
-    DEFAULT_ALERT_DEDUPE_HOURS,
-  );
   const timeoutMs = parsePositiveInt(
     readEnv(env, "FLUX_SMTP_TIMEOUT_MS"),
     DEFAULT_SMTP_TIMEOUT_MS,
   );
+  return { host, port, secure, user, pass, timeoutMs };
+}
 
+export function parseOpsAlertConfig(
+  env: OpsAlertEnv = process.env,
+): OpsAlertConfig | null {
+  const toRaw = readEnv(env, "FLUX_ALERT_EMAIL_TO");
+  if (!toRaw) return null;
+  const to = parseEmailList(toRaw);
+  if (to.length === 0) return null;
+
+  const dedupeHours = parsePositiveInt(
+    readEnv(env, "FLUX_ALERT_EMAIL_DEDUPE_HOURS"),
+    DEFAULT_ALERT_DEDUPE_HOURS,
+  );
+  const dedupeMs = dedupeHours * 60 * 60 * 1000;
+  const fromOverride = readEnv(env, "FLUX_ALERT_EMAIL_FROM");
+
+  const resendKey = readEnv(env, "FLUX_RESEND_API_KEY");
+  if (resendKey) {
+    const timeoutMs = parsePositiveInt(
+      readEnv(env, "FLUX_RESEND_TIMEOUT_MS"),
+      DEFAULT_RESEND_TIMEOUT_MS,
+    );
+    return {
+      to,
+      from: fromOverride ?? DEFAULT_RESEND_FROM,
+      provider: "resend",
+      resend: { apiKey: resendKey, timeoutMs },
+      smtp: parseSmtpConfig(env) ?? undefined,
+      dedupeMs,
+    };
+  }
+
+  const smtp = parseSmtpConfig(env);
+  if (!smtp) return null;
   return {
     to,
-    from,
-    smtp: { host, port, secure, user, pass, timeoutMs },
-    dedupeMs: dedupeHours * 60 * 60 * 1000,
+    from: fromOverride ?? DEFAULT_ALERT_EMAIL_FROM,
+    provider: "smtp",
+    smtp,
+    dedupeMs,
   };
 }
 
@@ -183,6 +216,26 @@ export function createSmtpOpsAlertTransport(config: SmtpTransportConfig): OpsAle
   };
 }
 
+export function createResendOpsAlertTransport(
+  config: ResendTransportConfig,
+): OpsAlertTransport {
+  return {
+    send(mail: SmtpMail) {
+      return sendResendMail(config, mail);
+    },
+  };
+}
+
+export function createDefaultOpsAlertTransport(config: OpsAlertConfig): OpsAlertTransport {
+  if (config.provider === "resend" && config.resend) {
+    return createResendOpsAlertTransport(config.resend);
+  }
+  if (config.smtp) {
+    return createSmtpOpsAlertTransport(config.smtp);
+  }
+  throw new Error("ops-alert-email: no transport configured");
+}
+
 export function setOpsAlertTestHooks(hooks?: {
   transport?: OpsAlertTransport;
   env?: OpsAlertEnv;
@@ -200,7 +253,7 @@ function logDisabledOnce(): void {
   if (loggedDisabled) return;
   loggedDisabled = true;
   console.debug(
-    "[flux] ops-alert-email: disabled (set FLUX_ALERT_EMAIL_TO and FLUX_SMTP_HOST or FLUX_SMTP_URL to enable)",
+    "[flux] ops-alert-email: disabled (set FLUX_ALERT_EMAIL_TO and FLUX_RESEND_API_KEY or SMTP to enable)",
   );
 }
 
@@ -227,7 +280,7 @@ export async function sendOpsAlert(
     }
 
     const transport =
-      options?.transport ?? testHooks?.transport ?? createSmtpOpsAlertTransport(config.smtp);
+      options?.transport ?? testHooks?.transport ?? createDefaultOpsAlertTransport(config);
     await transport.send({
       from: config.from,
       to: config.to,

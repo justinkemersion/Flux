@@ -86,7 +86,7 @@ On self-hosted installs, the control plane also enforces a **platform minimum ba
 | **v1 dedicated** | Hourly scheduler when restore-verified backup is older than the platform minimum (default 7 days) | Yes — `flux backup create` any time |
 | **v2 shared** | Same platform minimum freshness scheduler as v1 | Yes — `flux backup create` any time |
 
-The scheduler runs create → artifact validation → restore verification → local retention sweep (restore-verified rows only). **`flux-system`**, the **`static`** showcase project, demo-owned projects (`FLUX_DEMO_USER_ID`), and optional `FLUX_MIN_BACKUP_EXCLUDE_*` lists are excluded. Self-hosted operators can optionally email those scheduler failures (pipeline, offsite, artifact validation, tick hard-fail) over generic SMTP — see [Production hardening](/docs/guides/production-hardening#email-alerts-for-scheduler--ops-failures-optional). Unset SMTP is a no-op.
+The scheduler runs create → artifact validation → restore verification → local retention sweep (restore-verified rows only). **`flux-system`**, the **`static`** showcase project, demo-owned projects (`FLUX_DEMO_USER_ID`), and optional `FLUX_MIN_BACKUP_EXCLUDE_*` lists are excluded. Self-hosted operators can optionally email those scheduler failures (pipeline, offsite, artifact validation, tick hard-fail) via Resend or SMTP — see [Production hardening](/docs/guides/production-hardening#email-alerts-for-scheduler--ops-failures-optional). Unset send provider is a no-op.
 
 User-configurable project preferences (`backup_interval_days`, etc.) may **increase** frequency or retention but never go below the platform floor. Stale freshness shows in the dashboard and CLI; it does not return HTTP 412 on delete or migrate.
 
