@@ -1,4 +1,4 @@
-import { mkdir, stat as fsStat, copyFile } from "node:fs/promises";
+import { mkdir, stat as fsStat, copyFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import {
   parseOffsiteStorageConfig,
@@ -18,6 +18,8 @@ export interface BackupStorage {
     offsiteKey: string,
     contentSha256?: string | null,
   ): Promise<OffsiteUploadResult>;
+  /** Remove the offsite replica (R2 object or filesystem copy). Missing object is ok. */
+  deleteOffsite(offsiteKey: string): Promise<void>;
   /** True when R2/S3 offsite replication is configured. */
   usesR2Offsite(): boolean;
 }
@@ -98,6 +100,22 @@ class FilesystemBackupStorage implements BackupStorage {
       sizeBytes: Number(src.size),
     };
   }
+
+  async deleteOffsite(offsiteKey: string): Promise<void> {
+    const key = offsiteKey.trim();
+    if (!key) return;
+    const dest = offsiteKeyToPath(this.resolvedOffsiteRoot(), key);
+    try {
+      await unlink(dest);
+    } catch (err: unknown) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? (err as NodeJS.ErrnoException).code
+          : undefined;
+      if (code === "ENOENT") return;
+      throw err;
+    }
+  }
 }
 
 class R2BackupStorage implements BackupStorage {
@@ -148,6 +166,12 @@ class R2BackupStorage implements BackupStorage {
   ): Promise<OffsiteUploadResult> {
     return this.s3.putObjectFromFile(localPath, offsiteKey, contentSha256);
   }
+
+  async deleteOffsite(offsiteKey: string): Promise<void> {
+    const key = offsiteKey.trim();
+    if (!key) return;
+    await this.s3.deleteObject(key);
+  }
 }
 
 let cachedStorage: BackupStorage | null = null;
@@ -187,4 +211,17 @@ export function getBackupStorage(): BackupStorage {
 /** Test hook — reset singleton between tests. */
 export function resetBackupStorageForTests(): void {
   cachedStorage = null;
+}
+
+/** Test hook — inject a storage implementation (pass `null` to clear). */
+export function setBackupStorageForTests(storage: BackupStorage | null): void {
+  cachedStorage = storage;
+}
+
+/** Test hook — R2-backed storage with an injected S3 client. */
+export function createR2BackupStorageForTests(
+  localRoot: string,
+  s3Client: S3OffsiteClient,
+): BackupStorage {
+  return new R2BackupStorage(localRoot, s3Client);
 }

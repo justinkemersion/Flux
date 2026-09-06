@@ -43,7 +43,7 @@ flux backup create --project bloom-atelier --hash 0a1b2c3 \
 
 This is the single most useful one-liner before any destructive action.
 
-When the operator has enabled [R2 offsite replication](/docs/guides/production-hardening#cloudflare-r2-offsite-replication-optional), `flux backup create` also reports offsite upload status. Offsite storage is **not** a substitute for restore verification — always run `flux backup verify` before destructive work.
+When the operator has enabled [R2 offsite replication](/docs/guides/production-hardening#cloudflare-r2-offsite-replication-optional), `flux backup create` also reports offsite upload status. Offsite storage is **not** a substitute for restore verification — always run `flux backup verify` before destructive work. Retention that removes a restore-verified local row also deletes that backup's R2 object (or filesystem offsite copy). Historical orphans uploaded before this alignment may still need a one-time bucket cleanup.
 
 Self-hosted operators can optionally email backup-scheduler failures (freshness pipeline, offsite, artifact validation, tick hard-fail) via Resend (primary) or SMTP (fallback). See [Email alerts for scheduler / ops failures](/docs/guides/production-hardening#email-alerts-for-scheduler--ops-failures-optional). Unset send provider is a no-op and does not affect backups. Cloudflare Email Routing cannot send outbound mail.
 

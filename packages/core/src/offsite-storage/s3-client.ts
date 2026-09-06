@@ -26,6 +26,30 @@ export type S3OffsiteClientDeps = {
   send: (command: unknown) => Promise<unknown>;
 };
 
+/** True when an S3/R2 error means the object is already gone (idempotent delete). */
+export function isMissingOffsiteObjectError(err: unknown): boolean {
+  if (err == null) return false;
+  const name = err instanceof Error ? err.name : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  let status: number | undefined;
+  let code = "";
+  if (typeof err === "object" && err !== null) {
+    const rec = err as {
+      $metadata?: { httpStatusCode?: number };
+      Code?: unknown;
+      code?: unknown;
+    };
+    status = rec.$metadata?.httpStatusCode;
+    code = String(rec.Code ?? rec.code ?? "");
+  }
+  return (
+    status === 404 ||
+    /NoSuchKey|NotFound|NoSuchObject|\b404\b/i.test(name) ||
+    /NoSuchKey|NotFound|NoSuchObject|\b404\b/i.test(code) ||
+    /NoSuchKey|NotFound|NoSuchObject|\b404\b/i.test(msg)
+  );
+}
+
 export function createS3ClientFromConfig(config: OffsiteStorageConfig): S3Client {
   const clientConfig: S3ClientConfig = {
     region: config.region,
@@ -154,11 +178,18 @@ export class S3OffsiteClient {
   }
 
   async deleteObject(offsiteKey: string): Promise<void> {
-    await this.send(
-      new DeleteObjectCommand({
-        Bucket: this.config.bucket,
-        Key: offsiteKey,
-      }),
-    );
+    const send = this.getSender();
+    try {
+      await send(
+        new DeleteObjectCommand({
+          Bucket: this.config.bucket,
+          Key: offsiteKey,
+        }),
+      );
+    } catch (err: unknown) {
+      if (isMissingOffsiteObjectError(err)) return;
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Offsite storage operation failed: ${redactSensitiveText(msg)}`);
+    }
   }
 }

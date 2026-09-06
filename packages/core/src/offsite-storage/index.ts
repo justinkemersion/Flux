@@ -12,6 +12,7 @@ export {
 export {
   S3OffsiteClient,
   createS3ClientFromConfig,
+  isMissingOffsiteObjectError,
   type OffsiteUploadResult,
   type OffsiteProvider,
   type S3OffsiteClientDeps,

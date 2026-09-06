@@ -74,7 +74,7 @@ Separate from the destructive gate, the hourly backup scheduler enforces a **pla
 | `FLUX_MIN_BACKUP_EXCLUDE_SLUGS` | — | Extra comma-separated slugs (built-in: `flux-system`, `static`) |
 | `FLUX_MIN_BACKUP_EXCLUDE_USER_IDS` | — | Extra user ids (demo user from `FLUX_DEMO_USER_ID` is merged automatically when set) |
 
-Retention sweeps **restore-verified catalog rows only**; unverified complete backups are not counted toward the floor of four. Offsite R2 objects are **not** deleted during retention — safer until restore-from-R2 exists.
+Retention sweeps **restore-verified catalog rows only**; unverified complete backups are not counted toward the floor of four. When a verified row is removed, Flux also deletes its offsite replica (R2 object, or the filesystem copy under `FLUX_BACKUPS_OFFSITE_DIR`). A missing remote object is non-fatal — the sweep logs and continues. Objects uploaded before this behavior shipped may still need a one-time bucket cleanup. KEEP floors (`FLUX_MIN_BACKUP_RETENTION_COUNT` / `DAYS`) are unchanged.
 
 Freshness is visible in the dashboard Database tools panel and CLI backup list/create responses. It does **not** add HTTP 412 blocks beyond the existing restore-verified destructive gate.
 
