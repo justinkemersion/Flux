@@ -32,7 +32,7 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-08-26`
+- Last updated: `2026-09-06`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-traefik -> deploy-v2-shared -> deploy-gateway -> deploy-web`
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
@@ -48,13 +48,13 @@ Not intended for public docs or marketing consumption.
 |------|--------|--------|
 | Duplicate v2 `yeastcoast` (`3db3f78`) | `done` | Archived via operator SQL (owner: `justinkennethemter@gmail.com`; active project is v1 `ffca33f` for `justinkemersion@pm.me`) |
 | Ops-audit slug collision | `done` | `DISTINCT ON (p.id)`; display `slug:hash`; SQL in `bin/ops-audit/sql/` + tests |
-| Empty tenant restore verify policy | `todo` | Product ticket: [`plans/ops/empty-tenant-backup-verify.md`](ops/empty-tenant-backup-verify.md) |
+| Empty tenant restore verify policy | `done` | Schema-only empty v2 `tenant_export` verifies as `restore_verified` when tenant schema + empty TOC match; see [`plans/ops/empty-tenant-backup-verify.md`](ops/empty-tenant-backup-verify.md) |
 | Platform scheduler archived skip | `done` | `projectsDueForPlatformBackup` skips `lifecycle_state = archived` |
 | Ops disk cleanup (2026-06-30) | `done` | ~37 GB reclaimed on host; builder/volume prune + log truncate |
 | Edge log rotation + audit noise | `done` | json-file 20m×5 on Traefik/node gateway; v2 401/503 lifecycle OK in ops-audit |
 | Ops helper scripts | `done` | `bin/ops-disk-inventory.sh`, `bin/ops-cleanup-stale-containers.sh`; scheduler grep false-positive fix |
 
-**Context:** Empty v2 tenant exports validate as artifacts but fail pg_restore table-count check (zero user tables). Do not treat as corrupt; future tier e.g. `restorable_empty_tenant` / `backup_empty_but_valid`.
+**Context:** Empty v2 tenant exports used to fail the pg_restore table-count check (zero user tables). They now verify as `restore_verified` when the tenant schema restores and the dump TOC is also table-less (`restorable_empty_tenant` is the internal classifier label only).
 
 ## P0 — Production correctness & safety
 

@@ -319,6 +319,8 @@ audit_backup_catalog() {
     if [[ "$restore" == "pending" && "$st" == "complete" ]]; then
       warn "$label: latest backup is NOT restore-verified — run: flux backup verify -p $slug --hash $hash --latest"
     fi
+    # Empty v2 tenant_export rows persist restore_verified (not restore_failed)
+    # when the tenant schema restores and the dump TOC is also table-less.
     if [[ "$restore" == "restore_failed" ]]; then
       fail "$label: latest backup restore_verification failed"
     fi

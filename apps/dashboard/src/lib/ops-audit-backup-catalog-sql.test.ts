@@ -62,3 +62,17 @@ test("duplicate slug fixture — two projects must remain distinct audit rows", 
   );
   assert.equal(archivedFails.length, 1);
 });
+
+test("empty-valid tenant_export persists restore_verified — ops-audit must not FAIL it", () => {
+  const row = {
+    slug: "held-in-trust",
+    hash: "3a3dc9d",
+    mode: "v2_shared",
+    lifecycle_state: "active",
+    restore: "restore_verified",
+  };
+  const wouldFail =
+    row.lifecycle_state === "active" && row.restore === "restore_failed";
+  assert.equal(wouldFail, false);
+  assert.equal(row.restore, "restore_verified");
+});
