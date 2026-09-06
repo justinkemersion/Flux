@@ -39,6 +39,7 @@ Not intended for public docs or marketing consumption.
 - **Latest ops audit:** `./bin/ops-audit.sh --remote --deep --smoke` — see [Ops cleanup 2026-06-30](#ops-cleanup-2026-06-30) below
 - **Dedicated API unrestricted-write invariant (issue #8):** `merged to main; rollout pending` — the privilege-aware transactional `flux push` gate and matching doctor classification merged in PR #18; dashboard/control-plane and CLI deployment, the dedicated-project fleet audit, and one live canary per engine remain pending
 - **Pooled TLS provisioning:** `done` — catalog-derived exact-host Traefik routers reconcile atomically on startup and v2 lifecycle changes; full disposable v2 gauntlet passed live on 2026-08-18 (trusted TLS, push, API isolation, restore verify, cleanup)
+- **Empty-tenant restore verify (PR #20):** `done` — schema-only empty v2 `tenant_export` verifies when tenant schema + empty TOC match
 - **Backup-scheduler email alerts:** `done` — optional `FLUX_ALERT_EMAIL_TO` + Resend (`FLUX_RESEND_API_KEY`) primary, generic SMTP fallback; Cloudflare Email Routing is receive-only; no-op when unset; fingerprint dedupe for hourly retries
 
 ---
@@ -49,13 +50,13 @@ Not intended for public docs or marketing consumption.
 |------|--------|--------|
 | Duplicate v2 `yeastcoast` (`3db3f78`) | `done` | Archived via operator SQL (owner: `justinkennethemter@gmail.com`; active project is v1 `ffca33f` for `justinkemersion@pm.me`) |
 | Ops-audit slug collision | `done` | `DISTINCT ON (p.id)`; display `slug:hash`; SQL in `bin/ops-audit/sql/` + tests |
-| Empty tenant restore verify policy | `todo` | Product ticket: [`plans/ops/empty-tenant-backup-verify.md`](ops/empty-tenant-backup-verify.md) |
+| Empty tenant restore verify policy | `done` | Schema-only empty v2 `tenant_export` verifies as `restore_verified` when tenant schema + empty TOC match; see [`plans/ops/empty-tenant-backup-verify.md`](ops/empty-tenant-backup-verify.md) |
 | Platform scheduler archived skip | `done` | `projectsDueForPlatformBackup` skips `lifecycle_state = archived` |
 | Ops disk cleanup (2026-06-30) | `done` | ~37 GB reclaimed on host; builder/volume prune + log truncate |
 | Edge log rotation + audit noise | `done` | json-file 20m×5 on Traefik/node gateway; v2 401/503 lifecycle OK in ops-audit |
 | Ops helper scripts | `done` | `bin/ops-disk-inventory.sh`, `bin/ops-cleanup-stale-containers.sh`; scheduler grep false-positive fix |
 
-**Context:** Empty v2 tenant exports validate as artifacts but fail pg_restore table-count check (zero user tables). Do not treat as corrupt; future tier e.g. `restorable_empty_tenant` / `backup_empty_but_valid`.
+**Context:** Empty v2 tenant exports used to fail the pg_restore table-count check (zero user tables). They now verify as `restore_verified` when the tenant schema restores and the dump TOC is also table-less (`restorable_empty_tenant` is the internal classifier label only).
 
 ## P0 — Production correctness & safety
 

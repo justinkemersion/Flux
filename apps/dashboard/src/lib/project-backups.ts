@@ -11,7 +11,17 @@ import {
   type BackupFreshnessClassification,
   type EffectiveBackupPolicy,
 } from "@flux/core/backup-policy";
+import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
 import { buildBackupVerifyPreRestoreSql } from "@/src/lib/backup-verify-pre-restore-sql";
+import {
+  RESTORE_VERIFY_SCHEMA_LIST_SQL,
+  RESTORE_VERIFY_TABLE_COUNT_SQL,
+  classifyRestoreVerification,
+  parsePgRestoreList,
+  parseRestoredSchemaList,
+  type RestoreVerifyBackupKind,
+  type RestoreVerifyToc,
+} from "@/src/lib/backup-restore-verify-outcome";
 import { probeBackupArtifactOnDisk } from "@/src/lib/backup-artifact-probe";
 import { backupLocks, projectBackups, projects } from "@/src/db/schema";
 import {
@@ -571,6 +581,29 @@ async function pipeBackupFileToPgRestoreInContainer(
   }
 }
 
+/** Host `pg_restore --list` — dump TOC is the source of truth for empty-tenant matching. */
+async function readBackupDumpToc(artifactPath: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("pg_restore", ["--list", artifactPath], {
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return stdout.toString();
+  } catch (err: unknown) {
+    const e = err as NodeJS.ErrnoException & { stderr?: Buffer };
+    const stderr = e.stderr?.toString?.().trim() ?? "";
+    if (e.code === "ENOENT") {
+      throw new Error(
+        "pg_restore not found on the control plane (ENOENT). Install postgresql-client in the flux-web image to list dump TOC.",
+      );
+    }
+    throw new Error(
+      stderr.length > 0
+        ? `Failed to list dump TOC: ${stderr.slice(0, 800)}`
+        : "Failed to list dump TOC (pg_restore --list).",
+    );
+  }
+}
+
 /**
  * Wait until disposable verify Postgres accepts queries.
  * `pg_isready` alone is insufficient: during the official image init handoff it can
@@ -732,31 +765,56 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         "-t",
         "-A",
         "-c",
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema');",
+        RESTORE_VERIFY_TABLE_COUNT_SQL,
       ]);
       const tableCount = Number.parseInt(tableCountRaw.trim(), 10);
+      const kind = backup.kind as RestoreVerifyBackupKind;
+      const expectedTenantSchema =
+        kind === "tenant_export"
+          ? defaultTenantApiSchemaFromProjectId(backup.projectId)
+          : null;
+
+      let restoredSchemas: string[] = [];
+      let toc: RestoreVerifyToc | null = null;
       if (!Number.isFinite(tableCount) || tableCount <= 0) {
-        throw new Error(
-          "Restore verification failed: no user tables found after pg_restore.",
+        const schemaListRaw = await runDocker([
+          "exec",
+          "-e",
+          `PGPASSWORD=${verifyPassword}`,
+          verifyName,
+          "psql",
+          "-h",
+          "127.0.0.1",
+          "-U",
+          "postgres",
+          "-d",
+          "postgres",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-t",
+          "-A",
+          "-c",
+          RESTORE_VERIFY_SCHEMA_LIST_SQL,
+        ]);
+        restoredSchemas = parseRestoredSchemaList(schemaListRaw);
+        toc = parsePgRestoreList(await readBackupDumpToc(artifactPath));
+      }
+
+      const outcome = classifyRestoreVerification({
+        kind,
+        tableCount: Number.isFinite(tableCount) ? tableCount : Number.NaN,
+        restoredSchemas,
+        expectedTenantSchema,
+        toc,
+      });
+      if (!outcome.ok) {
+        throw new Error(outcome.error);
+      }
+      if (outcome.classification === "restorable_empty_tenant") {
+        console.log(
+          `[flux] backup verify: restorable_empty_tenant ${backup.id} schema ${expectedTenantSchema ?? "?"}`,
         );
       }
-      await runDocker([
-        "exec",
-        "-e",
-        `PGPASSWORD=${verifyPassword}`,
-        verifyName,
-        "psql",
-        "-h",
-        "127.0.0.1",
-        "-U",
-        "postgres",
-        "-d",
-        "postgres",
-        "-v",
-        "ON_ERROR_STOP=1",
-        "-c",
-        "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog','information_schema','pg_toast');",
-      ]);
       await db
         .update(projectBackups)
         .set({

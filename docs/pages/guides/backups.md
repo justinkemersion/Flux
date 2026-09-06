@@ -77,7 +77,7 @@ List output also includes **platform minimum backup freshness** when the control
 
 ## 3) Verify a backup
 
-This is the only step that promotes a backup to **restorable**. Verification runs `pg_restore` against the artifact in a disposable Postgres container on the control plane and checks that the schema and at least one non-system table came back:
+This is the only step that promotes a backup to **restorable**. Verification runs `pg_restore` against the artifact in a disposable Postgres container on the control plane and checks that the tenant (or dedicated) schema came back. A non-empty dump must restore at least one non-system table. A **schema-only empty v2 tenant export** (zero user tables) is still restore-verified when the expected `t_<shortId>_api` schema is present after restore and the dump TOC lists that schema with no `TABLE` entries — emptiness has to match the dump, not look like a failed restore:
 
 ```bash
 flux backup verify --project bloom-atelier --hash 0a1b2c3 --latest
@@ -187,7 +187,7 @@ Keep the API token used here narrow — read-write to the projects it touches, n
 
 | Symptom | Likely cause |
 |---------|--------------|
-| `flux backup verify` consistently fails | Postgres major-version mismatch between the verify image and the source; or the tenant schema was deleted between create and verify |
+| `flux backup verify` consistently fails | Postgres major-version mismatch between the verify image and the source; or the tenant schema was deleted between create and verify. Schema-only empty v2 tenants should verify — if you still see `no user tables found after pg_restore`, the control plane needs the empty-tenant verify policy. |
 | List always shows "Validating backup artifact" | The validator is stalled or the upload truncated; re-create and watch `--verbose` for the artifact size |
 | Download writes nothing to disk | Forgot `-o` or a shell redirect on a TTY (the CLI refuses binary to terminal) |
 | `flux nuke` refuses with "not restore-verified" | Latest backup is in a non-restorable trust state; create + verify, or pass `--skip-backup-check` if you really mean to destroy without a recovery path |

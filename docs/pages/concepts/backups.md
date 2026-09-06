@@ -39,7 +39,7 @@ Every backup moves through up to three states. The CLI and dashboard surface the
 | State | What it means | What it lets you do |
 |-------|---------------|---------------------|
 | **Artifact validated** | The dump file exists on the control plane, has a non-zero size, and its checksum matches what the upload reported. | Confirms the file is *physically* there. Does **not** confirm it is restorable. |
-| **Restore-verified** | A real `pg_restore` against this file succeeded in a disposable Postgres container. The schema and at least one non-system table came back as expected. | This is the only state that makes the backup **trustworthy** for production restore decisions. |
+| **Restore-verified** | A real `pg_restore` against this file succeeded in a disposable Postgres container. For a non-empty project the schema and at least one non-system table come back; for a **schema-only empty v2 tenant** (`tenant_export` with zero user tables) the tenant schema must exist after restore **and** the dump TOC must also be empty of tables (so a corrupt restore of a non-empty dump still fails). | This is the only state that makes the backup **trustworthy** for production restore decisions. |
 | **Offsite replicated** | A copy of the validated file lives in offsite storage (Backblaze B2, S3-compatible bucket, etc.). | Survives loss of the control-plane host. Independent of restore-verification. |
 
 These are independent dimensions. A backup can be **artifact validated** and **offsite replicated** but not yet **restore-verified** — meaning the file is durably stored but you do not yet know whether it actually restores. The `restore-verified` flag is the one that gates trust.
