@@ -527,9 +527,9 @@ Smoke: `./bin/mcp-smoke.sh` (offline); `./bin/mcp-smoke.sh --hosted` with `FLUX_
 | **v2 temp roles** | Readonly default; readwrite requires `FLUX_DB_ACCESS_ALLOW_READWRITE=1` |
 | **Backup trust** | Destructive actions require restore-verified newest backup (`@flux/core/backup-trust`) |
 | **Destructive gates** | CLI + dashboard + MCP apply path; HTTP 412 when blocked |
-| **R2 / offsite backups** | Optional `FLUX_R2_BACKUPS_*` when configured |
+| **R2 / offsite backups** | Optional `FLUX_R2_BACKUPS_*` when configured. `bin/ops-audit.sh` compares backup-bucket object bytes to the Cloudflare R2 Standard **10 GiB** free-tier storage allowance (WARN 5 GiB / FAIL 8 GiB; skip when R2 is unset) |
 | **Ops email alerts** | Optional Resend (`FLUX_ALERT_EMAIL_TO` + `FLUX_RESEND_API_KEY`) from the backup-scheduler and, when `FLUX_OPS_WATCH_ENABLED=1`, the error-only host/Docker watcher; generic SMTP fallback. Cloudflare Email Routing is receive-only. Unset = no-op. See [Production hardening](docs/pages/guides/production-hardening.md#email-alerts-for-scheduler--ops-failures-optional) |
-| **Ops audit** | `bin/ops-audit.sh` — containers, logs, backup catalog (`--deep`), edge smoke (`--smoke`). Error-only sibling: `bin/ops-watch.sh` |
+| **Ops audit** | `bin/ops-audit.sh` — containers, logs, **R2 free-tier storage**, backup catalog (`--deep`), edge smoke (`--smoke`). Error-only sibling: `bin/ops-watch.sh` |
 | **Gateway guardrails** | Rate limit (`FLUX_GATEWAY_RATE_LIMIT`), lifecycle 503, migration drain 503 |
 | **Free / Hobby tier** | Default `v2_shared`; max **2 active** projects; tier-aware gateway rate limits per tenant — **trajectory** (single env limit today) |
 | **Known deferred** | HTTP MCP, approval UI for agents, formal removal of legacy MCP CLI token |
@@ -584,7 +584,7 @@ Set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web
 
 ### When to run ops audit
 
-- Weekly: `./bin/ops-audit.sh --remote`
+- Weekly: `./bin/ops-audit.sh --remote` (includes R2 free-tier storage when `FLUX_R2_BACKUPS_ENABLED`; WARN/FAIL pages via the existing weekday email path)
 - Monthly or after incidents: `--deep --smoke`
 - Error-only (silent when healthy): `./bin/ops-watch.sh --remote`
 - Disk pressure: `bin/ops-disk-inventory.sh`, `bin/ops-cleanup-stale-containers.sh`
@@ -657,4 +657,4 @@ Summary:
 
 ---
 
-- Last reviewed: `2026-09-06`
+- Last reviewed: `2026-09-15`

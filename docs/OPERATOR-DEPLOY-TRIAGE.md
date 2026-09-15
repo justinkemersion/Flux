@@ -18,6 +18,7 @@ Use this table when a deploy or health check fails. Symptom-first app-developer 
 | v2 mesh **Offline** after deep JWT probe deploy | Catalog `jwt_secret` null or JWT probe not 2xx | Run **Repair** on the project; optional `FLUX_TENANT_PROBE_SHALLOW=1` for legacy 401-only probes |
 | `flux backup create` → `EACCES` on backup dir | Control plane runs as non-root `nextjs`; default backup dirs not writable | Redeploy `flux-web` with `docker/web/flux-web-entrypoint.sh` + compose volumes, or set `FLUX_BACKUPS_LOCAL_DIR` / `FLUX_BACKUPS_OFFSITE_DIR` to writable paths |
 | Backup-scheduler errors only in `flux-web` logs | Ops email alerts unset, Resend/SMTP send failed, or SMTP pointed at Cloudflare Email Routing (receive-only) | Set `FLUX_ALERT_EMAIL_TO=justin@vsl-base.com` plus `FLUX_RESEND_API_KEY` in `docker/web/.env`; recreate `flux-web`. Look for `ops-alert-email: send failed` |
+| Weekday ops-audit email: R2 storage WARN/FAIL | Backup bucket (or extra buckets) approaching Cloudflare R2 Standard 10 GiB free-tier, or extra bucket AccessDenied | Confirm `./bin/ops-audit.sh --remote` line `R2 storage: … / 10 GiB`. Defaults WARN 5 GiB / FAIL 8 GiB (`FLUX_R2_USAGE_*`). Do not add unlistable extra buckets |
 | No mail when a core container dies / disk is full | Host watcher disabled, or `flux-web` itself is down | Set `FLUX_OPS_WATCH_ENABLED=1` (same alert env), recreate `flux-web`, confirm `ops-watch: started`. If `flux-web` is down, `./bin/ops-watch.sh --remote` from a laptop. |
 | `ops-watch: disk check skipped` / `log scan skipped` in flux-web logs | Tooling skip (host `df` netns Permission denied, or `docker logs` timeout / exit 143). **Not a page.** | Redeploy flux-web with the path-scoped `df` helper and log timeout. Skips stay silent to Justin; only fatal/panic/OOM matches and real disk % pages. |
 | `flux-web` logs `EACCES` on `/var/run/docker.sock` | Entrypoint dropped to `nextjs` without host `docker` GID | Rebuild `flux-web` with `setpriv` entrypoint + `FLUX_DOCKER_SUPPLEMENTARY_GID` / `DOCKER_GID` in `docker/web/docker-compose.yml` |
@@ -39,7 +40,7 @@ The canonical full deploy order is `deploy-traefik` → `deploy-v2-shared` → `
 ## Ops audit
 
 ```bash
-./bin/ops-audit.sh --remote              # weekly
+./bin/ops-audit.sh --remote              # weekly (R2 free-tier storage when enabled)
 ./bin/ops-audit.sh --remote --deep --smoke   # monthly
 ./bin/ops-watch.sh --remote              # error-only; silent when healthy
 ```

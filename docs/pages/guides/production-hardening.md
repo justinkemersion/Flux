@@ -57,8 +57,15 @@ Set these in `docker/web/.env` next to compose (see [`docker/web/.env.example`](
 | `FLUX_R2_REGION` | `auto` |
 | `FLUX_R2_ACCESS_KEY_ID` / `FLUX_R2_SECRET_ACCESS_KEY` | R2 API token credentials (server env only) |
 | `FLUX_R2_BACKUPS_STRICT` | Optional — when `true`, backup create fails if offsite upload fails |
+| `FLUX_R2_USAGE_FREE_TIER_GIB` | Optional — free-tier storage compared as GiB (default **10**). Byte form: `FLUX_R2_USAGE_FREE_TIER_BYTES` |
+| `FLUX_R2_USAGE_WARN_GIB` | Optional — ops-audit **WARN** when summed object bytes reach this many GiB (default **5**, 50% of 10 GiB). Byte form: `FLUX_R2_USAGE_WARN_BYTES` |
+| `FLUX_R2_USAGE_FAIL_GIB` | Optional — ops-audit **FAIL** at this many GiB (default **8**, 80% of 10 GiB). Byte form: `FLUX_R2_USAGE_FAIL_BYTES` |
+| `FLUX_R2_USAGE_EXTRA_BUCKETS` | Optional — comma-separated extra bucket names listed with the same `FLUX_R2_*` token. **AccessDenied is a WARN**, not a FAIL. Leave unset unless the token can list those buckets |
+| `FLUX_R2_USAGE_SKIP` | Optional — `1` / `true` / `yes` skips the storage check |
 
 **Trust model:** R2 is an offsite replication layer only. Destructive gates (`flux nuke`, dashboard delete, etc.) still require a **restore-verified local** backup — offsite upload alone does not satisfy the gate.
+
+**Free-tier storage headroom (ops-audit):** `bin/ops-audit.sh` always runs a cheap `ListObjectsV2` sum against the configured backup bucket when `FLUX_R2_BACKUPS_ENABLED=true` (the whole bucket — `FLUX_R2_BACKUP_PREFIX` is not a filter). Example line: `R2 storage: 80.0 MiB / 10 GiB free-tier (0.8%)`. Well under the WARN bar is **OK** (no email). Crossing WARN/FAIL uses the existing weekday ops-audit alert path (Resend when the run has FAIL/WARN). This does **not** change retention deletes, `FLUX_R2_BACKUPS_STRICT`, or `ops-watch`. Helper: [`bin/ops-audit/r2-usage.mjs`](../../../bin/ops-audit/r2-usage.mjs) (`node bin/ops-audit/r2-usage.mjs --help`). Account ids in R2 hostnames are redacted; credentials are never printed.
 
 #### Platform minimum backup freshness (self-hosted)
 
@@ -84,7 +91,7 @@ Both `FLUX_BACKUPS_*` paths must exist and be writable by the control-plane proc
 
 The user-facing trust contract (what backups guarantee, the three trust states) is engine-independent and lives in [Backups](/docs/concepts/backups). This section is purely about where bytes physically land on the operator's host.
 
-**Periodic audit (self-hosted):** from the repo on your laptop or the server checkout, run `bin/ops-audit.sh --remote` (SSH defaults match `bin/sync-env-remote.sh`). Add `--deep` for backup-catalog trust rows and **platform minimum backup freshness** (restore-verified age vs `FLUX_MIN_BACKUP_INTERVAL_DAYS`); add `--smoke` to GET each tenant API through `flux-node-gateway` (see `bin/ops-audit-smoke.projects.example`). The scheduler restore-verifies stale projects automatically; `--deep` still warns when the newest restore-verified backup is missing or overdue. Schema-only empty v2 tenants (zero user tables) can be restore-verified — they are not treated as `restore_failed` once the tenant schema and empty dump TOC match. For unattended paging (error-only), see [Error-only Docker / host watcher](#error-only-docker--host-watcher-optional) and `bin/ops-watch.sh`.
+**Periodic audit (self-hosted):** from the repo on your laptop or the server checkout, run `bin/ops-audit.sh --remote` (SSH defaults match `bin/sync-env-remote.sh`). Add `--deep` for backup-catalog trust rows and **platform minimum backup freshness** (restore-verified age vs `FLUX_MIN_BACKUP_INTERVAL_DAYS`); add `--smoke` to GET each tenant API through `flux-node-gateway` (see `bin/ops-audit-smoke.projects.example`). The scheduler restore-verifies stale projects automatically; `--deep` still warns when the newest restore-verified backup is missing or overdue. Schema-only empty v2 tenants (zero user tables) can be restore-verified — they are not treated as `restore_failed` once the tenant schema and empty dump TOC match. Every run also checks **R2 free-tier storage headroom** when offsite backups are enabled (WARN at 5 GiB / FAIL at 8 GiB of the 10 GiB Standard allowance; quiet when well under). For unattended paging (error-only), see [Error-only Docker / host watcher](#error-only-docker--host-watcher-optional) and `bin/ops-watch.sh`.
 
 #### Email alerts for scheduler / ops failures (optional)
 
