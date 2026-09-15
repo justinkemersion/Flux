@@ -13,12 +13,19 @@
 #          Targets: bin/ops-audit-smoke.projects (copy from ops-audit-smoke.projects.example),
 #          or FLUX_OPS_SMOKE_PROJECTS=slug:hash,... or catalog query when unset.
 #
+# R2 storage (always, cheap ListObjectsV2): when FLUX_R2_BACKUPS_ENABLED is set, sum object
+# bytes in the backup bucket vs Cloudflare R2 Standard free-tier 10 GiB storage.
+# Default WARN at 5 GiB (50%), FAIL at 8 GiB (80%). Quiet/OK when well under.
+# Optional extra buckets: FLUX_R2_USAGE_EXTRA_BUCKETS (AccessDenied = WARN, not FAIL).
+# Skip: unset R2, or FLUX_R2_USAGE_SKIP=1. Helper: bin/ops-audit/r2-usage.mjs.
+#
 # Env overrides (match bin/sync-env-remote.sh / bin/use-remote-docker-hetzner.sh):
 #   FLUX_SYNC_REMOTE=root@host
 #   FLUX_REMOTE_REPO_ROOT=/srv/platform/flux
 #
 # Exit codes: 0 = no hard failures; 1 = one or more FAIL findings.
-# WARN lines do not fail the run (review them anyway).
+# WARN lines do not fail the run (review them anyway). Weekday ops-audit email
+# (Resend to justin@vsl-base.com) already pages on FAIL/WARN — this check uses that path.
 #
 set -euo pipefail
 
@@ -568,6 +575,159 @@ audit_host_cron() {
   fi
 }
 
+resolve_web_env_file() {
+  if [[ -f "${FLUX_REMOTE_REPO_ROOT}/docker/web/.env" ]]; then
+    echo "${FLUX_REMOTE_REPO_ROOT}/docker/web/.env"
+  elif [[ -f "${REPO_ROOT}/docker/web/.env" ]]; then
+    echo "${REPO_ROOT}/docker/web/.env"
+  fi
+}
+
+read_web_env_value() {
+  local key="$1"
+  local env_file
+  env_file="$(resolve_web_env_file)"
+  [[ -n "$env_file" && -f "$env_file" ]] || return 0
+  grep -E "^[[:space:]]*${key}=" "$env_file" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'" | tr -d '\r' || true
+}
+
+env_flag_truthy() {
+  local v
+  v="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  [[ "$v" == "1" || "$v" == "true" || "$v" == "yes" ]]
+}
+
+resolve_r2_usage_script() {
+  if [[ -n "${FLUX_OPS_R2_USAGE_SCRIPT:-}" && -f "${FLUX_OPS_R2_USAGE_SCRIPT}" ]]; then
+    echo "${FLUX_OPS_R2_USAGE_SCRIPT}"
+    return
+  fi
+  if [[ -f "${SCRIPT_DIR}/ops-audit/r2-usage.mjs" ]]; then
+    echo "${SCRIPT_DIR}/ops-audit/r2-usage.mjs"
+    return
+  fi
+  if [[ -f "${REPO_ROOT}/bin/ops-audit/r2-usage.mjs" ]]; then
+    echo "${REPO_ROOT}/bin/ops-audit/r2-usage.mjs"
+  fi
+}
+
+apply_r2_usage_report() {
+  local status="" line="" notes=() buckets=()
+  local row
+  while IFS= read -r row || [[ -n "$row" ]]; do
+    [[ -z "$row" ]] && continue
+    case "$row" in
+      status=*) status="${row#status=}" ;;
+      line=*) line="${row#line=}" ;;
+      note=*) notes+=("${row#note=}") ;;
+      bucket=*) buckets+=("${row#bucket=}") ;;
+    esac
+  done <<<"$1"
+
+  case "$status" in
+    skip)
+      pass "${line:-R2 usage check skipped}"
+      ;;
+    ok)
+      pass "${line:-R2 storage within free-tier headroom}"
+      ;;
+    warn)
+      warn "${line:-R2 storage headroom warning}"
+      ;;
+    fail)
+      fail "${line:-R2 storage exceeds free-tier fail threshold}"
+      ;;
+    *)
+      warn "R2 usage helper returned unreadable status=${status:-empty}"
+      if [[ -n "$line" ]]; then
+        warn "$line"
+      fi
+      ;;
+  esac
+  local b
+  for b in "${buckets[@]+"${buckets[@]}"}"; do
+    echo "  $b"
+  done
+  local n
+  for n in "${notes[@]+"${notes[@]}"}"; do
+    warn "$n"
+  done
+}
+
+audit_r2_usage() {
+  section "Cloudflare R2 free-tier storage"
+  local skip_flag enabled
+  skip_flag="$(read_web_env_value FLUX_R2_USAGE_SKIP)"
+  if env_flag_truthy "$skip_flag"; then
+    pass "R2 usage check skipped — FLUX_R2_USAGE_SKIP is set"
+    return
+  fi
+
+  enabled="$(read_web_env_value FLUX_R2_BACKUPS_ENABLED)"
+  local script
+  script="$(resolve_r2_usage_script)"
+
+  # If the host .env says R2 is off, skip without invoking Node. If the env file
+  # is missing, still try flux-web (container env may have the live flags).
+  if [[ -n "$(resolve_web_env_file)" ]] && ! env_flag_truthy "$enabled"; then
+    pass "R2 usage check skipped — FLUX_R2_BACKUPS_ENABLED is not set"
+    return
+  fi
+
+  if [[ -z "$script" ]]; then
+    if env_flag_truthy "$enabled"; then
+      warn "R2 backups enabled but missing bin/ops-audit/r2-usage.mjs — skip usage check"
+    else
+      pass "R2 usage check skipped — helper not present and R2 not configured"
+    fi
+    return
+  fi
+
+  local output=""
+  local overlay=() key val
+  for key in \
+    FLUX_R2_USAGE_SKIP \
+    FLUX_R2_USAGE_WARN_GIB \
+    FLUX_R2_USAGE_FAIL_GIB \
+    FLUX_R2_USAGE_FREE_TIER_GIB \
+    FLUX_R2_USAGE_WARN_BYTES \
+    FLUX_R2_USAGE_FAIL_BYTES \
+    FLUX_R2_USAGE_FREE_TIER_BYTES \
+    FLUX_R2_USAGE_EXTRA_BUCKETS
+  do
+    val="$(read_web_env_value "$key")"
+    [[ -n "$val" ]] || continue
+    overlay+=(-e "${key}=${val}")
+  done
+
+  if container_running "$FLUX_WEB_CONTAINER"; then
+    set +e
+    output="$(docker exec ${overlay[@]+"${overlay[@]}"} -i "$FLUX_WEB_CONTAINER" node --input-type=module - <"$script" 2>/dev/null)"
+    set -e
+  fi
+
+  if [[ -z "$output" ]]; then
+    local env_file
+    env_file="$(resolve_web_env_file)"
+    if command -v node >/dev/null 2>&1 && [[ -n "$env_file" ]]; then
+      set +e
+      output="$(node "$script" --env-file "$env_file" 2>/dev/null)"
+      set -e
+    fi
+  fi
+
+  if [[ -z "$output" ]]; then
+    if env_flag_truthy "$enabled"; then
+      warn "R2 usage check could not run (need running $FLUX_WEB_CONTAINER or host node + docker/web/.env)"
+    else
+      pass "R2 usage check skipped — FLUX_R2_BACKUPS_ENABLED is not set"
+    fi
+    return
+  fi
+
+  apply_r2_usage_report "$output"
+}
+
 run_audit() {
   echo "Flux ops audit — $(date -u +%Y-%m-%dT%H:%M:%SZ) — host $(hostname -f 2>/dev/null || hostname)"
   if ! docker_ok; then
@@ -578,6 +738,7 @@ run_audit() {
   audit_flux_web_logs
   audit_web_env_hints
   audit_backup_volumes
+  audit_r2_usage
   audit_gateway_health
   audit_stale_containers
   if [[ "$DEEP" == "1" ]]; then
@@ -600,7 +761,7 @@ run_audit() {
 }
 
 usage() {
-  sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 main() {
@@ -632,8 +793,18 @@ main() {
   done
   if [[ "$remote" == "1" ]]; then
     echo "Remote audit via SSH: $FLUX_SYNC_REMOTE (deep=${DEEP} smoke=${SMOKE})"
+    local helper="$SCRIPT_DIR/ops-audit/r2-usage.mjs"
+    local remote_helper_env=""
+    if [[ -f "$helper" ]]; then
+      if ssh -o BatchMode=yes -o ConnectTimeout=15 "$FLUX_SYNC_REMOTE" \
+        "cat > /tmp/flux-ops-audit-r2-usage.mjs && chmod 600 /tmp/flux-ops-audit-r2-usage.mjs" \
+        <"$helper"
+      then
+        remote_helper_env="FLUX_OPS_R2_USAGE_SCRIPT=/tmp/flux-ops-audit-r2-usage.mjs"
+      fi
+    fi
     ssh -o BatchMode=yes -o ConnectTimeout=15 "$FLUX_SYNC_REMOTE" \
-      "FLUX_REMOTE_REPO_ROOT='$FLUX_REMOTE_REPO_ROOT' FLUX_OPS_DEEP='$DEEP' FLUX_OPS_SMOKE='$SMOKE' FLUX_OPS_SMOKE_FILE='$FLUX_REMOTE_REPO_ROOT/bin/ops-audit-smoke.projects' bash -s" <"$0"
+      "${remote_helper_env} FLUX_REMOTE_REPO_ROOT='$FLUX_REMOTE_REPO_ROOT' FLUX_OPS_DEEP='$DEEP' FLUX_OPS_SMOKE='$SMOKE' FLUX_OPS_SMOKE_FILE='$FLUX_REMOTE_REPO_ROOT/bin/ops-audit-smoke.projects' bash -s" <"$0"
     exit $?
   fi
   run_audit

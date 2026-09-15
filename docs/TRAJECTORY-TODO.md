@@ -32,7 +32,7 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-09-06`
+- Last updated: `2026-09-15`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-traefik -> deploy-v2-shared -> deploy-gateway -> deploy-web`
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
@@ -42,6 +42,7 @@ Not intended for public docs or marketing consumption.
 - **Empty-tenant restore verify (PR #20):** `done` — schema-only empty v2 `tenant_export` verifies when tenant schema + empty TOC match
 - **Backup-scheduler email alerts:** `done` — optional `FLUX_ALERT_EMAIL_TO` + Resend (`FLUX_RESEND_API_KEY`) primary, generic SMTP fallback; Cloudflare Email Routing is receive-only; no-op when unset; fingerprint dedupe for hourly retries
 - **Error-only host/Docker watcher:** `done` — `FLUX_OPS_WATCH_ENABLED` flux-web tick + `bin/ops-watch.sh`; same Resend/dedupe path; silent when healthy; disk `df` is path-scoped (`/host`, `/host/srv`, `/host/var/lib/docker`) so docker netns Permission denied is a skip, not a page; `docker logs` has an 8s timeout (exit 143 / SIGTERM is a skip)
+- **R2 free-tier storage ops-audit:** `done` — `bin/ops-audit.sh` lists the configured backup bucket (cheap `ListObjectsV2`) vs Cloudflare R2 Standard 10 GiB; WARN at 5 GiB / FAIL at 8 GiB; extra buckets optional (`FLUX_R2_USAGE_EXTRA_BUCKETS`, AccessDenied = WARN); skip when R2 unset. Weekday ops-audit email already pages on WARN/FAIL.
 
 ---
 
