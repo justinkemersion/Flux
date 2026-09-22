@@ -67,7 +67,7 @@ curl -sS "http://127.0.0.1:4000/health"
 curl -sS "http://127.0.0.1:4000/health/deep"
 ```
 
-On `/health/deep` you want `"ok":true` and `"db":"up"` before treating the stack as ready (Redis is reported; `ok` follows the system DB only).
+On `/health/deep` you want `"ok":true` and `"db":"up"` before treating the stack as ready (Redis is reported; `ok` follows the system DB only). Full contract: [OPERATOR-GATEWAY-HEALTH.md](./OPERATOR-GATEWAY-HEALTH.md).
 
 ## 5. Run load tests against the local gateway
 

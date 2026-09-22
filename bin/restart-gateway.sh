@@ -2,6 +2,10 @@
 # Restart the Flux Node gateway without rebuilding images.
 # Delegates to deploy-gateway.sh with FLUX_DEPLOY_RESTART_ONLY=1.
 #
+# Health contract: docs/OPERATOR-GATEWAY-HEALTH.md
+#   GET /health       liveness (hard gate after the container is up)
+#   GET /health/deep  readiness (warning after this restart; the image-build
+#                     canary in deploy-gateway.sh is skipped when restart-only)
 # Same env vars as deploy-gateway.sh; see that file for options.
 set -euo pipefail
 

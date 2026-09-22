@@ -7,8 +7,13 @@
 #   FLUX_DEPLOY_RESTART_ONLY=1   — skip image build and prune; `compose up --no-build` only
 #                                  (used by bin/restart-gateway.sh).
 #   FLUX_GATEWAY_NAME            — gateway container name override (default: flux-node-gateway).
+# Health contract: docs/OPERATOR-GATEWAY-HEALTH.md
+#   GET /health       liveness (no I/O). Hard gate after cutover and in the canary.
+#   GET /health/deep  readiness (system DB SELECT 1). Hard gate in the canary;
+#                     warning after live cutover. Redis is reported and does not
+#                     change the HTTP status.
 #   FLUX_GATEWAY_HEALTH_URL      — liveness URL (default: http://127.0.0.1:4000/health).
-#   FLUX_GATEWAY_DEEP_URL        — readiness URL (default: http://127.0.0.1:4000/health/deep).
+#   FLUX_GATEWAY_DEEP_URL        — post-cutover readiness URL (default: http://127.0.0.1:4000/health/deep).
 #   FLUX_GATEWAY_ROUTE_HOST      — optional host header for edge route probe.
 #   FLUX_GATEWAY_SKIP_DB_PREFLIGHT=1 — skip catalog DB connectivity check (not recommended).
 #   FLUX_GATEWAY_HEALTH_WARMUP_SECS — liveness retry window after container cycle (default: 60).
@@ -281,6 +286,9 @@ wait_for_gateway_container
 wait_for_gateway_liveness
 
 if command -v curl >/dev/null 2>&1; then
+  # Post-cutover readiness is a warning. The canary already required HTTP 200
+  # from /health/deep before this container replaced the live route.
+  # Contract: docs/OPERATOR-GATEWAY-HEALTH.md
   DEEP_BODY="$(curl -sS "$DEEP_URL" || true)"
   DEEP_CODE="$(curl -sS -o /dev/null -w "%{http_code}" "$DEEP_URL" || echo "000")"
   if [[ "$DEEP_CODE" != "200" ]]; then
