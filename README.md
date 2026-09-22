@@ -557,7 +557,7 @@ Typical checkout: `/srv/platform/flux` (`FLUX_REMOTE_REPO_ROOT`, `APP_DIR` in de
 ./bin/deploy-web.sh         # dashboard + control plane
 ```
 
-Orchestrator: `./bin/deploy-all.sh` (optional `FLUX_DEPLOY_GIT_SYNC=1`).
+Orchestrator: `./bin/deploy-all.sh` (optional `FLUX_DEPLOY_GIT_SYNC=1`). Each run writes a timestamped stage report (exit code and elapsed time per stage, plus overall) under `tmp/deploy-reports/` (`FLUX_DEPLOY_REPORT_DIR` overrides the directory; `tmp/` is gitignored). The report is finalized on failure. Default is fail-fast; `FLUX_DEPLOY_CONTINUE_ON_WARN=1` continues after a non-zero stage. `./bin/restart-all.sh` writes the same kind of report for a recycle without image rebuild.
 
 ### Launch dashboard from laptop
 
