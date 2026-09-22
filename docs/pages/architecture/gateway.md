@@ -29,9 +29,13 @@ At a high level:
 3. External JWT verified per project configuration.
 4. Bridge JWT minted with Postgres role and claims PostgREST expects.
 
-Internal probes may use **`FLUX_TENANT_PROBE_GATEWAY_URL`** to avoid relying on public DNS from inside containers—see [Environment variables](/docs/reference/env-vars).
-
 The generated Traefik file is operational state, not source configuration. Startup and every pooled create/delete or v2→v1 cutover reconcile the complete document from the authoritative project catalog, using an atomic replace so Traefik never observes a partial write.
+
+Dashboard mesh probes may use **`FLUX_TENANT_PROBE_GATEWAY_URL`** (tenant `Host` on the gateway base) so `flux-web` does not depend on public DNS. That probe is separate from the process checks below.
+
+## Health
+
+`GET /health` is liveness: HTTP 200 `{"status":"ok"}`, no database or Redis call, no project JWT. `GET /health/deep` is readiness: `SELECT 1` on `FLUX_SYSTEM_DATABASE_URL`, HTTP 503 when that ping fails. The deep body also reports Redis (`up`, `down`, or `null` when `REDIS_URL` is unset); Redis does not change the status code. Neither route checks PostgREST or tenant JWT verification. Operator contract: `docs/OPERATOR-GATEWAY-HEALTH.md`.
 
 ## Example
 

@@ -4,6 +4,8 @@ Technical runbook for recreating a **namespaced** Flux project (for example **Ye
 
 **Scope:** Control plane from your laptop (or CI) targeting the fleet with `DOCKER_HOST`, Clerk JWT alignment, schema + data migration, frontend env sync, and identity backfill SQL.
 
+Gateway process checks are a different runbook: [`OPERATOR-GATEWAY-HEALTH.md`](./OPERATOR-GATEWAY-HEALTH.md) (`GET /health` liveness vs `GET /health/deep` system-database readiness). Deploy triage: [`OPERATOR-DEPLOY-TRIAGE.md`](./OPERATOR-DEPLOY-TRIAGE.md).
+
 ---
 
 ## Phase 1: The Pre-Flight Check
@@ -246,6 +248,7 @@ WHERE user_id = 'legacy-or-old-value';
 
 ## Related documentation
 
+- [`OPERATOR-GATEWAY-HEALTH.md`](./OPERATOR-GATEWAY-HEALTH.md) — gateway `GET /health` (liveness) and `GET /health/deep` (readiness).
 - [`docs/pages/guides/clerk.md`](pages/guides/clerk.md) — JWTs, `auth.uid()`, RLS.
 - [`docs/pages/guides/authjs.md`](pages/guides/authjs.md) — Auth.js sessions + RLS.
 - [`docs/pages/guides/nextjs.md`](pages/guides/nextjs.md) — Next.js bootstrap against a v2 shared project.

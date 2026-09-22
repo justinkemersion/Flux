@@ -2,7 +2,7 @@
 
 **Audience:** Flux operators deploying or debugging production.  
 **Status:** internal / operator-only  
-**Deploy workflow:** [README.md § Production deployment](../README.md#production-deployment) · [Production hardening](./pages/guides/production-hardening.md)
+**Deploy workflow:** [README.md § Production deployment](../README.md#production-deployment) · [Gateway health](./OPERATOR-GATEWAY-HEALTH.md) · [Production hardening](./pages/guides/production-hardening.md)
 
 Use this table when a deploy or health check fails. Symptom-first app-developer troubleshooting lives in [Troubleshooting](./pages/reference/troubleshooting.md).
 
@@ -28,10 +28,21 @@ Use this table when a deploy or health check fails. Symptom-first app-developer 
 
 ## Health gates (post-deploy)
 
+Canonical contract: [Gateway health and readiness](./OPERATOR-GATEWAY-HEALTH.md).
+
+| Endpoint | Role | Pass |
+|----------|------|------|
+| `GET /health` | Liveness. No database or Redis I/O. | HTTP 200 `{"status":"ok"}` |
+| `GET /health/deep` | Readiness. `SELECT 1` on `FLUX_SYSTEM_DATABASE_URL`. Redis is reported (`up`, `down`, or `null`) and does not change the status code. | HTTP 200 with `"ok":true` and `"db":"up"`. HTTP 503 when the system database ping fails. |
+
 ```bash
 curl -fsS http://127.0.0.1:4000/health && echo
 curl -fsS http://127.0.0.1:4000/health/deep && echo
 ```
+
+`bin/deploy-gateway.sh` fails the deploy when post-cutover liveness stays non-200 through the warmup window. Readiness is a hard fail on the pre-cutover canary and a warning after the live container is already up. `bin/ops-audit.sh` checks liveness only.
+
+Dashboard `GET /api/health` is a different endpoint (control-plane liveness and build provenance). `FLUX_TENANT_PROBE_GATEWAY_URL` is the dashboard mesh-probe base, not either gateway health URL.
 
 Optional: `pnpm --filter dashboard test` from the repo checkout on a dev machine or CI host.
 

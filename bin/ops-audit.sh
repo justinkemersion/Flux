@@ -233,6 +233,9 @@ audit_backup_volumes() {
   fi
 }
 
+# Liveness only: GET /health inside the gateway container.
+# Readiness is GET /health/deep (system DB). This audit does not call it.
+# Contract: docs/OPERATOR-GATEWAY-HEALTH.md
 audit_gateway_health() {
   section "Gateway / edge"
   if container_running "$FLUX_NODE_GATEWAY_CONTAINER"; then

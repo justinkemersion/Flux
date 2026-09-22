@@ -43,7 +43,7 @@ For pooled projects, the control plane renders exact `Host(...)` routers into Tr
 
 ## Example
 
-For internal health checks from the **control plane**, prefer probing via the **gateway** with correct `Host` headers—see [Environment variables](/docs/reference/env-vars) (`FLUX_TENANT_PROBE_GATEWAY_URL`).
+Dashboard fleet checks (`FLUX_TENANT_PROBE_GATEWAY_URL`) call the tenant API through the gateway with the public tenant `Host`. That mesh probe is separate from gateway `GET /health` (liveness) and `GET /health/deep` (system-database readiness). See `docs/OPERATOR-GATEWAY-HEALTH.md`.
 
 ## Next steps
 

@@ -106,8 +106,9 @@ working, it just cannot be identified, and answering 503 would tell orchestrator
 healthy process. Callers that require identity read the body.
 
 There is no `/api/health/deep` on the dashboard. Provenance is build identity, not dependency
-readiness, so it belongs on liveness. Deep readiness for the data plane remains the gateway's
-`/health/deep`.
+readiness, so it belongs on liveness. Gateway process checks are separate: `GET /health`
+(liveness, no I/O) and `GET /health/deep` (system-database readiness). Contract:
+[OPERATOR-GATEWAY-HEALTH.md](./OPERATOR-GATEWAY-HEALTH.md).
 
 ## Deploy guard
 
@@ -191,11 +192,12 @@ flux control-plane verify           # expect READY
 curl -s https://flux.vsl-base.com/api/health | jq .provenance
 ```
 
-Gateway and data plane are unchanged by this work, but confirm they are still healthy:
+Gateway and data plane are unchanged by this work. On the Docker host, confirm the
+gateway process ([health contract](./OPERATOR-GATEWAY-HEALTH.md)):
 
 ```bash
-curl -s https://<gateway-host>/health
-curl -s https://<gateway-host>/health/deep
+curl -fsS http://127.0.0.1:4000/health && echo
+curl -fsS http://127.0.0.1:4000/health/deep && echo
 ```
 
 Finally, prove the adapter end to end on a **disposable tenant** before touching application

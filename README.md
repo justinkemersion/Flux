@@ -573,12 +573,16 @@ Override: `FLUX_LAUNCH_REMOTE`, `FLUX_LAUNCH_APP_DIR`, `FLUX_LAUNCH_BRANCH`. Pre
 
 ### Health checks
 
+Gateway process checks on the Docker host. Canonical contract: [`docs/OPERATOR-GATEWAY-HEALTH.md`](docs/OPERATOR-GATEWAY-HEALTH.md).
+
 ```bash
-curl -fsS http://127.0.0.1:4000/health
-curl -fsS http://127.0.0.1:4000/health/deep
+curl -fsS http://127.0.0.1:4000/health && echo
+curl -fsS http://127.0.0.1:4000/health/deep && echo
 ```
 
-Set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` for reliable in-container v2 mesh probes.
+`GET /health` is liveness: the process is listening, no dependency I/O, HTTP 200 `{"status":"ok"}`. `GET /health/deep` is readiness: `SELECT 1` on the flux-system database, HTTP 503 when that ping fails. The deep body also reports Redis (`up`, `down`, or `null` when `REDIS_URL` is unset); Redis does not change the status code.
+
+`FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web/.env` is the dashboard mesh-probe base (tenant `Host` header). `FLUX_TENANT_PROBE_SHALLOW=1` restores 401-as-healthy mesh checks. Those variables do not select `/health` or `/health/deep`. Dashboard `GET /api/health` is control-plane liveness and build provenance.
 
 `docker/web/docker-compose.yml` sets `FLUX_TRAEFIK_DYNAMIC_CONFIG_PATH` and shares the named `flux-traefik-dynamic` volume with Traefik. Do not hand-edit the generated `v2-tenants.yml`; `flux-web` replaces it atomically from the catalog at startup and after pooled create/delete/migration events. The file uses JSON syntax, which is valid YAML, and the `.yml` extension is required for Traefik file-provider discovery. `bin/sync-v2-gateway-tls-domains.sh` remains a legacy rollout fallback, not a normal provisioning step.
 
@@ -603,6 +607,7 @@ Set `FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000` in `docker/web
 | [`docs/guides/`](docs/guides/) | Operators | Import, v1 SQL workflows (some duplicated in pages) |
 | [`docs/OPERATOR-DASHBOARD-MODE-SPLIT.md`](docs/OPERATOR-DASHBOARD-MODE-SPLIT.md) | Operators | Dashboard v1/v2 API matrix |
 | [`docs/OPERATOR-DEPLOY-TRIAGE.md`](docs/OPERATOR-DEPLOY-TRIAGE.md) | Operators | Deploy failure triage |
+| [`docs/OPERATOR-GATEWAY-HEALTH.md`](docs/OPERATOR-GATEWAY-HEALTH.md) | Operators | Gateway `/health` vs `/health/deep` |
 | [`docs/TRAJECTORY-TODO.md`](docs/TRAJECTORY-TODO.md) | Internal | Engineering backlog |
 | [`docs/UI-SCOPE-CONTRACT.md`](docs/UI-SCOPE-CONTRACT.md) | Contributors | Dashboard scope |
 | [`docs/README-MAINTENANCE-CONTRACT.md`](docs/README-MAINTENANCE-CONTRACT.md) | Contributors, agents | Docs freshness policy |
@@ -657,4 +662,4 @@ Summary:
 
 ---
 
-- Last reviewed: `2026-09-15`
+- Last reviewed: `2026-09-22`

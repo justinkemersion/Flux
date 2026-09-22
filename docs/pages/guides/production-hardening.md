@@ -17,7 +17,7 @@ Production is where implicit assumptions break: TLS trust, secret rotation, rate
 ## The idea
 
 - Prefer **`NODE_EXTRA_CA_CERTS`** (or system trust) over disabling TLS verification globally.
-- On **v2**, internal probes should often target the **gateway** with correct `Host` headers—see [Gateway](/docs/architecture/gateway) and [Environment variables](/docs/reference/env-vars) (`FLUX_TENANT_PROBE_GATEWAY_URL`).
+- On **v2**, dashboard mesh probes (`FLUX_TENANT_PROBE_GATEWAY_URL`) call the tenant API through the gateway with the public tenant `Host`. That is separate from gateway `GET /health` (liveness) and `GET /health/deep` (system-database readiness). See `docs/OPERATOR-GATEWAY-HEALTH.md`.
 - Treat gateway signing keys like database superuser passwords: rotation plans, access logging, least privilege.
 
 ## How it works
@@ -25,7 +25,8 @@ Production is where implicit assumptions break: TLS trust, secret rotation, rate
 Review:
 
 - `docs/production-security-audit.md` — audit framing
-- `docs/OPERATIONS.md` — operational checklist items relevant to your deployment
+- `docs/OPERATIONS.md` — namespaced project rebuild runbook (Hetzner)
+- `docs/OPERATOR-GATEWAY-HEALTH.md` — gateway `GET /health` (liveness) vs `GET /health/deep` (readiness)
 
 **Self-hosted operators — control plane:** **`flux migrate`** runs **`pg_dump` inside the dashboard/control-plane container** against the shared cluster. That image must include PostgreSQL **client** tools on **`PATH`** inside the process that handles **`/api/cli/v1/migrate`**; restarting an old container without rebuilding leaves **`pg_dump` missing** at runtime. App builders on **hosted** Flux cannot fix this in their own repo—see hosted vs self-hosted notes under [Pooled → dedicated migrate](/docs/guides/v2-to-v1-migrate) troubleshooting.
 

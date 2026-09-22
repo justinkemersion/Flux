@@ -16,7 +16,9 @@ REDIS_CONTAINER="${REDIS_CONTAINER:-redis}"
 SKIP_DISRUPTIVE="${SKIP_DISRUPTIVE:-0}"
 
 # Preflight uses readiness by default: GET /health/deep (503 if system DB is down).
-# Set HEALTH_URL to override (e.g. liveness-only: http://127.0.0.1:4000/health).
+# Redis status on that route does not change the HTTP code.
+# Set HEALTH_URL to override (liveness-only: http://127.0.0.1:4000/health).
+# Contract: docs/OPERATOR-GATEWAY-HEALTH.md
 health_gate_ok() {
   local -a hdrs=(-sf -o /dev/null)
   if [[ "${LOAD_TEST_HEADER:-}" == "true" ]]; then

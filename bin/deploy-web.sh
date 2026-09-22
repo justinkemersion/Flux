@@ -18,6 +18,10 @@
 # over HTTP before cutover. Image creation time and file mtimes are never used.
 #
 # Prerequisite: `docker/web/.env` exists, Traefik + external network `flux-network` (see repo docs).
+#
+# GET /api/health here is control-plane liveness plus build provenance.
+# Gateway process checks are GET /health and GET /health/deep (docs/OPERATOR-GATEWAY-HEALTH.md).
+# FLUX_TENANT_PROBE_GATEWAY_URL is the dashboard mesh-probe base, not either of those routes.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

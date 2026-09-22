@@ -284,6 +284,8 @@ fi
 #   1. curl/wget/node in FLUX_V2_PROBE_CONTAINER (when running)
 #   2. ephemeral curl image on flux-v2-shared, then flux-network
 # Does not treat "probe could not run" as healthy.
+# This is the PostgREST pool, not the gateway health contract
+# (GET /health liveness, GET /health/deep readiness): docs/OPERATOR-GATEWAY-HEALTH.md.
 probe_postgrest_status() {
   local url="$1"
   local status=""

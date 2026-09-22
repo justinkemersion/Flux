@@ -32,7 +32,7 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-09-15`
+- Last updated: `2026-09-22`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-traefik -> deploy-v2-shared -> deploy-gateway -> deploy-web`
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
@@ -43,6 +43,7 @@ Not intended for public docs or marketing consumption.
 - **Backup-scheduler email alerts:** `done` — optional `FLUX_ALERT_EMAIL_TO` + Resend (`FLUX_RESEND_API_KEY`) primary, generic SMTP fallback; Cloudflare Email Routing is receive-only; no-op when unset; fingerprint dedupe for hourly retries
 - **Error-only host/Docker watcher:** `done` — `FLUX_OPS_WATCH_ENABLED` flux-web tick + `bin/ops-watch.sh`; same Resend/dedupe path; silent when healthy; disk `df` is path-scoped (`/host`, `/host/srv`, `/host/var/lib/docker`) so docker netns Permission denied is a skip, not a page; `docker logs` has an 8s timeout (exit 143 / SIGTERM is a skip)
 - **R2 free-tier storage ops-audit:** `done` — `bin/ops-audit.sh` lists the configured backup bucket (cheap `ListObjectsV2`) vs Cloudflare R2 Standard 10 GiB; WARN at 5 GiB / FAIL at 8 GiB; extra buckets optional (`FLUX_R2_USAGE_EXTRA_BUCKETS`, AccessDenied = WARN); skip when R2 unset. Weekday ops-audit email already pages on WARN/FAIL.
+- **Gateway health/readiness contract:** `done` — canonical operator doc is [`OPERATOR-GATEWAY-HEALTH.md`](./OPERATOR-GATEWAY-HEALTH.md). `/health` is liveness (no I/O). `/health/deep` is system-database readiness (HTTP 503 when `SELECT 1` fails; Redis is reported and does not gate the status).
 
 ---
 
@@ -136,13 +137,14 @@ Not intended for public docs or marketing consumption.
 
 ### 6) Health/readiness contract doc parity
 - **Priority:** P1
-- **Status:** in_progress
+- **Status:** done
 - **Owner:** platform docs
 - **Why:** operators need one trusted runbook
-- **Scope:** README + `docs/OPERATIONS.md`
+- **Scope:** [`OPERATOR-GATEWAY-HEALTH.md`](./OPERATOR-GATEWAY-HEALTH.md) (canonical). README, deploy triage, and deploy scripts point at it. `docs/OPERATIONS.md` stays the Hetzner namespaced rebuild runbook and only links here.
 - **Acceptance criteria:**
   - endpoint semantics (`/health` vs `/health/deep`) are consistent everywhere
   - all deploy scripts reference same contract
+- **Notes:** `/health` is liveness (no I/O, HTTP 200 `{"status":"ok"}`). `/health/deep` is readiness (`SELECT 1` on `FLUX_SYSTEM_DATABASE_URL`; HTTP 503 when that fails). Redis is reported (`up` / `down` / `null`) and does not change the status code. `FLUX_TENANT_PROBE_*` is the dashboard mesh probe. `GET /api/health` is dashboard provenance. Post-cutover deep check in `bin/deploy-gateway.sh` warns; the canary treats deep non-200 as a hard fail.
 
 ---
 

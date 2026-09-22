@@ -54,11 +54,14 @@ working**, not a bug. The gateway injects `Accept-Profile` (GET/HEAD) and
 all references through the tenant's `t_<shortid>_api` schema. The catalogue's
 `pgrst_source` CTE is the visible side-effect of that resolution.
 
+Operator contract for status codes, JSON, and deploy gates: [`docs/OPERATOR-GATEWAY-HEALTH.md`](../../docs/OPERATOR-GATEWAY-HEALTH.md).
+
 ### Request flow
 
 ```
 incoming request
-  ├─ /health, /health/deep                        → liveness/readiness response
+  ├─ GET /health                                  → liveness (no I/O; {"status":"ok"})
+  ├─ GET /health/deep                             → readiness (system DB; Redis reported)
   ├─ /robots.txt, /favicon.ico, /apple-touch-icon → static-asset absorber
   │  /.well-known/*, /wp-admin, /.env, …             (no DB, no PostgREST)
   ├─ User-Agent matches bot denylist (opt-in)     → 403 forbidden
