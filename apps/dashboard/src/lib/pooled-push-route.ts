@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { FLUX_PROJECT_HASH_HEX_LEN } from "@flux/core";
-import type { ExecutePushInput } from "@/src/lib/pooled-push";
+import type { ExecutePooledPushResult, ExecutePushInput } from "@/src/lib/pooled-push";
 import { normalizePushSql } from "@flux/core/sql-migrations";
 import type { ExecuteMigrationPushInput, ExecuteRepeatablePushInput } from "@/src/lib/pooled-migrations";
 import {
@@ -26,13 +26,15 @@ export type PooledPushRouteDeps = {
     slug: string,
     hash: string,
   ) => Promise<PooledPushProjectRow | null>;
-  executePooledPush: (input: ExecutePushInput) => Promise<void>;
+  executePooledPush: (
+    input: ExecutePushInput,
+  ) => Promise<ExecutePooledPushResult | void>;
   executePooledMigrationPush?: (
     input: ExecuteMigrationPushInput,
-  ) => Promise<{ skipped: boolean }>;
+  ) => Promise<{ skipped: boolean; warnings?: string[] }>;
   executePooledRepeatablePush?: (
     input: ExecuteRepeatablePushInput,
-  ) => Promise<{ skipped: boolean; previousChecksum?: string }>;
+  ) => Promise<{ skipped: boolean; previousChecksum?: string; warnings?: string[] }>;
   /** Defaults to {@link POOLED_PUSH_MAX_SQL_BYTES}; tests may lower for SQL size cases. */
   maxSqlBytes?: number;
 };
@@ -171,7 +173,14 @@ export async function runPooledPushPost(
         migration,
       });
       return Response.json(
-        { ok: true, schema, skipped: result.skipped },
+        {
+          ok: true,
+          schema,
+          skipped: result.skipped,
+          ...(result.warnings && result.warnings.length > 0
+            ? { warnings: result.warnings }
+            : {}),
+        },
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
@@ -196,11 +205,24 @@ export async function runPooledPushPost(
           ...(result.previousChecksum
             ? { previousChecksum: result.previousChecksum }
             : {}),
+          ...(result.warnings && result.warnings.length > 0
+            ? { warnings: result.warnings }
+            : {}),
         },
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
-    await deps.executePooledPush({ schema, role, ddlRole, sql });
+    const pushed = await deps.executePooledPush({ schema, role, ddlRole, sql });
+    return Response.json(
+      {
+        ok: true,
+        schema,
+        ...(pushed?.warnings && pushed.warnings.length > 0
+          ? { warnings: pushed.warnings }
+          : {}),
+      },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/exceeded .* timeout/.test(msg)) {
@@ -216,9 +238,4 @@ export async function runPooledPushPost(
     }
     return jsonError(msg, 500);
   }
-
-  return Response.json(
-    { ok: true, schema },
-    { headers: { "Cache-Control": "private, no-store" } },
-  );
 }

@@ -10,7 +10,7 @@
 | **Pass 2** | **Complete** (destructive backup gate + dashboard UI) |
 | **Pass 3** | **Complete** (system-db cutover gating) |
 | **Pass 6** | **Merged, not deployable alone** — see Pass 6b |
-| **Last updated** | **2026-08-21** (issue #8 merged to `main`; rollout pending) |
+| **Last updated** | **2026-09-26** (blinded SECURITY DEFINER detection shipped in code; tenant repairs stay in each app repo) |
 
 > **`main` is now deployable to v2_shared production.** Pass 6 alone was not: it ran pooled
 > push as `t_<12hex>_role`, which has no `CREATE` on its own schema. Pass 6b runs DDL as a
@@ -134,6 +134,20 @@ pnpm --filter dashboard exec tsx --tsconfig tsconfig.json --test src/lib/dedicat
 | Project create/init quota serialization | Done | `pg_advisory_lock(hashtext(userId))` around quota+provision |
 
 ---
+
+## Blinded SECURITY DEFINER (shipped in code, 2026-09-26)
+
+Pass 6b re-owned tenant objects to `t_<shortId>_ddl` (no `BYPASSRLS`) and forced RLS. A `SECURITY DEFINER` function in the tenant schema then runs as that owner. Policies that name only `t_<shortId>_role` do not apply, so a read returns zero rows and does not error. Control-plane `/api/health` does not observe this.
+
+| Surface | Behavior |
+|---------|----------|
+| `flux push` (v2) | **Warns** and commits. A hard fail would reject unrelated migrations on tenants that already have the shape, and the detector is lexical. |
+| `flux doctor` (v2) | **Fails** the Definer RLS check (catalog names only: function, owner role, table). |
+| Repair | Tenant migration: permissive `SELECT` policy `TO` the function owner. Never `BYPASSRLS`, never `NO FORCE ROW LEVEL SECURITY`. |
+
+Heuristic limits (honest): dynamic SQL that builds the table name at runtime is not detected; a string literal containing `FROM`/`JOIN` of the table can be flagged. The platform does not apply per-tenant repairs.
+
+A read-only catalog scan reported this shape in lighthouse (repaired in that app's migration), parcelpop, noisydesign, and darn. Those repairs are not part of this change.
 
 ## Deferred
 

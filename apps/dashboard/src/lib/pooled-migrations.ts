@@ -124,7 +124,11 @@ export type ExecuteMigrationPushInput = {
   timeoutMs?: number;
 };
 
-export type ExecuteMigrationPushResult = { skipped: boolean };
+export type ExecuteMigrationPushResult = {
+  skipped: boolean;
+  /** Present when the applied SQL left blinded SECURITY DEFINER functions. */
+  warnings?: string[];
+};
 
 /**
  * Migration-mode pooled push: trusted ledger ops as control-plane role; user SQL under tenant role.
@@ -174,7 +178,7 @@ export async function executePooledMigrationPush(
         adaptUserSqlForPooledPush(input.schema, input.role, input.userSql),
       );
       await resetPooledPushRole(client);
-      await enforcePooledPushRlsInvariants(client, {
+      const warnings = await enforcePooledPushRlsInvariants(client, {
         schema: input.schema,
         runtimeRole: input.role,
       });
@@ -185,7 +189,10 @@ export async function executePooledMigrationPush(
         }),
       );
       await finishPooledPushTransaction(client);
-      return { skipped: false as const };
+      return {
+        skipped: false as const,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      };
     } catch (err) {
       try {
         await client.query("ROLLBACK");
@@ -214,6 +221,8 @@ export type ExecuteRepeatablePushInput = {
 export type ExecuteRepeatablePushResult = {
   skipped: boolean;
   previousChecksum?: string;
+  /** Present when the applied SQL left blinded SECURITY DEFINER functions. */
+  warnings?: string[];
 };
 
 /**
@@ -261,7 +270,7 @@ export async function executePooledRepeatablePush(
         adaptUserSqlForPooledPush(input.schema, input.role, input.userSql),
       );
       await resetPooledPushRole(client);
-      await enforcePooledPushRlsInvariants(client, {
+      const warnings = await enforcePooledPushRlsInvariants(client, {
         schema: input.schema,
         runtimeRole: input.role,
       });
@@ -277,6 +286,7 @@ export async function executePooledRepeatablePush(
         ...(previousChecksum && previousChecksum !== input.repeatable.checksum
           ? { previousChecksum }
           : {}),
+        ...(warnings.length > 0 ? { warnings } : {}),
       };
     } catch (err) {
       try {

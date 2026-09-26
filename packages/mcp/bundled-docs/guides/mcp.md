@@ -116,7 +116,7 @@ Optional `FLUX_API_BASE` overrides the control-plane API origin.
 
 ### Read and inspect (default)
 
-Use read-only presets to list projects, inspect schemas, check migration ledger status, run project doctor, read activity, and load FLUX.md context — no side effects.
+Use read-only presets to list projects, inspect schemas, check migration ledger status, run project doctor, read activity, and load FLUX.md context — no side effects. On v2, `flux.doctor` fails when a `SECURITY DEFINER` function looks blinded by `FORCE ROW LEVEL SECURITY`. That check reports function, owner role, and table names only.
 
 ### Controlled migration apply
 

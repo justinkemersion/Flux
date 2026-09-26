@@ -11,11 +11,17 @@ import {
   type ExposedTableSecurityFact,
 } from "@flux/core";
 import {
+  parseBlindedSecurityDefinerFindings,
+  buildInspectBlindedSecurityDefinersSql,
+  type BlindedSecurityDefinerFinding,
+} from "@flux/core/tenant-rls-invariants";
+import {
   inspectProjectExposedTableSecurity,
   inspectProjectSchema,
 } from "./project-schema-inspection";
 import { listPooledAppliedMigrations } from "./pooled-migrations";
 import { probeV2SharedCatalogProject, probeTenantApiUrl } from "./tenant-api-probe";
+import { createPooledTenantCatalogQueryFn } from "./pooled-schema-inspection";
 import { getDb } from "./db";
 import { projectBackups } from "@/src/db/schema";
 import { and, desc, eq } from "drizzle-orm";
@@ -104,6 +110,39 @@ export function buildDedicatedRlsDoctorCheck(
   );
 }
 
+const DEFINER_RLS_CHECK = "Definer RLS";
+const DEFINER_RLS_REMEDIATION =
+  "Add a permissive SELECT policy on each named table for the function owner role (normally t_<shortId>_ddl, pg_proc.proowner). Keep the USING clause as narrow as the helper needs. Do not grant BYPASSRLS and do not disable FORCE ROW LEVEL SECURITY. This scan is lexical: dynamic SQL that builds the table name at runtime is not detected, and a string literal containing FROM or JOIN of the table can be flagged. The check reports catalog names only.";
+
+function definerSignature(finding: BlindedSecurityDefinerFinding): string {
+  return `${finding.schema}.${finding.functionName}(${finding.identityArgs}) owned by ${finding.ownerRole} reads ${finding.tableSchema}.${finding.tableName}`;
+}
+
+/**
+ * v2_shared doctor check for SECURITY DEFINER functions blinded by FORCE RLS.
+ * Fail, not warn: a green doctor is what hid this outage. Catalog identifiers only.
+ */
+export function buildBlindedDefinerDoctorCheck(
+  findings: readonly BlindedSecurityDefinerFinding[],
+): DoctorCheck {
+  if (findings.length === 0) {
+    return pass(
+      DEFINER_RLS_CHECK,
+      "No SECURITY DEFINER function reads a FORCE RLS table without a permissive SELECT policy for its owner or PUBLIC",
+    );
+  }
+  const shown = findings.slice(0, 8).map(definerSignature);
+  const extra =
+    findings.length > shown.length
+      ? `; +${String(findings.length - shown.length)} more`
+      : "";
+  return fail(
+    DEFINER_RLS_CHECK,
+    `Blinded SECURITY DEFINER function(s): ${shown.join("; ")}${extra}`,
+    DEFINER_RLS_REMEDIATION,
+  );
+}
+
 /**
  * Runs all project doctor checks and returns a structured DoctorReport.
  *
@@ -186,6 +225,25 @@ export async function runProjectDoctor(project: ProjectRow): Promise<DoctorRepor
             "API schema RLS",
             `Inspection failed: ${msg.slice(0, 160)}`,
             "Confirm the dedicated Postgres container is running, then retry `flux doctor`.",
+          ),
+        );
+      }
+    }
+    if (mode === "v2_shared") {
+      try {
+        const rows = await createPooledTenantCatalogQueryFn(apiSchema)(
+          buildInspectBlindedSecurityDefinersSql(apiSchema),
+        );
+        checks.push(
+          buildBlindedDefinerDoctorCheck(parseBlindedSecurityDefinerFindings(rows)),
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push(
+          fail(
+            DEFINER_RLS_CHECK,
+            `Inspection failed: ${msg.slice(0, 160)}`,
+            "Confirm FLUX_SHARED_POSTGRES_URL on the control plane, then retry `flux doctor`.",
           ),
         );
       }

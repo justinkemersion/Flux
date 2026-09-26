@@ -68,7 +68,7 @@ Audit persistence failure is **non-fatal** for read/plan/preflight/credential to
 - `flux.schema.inspect` — tables, columns, keys, RLS, grants, warnings.
 - `flux.schema.counts` — per-table row counts + schema summary.
 - `flux.migrations.list` — applied migration ledger.
-- `flux.doctor` — project health checks.
+- `flux.doctor` — project health checks, including the v2 Definer RLS check (catalog names only; no tenant rows).
 - `flux.activity` — recent activity timeline.
 - `flux.backup.list` — sanitized backup summaries (trust tier, validation/restore state). **No paths, offsite storage details, or raw API rows.**
 - `flux.destructive.preflight` — whether destructive actions are currently allowed (reuses `@flux/core/backup-trust`). **No mutation.**

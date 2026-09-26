@@ -22,6 +22,8 @@ On **v2**, the architecture spec notes RLS is **not required initially** for the
 
 On **v1 dedicated**, Traefik routes directly to the project's PostgREST container. There is no Flux gateway authentication layer, so an RLS-disabled table that still grants write access to `anon`, `authenticated`, or `PUBLIC` is world-writable. `flux push` enforces that unrestricted-write invariant transactionally (effective privileges, including inherited and `PUBLIC` grants). RLS disabled with only reads, and RLS enabled with no policies, are warnings — the latter is secure by default in Postgres but usually unintentional. `flux doctor` uses the same classification.
 
+On **v2 shared**, gateway authentication plus schema and role separation are the platform boundary. When an app enables RLS, Flux also applies `FORCE ROW LEVEL SECURITY`, so the table owner (`t_<shortId>_ddl`) does not skip policies. A `SECURITY DEFINER` function runs as that owner. If the table's `SELECT` policies name only the runtime role, the function sees zero rows and does not error. `flux doctor` fails the **Definer RLS** check for that catalog shape (names of function, owner role, and table only — no row data, no function source). `flux push` warns and still commits. The repair is a tenant migration: a permissive `SELECT` policy `TO` the function owner. Do not grant `BYPASSRLS` and do not disable `FORCE ROW LEVEL SECURITY`. The detector reads function source text; dynamic SQL that assembles the table name at runtime is not detected. See [Migrations](/docs/guides/migrations).
+
 ## How it works
 
 Typical checklist:

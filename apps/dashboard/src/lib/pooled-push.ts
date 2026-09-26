@@ -57,7 +57,14 @@ function defaultClientFactory(): PushPgClient {
  *
  * On failure the transaction is rolled back; the original error is rethrown.
  */
-export async function executePooledPush(input: ExecutePushInput): Promise<void> {
+export type ExecutePooledPushResult = {
+  /** Catalog warnings. Empty when the tenant has no blinded SECURITY DEFINER function. */
+  warnings: string[];
+};
+
+export async function executePooledPush(
+  input: ExecutePushInput,
+): Promise<ExecutePooledPushResult> {
   const {
     beginPooledPushTransaction,
     enforcePooledPushRlsInvariants,
@@ -77,6 +84,7 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
   });
   const client = factory();
   let timer: NodeJS.Timeout | undefined;
+  let warnings: string[] = [];
   const work = (async () => {
     await client.connect();
     try {
@@ -87,7 +95,7 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
       });
       await client.query(adaptedSql);
       await resetPooledPushRole(client);
-      await enforcePooledPushRlsInvariants(client, {
+      warnings = await enforcePooledPushRlsInvariants(client, {
         schema: input.schema,
         runtimeRole: input.role,
       });
@@ -122,4 +130,5 @@ export async function executePooledPush(input: ExecutePushInput): Promise<void> 
   } finally {
     if (timer) clearTimeout(timer);
   }
+  return { warnings };
 }
