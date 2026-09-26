@@ -145,7 +145,7 @@ Pass 6b re-owned tenant objects to `t_<shortId>_ddl` (no `BYPASSRLS`) and forced
 | `flux doctor` (v2) | **Fails** the Definer RLS check (catalog names only: function, owner role, table). |
 | Repair | Tenant migration: permissive `SELECT` policy `TO` the function owner. Never `BYPASSRLS`, never `NO FORCE ROW LEVEL SECURITY`. |
 
-Heuristic limits (honest): dynamic SQL that builds the table name at runtime is not detected; a string literal containing `FROM`/`JOIN` of the table can be flagged. The platform does not apply per-tenant repairs.
+The scan matches `FROM`/`JOIN` of a lowercase table, including `schema.table` with no space around the dot, after stripping `--` comments only through end of line. Heuristic limits (honest): dynamic SQL that builds the table name at runtime is not detected; a string literal containing `FROM`/`JOIN` of the table can be flagged. The platform does not apply per-tenant repairs.
 
 A read-only catalog scan reported this shape in lighthouse (repaired in that app's migration), parcelpop, noisydesign, and darn. Those repairs are not part of this change.
 

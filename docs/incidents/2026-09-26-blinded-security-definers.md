@@ -20,7 +20,7 @@ Detection only.
 
 ## Heuristic limits
 
-The scan matches `FROM` / `JOIN` of an ordinary lowercase table in function source after comments are stripped.
+The scan matches `FROM` / `JOIN` of an ordinary lowercase table in function source after comments are stripped, including `schema.table` with no space around the dot. A `--` comment hides only the rest of that line.
 
 - Dynamic SQL that builds the table name at runtime is not detected.
 - A string literal that contains `FROM` or `JOIN` of the table name can be flagged.

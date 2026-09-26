@@ -66,6 +66,12 @@ test("blinded definer audit is a catalog read, not a push rollback", () => {
   const outputList = sql.slice(sql.lastIndexOf("SELECT"));
   assert.doesNotMatch(outputList, /prosrc|f\.body/);
   assert.match(sql, new RegExp(SCHEMA));
+  // schema.table with no space around the dot must match; a space is optional.
+  assert.match(sql, /\[\[:space:\]\]\*\\\.\[\[:space:\]\]\*/);
+  assert.doesNotMatch(sql, /\\\.\[\[:space:\]\]\+/);
+  // Postgres '.' matches newlines unless the pattern is newline-sensitive.
+  // Without 'n', '--.*' would erase the rest of the function body.
+  assert.match(sql, /'--\.\*',\s*' ',\s*'gn'/);
 });
 
 function finding(

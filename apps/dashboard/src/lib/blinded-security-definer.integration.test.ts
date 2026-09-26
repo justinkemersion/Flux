@@ -160,6 +160,19 @@ test(
         SECURITY DEFINER
         AS $$ SELECT count(*)::int FROM members $$;
 
+        CREATE FUNCTION read_members_qualified() RETURNS int
+        LANGUAGE sql
+        SECURITY DEFINER
+        AS $$ SELECT count(*)::int FROM ${identity.schema}.members $$;
+
+        CREATE FUNCTION read_members_after_comment() RETURNS int
+        LANGUAGE sql
+        SECURITY DEFINER
+        AS $$
+          -- note before the read
+          SELECT count(*)::int FROM members
+        $$;
+
         CREATE FUNCTION read_members_invoker() RETURNS int
         LANGUAGE sql
         AS $$ SELECT count(*)::int FROM members $$;
@@ -220,6 +233,14 @@ test(
       assert.ok(
         flaggedNames.has("read_members_definer"),
         "SECURITY DEFINER that reads a FORCE RLS table with no owner/PUBLIC SELECT policy is flagged",
+      );
+      assert.ok(
+        flaggedNames.has("read_members_qualified"),
+        "FROM schema.table with no space around the dot is flagged",
+      );
+      assert.ok(
+        flaggedNames.has("read_members_after_comment"),
+        "a -- comment before FROM does not hide the read",
       );
       assert.ok(
         flaggedNames.has("read_members_plpgsql"),

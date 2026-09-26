@@ -130,7 +130,10 @@ export type BlindedSecurityDefinerFinding = {
  *
  * Heuristic, not a parser:
  * - Matches `FROM` / `JOIN` of a plain lowercase table name (`relkind = 'r'`),
- *   optionally schema-qualified, after stripping comments.
+ *   optionally schema-qualified with or without space around the dot
+ *   (`schema.table` and `schema . table`), after stripping comments.
+ *   `--` comments are removed only through end of line (`n` flag: in Postgres,
+ *   `.` otherwise matches newlines and would drop the rest of the body).
  * - String literals are kept, so `EXECUTE 'SELECT … FROM notes'` is flagged.
  * - Dynamic SQL that builds the name at runtime (`format('%I', …)`, concatenation)
  *   is not visible and is not flagged.
@@ -154,7 +157,7 @@ WITH funcs AS (
       regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gn'),
       '--.*',
       ' ',
-      'g'
+      'gn'
     ) AS body
   FROM pg_catalog.pg_proc p
   JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
@@ -188,7 +191,7 @@ FROM funcs f
 JOIN tables t ON t.table_schema = f.schema_name
 WHERE f.body ~* (
   '(\\mfrom\\M|\\mjoin\\M)[[:space:]]+((only|lateral)[[:space:]]+)?'
-  || '((("?' || t.table_schema || '"?)[[:space:]]*\\.[[:space:]]+)?)'
+  || '((("?' || t.table_schema || '"?)[[:space:]]*\\.[[:space:]]*)?)'
   || '(\\m' || t.relname || '\\M|"' || t.relname || '")'
 )
 AND NOT EXISTS (
