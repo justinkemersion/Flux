@@ -70,7 +70,7 @@ Set these in `docker/web/.env` next to compose (see [`docker/web/.env.example`](
 
 #### Platform minimum backup freshness (self-hosted)
 
-Separate from the destructive gate, the hourly backup scheduler enforces a **platform minimum backup freshness** floor: the newest **restore-verified** backup should be within `FLUX_MIN_BACKUP_INTERVAL_DAYS` (default **7**). When a project is stale, the scheduler runs create → validate → restore-verify (up to `FLUX_MIN_BACKUP_MAX_PIPELINES_PER_TICK` projects per tick; default **1** for production safety).
+Separate from the destructive gate, the hourly backup scheduler enforces a **platform minimum backup freshness** floor: the newest **restore-verified** backup should be within `FLUX_MIN_BACKUP_INTERVAL_DAYS` (default **7**). When a project is stale, the scheduler runs create → validate → restore-verify (up to `FLUX_MIN_BACKUP_MAX_PIPELINES_PER_TICK` projects per tick; default **1** for production safety). Restore-verify stubs per-tenant roles named by the archive (`t_<shortId>_role`, `t_<shortId>_ddl`, and other non-reserved roles in policies, owners, grants, or default privileges) as `NOLOGIN` with no `BYPASSRLS`, then requires `pg_restore` to exit 0 with no ignored errors. The scheduler runs inside `flux-web`. After upgrading that image, re-check an existing artifact with `flux backup verify -p <slug> --hash <hash> --latest` (this does not write a new dump). The next scheduler tick creates a new backup only for projects that are still not platform-fresh; a restart runs one tick immediately, still capped by `FLUX_MIN_BACKUP_MAX_PIPELINES_PER_TICK` unless that process has never completed a tick.
 
 | Variable | Default | Role |
 |----------|---------|------|

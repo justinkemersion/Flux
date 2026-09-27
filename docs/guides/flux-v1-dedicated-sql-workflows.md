@@ -122,7 +122,7 @@ Backup trust model:
 
 - Backups are only trustworthy after restore verification.
 - Artifact validation checks that the backup file exists and is non-empty.
-- Restore verification runs `pg_restore` in a disposable database.
+- Restore verification runs `pg_restore` in a disposable database after stubbing `NOLOGIN` roles the archive names (including `t_<shortId>_ddl`). Ignored restore errors fail verification. The disposable database is removed with the verify container.
 
 Reference: detailed trust-model notes in [`plans/backups/backups-plan.md`](../../plans/backups/backups-plan.md).
 

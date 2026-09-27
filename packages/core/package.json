@@ -11,6 +11,7 @@
     "./migration-status": "./src/migration-status.ts",
     "./backup-trust": "./src/backup-trust.ts",
     "./backup-policy": "./src/backup-policy.ts",
+    "./backup-restore-roles": "./src/backup-restore-roles.ts",
     "./offsite-storage": "./src/offsite-storage/index.ts",
     "./sql-migrations": "./src/sql-migrations.ts",
     "./tenant-rls-invariants": "./src/tenant-rls-invariants.ts",

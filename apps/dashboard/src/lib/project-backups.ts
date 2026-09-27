@@ -12,6 +12,11 @@ import {
   type EffectiveBackupPolicy,
 } from "@flux/core/backup-policy";
 import { defaultTenantApiSchemaFromProjectId } from "@flux/core/api-schema-strategy";
+import { pgRestoreRejectedReason } from "@flux/core/backup-restore-roles";
+import {
+  BACKUP_VERIFY_PG_RESTORE_ARGS,
+  readCustomDumpSchemaSql,
+} from "@/src/lib/backup-restore-run";
 import { buildBackupVerifyPreRestoreSql } from "@/src/lib/backup-verify-pre-restore-sql";
 import {
   RESTORE_VERIFY_SCHEMA_LIST_SQL,
@@ -549,8 +554,7 @@ async function pipeBackupFileToPgRestoreInContainer(
       "postgres",
       "-d",
       "postgres",
-      "--no-owner",
-      "--no-acl",
+      ...BACKUP_VERIFY_PG_RESTORE_ARGS,
       // PG16+: stdin is used when no FILE is given. A literal "-" is a path, not stdin (see pg_restore --help).
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
@@ -574,13 +578,8 @@ async function pipeBackupFileToPgRestoreInContainer(
   await pipeline(src, child.stdin);
   const code = await closeCode;
   const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
-  if (code !== 0) {
-    throw new Error(
-      stderr.length > 0
-        ? `pg_restore failed (${String(code)}): ${stderr.slice(0, 1500)}`
-        : `pg_restore failed (exit ${String(code)}).`,
-    );
-  }
+  const reason = pgRestoreRejectedReason(code, stderr);
+  if (reason) throw new Error(reason);
 }
 
 /** Host `pg_restore --list` — dump TOC is the source of truth for empty-tenant matching. */
@@ -721,9 +720,16 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
       created = true;
       await waitForPgReady(verifyName, verifyPassword, 30_000);
 
-      // `pg_dump --no-acl` strips GRANT but keeps `CREATE POLICY ... TO <role>`. v2 tenant exports
-      // reference `t_<shortId>_role`; legacy dumps may reference `authenticated`. Pre-create both
-      // sets idempotently in the disposable Postgres (only `postgres` exists by default).
+      const schemaSql = await readCustomDumpSchemaSql(artifactPath);
+      const preRestoreSql = buildBackupVerifyPreRestoreSql({
+        projectId: backup.projectId,
+        kind: backup.kind as "project_db" | "tenant_export",
+        schemaSql,
+      });
+
+      // Archives name tenant roles in policies (and in OWNER TO, which verify
+      // suppresses with --no-owner). Stub them NOLOGIN / no BYPASSRLS before
+      // pg_restore. `docker rm` below drops the disposable database and those stubs.
       await runDocker([
         "exec",
         "-e",
@@ -739,10 +745,7 @@ export async function verifyBackupRestore(backupId: string): Promise<void> {
         "-v",
         "ON_ERROR_STOP=1",
         "-c",
-        buildBackupVerifyPreRestoreSql({
-          projectId: backup.projectId,
-          kind: backup.kind as "project_db" | "tenant_export",
-        }),
+        preRestoreSql,
       ]);
 
       await pipeBackupFileToPgRestoreInContainer(
