@@ -1,4 +1,11 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
+import {
+  LIVE_PG_RESTORE_ARGS,
+  buildRestoreRoleStubSql,
+  collectRestoreRoleNames,
+  pgRestoreRejectedReason,
+} from "@flux/core/backup-restore-roles";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import chalk from "chalk";
@@ -25,6 +32,8 @@ import {
 import { parsePostgresConnectionFields } from "../postgres-connection-fields";
 import { resolveHash, resolveOptionalName } from "../project-resolve";
 import { formatCliTimestampDisplay } from "../utils/cli-timestamp.js";
+
+const execFileAsync = promisify(execFile);
 
 export type DbAccessCommonOptions = {
   project?: string;
@@ -580,6 +589,87 @@ export async function cmdDbDump(
   console.log(`${B}Wrote schema-scoped dump to ${outputPath}`);
 }
 
+async function readCustomDumpSchemaSql(dumpPath: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync(
+      "pg_restore",
+      ["--schema-only", "-f", "-", dumpPath],
+      { maxBuffer: 64 * 1024 * 1024 },
+    );
+    return stdout.toString();
+  } catch (err: unknown) {
+    const e = err as NodeJS.ErrnoException & { stderr?: Buffer | string };
+    if (e.code === "ENOENT") {
+      throw new Error(
+        "pg_restore not found (ENOENT). Install postgresql-client to restore backups.",
+      );
+    }
+    const stderr = Buffer.isBuffer(e.stderr)
+      ? e.stderr.toString("utf8")
+      : typeof e.stderr === "string"
+        ? e.stderr
+        : "";
+    const code = typeof e.code === "number" ? e.code : 1;
+    throw new Error(
+      pgRestoreRejectedReason(code, stderr) ?? "Failed to read dump schema.",
+    );
+  }
+}
+
+async function applyRestoreRoleStubs(input: {
+  host: string;
+  port: number;
+  auth: Extract<DbConnectionAuth, { mode: "v1_dedicated" }>;
+  dumpPath: string;
+}): Promise<void> {
+  const schemaSql = await readCustomDumpSchemaSql(input.dumpPath);
+  const sql = buildRestoreRoleStubSql(collectRestoreRoleNames(schemaSql));
+  if (sql.trim().length === 0) return;
+  await new Promise<void>((resolve, reject) => {
+    const stderrChunks: Buffer[] = [];
+    const child = spawn(
+      "psql",
+      [
+        "-h",
+        input.host,
+        "-p",
+        String(input.port),
+        "-U",
+        input.auth.username,
+        "-d",
+        "postgres",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        sql,
+      ],
+      {
+        stdio: ["ignore", "inherit", "pipe"],
+        env: buildPsqlEnv(input.auth),
+      },
+    );
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+      process.stderr.write(chunk);
+    });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code != null && code !== 0) {
+        const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+        reject(
+          new Error(
+            stderr.length > 0
+              ? `Restore role setup failed: ${stderr.slice(0, 1500)}`
+              : `psql exited with code ${String(code)}.`,
+          ),
+        );
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 export async function cmdDbRestore(
   name: string | undefined,
   opts: DbRestoreOptions,
@@ -623,37 +713,53 @@ export async function cmdDbRestore(
     ...(opts.keepalive === true ? { keepalive: true } : {}),
   });
 
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(
-      "pg_restore",
-      [
-        "-h",
-        opened.localHost,
-        "-p",
-        String(opened.localPort),
-        "-U",
-        auth.username,
-        "-d",
-        "postgres",
-        "--clean",
-        "--if-exists",
-        inputPath,
-      ],
-      {
-        stdio: "inherit",
-        env: buildPsqlEnv(auth),
-      },
-    );
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (!opened.child.killed) opened.child.kill("SIGTERM");
-      if (code != null && code !== 0) {
-        reject(new Error(`pg_restore exited with code ${String(code)}.`));
-        return;
-      }
-      resolve();
+  try {
+    await applyRestoreRoleStubs({
+      host: opened.localHost,
+      port: opened.localPort,
+      auth,
+      dumpPath: inputPath,
     });
-  });
+
+    await new Promise<void>((resolve, reject) => {
+      const stderrChunks: Buffer[] = [];
+      const child = spawn(
+        "pg_restore",
+        [
+          "-h",
+          opened.localHost,
+          "-p",
+          String(opened.localPort),
+          "-U",
+          auth.username,
+          "-d",
+          "postgres",
+          ...LIVE_PG_RESTORE_ARGS,
+          inputPath,
+        ],
+        {
+          stdio: ["inherit", "inherit", "pipe"],
+          env: buildPsqlEnv(auth),
+        },
+      );
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderrChunks.push(chunk);
+        process.stderr.write(chunk);
+      });
+      child.once("error", reject);
+      child.once("close", (code) => {
+        const stderr = Buffer.concat(stderrChunks).toString("utf8");
+        const reason = pgRestoreRejectedReason(code, stderr);
+        if (reason) {
+          reject(new Error(reason));
+          return;
+        }
+        resolve();
+      });
+    });
+  } finally {
+    if (!opened.child.killed) opened.child.kill("SIGTERM");
+  }
 
   if (opts.json) {
     console.log(JSON.stringify({ ok: true, input: inputPath }, null, 2));

@@ -10,11 +10,18 @@ test("buildBackupVerifyPreRestoreSql includes platform and tenant roles for tena
     projectId: PROJECT_ID,
     kind: "tenant_export",
   });
-  assert.match(sql, /CREATE ROLE anon NOLOGIN NOINHERIT/u);
-  assert.match(sql, /CREATE ROLE authenticated NOLOGIN NOINHERIT/u);
+  assert.match(sql, /CREATE ROLE "anon" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/u);
+  assert.match(sql, /CREATE ROLE "authenticated" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/u);
   assert.match(sql, /CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS/u);
-  assert.match(sql, /CREATE ROLE authenticator NOLOGIN NOINHERIT/u);
-  assert.match(sql, /CREATE ROLE t_550e8400e29b_role NOLOGIN NOINHERIT/u);
+  assert.match(sql, /CREATE ROLE "authenticator" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/u);
+  assert.match(
+    sql,
+    /CREATE ROLE "t_550e8400e29b_role" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/u,
+  );
+  assert.match(
+    sql,
+    /CREATE ROLE "t_550e8400e29b_ddl" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/u,
+  );
   assert.match(sql, /GRANT anon, authenticated, service_role TO authenticator/u);
   assert.match(sql, /CREATE SCHEMA IF NOT EXISTS auth/u);
   assert.match(sql, /CREATE OR REPLACE FUNCTION auth\.uid\(\)/u);
@@ -26,7 +33,31 @@ test("buildBackupVerifyPreRestoreSql includes tenant role for project_db", () =>
     projectId: PROJECT_ID,
     kind: "project_db",
   });
-  assert.match(sql, /CREATE ROLE t_550e8400e29b_role NOLOGIN NOINHERIT/u);
+  assert.match(
+    sql,
+    /CREATE ROLE "t_550e8400e29b_role" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/u,
+  );
+  assert.match(
+    sql,
+    /CREATE ROLE "t_550e8400e29b_ddl" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/u,
+  );
+  const ddlStmt = sql.match(/CREATE ROLE "t_550e8400e29b_ddl"[^;]*/u)?.[0] ?? "";
+  assert.match(ddlStmt, /NOBYPASSRLS/u);
+  assert.doesNotMatch(ddlStmt, /\bBYPASSRLS\b/u);
   assert.doesNotMatch(sql, /CREATE SCHEMA IF NOT EXISTS auth/u);
+  assertNoDoubleStatementTerminator(sql);
+});
+
+test("buildBackupVerifyPreRestoreSql stubs extra roles named by the dump", () => {
+  const sql = buildBackupVerifyPreRestoreSql({
+    projectId: PROJECT_ID,
+    kind: "tenant_export",
+    schemaSql:
+      "CREATE POLICY p ON t_550e8400e29b_api.notes FOR SELECT TO custom_reader USING (true);",
+  });
+  assert.match(
+    sql,
+    /CREATE ROLE "custom_reader" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/u,
+  );
   assertNoDoubleStatementTerminator(sql);
 });

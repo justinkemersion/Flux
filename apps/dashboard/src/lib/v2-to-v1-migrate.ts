@@ -311,6 +311,7 @@ export async function runV2SharedToV1DedicatedMigration(input: {
       hash,
       dumpPath,
       plan.tenantSchema,
+      plan.projectId,
     );
 
     function qI(ident: string): string {
