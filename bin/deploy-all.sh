@@ -19,6 +19,11 @@
 #   FLUX_ENV=prod                Optional label used in logs.
 #   FLUX_DEPLOY_CONTINUE_ON_WARN=1  Continue if a stage exits non-zero (default: fail fast).
 #   FLUX_DOCS_STALE_DAYS=14      Warn if trajectory TODO doc is older than this many days.
+#   FLUX_DEPLOY_REPORT_DIR       Timestamped stage report directory
+#                                (default: <repo>/tmp/deploy-reports, gitignored via tmp/).
+#                                Each run writes deploy-all-<UTC timestamp>-<pid>.txt with
+#                                per-stage exit codes and elapsed times. The EXIT trap
+#                                appends the overall footer on success and on fail-fast.
 #
 # Notes:
 # - Child scripts already run `docker image prune -f` by default.
@@ -42,6 +47,11 @@ echo "  env: ${ENV_LABEL}"
 echo "  prune_builder: ${FLUX_DEPLOY_PRUNE_BUILDER:-0}"
 echo "  git_sync: ${FLUX_DEPLOY_GIT_SYNC:-0}"
 echo "  docs_stale_days: ${DOCS_STALE_DAYS}"
+
+# shellcheck source=lib/deploy-stage-report.sh
+source "$SCRIPT_DIR/lib/deploy-stage-report.sh"
+deploy_report_begin "deploy-all"
+trap deploy_report_on_exit EXIT
 
 check_docs_freshness() {
   local doc="$1"
@@ -91,33 +101,12 @@ if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
   git -C "$REPO_ROOT" pull --ff-only
 fi
 
-run_stage() {
-  local name="$1"
-  local script="$2"
-
-  echo ""
-  echo "=== Stage: ${name} ==="
-
-  # Important: we force child git sync off because we already did a single
-  # optional pull above. This prevents drift between stages.
-  if FLUX_DEPLOY_GIT_SYNC=0 "$script"; then
-    echo "=== Stage OK: ${name} ==="
-    return 0
-  else
-    local code=$?
-    echo "=== Stage FAILED (${code}): ${name} ===" >&2
-    if [[ "$CONTINUE_ON_WARN" == "1" ]]; then
-      echo "  WARN: continuing because FLUX_DEPLOY_CONTINUE_ON_WARN=1" >&2
-      return 0
-    fi
-    return "$code"
-  fi
-}
-
-run_stage "Traefik edge" "$SCRIPT_DIR/deploy-traefik.sh"
-run_stage "v2 shared data plane" "$SCRIPT_DIR/deploy-v2-shared.sh"
-run_stage "gateway" "$SCRIPT_DIR/deploy-gateway.sh"
-run_stage "dashboard control plane" "$SCRIPT_DIR/deploy-web.sh"
+# Child git sync is forced off inside deploy_report_run_stage: one optional
+# pull already ran above, so stages cannot drift from each other.
+deploy_report_run_stage "Traefik edge" "$SCRIPT_DIR/deploy-traefik.sh"
+deploy_report_run_stage "v2 shared data plane" "$SCRIPT_DIR/deploy-v2-shared.sh"
+deploy_report_run_stage "gateway" "$SCRIPT_DIR/deploy-gateway.sh"
+deploy_report_run_stage "dashboard control plane" "$SCRIPT_DIR/deploy-web.sh"
 
 echo ""
 echo "--- Flux Deploy All: Complete ---"

@@ -14,6 +14,11 @@
 #   FLUX_ENV=prod                Optional label used in logs.
 #   FLUX_DEPLOY_CONTINUE_ON_WARN=1  Continue if a stage exits non-zero (default: fail fast).
 #   FLUX_DOCS_STALE_DAYS=14      Warn if trajectory TODO doc is older than this many days.
+#   FLUX_DEPLOY_REPORT_DIR       Timestamped stage report directory
+#                                (default: <repo>/tmp/deploy-reports, gitignored via tmp/).
+#                                Each run writes restart-all-<UTC timestamp>-<pid>.txt with
+#                                per-stage exit codes and elapsed times. The EXIT trap
+#                                appends the overall footer on success and on fail-fast.
 #
 # Child stages set FLUX_DEPLOY_RESTART_ONLY internally via restart-*.sh wrappers.
 set -euo pipefail
@@ -32,6 +37,11 @@ echo "  repo: $REPO_ROOT"
 echo "  env: ${ENV_LABEL}"
 echo "  git_sync: ${FLUX_DEPLOY_GIT_SYNC:-0}"
 echo "  docs_stale_days: ${DOCS_STALE_DAYS}"
+
+# shellcheck source=lib/deploy-stage-report.sh
+source "$SCRIPT_DIR/lib/deploy-stage-report.sh"
+deploy_report_begin "restart-all"
+trap deploy_report_on_exit EXIT
 
 check_docs_freshness() {
   local doc="$1"
@@ -79,30 +89,11 @@ if [[ "${FLUX_DEPLOY_GIT_SYNC:-}" == "1" ]]; then
   git -C "$REPO_ROOT" pull --ff-only
 fi
 
-run_stage() {
-  local name="$1"
-  local script="$2"
-
-  echo ""
-  echo "=== Stage: ${name} ==="
-
-  if FLUX_DEPLOY_GIT_SYNC=0 "$script"; then
-    echo "=== Stage OK: ${name} ==="
-    return 0
-  else
-    local code=$?
-    echo "=== Stage FAILED (${code}): ${name} ===" >&2
-    if [[ "$CONTINUE_ON_WARN" == "1" ]]; then
-      echo "  WARN: continuing because FLUX_DEPLOY_CONTINUE_ON_WARN=1" >&2
-      return 0
-    fi
-    return "$code"
-  fi
-}
-
-run_stage "v2 shared data plane" "$SCRIPT_DIR/restart-v2-shared.sh"
-run_stage "gateway" "$SCRIPT_DIR/restart-gateway.sh"
-run_stage "dashboard control plane" "$SCRIPT_DIR/restart-web.sh"
+# Child git sync is forced off inside deploy_report_run_stage: one optional
+# pull already ran above, so stages cannot drift from each other.
+deploy_report_run_stage "v2 shared data plane" "$SCRIPT_DIR/restart-v2-shared.sh"
+deploy_report_run_stage "gateway" "$SCRIPT_DIR/restart-gateway.sh"
+deploy_report_run_stage "dashboard control plane" "$SCRIPT_DIR/restart-web.sh"
 
 echo ""
 echo "--- Flux Restart All: Complete ---"

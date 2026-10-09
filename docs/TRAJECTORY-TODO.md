@@ -19,6 +19,7 @@ Not intended for public docs or marketing consumption.
 - `todo`
 - `in_progress`
 - `blocked`
+- `skipped` — deferred / not doing now; may resume later
 - `done`
 
 ### Priority legend
@@ -44,6 +45,8 @@ Not intended for public docs or marketing consumption.
 - **Error-only host/Docker watcher:** `done` — `FLUX_OPS_WATCH_ENABLED` flux-web tick + `bin/ops-watch.sh`; same Resend/dedupe path; silent when healthy; disk `df` is path-scoped (`/host`, `/host/srv`, `/host/var/lib/docker`) so docker netns Permission denied is a skip, not a page; `docker logs` has an 8s timeout (exit 143 / SIGTERM is a skip)
 - **R2 free-tier storage ops-audit:** `done` — `bin/ops-audit.sh` lists the configured backup bucket (cheap `ListObjectsV2`) vs Cloudflare R2 Standard 10 GiB; WARN at 5 GiB / FAIL at 8 GiB; extra buckets optional (`FLUX_R2_USAGE_EXTRA_BUCKETS`, AccessDenied = WARN); skip when R2 unset. Weekday ops-audit email already pages on WARN/FAIL.
 - **Gateway health/readiness contract:** `done` — canonical operator doc is [`OPERATOR-GATEWAY-HEALTH.md`](./OPERATOR-GATEWAY-HEALTH.md). `/health` is liveness (no I/O). `/health/deep` is system-database readiness (HTTP 503 when `SELECT 1` fails; Redis is reported and does not gate the status).
+- **Secret rotation (item 3b):** `skipped` until product launch (if ever). Intentional short-term risk accepted for personal/dev use. Not done.
+- **Deploy-all stage report (item 4):** `done` — `bin/deploy-all.sh` and `bin/restart-all.sh` write `tmp/deploy-reports/<kind>-<UTC timestamp>-<pid>.txt` with per-stage exit codes and elapsed times. Fail-fast stays the default (`FLUX_DEPLOY_CONTINUE_ON_WARN=1` continues).
 
 ---
 
@@ -101,7 +104,7 @@ Not intended for public docs or marketing consumption.
 
 ### 3b) Rotate all development and remote secrets after infra stabilization
 - **Priority:** P0
-- **Status:** todo
+- **Status:** skipped
 - **Owner:** platform
 - **Why:** current dev/remote secret reuse is intentional short-term risk and must be removed before steady-state use
 - **Scope:** gateway `.env`, v2 shared `.env`, system DB credentials, JWT secret
@@ -109,6 +112,7 @@ Not intended for public docs or marketing consumption.
   - generate new strong secrets for DB and JWT material
   - update remote runtime + local templates with new values
   - verify gateway/PostgREST JWT parity and successful end-to-end request flow
+- **Notes:** Deferred until product launch (if ever). Intentional short-term risk accepted for personal/dev use. Do not treat as done.
 
 ---
 
@@ -116,14 +120,15 @@ Not intended for public docs or marketing consumption.
 
 ### 4) Deploy-all stage report artifact
 - **Priority:** P1
-- **Status:** todo
+- **Status:** done
 - **Owner:** platform
 - **Why:** easier postmortem and CI integration
-- **Scope:** `bin/deploy-all.sh`
+- **Scope:** `bin/deploy-all.sh` (same writer on `bin/restart-all.sh`)
 - **Acceptance criteria:**
   - writes per-stage result summary to a timestamped file
   - includes exit codes + elapsed times
   - preserves fail-fast semantics by default
+- **Notes:** Report path `tmp/deploy-reports/deploy-all-<UTC timestamp>-<pid>.txt` (`restart-all-…` for the recycle orchestrator). Override the directory with `FLUX_DEPLOY_REPORT_DIR`. Each stage row is appended when that stage finishes (`exit_code`, `elapsed_s`). The EXIT trap appends `overall_exit` and `overall_elapsed_s` on success and on fail-fast. `tmp/` is gitignored. Default remains fail-fast; `FLUX_DEPLOY_CONTINUE_ON_WARN=1` continues and records the real stage exit codes without failing the script. Dry-run without Docker: `bash bin/deploy-stage-report.test.sh`.
 
 ### 5) Unified cache-eviction contract tests
 - **Priority:** P1
@@ -246,6 +251,7 @@ Active execution of `docs/MAKER-PLATFORM-ROADMAP.md`. Phases are executed one at
 
 ## Recently completed
 
+- `done` — **Deploy-all stage report:** `bin/deploy-all.sh` and `bin/restart-all.sh` write a timestamped per-stage exit/elapsed report under `tmp/deploy-reports/`. Fail-fast default unchanged.
 - `done` — **Flux MCP v0 (Phase 5):** Scoped `flx_mcp_` tokens, dashboard `/settings/mcp-tokens`, `FLUX_MCP_TOKEN` auth, capability/project enforcement, audit/intent `keyPreview` identity, hosted smoke on `flux.vsl-base.com` (`a1a5cc9`); release notes `docs/pages/release-notes/mcp-v0.md`; legacy MCP deprecation clock 2026-06-30 → ~2026-09-28.
 - `done` — **Maker Platform Phase 12:** AI-assisted brief + summaries — `@flux/core/project-ai-prompts`; Workers AI completion for FLUX.md draft, activity summary, and resume brief; session + CLI POST `/ai/summary`; dashboard Generate draft + Summarize buttons; `flux project brief generate [--save]`, `flux project summarize`; CLI `2.0.0`.
 - `done` — **Maker Platform Phase 11:** FLUX.md Project Brief — `@flux/core/flux-md` template + generation prompt; optional `projects.flux_md` dashboard snapshot synced via `flux project brief push`; local repo detection; session + CLI GET/PUT `/flux-md`; dashboard `ProjectFluxMdPanel` with markdown render + copyable generation prompt when missing.
