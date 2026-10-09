@@ -164,7 +164,9 @@ On **v2_shared**, a `SECURITY DEFINER` function in the tenant schema is owned by
 
 This shipped with the Pass 6b ownership backfill. It is invisible to control-plane `/api/health`. `flux doctor` on a v2 project **fails** the **Definer RLS** check when it sees the shape. `flux push` **warns** and still commits, so a project that already has a blinded helper can ship the repair. The warning is not a rollback: the repair belongs in the app's next migration, and the detector is a heuristic.
 
-The scan reads `pg_proc` source text after stripping comments (`--` through the end of that line, and `/* … */` blocks). It matches `FROM` / `JOIN` of an ordinary lowercase table (`relkind = 'r'`), including a schema-qualified name with or without space around the dot (`t_<shortId>_api.notes` and `schema . table`). It does **not** read tenant rows, and it does not return function bodies. Limits, honestly:
+After this check is deployed, a tenant that still has a real blinded definer shows doctor **FAIL** until the repair migration is pushed as **versioned** (so it is recorded in `flux.flux_migrations`). **parcelpop** is in that state today: repair `0035` exists in the app repo but is not recorded in its migration ledger, so doctor stays failed until that file is pushed as versioned. A repair that was applied by hand, or as a repeatable/raw script, does not clear the check.
+
+The scan reads `pg_proc` source text after stripping comments (`--` through the end of that line, and `/* … */` blocks, including a block comment that spans lines). It matches `FROM` / `JOIN` of an ordinary lowercase table (`relkind = 'r'`), including a schema-qualified name with or without space around the dot (`t_<shortId>_api.notes` and `schema . table`). It does **not** read tenant rows, and it does not return function bodies. Limits, honestly:
 
 - Dynamic SQL that builds the table name at runtime (`EXECUTE format('SELECT … FROM %I', …)`, concatenation) is not detected.
 - A later comma-separated item (`FROM other, notes`), a read that only goes through a view, and quoted mixed-case identifiers are not detected.

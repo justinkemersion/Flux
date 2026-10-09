@@ -16,7 +16,7 @@ Lighthouse was the outage that surfaced it. A read-only catalog scan of the flee
 Detection only.
 
 - `flux push` on v2 **warns** and still commits. Failing the push would block unrelated migrations on tenants that already have the shape, and the detector is lexical.
-- `flux doctor` on v2 **fails** the Definer RLS check. The check is catalog-only: function name, owner role, and table name. No tenant rows, no function source.
+- `flux doctor` on v2 **fails** the Definer RLS check. The check is catalog-only: function name, owner role, and table name. No tenant rows, no function source. After deploy, a tenant that still has a real blinded definer shows that **FAIL** until the repair is pushed as a versioned migration. parcelpop's repair `0035` is not recorded in its migration ledger, so doctor stays failed for that tenant until `0035` is pushed as versioned.
 
 ## Heuristic limits
 

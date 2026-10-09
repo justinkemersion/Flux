@@ -207,6 +207,17 @@ test(
           SELECT 1
         $$;
 
+        CREATE FUNCTION block_comment_only() RETURNS int
+        LANGUAGE sql
+        SECURITY DEFINER
+        AS $$
+          /*
+            inventory note:
+            FROM members
+          */
+          SELECT 1
+        $$;
+
         CREATE FUNCTION read_audit_open() RETURNS int
         LANGUAGE sql
         SECURITY DEFINER
@@ -260,6 +271,11 @@ test(
         flaggedNames.has("comment_only"),
         false,
         "a comment that mentions FROM <table> is not flagged",
+      );
+      assert.equal(
+        flaggedNames.has("block_comment_only"),
+        false,
+        "a multi-line block comment that mentions FROM members is not flagged when the function does not read the table",
       );
       assert.equal(
         flaggedNames.has("read_audit_open"),

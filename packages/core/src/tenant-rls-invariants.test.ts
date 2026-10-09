@@ -69,6 +69,10 @@ test("blinded definer audit is a catalog read, not a push rollback", () => {
   // schema.table with no space around the dot must match; a space is optional.
   assert.match(sql, /\[\[:space:\]\]\*\\\.\[\[:space:\]\]\*/);
   assert.doesNotMatch(sql, /\\\.\[\[:space:\]\]\+/);
+  // Block comments must use 'g' only. With 'n', '.' does not match newlines, so a
+  // multi-line /* */ comment survives and a FROM inside it is a false positive.
+  assert.match(sql, /regexp_replace\(p\.prosrc, '\/\\\*\.\*\?\\\*\/', ' ', 'g'\)/);
+  assert.doesNotMatch(sql, /'\/\\\*\.\*\?\\\*\/',\s*' ',\s*'gn'/);
   // Postgres '.' matches newlines unless the pattern is newline-sensitive.
   // Without 'n', '--.*' would erase the rest of the function body.
   assert.match(sql, /'--\.\*',\s*' ',\s*'gn'/);

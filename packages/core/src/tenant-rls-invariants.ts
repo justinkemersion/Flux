@@ -132,8 +132,10 @@ export type BlindedSecurityDefinerFinding = {
  * - Matches `FROM` / `JOIN` of a plain lowercase table name (`relkind = 'r'`),
  *   optionally schema-qualified with or without space around the dot
  *   (`schema.table` and `schema . table`), after stripping comments.
- *   `--` comments are removed only through end of line (`n` flag: in Postgres,
- *   `.` otherwise matches newlines and would drop the rest of the body).
+ *   Block comments (`/* … */`) use flag `g` only. Postgres `.` matches newlines
+ *   unless `n` is set, and `n` would leave a multi-line block comment in the body.
+ *   `--` comments use `gn` so they are removed only through end of line (without
+ *   `n`, `.` would drop the rest of the function body).
  * - String literals are kept, so `EXECUTE 'SELECT … FROM notes'` is flagged.
  * - Dynamic SQL that builds the name at runtime (`format('%I', …)`, concatenation)
  *   is not visible and is not flagged.
@@ -154,7 +156,7 @@ WITH funcs AS (
     owner.rolname AS owner_role,
     owner.oid AS owner_oid,
     regexp_replace(
-      regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gn'),
+      regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'g'),
       '--.*',
       ' ',
       'gn'
