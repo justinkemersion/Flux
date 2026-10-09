@@ -465,13 +465,18 @@ async function pushMigrationFile(input: {
     );
   }
   if (input.mode === "v2_shared") {
-    const skipped = await pushSqlV2Migration({
+    const result = await pushSqlV2Migration({
       slug: input.slug,
       hash: input.hash,
       sql: input.content,
       migration: input.migration,
     });
-    return { skipped };
+    return {
+      skipped: result.skipped,
+      ...(result.warnings && result.warnings.length > 0
+        ? { warnings: result.warnings }
+        : {}),
+    };
   }
   const client = getApiClient();
   const result = await client.pushSql({
@@ -588,14 +593,27 @@ async function pushSqlV2Raw(input: {
   sqlPath: string;
 }): Promise<void> {
   const sql = await readFile(input.sqlPath, "utf8");
-  await pushSqlV2Push({
+  const result = await pushSqlV2Push({
     slug: input.slug,
     hash: input.hash,
     sql,
   });
+  printPushSecurityWarnings(result.warnings);
 }
 
-type PushSqlV2Result = { skipped: boolean; previousChecksum?: string };
+type PushSqlV2Result = {
+  skipped: boolean;
+  previousChecksum?: string;
+  warnings?: string[];
+};
+
+function readV2PushWarnings(body: unknown): string[] | undefined {
+  if (!body || typeof body !== "object" || !("warnings" in body)) return undefined;
+  const value = (body as { warnings?: unknown }).warnings;
+  if (!Array.isArray(value)) return undefined;
+  const warnings = value.filter((item): item is string => typeof item === "string");
+  return warnings.length > 0 ? warnings : undefined;
+}
 
 async function pushSqlV2Push(input: {
   slug: string;
@@ -672,9 +690,11 @@ async function pushSqlV2Push(input: {
     typeof (body as { previousChecksum?: unknown }).previousChecksum === "string"
       ? (body as { previousChecksum: string }).previousChecksum
       : undefined;
+  const warnings = readV2PushWarnings(body);
   return {
     skipped: skipped === true,
     ...(previousChecksum ? { previousChecksum } : {}),
+    ...(warnings ? { warnings } : {}),
   };
 }
 
@@ -683,8 +703,7 @@ async function pushSqlV2Migration(input: {
   hash: string;
   sql: string;
   migration: MigrationPushMeta;
-}): Promise<boolean> {
-  const result = await pushSqlV2Push(input);
-  return result.skipped;
+}): Promise<PushSqlV2Result> {
+  return pushSqlV2Push(input);
 }
 

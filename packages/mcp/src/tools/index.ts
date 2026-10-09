@@ -319,7 +319,7 @@ export function buildTools(
     {
       name: "flux.doctor",
       description:
-        "Run the project health doctor: DB reachability, API probe, migration ledger, and backup trust checks.",
+        "Run the project health doctor: DB reachability, API probe, migration ledger, backup trust, and (v2) SECURITY DEFINER / FORCE RLS checks.",
       intentClass: "read",
       inputSchema: HASH_INPUT_SCHEMA,
       handler: async (args): Promise<ToolResult> => {

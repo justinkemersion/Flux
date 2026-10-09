@@ -160,6 +160,13 @@ now be filtered unless a policy permits the insert — previously it ran as `pos
 bypassed RLS. Seed scripts that break this way should either gain an appropriate policy or
 use the documented `flux:no-force-rls` exemption.
 
+The same constraint applies to `SECURITY DEFINER` functions owned by the DDL role (everything
+created by pooled push, and everything the 2026-08-08 backfill re-owned). They run as the
+owner, so a policy that names only the runtime role does not apply and a `SELECT` returns
+zero rows. Follow-up (2026-09-26): `flux push` warns and `flux doctor` fails that catalog
+shape. The repair is an owner-scoped policy in the tenant's own migration, not `BYPASSRLS`
+and not `NO FORCE`. See [`docs/pages/guides/migrations.md`](../../docs/pages/guides/migrations.md).
+
 ---
 
 ## Resolved decisions (operator, 2026-08-08)

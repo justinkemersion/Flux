@@ -1,6 +1,9 @@
 import {
   buildAssertRuntimeRoleOwnsNothingSql,
   buildForceRlsInvariantSql,
+  buildInspectBlindedSecurityDefinersSql,
+  formatBlindedSecurityDefinerWarnings,
+  parseBlindedSecurityDefinerFindings,
 } from "@flux/core/tenant-rls-invariants";
 import type { PushPgClient } from "@/src/lib/pooled-push";
 import { quoteIdent } from "@/src/lib/pooled-push";
@@ -65,19 +68,32 @@ export async function resetPooledPushRole(client: PushPgClient): Promise<void> {
   await client.query("RESET ROLE");
 }
 
+function rowsFrom(result: unknown): unknown[] {
+  if (!result || typeof result !== "object" || !("rows" in result)) return [];
+  const rows = (result as { rows: unknown }).rows;
+  return Array.isArray(rows) ? rows : [];
+}
+
 /**
  * Runs after `RESET ROLE`, as the control plane, so the sweep can touch tables the DDL
  * role does not own (pre-Pass-6b objects still owned by the bootstrap role).
+ *
+ * Returns push warnings for blinded SECURITY DEFINER functions. Those warnings do not
+ * roll the transaction back: the repair is a tenant migration, and the detector is lexical.
  */
 export async function enforcePooledPushRlsInvariants(
   client: PushPgClient,
   input: { schema: string; runtimeRole: string },
-): Promise<void> {
+): Promise<string[]> {
   assertTenantSchemaName(input.schema);
   assertTenantRoleName(input.runtimeRole);
   await client.query(buildForceRlsInvariantSql(input.schema));
   await client.query(
     buildAssertRuntimeRoleOwnsNothingSql(input.schema, input.runtimeRole),
+  );
+  const audited = await client.query(buildInspectBlindedSecurityDefinersSql(input.schema));
+  return formatBlindedSecurityDefinerWarnings(
+    parseBlindedSecurityDefinerFindings(rowsFrom(audited)),
   );
 }
 

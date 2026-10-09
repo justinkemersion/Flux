@@ -109,6 +109,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE t_<shortId>_api.<table> TO t_<shor
 
 **Your migrations do not run as your JWT role.** On v2_shared, Flux executes pushed SQL as a separate per-tenant owner role, **`t_<shortId>_ddl`**, because a table owner bypasses RLS in PostgreSQL — if DDL ran as `t_<shortId>_role`, every table it created would stop enforcing policies for your own app. So tables you create are owned by `t_<shortId>_ddl`; `SELECT` is granted to your runtime role automatically, and **writes still require the explicit `GRANT` above**. Flux also applies `FORCE ROW LEVEL SECURITY` to tenant tables that already have RLS enabled (opt out with a table comment containing `flux:no-force-rls`). See [`docs/pages/guides/migrations.md`](docs/pages/guides/migrations.md).
 
+**`SECURITY DEFINER` does not bypass that FORCE.** The function runs as its owner, `t_<shortId>_ddl`, which has no `BYPASSRLS`. Policies that name only `t_<shortId>_role` (or `authenticated`, rewritten to that role) do not apply, so a definer `SELECT` returns zero rows with no error. Repair with a permissive `SELECT` policy `TO t_<shortId>_ddl` (narrow `USING`). Do not grant `BYPASSRLS` and do not turn off `FORCE ROW LEVEL SECURITY`. `flux push` warns and still commits; `flux doctor` fails the **Definer RLS** check. The scan is lexical and misses dynamic SQL that builds the table name at runtime. Details: [`docs/pages/guides/migrations.md`](docs/pages/guides/migrations.md).
+
 ---
 
 ## 6) TLS from Node / serverless **`fetch`**

@@ -172,6 +172,9 @@ export async function POST(req: Request): Promise<Response> {
           {
             ok: true,
             skipped: result.skipped,
+            ...(result.warnings && result.warnings.length > 0
+              ? { warnings: result.warnings }
+              : {}),
             tablesMoved: 0,
             sequencesMoved: 0,
             viewsMoved: 0,
@@ -194,6 +197,9 @@ export async function POST(req: Request): Promise<Response> {
           ...(result.previousChecksum
             ? { previousChecksum: result.previousChecksum }
             : {}),
+          ...(result.warnings && result.warnings.length > 0
+            ? { warnings: result.warnings }
+            : {}),
           tablesMoved: 0,
           sequencesMoved: 0,
           viewsMoved: 0,
@@ -201,7 +207,7 @@ export async function POST(req: Request): Promise<Response> {
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
-    await executePooledPush({
+    const pushed = await executePooledPush({
       schema: apiSchema,
       role: tenantRole,
       ddlRole: tenantDdlRole,
@@ -210,6 +216,7 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json(
         {
           ok: true,
+          ...(pushed.warnings.length > 0 ? { warnings: pushed.warnings } : {}),
           tablesMoved: 0,
           sequencesMoved: 0,
           viewsMoved: 0,

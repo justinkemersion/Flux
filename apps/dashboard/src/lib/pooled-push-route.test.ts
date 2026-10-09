@@ -235,6 +235,29 @@ test("successful v2_shared dispatch invokes executePooledPush with tenant schema
   });
 });
 
+test("v2_shared push forwards blinded-definer warnings", async () => {
+  const token = await mintServiceRoleJwt("service_role");
+  const res = await runPooledPushPost(
+    pooledPushRequest({ hash: VALID_HASH, sql: "select 2" }, token),
+    ctx("my-proj"),
+    {
+      initSystemDb: async () => undefined,
+      loadProjectForPush: async () => ({
+        id: TENANT_PROJECT_ID,
+        mode: "v2_shared",
+        jwtSecret: JWT_SECRET,
+      }),
+      executePooledPush: async () => ({
+        warnings: ["Flux security warning: SECURITY DEFINER read_members()"],
+      }),
+    },
+  );
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { ok: boolean; warnings?: string[] };
+  assert.equal(body.ok, true);
+  assert.match(body.warnings?.[0] ?? "", /read_members/);
+});
+
 test("invalid JSON body returns 400", async () => {
   const headers = new Headers({ "content-type": "application/json" });
   headers.set("authorization", `Bearer ${await mintServiceRoleJwt("service_role")}`);

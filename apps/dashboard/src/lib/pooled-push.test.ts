@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildAssertRuntimeRoleOwnsNothingSql,
   buildForceRlsInvariantSql,
+  buildInspectBlindedSecurityDefinersSql,
 } from "@flux/core/tenant-rls-invariants";
 import {
   executePooledPush,
@@ -15,6 +16,7 @@ class RecordingClient implements PushPgClient {
   ended = false;
   failOn: string | RegExp | null = null;
   failError: Error | null = null;
+  rowsFor: ((sql: string) => unknown[]) | null = null;
 
   async connect(): Promise<void> {
     this.statements.push("__connect__");
@@ -34,7 +36,7 @@ class RecordingClient implements PushPgClient {
         throw err;
       }
     }
-    return { rows: [] };
+    return { rows: this.rowsFor?.(sql) ?? [] };
   }
 
   async end(): Promise<void> {
@@ -66,6 +68,7 @@ test("executePooledPush issues BEGIN, SET LOCAL ROLE (DDL role), search_path, ad
     "RESET ROLE",
     buildForceRlsInvariantSql(TENANT_SCHEMA),
     buildAssertRuntimeRoleOwnsNothingSql(TENANT_SCHEMA, TENANT_ROLE),
+    buildInspectBlindedSecurityDefinersSql(TENANT_SCHEMA),
     "NOTIFY pgrst, 'reload schema';",
     "COMMIT",
   ]);
@@ -146,6 +149,37 @@ test("executePooledPush enforces wall-clock timeout", async () => {
       }),
     /exceeded 0\.025s timeout/,
   );
+});
+
+test("executePooledPush returns blinded-definer warnings without rolling back", async () => {
+  const client = new RecordingClient();
+  client.rowsFor = (sql) =>
+    sql.includes("flux:blinded-security-definer-audit")
+      ? [
+          {
+            schema_name: TENANT_SCHEMA,
+            function_name: "read_members",
+            identity_args: "",
+            owner_role: TENANT_DDL_ROLE,
+            table_schema: TENANT_SCHEMA,
+            table_name: "members",
+          },
+        ]
+      : [];
+
+  const result = await executePooledPush({
+    schema: TENANT_SCHEMA,
+    role: TENANT_ROLE,
+    ddlRole: TENANT_DDL_ROLE,
+    sql: "SELECT 1;",
+    clientFactory: () => client,
+  });
+
+  assert.ok(client.statements.includes("COMMIT"));
+  assert.equal(client.statements.includes("ROLLBACK"), false);
+  assert.match(result.warnings[0] ?? "", /read_members\(\)/);
+  assert.match(result.warnings[0] ?? "", /BYPASSRLS/);
+  assert.match(result.warnings.at(-1) ?? "", /Dynamic SQL/);
 });
 
 test("quoteIdent wraps and doubles embedded quotes", () => {

@@ -158,6 +158,32 @@ COMMENT ON TABLE t_<shortId>_api.audit_log IS 'flux:no-force-rls — append-only
 
 Tables **without** RLS enabled are never modified. A push is rejected if the runtime role is found owning objects in the tenant schema, since that would disable RLS for that role.
 
+### SECURITY DEFINER functions and FORCE RLS
+
+On **v2_shared**, a `SECURITY DEFINER` function in the tenant schema is owned by `t_<shortId>_ddl`. That role is not a superuser and does not have `BYPASSRLS`. `FORCE ROW LEVEL SECURITY` applies to the owner, so policies written only `TO t_<shortId>_role` (including `TO authenticated`, which push rewrites to that role) do not apply while the function runs. A `SELECT` then returns **zero rows and no error**. Writes fail with a row-level security error instead of bypassing the policy.
+
+This shipped with the Pass 6b ownership backfill. It is invisible to control-plane `/api/health`. `flux doctor` on a v2 project **fails** the **Definer RLS** check when it sees the shape. `flux push` **warns** and still commits, so a project that already has a blinded helper can ship the repair. The warning is not a rollback: the repair belongs in the app's next migration, and the detector is a heuristic.
+
+After this check is deployed, a tenant that still has a real blinded definer shows doctor **FAIL** until the repair migration is pushed as **versioned** (so it is recorded in `flux.flux_migrations`). **parcelpop** is in that state today: repair `0035` exists in the app repo but is not recorded in its migration ledger, so doctor stays failed until that file is pushed as versioned. A repair that was applied by hand, or as a repeatable/raw script, does not clear the check.
+
+The scan reads `pg_proc` source text after stripping comments (`--` through the end of that line, and `/* … */` blocks, including a block comment that spans lines). It matches `FROM` / `JOIN` of an ordinary lowercase table (`relkind = 'r'`), including a schema-qualified name with or without space around the dot (`t_<shortId>_api.notes` and `schema . table`). It does **not** read tenant rows, and it does not return function bodies. Limits, honestly:
+
+- Dynamic SQL that builds the table name at runtime (`EXECUTE format('SELECT … FROM %I', …)`, concatenation) is not detected.
+- A later comma-separated item (`FROM other, notes`), a read that only goes through a view, and quoted mixed-case identifiers are not detected.
+- A string literal that contains `FROM notes` or `JOIN notes` can be flagged even when that statement never runs.
+- Procedures are not scanned.
+
+Repair it with a **new** migration. Add a permissive `SELECT` policy scoped to the function owner (`pg_proc.proowner`, normally `t_<shortId>_ddl`). Keep `USING` as narrow as the helper is supposed to be. Do **not** `ALTER ROLE … BYPASSRLS`, do **not** `NO FORCE ROW LEVEL SECURITY`, and do **not** drop RLS. Do **not** use `TO PUBLIC` just to unstick the helper: a policy with no `TO` is `TO PUBLIC`, which also admits every other role that can reach the table.
+
+```sql
+CREATE POLICY members_definer_select ON members
+  FOR SELECT
+  TO t_<shortId>_ddl
+  USING (true); -- narrow this to the rows the helper is allowed to see
+```
+
+An `INSERT` / `UPDATE` / `DELETE` inside the definer needs the matching command policy for that same owner role. The runtime role's policies stay unchanged. This policy only admits the owner, which is who the definer runs as.
+
 ### Foundry / Supabase-style SQL on v2_shared
 
 Foundry repos often ship **unqualified** DDL (`CREATE TABLE profiles …`) and privilege boilerplate (`GRANT … TO authenticated`, `GRANT USAGE ON SCHEMA public …`). On **v2_shared**, `flux push` applies SQL inside a transaction with:

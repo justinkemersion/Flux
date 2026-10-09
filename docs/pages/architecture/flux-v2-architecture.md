@@ -129,7 +129,7 @@ role       = "t_5ecfa3ab72d1_role"
 
 - **Cluster-level blast radius.** v2 deliberately accepts that a misbehaving tenant can stress the shared cluster. Operational controls (rate limits, connection caps, statement timeouts) reduce this; they do not eliminate it.
 - **Hard CPU isolation.** v2 does not promise per-tenant CPU pinning. If you need that, you want [v1 dedicated](/docs/concepts/pooled-vs-dedicated).
-- **RLS by default.** v2's baseline isolation is schema and role, not [row-level security](/docs/concepts/rls). RLS is an opt-in additional control your app adds; it is not the load-bearing boundary.
+- **RLS by default.** v2's baseline isolation is schema and role, not [row-level security](/docs/concepts/rls). RLS is an opt-in additional control your app adds; it is not the load-bearing boundary. When you enable it, Flux forces it, so the owner role and `SECURITY DEFINER` functions that run as that owner are subject to your policies. A definer whose table has no `SELECT` policy for the owner or `PUBLIC` reads zero rows. See [Migrations](/docs/guides/migrations).
 
 For the threat-model framing, see [Threat model](/docs/security/threat-model). For the structural layout, see [Tenant isolation (architecture)](/docs/architecture/tenant-isolation).
 

@@ -150,6 +150,20 @@ create policy profiles_self_read
   on t_5ecfa3ab72d1_api.profiles for select
   using (id = auth.uid());
 
+-- Owner of the SECURITY DEFINER function. Narrow to the row the helper writes.
+create policy profiles_definer_write
+  on t_5ecfa3ab72d1_api.profiles
+  for insert
+  to t_5ecfa3ab72d1_ddl
+  with check (id = auth.uid());
+
+create policy profiles_definer_update
+  on t_5ecfa3ab72d1_api.profiles
+  for update
+  to t_5ecfa3ab72d1_ddl
+  using (id = auth.uid())
+  with check (id = auth.uid());
+
 create or replace function t_5ecfa3ab72d1_api.ensure_user_profile()
 returns void
 language sql
@@ -172,7 +186,7 @@ POST /rpc/ensure_user_profile
 Authorization: Bearer <clerk template JWT>
 ```
 
-`SECURITY DEFINER` is intentional: the function bypasses the policy on its own `INSERT` so the profile row exists before any RLS-sensitive read. The explicit `search_path` and the narrow `EXECUTE` grant keep the privilege escalation contained.
+`SECURITY DEFINER` runs as the function owner. On v2_shared that owner is `t_<shortId>_ddl`, which has no `BYPASSRLS`, and Flux forces RLS on tables that enable it. The function does **not** bypass the table's policies. The `profiles_definer_write` and `profiles_definer_update` policies above are what let this `INSERT … ON CONFLICT DO UPDATE` succeed. Do not grant `BYPASSRLS` and do not turn off `FORCE ROW LEVEL SECURITY`. The explicit `search_path` and the narrow `EXECUTE` grant still matter. A definer that `SELECT`s needs a `SELECT` policy for the same owner; see [Migrations](/docs/guides/migrations).
 
 ## Common pitfalls
 

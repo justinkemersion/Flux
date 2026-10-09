@@ -144,7 +144,7 @@ Compose: [`docker/traefik/docker-compose.yml`](docker/traefik/docker-compose.yml
 
 - Schema: `t_<shortId>_api` — tables, policies, grants for the tenant.
 - Role: `t_<shortId>_role` — JWT `role` claim on v2_shared (not `authenticated`). Runtime only: it owns nothing and cannot run DDL.
-- Owner role: `t_<shortId>_ddl` — `NOLOGIN`, owns the schema and everything pushed into it. Pooled `flux push` runs DDL as this role via `SET LOCAL ROLE`. Keeping the owner distinct from the runtime role is what keeps RLS in force, since a table owner bypasses RLS; pushes additionally apply `FORCE ROW LEVEL SECURITY` to RLS-enabled tenant tables and abort if the runtime role is found owning anything.
+- Owner role: `t_<shortId>_ddl` — `NOLOGIN`, owns the schema and everything pushed into it. Pooled `flux push` runs DDL as this role via `SET LOCAL ROLE`. Keeping the owner distinct from the runtime role is what keeps RLS in force, since a table owner bypasses RLS; pushes additionally apply `FORCE ROW LEVEL SECURITY` to RLS-enabled tenant tables and abort if the runtime role is found owning anything. A `SECURITY DEFINER` function owned by that role is subject to the same policies: if none admit the owner or `PUBLIC` for `SELECT`, the function reads zero rows and does not error. `flux push` warns (and still commits); `flux doctor` fails that v2 check. Repair with a policy `TO t_<shortId>_ddl`, not `BYPASSRLS` and not `NO FORCE`. See [Migrations](docs/pages/guides/migrations.md).
 - Provisioned by `@flux/engine-v2`; collision guard via schema `COMMENT` ownership marker.
 - Operator checks: `bin/pass6b-reconcile-tenant-roles.sh` (read-only) and `bin/pass6b-backfill-tenant-ddl-roles.sh` (idempotent backfill for tenants provisioned before the owner role existed).
 
@@ -436,6 +436,8 @@ pnpm --filter @flux/mcp build
 | `flux.backup.ensureVerified` | protective mutation | `backup:ensure_verified` |
 | `flux.migration.apply` | write | `migration:apply` |
 
+`flux.doctor` on a v2 project fails the **Definer RLS** check when a `SECURITY DEFINER` function looks blinded by `FORCE ROW LEVEL SECURITY`. The report names the function, owner role, and table. It does not return row data or function source.
+
 **Resources:** `flux://projects`, per-hash schema/backups/activity/doctor, bundled guide markdown.
 
 **Prompts (6):** production readiness, migration review, RLS debug, nextjs setup, backup-before-migration, brief refresh.
@@ -664,4 +666,4 @@ Summary:
 
 ---
 
-- Last reviewed: `2026-09-27`
+- Last reviewed: `2026-10-09`
