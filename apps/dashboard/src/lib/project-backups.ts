@@ -5,7 +5,7 @@ import { mkdir, stat, unlink } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   selectFailedBackupsWithNewerRestoreVerified,
   selectRestoreVerifiedBackupsForRetention,
@@ -1142,9 +1142,24 @@ export async function sweepProjectBackupRetention(
   return deleted;
 }
 
-export async function sweepRetentionBatch(limit = 10): Promise<number> {
-  const db = getDb();
-  const rows = await db
+export type RetentionSweepProject = Pick<
+  PlatformBackupProjectRow,
+  | "id"
+  | "slug"
+  | "userId"
+  | "backupIntervalDays"
+  | "backupRetentionCount"
+  | "backupRetentionDays"
+>;
+
+export type SweepRetentionBatchDeps = {
+  /** Catalog read. Production loads every project, ordered by id. */
+  listProjects?: () => Promise<readonly RetentionSweepProject[]>;
+  sweepProject?: (project: RetentionSweepProject) => Promise<number>;
+};
+
+async function listProjectsForRetentionSweep(): Promise<RetentionSweepProject[]> {
+  return getDb()
     .select({
       id: projects.id,
       slug: projects.slug,
@@ -1154,17 +1169,29 @@ export async function sweepRetentionBatch(limit = 10): Promise<number> {
       backupRetentionDays: projects.backupRetentionDays,
     })
     .from(projects)
-    .limit(500);
+    .orderBy(asc(projects.id));
+}
 
+/**
+ * Hourly retention pass. Every non-excluded project is swept, in project-id order.
+ * A cap on an unordered catalog read left later projects uncleaned until their own
+ * backup pipeline, so eligible `failed` and `restore_failed` rows sat around.
+ */
+export async function sweepRetentionBatch(
+  deps: SweepRetentionBatchDeps = {},
+): Promise<number> {
+  const listed = [...(deps.listProjects
+    ? await deps.listProjects()
+    : await listProjectsForRetentionSweep())];
+  listed.sort((a, b) => a.id.localeCompare(b.id));
+
+  const sweepProject = deps.sweepProject ?? sweepProjectBackupRetention;
   let total = 0;
-  let processed = 0;
-  for (const row of rows) {
+  for (const row of listed) {
     if (isSchedulerExcludedProject({ slug: row.slug, userId: row.userId })) {
       continue;
     }
-    total += await sweepProjectBackupRetention(row);
-    processed += 1;
-    if (processed >= limit) break;
+    total += await sweepProject(row);
   }
   return total;
 }

@@ -175,7 +175,7 @@ export async function runBackupSchedulerTick(): Promise<void> {
 
   let retentionDeleted = 0;
   try {
-    retentionDeleted = await sweepRetentionBatch(10);
+    retentionDeleted = await sweepRetentionBatch();
     if (retentionDeleted > 0) {
       logBackupScheduler(
         `retention sweep deleted ${String(retentionDeleted)} backup row(s)`,
