@@ -259,6 +259,8 @@ flux backup verify -p my-app --hash <7hex> --latest
 flux backup list -p my-app --hash <7hex>
 ```
 
+Verification restores the archive in a disposable Postgres. Before `pg_restore` it creates `NOLOGIN` stubs (no superuser, no `BYPASSRLS`) for `t_<shortId>_role`, `t_<shortId>_ddl`, and any other non-reserved role the dump names in a policy, owner, grant, or default privilege. The container is removed afterwards, which drops those stubs. `pg_restore` must exit 0 with no ignored errors. A manual re-check of an existing artifact is `flux backup verify -p <slug> --hash <hash> --latest`.
+
 ### Run destructive operation safely
 
 1. `flux backup create` → `flux backup verify --latest`
@@ -662,4 +664,4 @@ Summary:
 
 ---
 
-- Last reviewed: `2026-09-22`
+- Last reviewed: `2026-09-27`

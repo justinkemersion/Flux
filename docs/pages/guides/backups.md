@@ -77,7 +77,7 @@ List output also includes **platform minimum backup freshness** when the control
 
 ## 3) Verify a backup
 
-This is the only step that promotes a backup to **restorable**. Verification runs `pg_restore` against the artifact in a disposable Postgres container on the control plane and checks that the tenant (or dedicated) schema came back. A non-empty dump must restore at least one non-system table. A **schema-only empty v2 tenant export** (zero user tables) is still restore-verified when the expected `t_<shortId>_api` schema is present after restore and the dump TOC lists that schema with no `TABLE` entries — emptiness has to match the dump, not look like a failed restore:
+This is the only step that promotes a backup to **restorable**. Verification runs `pg_restore` against the artifact in a disposable Postgres container on the control plane and checks that the tenant (or dedicated) schema came back. Before that restore, Flux creates `NOLOGIN` stubs with no superuser and no `BYPASSRLS` for every non-reserved role the archive names — including `t_<shortId>_role` and `t_<shortId>_ddl` — so `CREATE POLICY ... TO t_<shortId>_ddl` and `ALTER ... OWNER TO` can be applied. The container is removed when verification finishes, which drops the stubs. `pg_restore` must exit 0 with **no ignored errors**; a missing role is not skipped. A non-empty dump must restore at least one non-system table. A **schema-only empty v2 tenant export** (zero user tables) is still restore-verified when the expected `t_<shortId>_api` schema is present after restore and the dump TOC lists that schema with no `TABLE` entries — emptiness has to match the dump, not look like a failed restore:
 
 ```bash
 flux backup verify --project bloom-atelier --hash 0a1b2c3 --latest
@@ -140,7 +140,9 @@ pg_restore --no-owner --no-acl \
   ./bloom.dump
 ```
 
-The dump uses `--no-owner --no-acl` at create time, so role names and grants do not need to line up between the source tenant and the restore target. Before `pg_restore`, create stub roles that policies reference — at minimum the per-tenant role `t_<shortId>_role` (from `flux list` / dashboard) plus the platform roles (`anon`, `authenticated`, `service_role`, `authenticator`) if your policies target them. Re-create grants in the target database before serving traffic.
+`pg_dump --no-acl` omits `GRANT` and `ALTER DEFAULT PRIVILEGES` from the archive. `pg_dump --no-owner` does **not** remove ownership from a custom-format archive; `pg_restore --no-owner` is what suppresses `ALTER ... OWNER TO`. `CREATE POLICY ... TO <role>` is neither an owner command nor an ACL, so it is always in the file. Flux backup verification passes `--no-owner --no-acl` and still has to stub those policy roles. A restore that does not pass `--no-owner` (including `flux db restore` on v1, and a manual `pg_restore` without that flag) also applies `OWNER TO t_<shortId>_ddl` and needs the same stub.
+
+Before `pg_restore` into a database that does not already have the tenant roles, create them as `NOLOGIN` with no superuser and no `BYPASSRLS`. At minimum: `t_<shortId>_role` and `t_<shortId>_ddl` (same short id as `t_<shortId>_api`), plus `anon`, `authenticated`, `service_role`, and `authenticator` if the archive names them. Leave the stubs in place on a database you will serve: the restored policies reference them. Re-create grants before serving traffic when the archive was taken with `--no-acl`, because those grants were not written into the file. `flux db restore` (v1 dedicated) and v2→v1 migrate create these stubs themselves. `flux db restore` does not pass `--no-acl` or `--no-owner`, so policies and any ownership commands in the archive are kept.
 
 ## 6) Pre-destructive workflow pattern
 
@@ -187,7 +189,7 @@ Keep the API token used here narrow — read-write to the projects it touches, n
 
 | Symptom | Likely cause |
 |---------|--------------|
-| `flux backup verify` consistently fails | Postgres major-version mismatch between the verify image and the source; or the tenant schema was deleted between create and verify. Schema-only empty v2 tenants should verify — if you still see `no user tables found after pg_restore`, the control plane needs the empty-tenant verify policy. |
+| `flux backup verify` consistently fails | Postgres major-version mismatch between the verify image and the source; or the tenant schema was deleted between create and verify. `role "t_<shortId>_ddl" does not exist` (or `t_<shortId>_role`) means the control plane is older than the tenant-role stub — upgrade `flux-web`, then `flux backup verify --latest` on the existing artifact. Schema-only empty v2 tenants should verify — if you still see `no user tables found after pg_restore`, the control plane needs the empty-tenant verify policy. |
 | List always shows "Validating backup artifact" | The validator is stalled or the upload truncated; re-create and watch `--verbose` for the artifact size |
 | Download writes nothing to disk | Forgot `-o` or a shell redirect on a TTY (the CLI refuses binary to terminal) |
 | `flux nuke` refuses with "not restore-verified" | Latest backup is in a non-restorable trust state; create + verify, or pass `--skip-backup-check` if you really mean to destroy without a recovery path |

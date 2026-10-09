@@ -91,6 +91,15 @@ export {
 } from "./migration-status.ts";
 export { FLUX_AUTH_SCHEMA_AND_UID_SQL } from "./auth-compat-sql.ts";
 export {
+  BACKUP_VERIFY_PG_RESTORE_ARGS,
+  LIVE_PG_RESTORE_ARGS,
+  buildIdempotentNologinRoleSql,
+  buildRestoreRoleStubSql,
+  collectRestoreRoleNames,
+  extractRestoreRoleDependencies,
+  pgRestoreRejectedReason,
+} from "./backup-restore-roles.ts";
+export {
   FLUX_PROJECT_HASH_HEX_LEN,
   FLUX_SYSTEM_HASH,
   generateProjectHash,

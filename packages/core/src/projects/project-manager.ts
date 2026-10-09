@@ -283,6 +283,7 @@ export class ProjectManager {
     hash: string,
     hostFilePath: string,
     apiSchemaName: string,
+    projectId?: string,
   ): Promise<void> {
     return replaceTenantApiSchemaFromPlainSqlFile(
       this.ctx,
@@ -290,6 +291,7 @@ export class ProjectManager {
       hash,
       hostFilePath,
       apiSchemaName,
+      projectId,
     );
   }
 

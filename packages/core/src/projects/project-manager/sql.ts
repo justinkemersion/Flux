@@ -1,7 +1,12 @@
+import { readFile } from "node:fs/promises";
 import {
   buildApiSchemaPrivilegesSql,
   buildDisableRowLevelSecurityForSchemaSql,
 } from "../../api-schema-privileges.ts";
+import {
+  buildRestoreRoleStubSql,
+  collectRestoreRoleNames,
+} from "../../backup-restore-roles.ts";
 import {
   assertFluxApiSchemaIdentifier,
   LEGACY_FLUX_API_SCHEMA,
@@ -449,6 +454,7 @@ export async function replaceTenantApiSchemaFromPlainSqlFile(
   hash: string,
   hostFilePath: string,
   apiSchemaName: string,
+  projectId?: string,
 ): Promise<void> {
   assertFluxApiSchemaIdentifier(apiSchemaName);
   const { containerId, password, slug } =
@@ -461,6 +467,19 @@ export async function replaceTenantApiSchemaFromPlainSqlFile(
     `DROP SCHEMA IF EXISTS ${q} CASCADE;`,
     POSTGRES_USER,
   );
+  const dumpSql = await readFile(hostFilePath, "utf8");
+  const roleStubSql = buildRestoreRoleStubSql(
+    collectRestoreRoleNames(dumpSql, projectId),
+  );
+  if (roleStubSql.trim().length > 0) {
+    await runPsqlSqlInsideContainer(
+      ctx.docker,
+      containerId,
+      password,
+      roleStubSql,
+      POSTGRES_USER,
+    );
+  }
   const materialized = await materializePreparedSqlFile(
     hostFilePath,
     { sanitizeForTarget: true },
