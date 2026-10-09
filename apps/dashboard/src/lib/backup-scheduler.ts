@@ -12,6 +12,7 @@ import {
   recordPlatformBackupFreshnessSchedulerExecution,
 } from "@/src/lib/platform-scheduler-state";
 import {
+  failedBackupCatalogPatch,
   projectsDueForPlatformBackup,
   replicateBackupOffsite,
   runBackupArtifactValidation,
@@ -31,7 +32,7 @@ async function markFailed(
   if (field === "status") {
     await db
       .update(projectBackups)
-      .set({ status: "failed", error })
+      .set(failedBackupCatalogPatch(error))
       .where(eq(projectBackups.id, backupId));
     return;
   }
@@ -177,7 +178,7 @@ export async function runBackupSchedulerTick(): Promise<void> {
     retentionDeleted = await sweepRetentionBatch(10);
     if (retentionDeleted > 0) {
       logBackupScheduler(
-        `retention sweep deleted ${String(retentionDeleted)} restore-verified backup row(s)`,
+        `retention sweep deleted ${String(retentionDeleted)} backup row(s)`,
       );
     }
   } catch (err: unknown) {

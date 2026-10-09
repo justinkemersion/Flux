@@ -87,6 +87,13 @@ services:
       traefik.http.routers.flux-web-http.priority: "1"
       traefik.http.routers.flux-web-http.service: flux-web
       traefik.http.services.flux-web.loadbalancer.server.port: "3000"
+    # json-file caps, same 20m × 5 as the gateways. Docker applies this only
+    # when flux-web is recreated. This file does not recreate it.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 networks:
   flux-network:

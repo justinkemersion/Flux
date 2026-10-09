@@ -281,6 +281,92 @@ test("local-only retention does not call offsite delete and still drops the row"
   await rm(dir, { recursive: true, force: true });
 });
 
+test("retention removes failed and restore_failed files once a newer verified backup exists", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "flux-retention-failed-"));
+  const deletedKeys: string[] = [];
+  const deletedIds: string[] = [];
+  const oldFailed = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1";
+  const oldRestoreFailed = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2";
+  const newerFailed = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3";
+  const storage = mockStorage({
+    localRoot: dir,
+    usesR2: true,
+    deleteOffsite: async (key) => {
+      deletedKeys.push(key);
+    },
+  });
+  await mkdir(path.join(dir, PROJECT_ID), { recursive: true });
+  for (const id of [oldFailed, oldRestoreFailed, newerFailed]) {
+    await writeFile(storage.localPathForBackup(PROJECT_ID, id), "dump");
+  }
+  const verified = fakeRow({
+    id: "verified-new",
+    createdAt: daysAgo(1),
+    restoreVerificationAt: daysAgo(1),
+    offsiteKey: null,
+    offsiteStatus: "pending",
+  });
+  const rows = [
+    fakeRow({
+      id: oldFailed,
+      status: "failed",
+      artifactValidationStatus: "skipped",
+      restoreVerificationStatus: "skipped",
+      createdAt: daysAgo(20),
+      offsiteKey: `${OFFSITE_PREFIX}/${oldFailed}.dump`,
+      offsiteStatus: "failed",
+    }),
+    fakeRow({
+      id: oldRestoreFailed,
+      status: "complete",
+      restoreVerificationStatus: "restore_failed",
+      createdAt: daysAgo(40),
+      offsiteKey: null,
+      offsiteStatus: "pending",
+    }),
+    fakeRow({
+      id: newerFailed,
+      status: "failed",
+      artifactValidationStatus: "skipped",
+      restoreVerificationStatus: "skipped",
+      createdAt: daysAgo(0),
+      offsiteKey: `${OFFSITE_PREFIX}/${newerFailed}.dump`,
+      offsiteStatus: "failed",
+    }),
+    verified,
+  ];
+
+  const deleted = await sweepProjectBackupRetention(
+    {
+      id: PROJECT_ID,
+      backupIntervalDays: 7,
+      backupRetentionCount: 4,
+      backupRetentionDays: 30,
+    },
+    {
+      storage,
+      listRows: async () => rows,
+      deleteCatalogRow: async (id) => {
+        deletedIds.push(id);
+      },
+    },
+  );
+
+  assert.equal(deleted, 2);
+  assert.deepEqual(deletedIds.sort(), [oldFailed, oldRestoreFailed].sort());
+  assert.deepEqual(deletedKeys, [`${OFFSITE_PREFIX}/${oldFailed}.dump`]);
+  await assert.rejects(
+    () => access(storage.localPathForBackup(PROJECT_ID, oldFailed), constants.F_OK),
+    { code: "ENOENT" },
+  );
+  await assert.rejects(
+    () => access(storage.localPathForBackup(PROJECT_ID, oldRestoreFailed), constants.F_OK),
+    { code: "ENOENT" },
+  );
+  await access(storage.localPathForBackup(PROJECT_ID, newerFailed), constants.F_OK);
+  await rm(dir, { recursive: true, force: true });
+});
+
 test("filesystem offsite mode deletes the replica file", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "flux-retention-fs-"));
   const localRoot = path.join(dir, "local");

@@ -194,6 +194,7 @@ Keep the API token used here narrow — read-write to the projects it touches, n
 | Download writes nothing to disk | Forgot `-o` or a shell redirect on a TTY (the CLI refuses binary to terminal) |
 | `flux nuke` refuses with "not restore-verified" | Latest backup is in a non-restorable trust state; create + verify, or pass `--skip-backup-check` if you really mean to destroy without a recovery path |
 | Old backup artifact missing on disk | Retention swept it; older rows can have valid metadata but no file. Check the project's retention window in the dashboard |
+| `failed` or `restore_failed` row disappears | Retention removes those rows and their files once a newer restore-verified backup exists for the same project. A failed create (including strict offsite failure) records validation and restore verification as `skipped` |
 
 The full symptom-by-symptom map for backup failures lives in [Troubleshooting](/docs/reference/troubleshooting).
 

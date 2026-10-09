@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +33,7 @@ import {
   parseOpsWatchConfig,
   resetOpsWatchStartedForTests,
   runOpsWatchTick,
+  spawnWithHardTimeout,
 } from "./ops-watch.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
@@ -506,6 +508,32 @@ test("collectOpsWatchFindings still pages matched fatal lines after a successful
   );
 });
 
+test("spawnWithHardTimeout kills a child that ignores SIGTERM", async () => {
+  const started = Date.now();
+  await assert.rejects(
+    () =>
+      spawnWithHardTimeout(
+        process.execPath,
+        ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"],
+        { timeoutMs: 200, killGraceMs: 400 },
+      ),
+    (err: Error & { signal?: string | null }) => {
+      assert.equal(err.signal, "SIGKILL");
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 5_000);
+});
+
+test("spawnWithHardTimeout returns stdout when the command finishes", async () => {
+  const result = await spawnWithHardTimeout(
+    process.execPath,
+    ["-e", "process.stdout.write('ok')"],
+    { timeoutMs: 5_000 },
+  );
+  assert.equal(result.stdout, "ok");
+});
+
 test("bin/ops-watch.sh stays error-only and documents the exited-tenant filter", () => {
   const script = readFileSync(join(REPO_ROOT, "bin", "ops-watch.sh"), "utf8");
   assert.match(script, /error-only/i);
@@ -515,6 +543,35 @@ test("bin/ops-watch.sh stays error-only and documents the exited-tenant filter",
   assert.match(script, /--remote/);
   assert.match(script, /FLUX_OPS_WATCH_DISK_ALERT_PERCENT/);
   assert.doesNotMatch(script, /api\.resend\.com/);
+  const logs = script.slice(script.indexOf("watch_logs()"));
+  assert.match(logs, /timeout -k/);
+  assert.match(logs, /docker logs/);
+  const scan = script.match(/LOG_SCAN_RE="\$\{LOG_FATAL_RE\}\|\$\{LOG_PANIC_RE\}\|\$\{LOG_OOM_RE\}"/);
+  assert.ok(scan);
+  const fatal = script.match(/LOG_FATAL_RE='([^']+)'/);
+  const panic = script.match(/LOG_PANIC_RE='([^']+)'/);
+  const oom = script.match(/LOG_OOM_RE='([^']+)'/);
+  assert.ok(fatal && panic && oom);
+  const pattern = `${fatal[1]}|${panic[1]}|${oom[1]}`;
+  assert.equal(pattern.includes("\\\\"), false);
+  const sample = [
+    "info: checkpoint complete",
+    "FATAL: the database system is shutting down",
+    "server panic",
+    "the process panicked",
+    String.raw`\bfatal\b`,
+    "out of memory",
+  ].join("\n");
+  const matched = execFileSync("grep", ["-Ei", pattern], {
+    input: `${sample}\n`,
+    encoding: "utf8",
+  });
+  assert.match(matched, /FATAL: the database system is shutting down/);
+  assert.match(matched, /server panic/);
+  assert.match(matched, /panicked/);
+  assert.match(matched, /out of memory/);
+  assert.doesNotMatch(matched, /checkpoint complete/);
+  assert.equal(matched.includes(String.raw`\bfatal\b`), false);
 });
 
 function inspectJson(

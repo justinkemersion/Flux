@@ -3,8 +3,7 @@
  * Emails via sendOpsAlert (FLUX_ALERT_EMAIL_* / FLUX_RESEND_API_KEY).
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { projects } from "@/src/db/schema";
 import { getDb, initSystemDb } from "@/src/lib/db";
 import { formatOpsAlertBody, sendOpsAlert } from "@/src/lib/ops-alert-email";
@@ -33,9 +32,9 @@ import {
   type OpsWatchFinding,
 } from "@/src/lib/ops-watch-classify";
 
-const execFileAsync = promisify(execFile);
-
 const DOCKER_TIMEOUT_MS = 45_000;
+/** After SIGTERM, SIGKILL the docker child if it is still running. */
+export const OPS_WATCH_DOCKER_KILL_GRACE_MS = 2_000;
 const DISK_HELPER_NAME = "flux-ops-watch-df";
 
 export type OpsWatchEnv = Record<string, string | undefined>;
@@ -118,7 +117,7 @@ export function parseOpsWatchConfig(env: OpsWatchEnv = process.env): OpsWatchCon
 
 export function isOpsWatchToolingSkip(err: unknown): boolean {
   if (err instanceof OpsWatchDockerError) {
-    if (err.code === "143" || err.code === "ETIMEDOUT") return true;
+    if (err.code === "143" || err.code === "137" || err.code === "ETIMEDOUT") return true;
     if (err.signal === "SIGTERM" || err.signal === "SIGKILL") return true;
   }
   const e = err as { killed?: boolean; signal?: string };
@@ -128,31 +127,151 @@ export function isOpsWatchToolingSkip(err: unknown): boolean {
   return /exit 143|SIGTERM|ETIMEDOUT|timed out/i.test(msg);
 }
 
+export type HardTimeoutResult = {
+  stdout: string;
+  stderr: string;
+};
+
+type HardTimeoutFail = Error & {
+  code?: string | number | null;
+  signal?: NodeJS.Signals | null;
+  stdout?: string;
+  stderr?: string;
+  killed?: boolean;
+};
+
+/**
+ * Run a command and kill it when `timeoutMs` elapses. SIGTERM first, then
+ * SIGKILL after `killGraceMs`, so a stuck `docker logs` cannot keep running
+ * after the caller has given up.
+ */
+export function spawnWithHardTimeout(
+  file: string,
+  args: readonly string[],
+  options: { timeoutMs: number; killGraceMs?: number; maxBuffer?: number },
+): Promise<HardTimeoutResult> {
+  const killGraceMs = options.killGraceMs ?? OPS_WATCH_DOCKER_KILL_GRACE_MS;
+  const maxBuffer = options.maxBuffer ?? 2 * 1024 * 1024;
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, [...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const fail = (err: HardTimeoutFail) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(termTimer);
+      if (killTimer) clearTimeout(killTimer);
+      reject(err);
+    };
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(termTimer);
+      if (killTimer) clearTimeout(killTimer);
+      resolve({ stdout, stderr });
+    };
+    const kill = (signal: NodeJS.Signals) => {
+      try {
+        child.kill(signal);
+      } catch {
+        // already exited
+      }
+    };
+
+    const onData = (which: "stdout" | "stderr") => (chunk: Buffer | string) => {
+      const text = typeof chunk === "string" ? chunk : chunk.toString();
+      if (which === "stdout") stdout += text;
+      else stderr += text;
+      if (stdout.length + stderr.length > maxBuffer) {
+        timedOut = true;
+        kill("SIGKILL");
+        const err = new Error("maxBuffer exceeded") as HardTimeoutFail;
+        err.code = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+        err.stdout = stdout;
+        err.stderr = stderr;
+        err.killed = true;
+        fail(err);
+      }
+    };
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", onData("stdout"));
+    child.stderr?.on("data", onData("stderr"));
+
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      const wrapped = err as HardTimeoutFail;
+      wrapped.stdout = stdout;
+      wrapped.stderr = stderr;
+      fail(wrapped);
+    });
+
+    child.on("close", (code, signal) => {
+      if (settled) return;
+      if (timedOut || signal) {
+        const err = new Error(
+          `command timed out (${signal ?? code ?? "unknown"})`,
+        ) as HardTimeoutFail;
+        err.code = code;
+        err.signal = signal;
+        err.stdout = stdout;
+        err.stderr = stderr;
+        err.killed = true;
+        fail(err);
+        return;
+      }
+      if (code !== 0) {
+        const err = new Error(`command failed (exit ${String(code)})`) as HardTimeoutFail;
+        err.code = code;
+        err.stdout = stdout;
+        err.stderr = stderr;
+        fail(err);
+        return;
+      }
+      succeed();
+    });
+
+    const termTimer = setTimeout(() => {
+      if (settled || child.exitCode != null || child.signalCode != null) return;
+      timedOut = true;
+      kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (settled || child.exitCode != null || child.signalCode != null) return;
+        kill("SIGKILL");
+      }, killGraceMs);
+    }, options.timeoutMs);
+  });
+}
+
 export async function defaultRunDocker(
   args: string[],
   options?: OpsWatchDockerOptions,
 ): Promise<string> {
   try {
-    const { stdout, stderr } = await execFileAsync("docker", args, {
+    const { stdout, stderr } = await spawnWithHardTimeout("docker", args, {
+      timeoutMs: options?.timeoutMs ?? DOCKER_TIMEOUT_MS,
+      killGraceMs: OPS_WATCH_DOCKER_KILL_GRACE_MS,
       maxBuffer: 2 * 1024 * 1024,
-      timeout: options?.timeoutMs ?? DOCKER_TIMEOUT_MS,
     });
     // `docker logs` splits container stdout/stderr; keep both for the fatal/panic/OOM scan.
-    return `${stdout.toString()}${stderr?.toString() ?? ""}`;
+    return `${stdout}${stderr}`;
   } catch (err: unknown) {
-    const e = err as NodeJS.ErrnoException & {
-      stderr?: Buffer | string;
-      stdout?: Buffer | string;
-      signal?: string;
-      killed?: boolean;
-    };
-    const stdout =
-      typeof e.stdout === "string" ? e.stdout : e.stdout?.toString?.() ?? "";
-    const stderr =
-      typeof e.stderr === "string"
-        ? e.stderr
-        : e.stderr?.toString?.().trim() ?? "";
-    const code = e?.code != null ? String(e.code) : e?.signal ? e.signal : "unknown";
+    const e = err as HardTimeoutFail;
+    const stdout = e.stdout ?? "";
+    const stderr = e.stderr?.trim() ?? "";
+    const signal = e.signal ?? undefined;
+    const code =
+      e.code != null
+        ? String(e.code)
+        : signal === "SIGTERM"
+          ? "143"
+          : signal === "SIGKILL"
+            ? "137"
+            : "unknown";
     if (code === "ENOENT") {
       throw new OpsWatchDockerError("docker CLI not found on the control plane (ENOENT)", {
         code,
@@ -165,7 +284,7 @@ export async function defaultRunDocker(
       code,
       stdout,
       stderr,
-      signal: e.signal,
+      signal,
     });
   }
 }

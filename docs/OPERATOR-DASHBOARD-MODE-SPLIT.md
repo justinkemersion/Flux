@@ -37,8 +37,9 @@ Every project row in `flux-system.projects` carries a `mode` column (`v1_dedicat
 
 On every 2-minute tick (`runFleetMonitorTick`) and on the immediate post-create probe (`probeSingleProject`):
 
-- **v1_dedicated** — `getProjectSummariesForSlugs` (Docker inspect batch); if stopped, records `stopped`; otherwise HTTP probes the PostgREST URL and records `running` or `error`.
-- **v2_shared** — HTTP probe only (no Docker); records `running` or `error` directly in `projects.health_status`.
+- **Archived** (`lifecycle_state=archived`) — no HTTP probe and no new heartbeat. The node gateway would answer an archived v2 host with 503.
+- **v1_dedicated** — `getProjectSummariesForSlugs` (Docker inspect batch); if stopped, records `stopped`; otherwise HTTP probes the dedicated PostgREST container at `http://flux-<hash>-<slug>-api:3000/`, then the public API origin. The path is `/`. Dedicated PostgREST treats `/health` as a table lookup (`relation … health does not exist`), so the probe does not use it. Records `running` or `error`.
+- **v2_shared** — HTTP probe only (no Docker), through `flux-node-gateway` when `FLUX_TENANT_PROBE_GATEWAY_URL` is set; records `running` or `error` directly in `projects.health_status`. Dedicated projects are not sent to the node gateway (it returns 502 for `v1_dedicated`).
 
 `getProjectSummariesForSlugs` is **never called for v2 rows** — the Docker batch only runs when there is at least one v1 project in the catalog.
 
@@ -50,7 +51,7 @@ Inside `flux-web`, public `https://` probes to tenant API URLs often fail even w
 FLUX_TENANT_PROBE_GATEWAY_URL=http://flux-node-gateway:4000
 ```
 
-Probes then call the internal gateway base URL with `Host: api--<slug>--<hash>.<domain>`. v2 fleet health mints a short-lived project JWT (`jwt_secret` required). See `apps/dashboard/src/lib/tenant-api-probe.ts`.
+v2 probes then call the internal gateway base URL with `Host: api--<slug>--<hash>.<domain>`. v2 fleet health mints a short-lived project JWT (`jwt_secret` required). Dedicated probes do not use this base URL. See `apps/dashboard/src/lib/tenant-api-probe.ts`.
 
 ## `statusFromV2CatalogHealth` (`apps/dashboard/src/lib/v2-project-status.ts`)
 

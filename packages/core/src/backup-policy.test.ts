@@ -7,6 +7,7 @@ import {
   parsePlatformBackupPolicy,
   resolveEffectiveBackupPolicy,
   resolvePlatformBackupSchedulerBatchSize,
+  selectFailedBackupsWithNewerRestoreVerified,
   selectRestoreVerifiedBackupsForRetention,
 } from "./backup-policy.ts";
 
@@ -138,6 +139,65 @@ test("complete but unverified rows do not count toward retention floor", () => {
     retentionCount: 4,
     retentionDays: 30,
     now,
+  });
+  assert.deepEqual(ids, []);
+});
+
+test("failed and restore_failed rows are removable only behind a newer verified backup", () => {
+  const t = (iso: string) => new Date(iso);
+  const ids = selectFailedBackupsWithNewerRestoreVerified({
+    rows: [
+      {
+        id: "old-failed",
+        status: "failed",
+        restoreVerificationStatus: "skipped",
+        createdAt: t("2026-09-13T21:20:00.000Z"),
+      },
+      {
+        id: "old-restore-failed",
+        status: "complete",
+        restoreVerificationStatus: "restore_failed",
+        createdAt: t("2026-06-20T14:51:00.000Z"),
+      },
+      {
+        id: "verified",
+        status: "complete",
+        restoreVerificationStatus: "restore_verified",
+        createdAt: t("2026-10-04T12:00:00.000Z"),
+      },
+      {
+        id: "newer-failed",
+        status: "failed",
+        restoreVerificationStatus: "skipped",
+        createdAt: t("2026-10-08T12:00:00.000Z"),
+      },
+      {
+        id: "pending",
+        status: "complete",
+        restoreVerificationStatus: "pending",
+        createdAt: t("2026-06-01T00:00:00.000Z"),
+      },
+    ],
+  });
+  assert.deepEqual(ids, ["old-failed", "old-restore-failed"]);
+});
+
+test("failed backups stay when nothing newer is restore-verified", () => {
+  const ids = selectFailedBackupsWithNewerRestoreVerified({
+    rows: [
+      {
+        id: "only-failed",
+        status: "failed",
+        restoreVerificationStatus: "pending",
+        createdAt: new Date("2026-09-13T21:20:00.000Z"),
+      },
+      {
+        id: "older-verified",
+        status: "complete",
+        restoreVerificationStatus: "restore_verified",
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      },
+    ],
   });
   assert.deepEqual(ids, []);
 });

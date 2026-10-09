@@ -7,6 +7,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
+  selectFailedBackupsWithNewerRestoreVerified,
   selectRestoreVerifiedBackupsForRetention,
   type BackupFreshnessClassification,
   type EffectiveBackupPolicy,
@@ -54,6 +55,39 @@ import {
 import { logBackupScheduler, logBackupSchedulerError } from "@/src/lib/backup-scheduler-log";
 
 export type BackupEngineMode = "v1_dedicated" | "v2_shared";
+
+export const BACKUP_CREATE_FAILED_SKIP_REASON =
+  "Skipped because backup creation failed.";
+export const BACKUP_OFFSITE_FAILED_SKIP_REASON =
+  "Skipped because offsite upload failed.";
+
+/**
+ * Catalog patch for a backup that failed to create, including a strict-mode
+ * offsite failure that fails the row. Validation and restore verification are
+ * `skipped`. Nothing retries `status=failed`, so `pending` would sit forever.
+ * A complete local backup whose non-strict offsite copy failed stays eligible
+ * for validation and restore verification.
+ */
+export function failedBackupCatalogPatch(error: string): {
+  status: "failed";
+  error: string;
+  artifactValidationStatus: "skipped";
+  artifactValidationError: string;
+  restoreVerificationStatus: "skipped";
+  restoreVerificationError: string;
+} {
+  const reason = /offsite replication failed/i.test(error)
+    ? BACKUP_OFFSITE_FAILED_SKIP_REASON
+    : BACKUP_CREATE_FAILED_SKIP_REASON;
+  return {
+    status: "failed",
+    error,
+    artifactValidationStatus: "skipped",
+    artifactValidationError: reason,
+    restoreVerificationStatus: "skipped",
+    restoreVerificationError: reason,
+  };
+}
 
 export type BackupRow = typeof projectBackups.$inferSelect;
 
@@ -353,9 +387,10 @@ export async function createBackupForProject(input: {
   } catch (err: unknown) {
     const db = getDb();
     if (queuedId) {
+      const message = err instanceof Error ? err.message : String(err);
       await db
         .update(projectBackups)
-        .set({ status: "failed", error: err instanceof Error ? err.message : String(err) })
+        .set(failedBackupCatalogPatch(message))
         .where(eq(projectBackups.id, queuedId));
     }
     throw err;
@@ -468,11 +503,23 @@ async function replicateBackupOffsiteIfEligible(
   } catch (err: unknown) {
     const db = getDb();
     const message = err instanceof Error ? err.message : String(err);
+    const strict = isR2OffsiteStrict();
     await db
       .update(projectBackups)
-      .set({ offsiteStatus: "failed", offsiteError: message })
+      .set({
+        offsiteStatus: "failed",
+        offsiteError: message,
+        ...(strict
+          ? {
+              artifactValidationStatus: "skipped" as const,
+              artifactValidationError: BACKUP_OFFSITE_FAILED_SKIP_REASON,
+              restoreVerificationStatus: "skipped" as const,
+              restoreVerificationError: BACKUP_OFFSITE_FAILED_SKIP_REASON,
+            }
+          : {}),
+      })
       .where(eq(projectBackups.id, backup.id));
-    if (isR2OffsiteStrict()) {
+    if (strict) {
       throw new Error(`Offsite replication failed (strict mode): ${message}`);
     }
     logBackupSchedulerError(`offsite replication failed backupId=${backup.id}`, err);
@@ -1006,7 +1053,7 @@ export async function runPlatformBackupPipeline(
   const retentionDeleted = await sweepProjectBackupRetention(project);
   if (retentionDeleted > 0) {
     logBackupScheduler(
-      `pipeline retention ${label} deleted ${String(retentionDeleted)} restore-verified row(s) (local + offsite)`,
+      `pipeline retention ${label} deleted ${String(retentionDeleted)} backup row(s) (local + offsite)`,
     );
   }
   logBackupScheduler(`pipeline complete ${label} backupId=${backup.id}`);
@@ -1067,11 +1114,16 @@ export async function sweepProjectBackupRetention(
         .where(eq(projectBackups.projectId, project.id))
         .orderBy(desc(projectBackups.createdAt));
 
-  const deleteIds = selectRestoreVerifiedBackupsForRetention({
-    rows,
-    retentionCount: effectivePolicy.retentionCount,
-    retentionDays: effectivePolicy.retentionDays,
-  });
+  const deleteIds = [
+    ...new Set([
+      ...selectRestoreVerifiedBackupsForRetention({
+        rows,
+        retentionCount: effectivePolicy.retentionCount,
+        retentionDays: effectivePolicy.retentionDays,
+      }),
+      ...selectFailedBackupsWithNewerRestoreVerified({ rows }),
+    ]),
+  ];
 
   const deleteCatalogRow =
     deps.deleteCatalogRow ??

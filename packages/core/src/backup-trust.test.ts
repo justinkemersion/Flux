@@ -69,6 +69,18 @@ test("skipped restore verification", () => {
   assert.equal(c.tier, "restore_failed");
 });
 
+test("failed backup with skipped verification still blocks destructive ops", () => {
+  const c = classifyNewestBackup([
+    {
+      status: "failed",
+      artifactValidationStatus: "skipped",
+      restoreVerificationStatus: "skipped",
+    },
+  ]);
+  assert.equal(c.tier, "latest_not_complete");
+  assert.equal(c.allowsDestructiveWithoutOverride, false);
+});
+
 test("latest incomplete (e.g. failed backup)", () => {
   const rows: BackupTrustInput[] = [
     { status: "failed", artifactValidationStatus: "pending", restoreVerificationStatus: "pending" },

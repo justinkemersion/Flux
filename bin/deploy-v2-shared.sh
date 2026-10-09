@@ -23,6 +23,12 @@
 #   PGRST_DB_PASSWORD
 #   FLUX_GATEWAY_JWT_SECRET  (pool secret; must match PGRST_JWT_SECRET — not per-tenant keys)
 #
+# Logging (json-file max-size 20m, max-file 5) is set on postgres-v2,
+# pgbouncer, and postgrest-pool. Docker applies a logging change only when
+# the container is recreated. `compose up` recreates a service whose config
+# changed, and recreating flux-postgres-v2 is a short outage for v2 tenants.
+# Do not add a separate automatic recreate.
+#
 # Postgres image / locale:
 #   docker/v2-shared/docker-compose.yml pins the Debian-based `postgres:16`
 #   image (NOT `-alpine`).  Debian carries glibc + ICU, which silences the
