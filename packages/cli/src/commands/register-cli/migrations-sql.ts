@@ -21,7 +21,7 @@ export function registerMigrationsSqlCommands(program: Command): void {
     )
     .argument(
       "[target]",
-      "migrations directory (ledger + checksums) or .sql file (no ledger); default discovery: migrations/, flux/migrations/, sql/migrations/, sql/, schema.sql",
+      "migrations directory (versioned ledger) or one .sql file (raw, versioned, or repeatable); default discovery: migrations/, flux/migrations/, sql/migrations/, sql/, schema.sql",
     )
     .option(
       "-p, --project <name>",
@@ -44,12 +44,12 @@ export function registerMigrationsSqlCommands(program: Command): void {
     .option("--hash <hex>", HASH_FLAG_DESC)
     .option(
       "--plan",
-      "Directory only: show skip / would apply / conflicts without applying (single file: preview only)",
+      "Show what would happen without applying. Directory: skip / would apply / conflicts. Single file: resolved mode only (does not read the ledger)",
       false,
     )
     .option(
       "--dry-run",
-      "Directory: validate plan, conflicts, and 4 MiB per pending file; file: size check + preview. Incompatible with --plan",
+      "Directory: validate plan, conflicts, and 4 MiB per pending file; file: size check and resolved-mode preview (does not read the ledger). Incompatible with --plan",
       false,
     )
     .option(

@@ -8,8 +8,10 @@ import {
   formatDdlSummaryLines,
 } from "@flux/core/sql-ddl-classify";
 import type { FluxMigrationRecord } from "@flux/core/sql-migrations";
+import { basename } from "node:path";
 import chalk from "chalk";
 import { B } from "../cli-layout.js";
+import type { PushScriptMode } from "./push-script-mode.js";
 
 export const MIGRATION_EDIT_RULE =
   "Do not edit a migration after it has been applied. Create a new migration instead.";
@@ -149,11 +151,50 @@ export function printMigrationPlanSummary(input: {
   );
 }
 
+function ledgerUncheckedNote(mode: MigrationPushMode): string {
+  return mode === "plan"
+    ? "This plan did not check the ledger."
+    : "This dry run did not check the ledger.";
+}
+
+/**
+ * One-line description of what a later apply would record.
+ * Preview never reads flux.flux_migrations or flux.flux_repeatable_scripts.
+ */
+function singleFilePushPreviewDetail(input: {
+  filePath: string;
+  mode: MigrationPushMode;
+  scriptMode: PushScriptMode;
+  scriptId?: string;
+  checksum?: string;
+}): string {
+  if (input.scriptMode === "raw") {
+    return "Single-file push (raw SQL, not recorded in flux.flux_migrations).";
+  }
+  const unchecked = ledgerUncheckedNote(input.mode);
+  if (input.scriptMode === "versioned") {
+    if (!input.checksum) {
+      throw new Error("Versioned single-file preview requires a checksum.");
+    }
+    const version = basename(input.filePath);
+    const prefix = input.checksum.slice(0, 12);
+    return `Versioned migration: on apply, recorded in flux.flux_migrations as version ${version} (checksum ${prefix}). Skipped if already applied with the same checksum; fails on a checksum conflict. ${unchecked}`;
+  }
+  const scriptId = input.scriptId?.trim();
+  if (!scriptId) {
+    throw new Error("Repeatable single-file preview requires a script id.");
+  }
+  return `Repeatable script: on apply, recorded in flux.flux_repeatable_scripts under script id ${scriptId}. An unchanged checksum is skipped unless --force; a changed checksum is reapplied. ${unchecked}`;
+}
+
 export function printSingleFilePushPreview(input: {
   filePath: string;
   slug: string;
   schemaHint: string;
   mode: MigrationPushMode;
+  scriptMode: PushScriptMode;
+  scriptId?: string;
+  checksum?: string;
 }): void {
   const verb =
     input.mode === "apply" ? "Applying" : "Would apply";
@@ -162,9 +203,7 @@ export function printSingleFilePushPreview(input: {
       `${verb} ${chalk.bold(input.filePath)} to project ${chalk.bold(input.slug)} (${chalk.dim(input.schemaHint)})`,
     ),
   );
-  console.log(
-    chalk.dim("  Single-file push (raw SQL, not recorded in flux.flux_migrations)."),
-  );
+  console.log(chalk.dim(`  ${singleFilePushPreviewDetail(input)}`));
   if (input.mode === "dry-run") {
     console.log(chalk.white("Dry run OK. Nothing applied."));
   }
