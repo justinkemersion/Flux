@@ -24,7 +24,7 @@ import type { ImportSqlFileResult } from "@flux/core/standalone";
 import chalk from "chalk";
 import ora from "ora";
 import { getApiClient } from "../api-client";
-import type { PushSqlResult } from "../api-client";
+import type { ProjectMetadata, PushSqlResult } from "../api-client";
 import { sectionBanner } from "../cli-layout";
 import { resolveDashboardBase } from "../dashboard-base";
 import type { FluxJson } from "../flux-config";
@@ -69,6 +69,8 @@ export type CmdPushOptions = {
   explicitScriptMode?: string;
   force?: boolean;
   scriptId?: string;
+  /** Skip the control-plane metadata request. Used by preview tests. */
+  projectMetadata?: Pick<ProjectMetadata, "mode" | "apiSchema">;
 };
 
 export type PushTarget =
@@ -125,8 +127,9 @@ export async function cmdPush(
   const target = await resolvePushTarget(targetArg);
   const slug = resolveProjectSlug(project, flux, "-p, --project");
   const hash = resolveHash(options.hash, flux);
-  const client = getApiClient();
-  const metadata = await client.getProjectMetadata(hash);
+  const metadata =
+    options.projectMetadata ??
+    (await getApiClient().getProjectMetadata(hash));
 
   // Pooled pushes are adapted by the deployed control plane, so a verified CLI artifact does
   // not establish which code rewrites the SQL. Check the other half of the boundary before
@@ -149,39 +152,6 @@ export async function cmdPush(
         }),
       );
     }
-  } else if (options.explicitScriptMode || options.force || options.scriptId) {
-    const scriptMode = resolvePushScriptMode({
-      ...(options.explicitScriptMode !== undefined
-        ? { explicitMode: options.explicitScriptMode }
-        : {}),
-      resolvedFilePath: target.path,
-    });
-    assertForceRequiresRepeatable(options.force === true, scriptMode);
-  }
-
-  if (target.kind === "file" && options.pushMode !== "apply") {
-    const schemaHint =
-      metadata.mode === "v1_dedicated"
-        ? `${metadata.mode}, schema ${metadata.apiSchema ?? LEGACY_FLUX_API_SCHEMA}`
-        : metadata.mode;
-    if (options.pushMode === "dry-run") {
-      const st = await stat(target.path);
-      if (st.size > MAX_SQL_BYTES) {
-        throw new Error(
-          "SQL file is larger than 4 MiB (server limit for flux push).",
-        );
-      }
-    }
-    printSingleFilePushPreview({
-      filePath: target.path,
-      slug,
-      schemaHint,
-      mode: options.pushMode,
-    });
-    return;
-  }
-
-  if (target.kind === "directory") {
     if (metadata.mode === "v2_shared") {
       if (options.supabaseCompat || options.disableApiRls) {
         console.log(
@@ -224,6 +194,36 @@ export async function cmdPush(
     metadata.mode === "v1_dedicated"
       ? `${metadata.mode}, schema ${metadata.apiSchema ?? LEGACY_FLUX_API_SCHEMA}`
       : metadata.mode;
+
+  if (options.pushMode !== "apply") {
+    if (options.pushMode === "dry-run") {
+      const st = await stat(target.path);
+      if (st.size > MAX_SQL_BYTES) {
+        throw new Error(
+          "SQL file is larger than 4 MiB (server limit for flux push).",
+        );
+      }
+    }
+    const checksum =
+      scriptMode === "versioned"
+        ? migrationChecksum(await readFile(file, "utf8"))
+        : undefined;
+    const scriptId =
+      scriptMode === "repeatable"
+        ? options.scriptId?.trim() ||
+          defaultRepeatableScriptId(file, process.cwd())
+        : undefined;
+    printSingleFilePushPreview({
+      filePath: file,
+      slug,
+      schemaHint,
+      mode: options.pushMode,
+      scriptMode,
+      ...(checksum !== undefined ? { checksum } : {}),
+      ...(scriptId !== undefined ? { scriptId } : {}),
+    });
+    return;
+  }
 
   if (scriptMode === "raw") {
     console.log(
