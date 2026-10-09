@@ -241,6 +241,49 @@ export function selectRestoreVerifiedBackupsForRetention(input: {
   return toDelete;
 }
 
+/**
+ * Failed creates and `restore_failed` rows can be deleted once a newer
+ * restore-verified backup exists for the same project.
+ *
+ * "Newer" is `createdAt` of a complete `restore_verified` row. Rows that are
+ * not older than that backup stay, including a failed row that is itself the
+ * newest. Pending and restore-verified rows are not selected here.
+ */
+export function selectFailedBackupsWithNewerRestoreVerified(input: {
+  rows: ReadonlyArray<{
+    id: string;
+    status: string;
+    restoreVerificationStatus?: string | null;
+    createdAt?: Date | null;
+  }>;
+}): string[] {
+  let newestVerifiedCreatedMs: number | null = null;
+  for (const row of input.rows) {
+    if (row.status !== "complete") continue;
+    if (row.restoreVerificationStatus !== "restore_verified") continue;
+    const created = row.createdAt;
+    if (!(created instanceof Date) || Number.isNaN(created.getTime())) continue;
+    const ms = created.getTime();
+    if (newestVerifiedCreatedMs == null || ms > newestVerifiedCreatedMs) {
+      newestVerifiedCreatedMs = ms;
+    }
+  }
+  if (newestVerifiedCreatedMs == null) return [];
+
+  const toDelete: string[] = [];
+  for (const row of input.rows) {
+    const failedCreate = row.status === "failed";
+    const restoreFailed =
+      row.status === "complete" &&
+      row.restoreVerificationStatus === "restore_failed";
+    if (!failedCreate && !restoreFailed) continue;
+    const created = row.createdAt;
+    if (!(created instanceof Date) || Number.isNaN(created.getTime())) continue;
+    if (created.getTime() < newestVerifiedCreatedMs) toDelete.push(row.id);
+  }
+  return toDelete;
+}
+
 /** How many full backup pipelines to run this scheduler tick. */
 export function resolvePlatformBackupSchedulerBatchSize(input: {
   dueCount: number;

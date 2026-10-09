@@ -61,6 +61,15 @@ services:
     networks:
       - flux-v2-shared
       - flux-network
+    # json-file caps, same 20m × 5 as the gateways. Docker applies logging
+    # options only when this container is recreated. Recreating
+    # flux-postgres-v2 stops the shared cluster: a short outage for every
+    # v2 tenant. Nothing in this repo recreates it automatically.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   pgbouncer:
     image: edoburu/pgbouncer:v1.24.1-p1
@@ -88,6 +97,12 @@ services:
     networks:
       - flux-v2-shared
       - flux-network
+    # Applied only when the container is recreated. No automatic recreate.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   postgrest-pool:
     image: postgrest/postgrest:v12.2.12
@@ -126,6 +141,12 @@ services:
     networks:
       - flux-v2-shared
       - flux-network
+    # Applied only when the container is recreated. No automatic recreate.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 volumes:
   postgres-v2-data:

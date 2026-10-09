@@ -246,6 +246,54 @@ WHERE user_id = 'legacy-or-old-value';
 
 ---
 
+## Apply json-file log caps to flux-postgres-v2
+
+Docker reads `max-size: 20m` and `max-file: 5` only when the container is created. A control-plane deploy does not apply them.
+
+On the host the control-plane path is `git merge --ff-only origin/main` in `/srv/platform/flux`, then `./bin/deploy-web.sh`. That script runs `docker compose -f docker/web/docker-compose.yml up` for the `flux-web` service only. `docker/web/docker-compose.yml` defines `flux-web` and does not define `flux-postgres-v2`, `flux-pgbouncer`, or `flux-postgrest-pool`. The script does not call `bin/deploy-v2-shared.sh`.
+
+Dashboard startup (`apps/dashboard/instrumentation.ts`) bootstraps the `flux-system` catalog, rewrites the Traefik dynamic file, and starts the fleet monitor, backup scheduler, and ops-watch. None of those read a Compose config hash or recreate the v2 data-plane containers.
+
+`./bin/deploy-v2-shared.sh`, `./bin/restart-v2-shared.sh`, and `./bin/deploy-all.sh` do run `docker compose up` on `docker/v2-shared/docker-compose.yml`. The next time one of those runs, Compose recreates every service whose config changed, including `flux-postgres-v2`. Do not use them to ship a dashboard change.
+
+To apply the Postgres log caps, use this separate command during a planned window. It keeps the `postgres-v2-data` volume. It still stops Postgres.
+
+### Pre-check
+
+Every active `v2_shared` project needs a restore-verified backup inside the platform freshness window (`FLUX_MIN_BACKUP_INTERVAL_DAYS`, default 7) before the recreate. On the host:
+
+```bash
+cd /srv/platform/flux
+./bin/ops-audit.sh
+```
+
+Read **Platform minimum backup freshness**. Each active `v2_shared` row must show `newest_verified` within that window. If one does not, create and verify before continuing:
+
+```bash
+flux backup create -p <slug> --hash <hash>
+flux backup verify -p <slug> --hash <hash> --latest
+flux backup list -p <slug> --hash <hash>
+```
+
+Stop if the newest row is not restore-verified. The recreate is an availability hit, not a volume wipe. The verified backup is the recovery path if the new container does not come back healthy.
+
+### Recreate
+
+Compose loads `docker/v2-shared/.env` from the compose file's directory. Run from the repo root:
+
+```bash
+cd /srv/platform/flux
+docker compose -f docker/v2-shared/docker-compose.yml up -d --no-deps --force-recreate postgres-v2
+docker inspect -f '{{.State.Health.Status}}' flux-postgres-v2
+docker inspect -f '{{json .HostConfig.LogConfig.Config}}' flux-postgres-v2
+```
+
+The service name is `postgres-v2`. The container name is `flux-postgres-v2`. `--no-deps` leaves PgBouncer and the PostgREST pool running. Their connections drop and reconnect after Postgres accepts connections. This command does not apply their log caps.
+
+**Downtime.** Postgres is stopped and started. Every v2 tenant API fails until `flux-postgres-v2` is healthy (`pg_isready` in the compose healthcheck). A clean shutdown is usually well under a minute and is bounded by that healthcheck (5s interval, 30 retries). It is not a rolling restart. v1 dedicated databases and the `flux-system` catalog are other containers and stay up.
+
+Confirm the log config JSON shows `"max-size":"20m"` and `"max-file":"5"`, and that the health status is `healthy`, before treating the window as closed.
+
 ## Related documentation
 
 - [`OPERATOR-GATEWAY-HEALTH.md`](./OPERATOR-GATEWAY-HEALTH.md) — gateway `GET /health` (liveness) and `GET /health/deep` (readiness).

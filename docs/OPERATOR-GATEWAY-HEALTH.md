@@ -70,7 +70,7 @@ Shell overrides (read by the deploy script, not by the gateway process):
 |------|---------------------|
 | `FLUX_SYSTEM_DATABASE_URL` | Gateway env. Catalog Postgres URL that `/health/deep` pings. Required for the process to start. |
 | `REDIS_URL` | Gateway env. Optional. Unset → `redis: null` on `/health/deep`. |
-| `FLUX_TENANT_PROBE_GATEWAY_URL` | Dashboard env (`docker/web/.env`), typically `http://flux-node-gateway:4000`. Fleet/mesh probes send the tenant API `Host` to this base. It does not call `/health` or `/health/deep`. |
+| `FLUX_TENANT_PROBE_GATEWAY_URL` | Dashboard env (`docker/web/.env`), typically `http://flux-node-gateway:4000`. **v2_shared** fleet probes send the tenant API `Host` to this base. Dedicated probes use the tenant PostgREST container, then the public origin, on `/` (not `/health`). Archived projects are not probed. It does not call gateway `/health` or `/health/deep`. |
 | `FLUX_TENANT_PROBE_SHALLOW` | Dashboard env. `1` / `true` / `yes` restores mesh success on HTTP 401 without a Bearer token. Default fleet probes mint a project JWT and require 2xx. |
 | `GET /api/health` on `flux-web` | Control-plane liveness plus build provenance (`bin/deploy-web.sh`). There is no `/api/health/deep`. See [Control-plane provenance](./CONTROL-PLANE-PROVENANCE.md). |
 | `FLUX_WEB_HEALTH_WARMUP_SECS` | Dashboard canary warmup. Unrelated to `FLUX_GATEWAY_HEALTH_WARMUP_SECS`. |

@@ -17,7 +17,7 @@ Production is where implicit assumptions break: TLS trust, secret rotation, rate
 ## The idea
 
 - Prefer **`NODE_EXTRA_CA_CERTS`** (or system trust) over disabling TLS verification globally.
-- On **v2**, dashboard mesh probes (`FLUX_TENANT_PROBE_GATEWAY_URL`) call the tenant API through the gateway with the public tenant `Host`. That is separate from gateway `GET /health` (liveness) and `GET /health/deep` (system-database readiness). See `docs/OPERATOR-GATEWAY-HEALTH.md`.
+- On **v2**, dashboard mesh probes (`FLUX_TENANT_PROBE_GATEWAY_URL`) call the tenant API through the gateway with the public tenant `Host`. Dedicated projects are probed at their PostgREST container (`http://flux-<hash>-<slug>-api:3000/`) and then the public origin, on `/`, because dedicated PostgREST treats `/health` as a table lookup. Archived projects are not probed. That mesh probe is separate from gateway `GET /health` (liveness) and `GET /health/deep` (system-database readiness). See `docs/OPERATOR-GATEWAY-HEALTH.md`.
 - Treat gateway signing keys like database superuser passwords: rotation plans, access logging, least privilege.
 
 ## How it works
@@ -135,7 +135,7 @@ The same Resend path can page on **host/Docker problems** — never on a healthy
 | `FLUX_OPS_WATCH_INTERVAL_MS` | `900000` (15m) | Tick interval. First tick is immediate. |
 | `FLUX_OPS_WATCH_DISK_ALERT_PERCENT` | `90` | Email when `/`, `/srv`, or `/var/lib/docker` is at least this full (ops-audit high watermark). 80% stays an ops-audit WARN only. |
 | `FLUX_OPS_WATCH_LOG_MINUTES` | `15` | Docker log `--since` window for named core services |
-| `FLUX_OPS_WATCH_LOG_TIMEOUT_MS` | `8000` | Hard timeout for each `docker logs`. Timeout / SIGTERM is a skip, not a page. |
+| `FLUX_OPS_WATCH_LOG_TIMEOUT_MS` | `8000` | Hard timeout for each `docker logs`. The child is SIGTERM'd, then SIGKILL if it is still alive. Timeout / SIGTERM / SIGKILL is a skip, not a page. |
 | `FLUX_OPS_WATCH_LOG_TAIL` | `80` | Max lines per container (bounds noisy json-file tails such as `flux-postgres-v2`) |
 | `FLUX_OPS_WATCH_LOG_CONTAINERS` | `flux-web,flux-gateway,flux-node-gateway,flux-postgres-v2` | Fatal / panic / OOM lines only — not general stderr |
 
@@ -152,7 +152,9 @@ Host disk is sampled with a one-shot `docker run --rm -v /:/host:ro` using the r
 
 Tooling failures (disk helper permission errors, `docker logs` timeout / exit 143) are **not** findings and do not page. Only real container/disk/log-match problems email Justin.
 
-`bin/ops-watch.sh` is the host/SSH sibling (`--remote`, `--json`): error-only, same filters, **does not send mail**. Use it for a one-shot check. Do not also cron it while the flux-web tick is enabled or you will double-page after a 6h dedupe window (in-memory vs none).
+`bin/ops-watch.sh` is the host/SSH sibling (`--remote`, `--json`): error-only, same filters, **does not send mail**. Use it for a one-shot check. Do not also cron it while the flux-web tick is enabled or you will double-page after a 6h dedupe window (in-memory vs none). Its `docker logs` reads run under `timeout -k` (`FLUX_OPS_WATCH_LOG_TIMEOUT_SECONDS`, default 8, then SIGKILL after `FLUX_OPS_WATCH_LOG_KILL_AFTER_SECONDS`, default 5) so a stuck read cannot outlive the check. The fatal/panic patterns are word boundaries (`\bfatal\b`, `\bpanic(ked)?\b`).
+
+**Docker json-file rotation.** `flux-gateway` and `flux-node-gateway` already cap logs at `max-size: 20m`, `max-file: 5`. The same caps are set on `flux-web`, `flux-postgres-v2`, `flux-pgbouncer`, and `flux-postgrest-pool`. Docker applies a logging change only when that container is recreated. `./bin/deploy-web.sh` brings up only `flux-web`. `docker compose up` on `docker/v2-shared/docker-compose.yml` (`./bin/deploy-v2-shared.sh`, `./bin/restart-v2-shared.sh`, `./bin/deploy-all.sh`) recreates a service whose config changed, including `flux-postgres-v2`. The planned command for that Postgres recreate, the restore-verified backup pre-check, and the expected v2 outage are in [`docs/OPERATIONS.md`](../../OPERATIONS.md).
 
 **Limitation:** if `flux-web` itself is down, this tick cannot send. Dashboard down is the signal; `./bin/ops-watch.sh --remote` from a laptop still works.
 

@@ -1,6 +1,7 @@
 import {
   type FluxCatalogProjectMode,
   fluxApiUrlForCatalog,
+  postgrestContainerName,
   V2_GATEWAY_AUTH_REQUIRED_ERROR,
 } from "@flux/core";
 import { SignJWT } from "jose";
@@ -8,13 +9,40 @@ import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
 
+export type TenantProbeTarget = {
+  kind: "gateway" | "dedicated-container" | "public";
+  url: string;
+  headers: Record<string, string>;
+};
+
+export type TenantProbeTransport = (
+  target: TenantProbeTarget,
+) => Promise<number | null>;
+
 export type TenantApiProbeOptions = {
   bearerToken?: string;
   /** When true, only 2xx/3xx count (used for v2 fleet JWT deep probe). */
   requireAuthenticatedSuccess?: boolean;
   /** PostgREST OpenAPI root expects a JSON-family Accept header. */
   accept?: string;
+  /** Archived projects are not probed. */
+  lifecycleState?: string | null;
+  /** Test hook. Production uses gateway HTTP for v2 and fetch otherwise. */
+  transport?: TenantProbeTransport;
 };
+
+/**
+ * Dedicated PostgREST has no `/health` route. `GET /health` is a table lookup
+ * (`relation "…health" does not exist`) and shows up as 404 noise. `GET /` is
+ * the OpenAPI root and does not name a table.
+ */
+export const DEDICATED_POSTGREST_PROBE_PATH = "/";
+
+export function isArchivedProjectLifecycle(
+  lifecycleState: string | null | undefined,
+): boolean {
+  return lifecycleState === "archived";
+}
 
 const FLEET_PROBE_JWT_SUB = "flux-fleet-probe";
 const FLEET_PROBE_JWT_TTL = "5m";
@@ -23,17 +51,23 @@ const PROBE_TIMEOUT_MS = 5_000;
 const DEFAULT_GATEWAY_PROBE_URL = "http://flux-node-gateway:4000";
 
 /**
- * When set (e.g. `http://flux-node-gateway:4000`), tenant health probes from the
+ * When set (e.g. `http://flux-node-gateway:4000`), **v2_shared** health probes from the
  * dashboard (fleet monitor, v2 "start" power) issue HTTP to this base URL and set
  * the `Host` header to the public tenant API hostname (canonical flattened
- * `api--<slug>--<hash>.<domain>` for both engines; the gateway resolves it for `v2_shared`).
+ * `api--<slug>--<hash>.<domain>`). The node gateway only routes `v2_shared`.
  *
- * Without this, `fetch("https://api…")` from inside `flux-web` often fails in production
- * (TLS / wildcard depth for extra labels, split-horizon DNS, or hairpin NAT) even when
- * Traefik and the gateway are healthy.
+ * `v1_dedicated` is not sent here. The gateway answers those hosts with 502.
+ * Dedicated probes use the tenant PostgREST container on the Docker network
+ * (`http://flux-<hash>-<slug>-api:3000/`), then the public API origin. The path
+ * is {@link DEDICATED_POSTGREST_PROBE_PATH}, not `/health`.
+ *
+ * Without the gateway base, `fetch("https://api…")` from inside `flux-web` often
+ * fails in production (TLS / wildcard depth for extra labels, split-horizon DNS,
+ * or hairpin NAT) even when Traefik and the gateway are healthy.
  *
  * v2_shared shallow probes (see {@link tenantProbeShallowAllowed}) treat HTTP 401 as success.
  * Default fleet/catalog probes use {@link probeV2SharedCatalogProject} (JWT + 2xx).
+ * Archived projects are not probed.
  */
 function tenantProbeGatewayBases(): string[] {
   const configured = process.env.FLUX_TENANT_PROBE_GATEWAY_URL?.trim();
@@ -103,17 +137,27 @@ export async function probeV2SharedCatalogProject(options: {
   hash: string;
   isProduction: boolean;
   jwtSecret: string | null | undefined;
+  lifecycleState?: string | null;
+  transport?: TenantProbeTransport;
 }): Promise<boolean> {
+  if (isArchivedProjectLifecycle(options.lifecycleState)) {
+    return false;
+  }
   const secret = options.jwtSecret?.trim();
   if (!secret) {
     return false;
   }
+  const shared: TenantApiProbeOptions = {
+    lifecycleState: options.lifecycleState,
+    ...(options.transport ? { transport: options.transport } : {}),
+  };
   if (tenantProbeShallowAllowed()) {
     return probeTenantApiUrl(
       options.slug,
       options.hash,
       options.isProduction,
       "v2_shared",
+      shared,
     );
   }
   const bearer = await mintFleetProbeProjectJwt(secret);
@@ -123,11 +167,64 @@ export async function probeV2SharedCatalogProject(options: {
     options.isProduction,
     "v2_shared",
     {
+      ...shared,
       bearerToken: bearer,
       requireAuthenticatedSuccess: true,
       accept: "application/json",
     },
   );
+}
+
+/**
+ * Where a fleet probe will send HTTP. Dedicated mode never lists the node gateway.
+ * v2 lists each configured gateway base, then the public origin.
+ */
+export function buildTenantProbePlan(input: {
+  slug: string;
+  hash: string;
+  isProduction: boolean;
+  mode: FluxCatalogProjectMode;
+  gatewayBases: readonly string[];
+  headers?: Record<string, string>;
+}): TenantProbeTarget[] {
+  const headers = input.headers ?? {};
+  const publicOrigin = fluxApiUrlForCatalog(
+    input.slug,
+    input.hash,
+    input.isProduction,
+    input.mode,
+  );
+  if (input.mode !== "v2_shared") {
+    const containerUrl = `http://${postgrestContainerName(input.hash, input.slug)}:3000${DEDICATED_POSTGREST_PROBE_PATH}`;
+    const publicUrl = new URL(publicOrigin);
+    publicUrl.pathname = DEDICATED_POSTGREST_PROBE_PATH;
+    publicUrl.search = "";
+    publicUrl.hash = "";
+    return [
+      { kind: "dedicated-container", url: containerUrl, headers },
+      { kind: "public", url: publicUrl.toString(), headers },
+    ];
+  }
+
+  const tenantUrl = new URL(publicOrigin);
+  const targets: TenantProbeTarget[] = [];
+  const path = `${tenantUrl.pathname || "/"}${tenantUrl.search}` || "/";
+  for (const base of input.gatewayBases) {
+    let gatewayBase: URL;
+    try {
+      gatewayBase = new URL(base);
+    } catch {
+      continue;
+    }
+    const suffix = path.startsWith("/") ? path : `/${path}`;
+    targets.push({
+      kind: "gateway",
+      url: `${gatewayBase.origin}${suffix}`,
+      headers: { ...headers, host: tenantUrl.host },
+    });
+  }
+  targets.push({ kind: "public", url: publicOrigin, headers });
+  return targets;
 }
 
 /**
@@ -140,30 +237,51 @@ export async function probeTenantApiUrl(
   mode: FluxCatalogProjectMode,
   probeOptions?: TenantApiProbeOptions,
 ): Promise<boolean> {
-  const publicUrl = fluxApiUrlForCatalog(slug, hash, isProduction, mode);
-  const tenantUrl = new URL(publicUrl);
-  for (const via of tenantProbeGatewayBases()) {
-    if (await probeThroughGateway(tenantUrl, via, mode, probeOptions)) {
+  if (isArchivedProjectLifecycle(probeOptions?.lifecycleState)) {
+    return false;
+  }
+  const headers: Record<string, string> = {};
+  if (probeOptions?.bearerToken) {
+    headers.authorization = `Bearer ${probeOptions.bearerToken}`;
+  }
+  if (probeOptions?.accept) {
+    headers.accept = probeOptions.accept;
+  }
+  const plan = buildTenantProbePlan({
+    slug,
+    hash,
+    isProduction,
+    mode,
+    gatewayBases: mode === "v2_shared" ? tenantProbeGatewayBases() : [],
+    headers,
+  });
+  const transport = probeOptions?.transport ?? defaultTenantProbeTransport;
+  for (const target of plan) {
+    const status = await transport(target);
+    if (
+      status != null &&
+      isTenantProbeSuccess(status, mode, {
+        requireAuthenticatedSuccess: probeOptions?.requireAuthenticatedSuccess,
+      })
+    ) {
       return true;
     }
   }
-  // Final fallback: probe the public URL directly.
-  return probeWithFetch(publicUrl, mode, probeOptions);
+  return false;
 }
 
-async function probeWithFetch(
+async function defaultTenantProbeTransport(
+  target: TenantProbeTarget,
+): Promise<number | null> {
+  if (target.kind === "gateway") return probeGatewayTarget(target);
+  return probeFetchStatus(target.url, target.headers);
+}
+
+async function probeFetchStatus(
   url: string,
-  mode: FluxCatalogProjectMode,
-  probeOptions?: TenantApiProbeOptions,
-): Promise<boolean> {
+  headers: Record<string, string>,
+): Promise<number | null> {
   try {
-    const headers: Record<string, string> = {};
-    if (probeOptions?.bearerToken) {
-      headers.authorization = `Bearer ${probeOptions.bearerToken}`;
-    }
-    if (probeOptions?.accept) {
-      headers.accept = probeOptions.accept;
-    }
     const res = await fetch(url, {
       method: "GET",
       cache: "no-store",
@@ -171,68 +289,54 @@ async function probeWithFetch(
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       headers,
     });
-    return isTenantProbeSuccess(res.status, mode, {
-      requireAuthenticatedSuccess: probeOptions?.requireAuthenticatedSuccess,
-    });
+    return res.status;
   } catch {
-    return false;
+    return null;
   }
 }
 
-function probeThroughGateway(
-  tenantUrl: URL,
-  gatewayBaseRaw: string,
-  mode: FluxCatalogProjectMode,
-  probeOptions?: TenantApiProbeOptions,
-): Promise<boolean> {
+function probeGatewayTarget(target: TenantProbeTarget): Promise<number | null> {
   let gatewayBase: URL;
   try {
-    gatewayBase = new URL(gatewayBaseRaw);
+    gatewayBase = new URL(target.url);
   } catch {
-    return Promise.resolve(false);
+    return Promise.resolve(null);
   }
   const isHttps = gatewayBase.protocol === "https:";
   const mod = isHttps ? https : http;
-  const path = `${tenantUrl.pathname || "/"}${tenantUrl.search}`;
   const port = gatewayBase.port
     ? Number(gatewayBase.port)
     : isHttps
       ? 443
       : 80;
-  const hostHeader = tenantUrl.host;
+  const path = `${gatewayBase.pathname}${gatewayBase.search}` || "/";
+  const hostHeader = target.headers.host ?? gatewayBase.host;
 
   return new Promise((resolve) => {
     const req = mod.request(
       {
         hostname: gatewayBase.hostname,
         port,
-        path: path || "/",
+        path,
         method: "GET",
         timeout: PROBE_TIMEOUT_MS,
         headers: {
+          ...target.headers,
           host: hostHeader,
-          ...(probeOptions?.bearerToken
-            ? { authorization: `Bearer ${probeOptions.bearerToken}` }
-            : {}),
-          ...(probeOptions?.accept ? { accept: probeOptions.accept } : {}),
         },
       },
       (res) => {
         const code = res.statusCode ?? 0;
         res.resume();
-        resolve(
-          isTenantProbeSuccess(code, mode, {
-            requireAuthenticatedSuccess: probeOptions?.requireAuthenticatedSuccess,
-          }),
-        );
+        resolve(code);
       },
     );
     req.on("error", () => {
-      resolve(false);
+      resolve(null);
     });
     req.on("timeout", () => {
       req.destroy();
-      resolve(false);
+      resolve(null);
     });
     req.end();
   });

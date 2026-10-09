@@ -325,7 +325,7 @@ Tier-name decoder:
 **Common fixes.**
 
 - If the latest is `not_restore_verified`, run `flux backup verify --project <slug> --hash <hash> --latest`. That is the only step that promotes the trust state.
-- If verify keeps failing with `restore_failed`, create a new backup and verify it. The old artifact may be truncated or corrupt; the catalog row remains as evidence.
+- If verify keeps failing with `restore_failed`, create a new backup and verify it. The old artifact may be truncated or corrupt. Retention deletes that `restore_failed` row and its files only after a newer restore-verified backup exists for the same project. Until then the row stays.
 - If stderr is `role "t_<shortId>_role" does not exist` or `role "t_<shortId>_ddl" does not exist` during verify on a **v2_shared** tenant export, the backup file is often still valid. Policies name those roles, and custom-format archives also store `ALTER ... OWNER TO t_<shortId>_ddl`. Neither role is created by a schema-only dump. Upgrade the control plane (it stubs them as `NOLOGIN` with no `BYPASSRLS` before `pg_restore`), or pre-create both roles before a manual `pg_restore`, then re-run `flux backup verify -p <slug> --hash <hash> --latest`. That re-checks the existing artifact. The hourly scheduler creates a new backup for projects that are not platform-fresh; it does not re-verify a `restore_failed` row by itself.
 - If you genuinely need to run a destructive command without a verified backup, pass `--skip-backup-check`. The CLI prints a clear warning and proceeds.
 

@@ -33,16 +33,17 @@ Not intended for public docs or marketing consumption.
 
 ## Current snapshot
 
-- Last updated: `2026-09-22`
+- Last updated: `2026-10-09`
 - Maintainer: Flux platform engineering
 - Current default deploy flow: `deploy-traefik -> deploy-v2-shared -> deploy-gateway -> deploy-web`
 - **MCP v0:** Phase 5 closed — scoped tokens, hosted smoke `a1a5cc9`, release notes at `docs/pages/release-notes/mcp-v0.md`
 - **Latest ops audit:** `./bin/ops-audit.sh --remote --deep --smoke` — see [Ops cleanup 2026-06-30](#ops-cleanup-2026-06-30) below
 - **Dedicated API unrestricted-write invariant (issue #8):** `merged to main; rollout pending` — the privilege-aware transactional `flux push` gate and matching doctor classification merged in PR #18; dashboard/control-plane and CLI deployment, the dedicated-project fleet audit, and one live canary per engine remain pending
+- **Prod ops 2026-10-09:** json-file 20m×5 on the long-lived compose services (applied only when the container is recreated). `./bin/deploy-web.sh` composes only `flux-web`. The planned `flux-postgres-v2` recreate, backup pre-check, and expected v2 outage are in [`OPERATIONS.md`](./OPERATIONS.md). `ops-watch` log reads use `timeout -k` and word-boundary fatal/panic matches, and the dashboard kills the `docker logs` child on timeout; fleet probe skips archived projects and probes dedicated PostgREST at the container route or public `/` (not `/health`, not the node gateway); `failed` and `restore_failed` backups are retention-eligible once a newer restore-verified backup exists
 - **Pooled TLS provisioning:** `done` — catalog-derived exact-host Traefik routers reconcile atomically on startup and v2 lifecycle changes; full disposable v2 gauntlet passed live on 2026-08-18 (trusted TLS, push, API isolation, restore verify, cleanup)
 - **Empty-tenant restore verify (PR #20):** `done` — schema-only empty v2 `tenant_export` verifies when tenant schema + empty TOC match
 - **Backup-scheduler email alerts:** `done` — optional `FLUX_ALERT_EMAIL_TO` + Resend (`FLUX_RESEND_API_KEY`) primary, generic SMTP fallback; Cloudflare Email Routing is receive-only; no-op when unset; fingerprint dedupe for hourly retries
-- **Error-only host/Docker watcher:** `done` — `FLUX_OPS_WATCH_ENABLED` flux-web tick + `bin/ops-watch.sh`; same Resend/dedupe path; silent when healthy; disk `df` is path-scoped (`/host`, `/host/srv`, `/host/var/lib/docker`) so docker netns Permission denied is a skip, not a page; `docker logs` has an 8s timeout (exit 143 / SIGTERM is a skip)
+- **Error-only host/Docker watcher:** `done` — `FLUX_OPS_WATCH_ENABLED` flux-web tick + `bin/ops-watch.sh`; same Resend/dedupe path; silent when healthy; disk `df` is path-scoped (`/host`, `/host/srv`, `/host/var/lib/docker`) so docker netns Permission denied is a skip, not a page; `docker logs` has an 8s timeout and the child is killed (SIGTERM, then SIGKILL). `bin/ops-watch.sh` uses `timeout -k`. Exit 143 / SIGTERM / SIGKILL is a skip
 - **R2 free-tier storage ops-audit:** `done` — `bin/ops-audit.sh` lists the configured backup bucket (cheap `ListObjectsV2`) vs Cloudflare R2 Standard 10 GiB; WARN at 5 GiB / FAIL at 8 GiB; extra buckets optional (`FLUX_R2_USAGE_EXTRA_BUCKETS`, AccessDenied = WARN); skip when R2 unset. Weekday ops-audit email already pages on WARN/FAIL.
 - **Gateway health/readiness contract:** `done` — canonical operator doc is [`OPERATOR-GATEWAY-HEALTH.md`](./OPERATOR-GATEWAY-HEALTH.md). `/health` is liveness (no I/O). `/health/deep` is system-database readiness (HTTP 503 when `SELECT 1` fails; Redis is reported and does not gate the status).
 - **Secret rotation (item 3b):** `skipped` until product launch (if ever). Intentional short-term risk accepted for personal/dev use. Not done.
@@ -59,7 +60,7 @@ Not intended for public docs or marketing consumption.
 | Empty tenant restore verify policy | `done` | Schema-only empty v2 `tenant_export` verifies as `restore_verified` when tenant schema + empty TOC match; see [`plans/ops/empty-tenant-backup-verify.md`](ops/empty-tenant-backup-verify.md) |
 | Platform scheduler archived skip | `done` | `projectsDueForPlatformBackup` skips `lifecycle_state = archived` |
 | Ops disk cleanup (2026-06-30) | `done` | ~37 GB reclaimed on host; builder/volume prune + log truncate |
-| Edge log rotation + audit noise | `done` | json-file 20m×5 on Traefik/node gateway; v2 401/503 lifecycle OK in ops-audit |
+| Edge log rotation + audit noise | `done` | json-file 20m×5 on Traefik, the node gateway, and the other long-lived compose services. Limits apply when the container is recreated. Recreating `flux-postgres-v2` is a short v2 outage and is not automatic. |
 | Ops helper scripts | `done` | `bin/ops-disk-inventory.sh`, `bin/ops-cleanup-stale-containers.sh`; scheduler grep false-positive fix |
 
 **Context:** Empty v2 tenant exports used to fail the pg_restore table-count check (zero user tables). They now verify as `restore_verified` when the tenant schema restores and the dump TOC is also table-less (`restorable_empty_tenant` is the internal classifier label only).

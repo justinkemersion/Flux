@@ -25,6 +25,8 @@
 #   FLUX_OPS_WATCH_DISK_ALERT_PERCENT   default 90 (ops-audit high watermark)
 #   FLUX_OPS_WATCH_LOG_MINUTES          default 15
 #   FLUX_OPS_WATCH_LOG_CONTAINERS       comma list; default core services
+#   FLUX_OPS_WATCH_LOG_TIMEOUT_SECONDS  default 8 (SIGTERM via timeout(1))
+#   FLUX_OPS_WATCH_LOG_KILL_AFTER_SECONDS default 5 (SIGKILL if the read survives)
 #
 set -euo pipefail
 
@@ -43,6 +45,14 @@ FLUX_POSTGREST_POOL_CONTAINER="${FLUX_POSTGREST_POOL_CONTAINER:-flux-postgrest-p
 DISK_ALERT_PERCENT="${FLUX_OPS_WATCH_DISK_ALERT_PERCENT:-90}"
 LOG_MINUTES="${FLUX_OPS_WATCH_LOG_MINUTES:-15}"
 LOG_CONTAINERS="${FLUX_OPS_WATCH_LOG_CONTAINERS:-flux-web,flux-gateway,flux-node-gateway,flux-postgres-v2}"
+LOG_TIMEOUT_SECONDS="${FLUX_OPS_WATCH_LOG_TIMEOUT_SECONDS:-8}"
+LOG_KILL_AFTER_SECONDS="${FLUX_OPS_WATCH_LOG_KILL_AFTER_SECONDS:-5}"
+# Single-quoted so grep sees \b (word boundary). A doubled backslash matches
+# a literal backslash and never catches "fatal" or "panic".
+LOG_FATAL_RE='\bfatal\b'
+LOG_PANIC_RE='\bpanic(ked)?\b'
+LOG_OOM_RE='oom[- ]?(killed|killer)?|out of memory'
+LOG_SCAN_RE="${LOG_FATAL_RE}|${LOG_PANIC_RE}|${LOG_OOM_RE}"
 
 JSON=0
 FINDINGS=()
@@ -180,25 +190,32 @@ watch_disk() {
 }
 
 watch_logs() {
+  if ! command -v timeout >/dev/null 2>&1; then
+    emit "log:timeout-missing" "timeout(1) is required so docker logs cannot hang"
+    return
+  fi
   local IFS=,
-  local name
+  local name hits
   for name in $LOG_CONTAINERS; do
     name="${name#"${name%%[![:space:]]*}"}"
     name="${name%"${name##*[![:space:]]}"}"
     [[ -z "$name" ]] && continue
     container_running "$name" || continue
-    local hits
-    hits="$(docker logs --since "${LOG_MINUTES}m" --tail 200 "$name" 2>&1 \
-      | grep -Ei '\\bfatal\\b|\\bpanic(ked)?\\b|oom[- ]?(killed|killer)?|out of memory' \
+    hits=""
+    # timeout -k: SIGTERM at LOG_TIMEOUT_SECONDS, SIGKILL if the read is still alive.
+    # Applies to docker logs only (not the grep on the right of the pipe).
+    hits="$(timeout -k "${LOG_KILL_AFTER_SECONDS}" "${LOG_TIMEOUT_SECONDS}" \
+      docker logs --since "${LOG_MINUTES}m" --tail 200 "$name" 2>&1 \
+      | grep -Ei "$LOG_SCAN_RE" \
       || true)"
     [[ -z "$hits" ]] && continue
-    if echo "$hits" | grep -Eiq 'oom[- ]?(killed|killer)?|out of memory'; then
+    if echo "$hits" | grep -Eiq "$LOG_OOM_RE"; then
       emit "log:oom:${name}" "${name} log matched oom"
     fi
-    if echo "$hits" | grep -Eiq '\\bfatal\\b'; then
+    if echo "$hits" | grep -Eiq "$LOG_FATAL_RE"; then
       emit "log:fatal:${name}" "${name} log matched fatal"
     fi
-    if echo "$hits" | grep -Eiq '\\bpanic(ked)?\\b'; then
+    if echo "$hits" | grep -Eiq "$LOG_PANIC_RE"; then
       emit "log:panic:${name}" "${name} log matched panic"
     fi
   done
@@ -273,7 +290,7 @@ main() {
   done
   if [[ "$remote" == "1" ]]; then
     ssh -o BatchMode=yes -o ConnectTimeout=15 "$FLUX_SYNC_REMOTE" \
-      "FLUX_REMOTE_REPO_ROOT='$FLUX_REMOTE_REPO_ROOT' FLUX_OPS_WATCH_DISK_ALERT_PERCENT='$DISK_ALERT_PERCENT' FLUX_OPS_WATCH_LOG_MINUTES='$LOG_MINUTES' FLUX_OPS_WATCH_LOG_CONTAINERS='$LOG_CONTAINERS' bash -s -- ${JSON:+--json}" <"$0"
+      "FLUX_REMOTE_REPO_ROOT='$FLUX_REMOTE_REPO_ROOT' FLUX_OPS_WATCH_DISK_ALERT_PERCENT='$DISK_ALERT_PERCENT' FLUX_OPS_WATCH_LOG_MINUTES='$LOG_MINUTES' FLUX_OPS_WATCH_LOG_CONTAINERS='$LOG_CONTAINERS' FLUX_OPS_WATCH_LOG_TIMEOUT_SECONDS='$LOG_TIMEOUT_SECONDS' FLUX_OPS_WATCH_LOG_KILL_AFTER_SECONDS='$LOG_KILL_AFTER_SECONDS' bash -s -- ${JSON:+--json}" <"$0"
     exit $?
   fi
   run_watch

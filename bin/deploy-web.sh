@@ -31,6 +31,9 @@ cd "$REPO_ROOT"
 COMPOSE="docker compose -f docker/web/docker-compose.yml"
 # Must match `container_name` in docker/web/docker-compose.yml
 CONTAINER_NAME="flux-web"
+# `up` is limited to this service. The web compose file does not define the v2
+# data plane, and this script must not run docker/v2-shared/docker-compose.yml.
+# An unscoped `up` on that file recreates flux-postgres-v2 when its config changes.
 GATEWAY_NAME="${FLUX_GATEWAY_CONTAINER_NAME:-flux-gateway}"
 CHECK_HOST="${FLUX_DEPLOY_CHECK_HOST:-flux.vsl-base.com}"
 CANARY_NAME="${FLUX_WEB_CANARY_NAME:-flux-web-canary}"
@@ -195,7 +198,7 @@ web_candidate_probe() {
 # 2–4. Build (unless restart-only), cycle, prune
 if [[ "${FLUX_DEPLOY_RESTART_ONLY:-}" == "1" ]]; then
   echo "--- Flux ${FLUX_WEB_TAG}: Cycling container (no image build) ---"
-  $COMPOSE up -d --remove-orphans --no-build
+  $COMPOSE up -d --remove-orphans --no-build "$CONTAINER_NAME"
 else
   echo "--- Flux ${FLUX_WEB_TAG}: Building control plane ($CONTAINER_NAME) ---"
   $COMPOSE build --pull
@@ -208,7 +211,7 @@ else
     && echo "  tagged: flux-web:${EXPECTED_SHA:0:12}"
 
   echo "--- Flux ${FLUX_WEB_TAG}: Cycling container ---"
-  $COMPOSE up -d --remove-orphans
+  $COMPOSE up -d --remove-orphans "$CONTAINER_NAME"
 
   echo "--- Flux ${FLUX_WEB_TAG}: Pruning dangling images ---"
   docker image prune -f

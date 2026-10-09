@@ -4,9 +4,28 @@ import { getDb, initSystemDb } from "@/src/lib/db";
 import { getProjectManager } from "@/src/lib/flux";
 import type { FluxCatalogProjectMode } from "@flux/core";
 import {
+  isArchivedProjectLifecycle,
   probeTenantApiUrl,
   probeV2SharedCatalogProject,
 } from "@/src/lib/tenant-api-probe";
+
+export type FleetHttpProbeAction = "skip-archived" | "record-stopped" | "probe";
+
+/**
+ * Archived projects are not probed. The node gateway answers them with 503,
+ * and a dedicated stack that is frozen should not be polled either.
+ * Dormant projects are still probed. v1 stacks Docker reports as stopped are
+ * recorded without HTTP.
+ */
+export function fleetHttpProbeAction(input: {
+  lifecycleState: string | null | undefined;
+  mode: "v1_dedicated" | "v2_shared" | null | undefined;
+  stopped: boolean;
+}): FleetHttpProbeAction {
+  if (isArchivedProjectLifecycle(input.lifecycleState)) return "skip-archived";
+  if (input.mode !== "v2_shared" && input.stopped) return "record-stopped";
+  return "probe";
+}
 
 function catalogProbeMode(
   mode: "v1_dedicated" | "v2_shared" | null | undefined,
@@ -123,6 +142,7 @@ export async function probeSingleProject(projectId: string): Promise<void> {
       hash: projects.hash,
       mode: projects.mode,
       jwtSecret: projects.jwtSecret,
+      lifecycleState: projects.lifecycleState,
     })
     .from(projects)
     .where(eq(projects.id, projectId))
@@ -134,12 +154,23 @@ export async function probeSingleProject(projectId: string): Promise<void> {
   const isProd = process.env.NODE_ENV === "production";
   const now = new Date();
 
+  if (
+    fleetHttpProbeAction({
+      lifecycleState: row.lifecycleState,
+      mode: row.mode,
+      stopped: false,
+    }) === "skip-archived"
+  ) {
+    return;
+  }
+
   if (row.mode === "v2_shared") {
     const ok = await probeV2SharedCatalogProject({
       slug: row.slug,
       hash: row.hash,
       isProduction: isProd,
       jwtSecret: row.jwtSecret,
+      lifecycleState: row.lifecycleState,
     });
     const status = ok ? "running" : "error";
     await db
@@ -175,6 +206,7 @@ export async function probeSingleProject(projectId: string): Promise<void> {
     row.hash,
     isProd,
     catalogProbeMode(row.mode),
+    { lifecycleState: row.lifecycleState },
   );
   const status = ok ? "running" : "error";
   await db
@@ -203,12 +235,15 @@ export async function runFleetMonitorTick(): Promise<void> {
       hash: projects.hash,
       mode: projects.mode,
       jwtSecret: projects.jwtSecret,
+      lifecycleState: projects.lifecycleState,
     })
     .from(projects);
   if (rows.length > 0) {
     const isProd = process.env.NODE_ENV === "production";
     const pm = getProjectManager();
-    const v1Rows = rows.filter((r) => r.mode !== "v2_shared");
+    const v1Rows = rows.filter(
+      (r) => r.mode !== "v2_shared" && !isArchivedProjectLifecycle(r.lifecycleState),
+    );
     let bySlugHash = new Map<
       string,
       Awaited<ReturnType<typeof pm.getProjectSummariesForSlugs>>[number]
@@ -225,6 +260,14 @@ export async function runFleetMonitorTick(): Promise<void> {
     const now = new Date();
     await Promise.all(
       rows.map(async (row) => {
+        const stopped = bySlugHash.get(`${row.slug}\0${row.hash}`)?.status === "stopped";
+        const action = fleetHttpProbeAction({
+          lifecycleState: row.lifecycleState,
+          mode: row.mode,
+          stopped,
+        });
+        if (action === "skip-archived") return;
+
         if (row.mode === "v2_shared") {
           const preCheck = resolveV2SharedFleetHealthStatus({
             jwtSecret: row.jwtSecret,
@@ -250,6 +293,7 @@ export async function runFleetMonitorTick(): Promise<void> {
             hash: row.hash,
             isProduction: isProd,
             jwtSecret: row.jwtSecret,
+            lifecycleState: row.lifecycleState,
           });
           const status = resolveV2SharedFleetHealthStatus({
             jwtSecret: row.jwtSecret,
@@ -270,8 +314,7 @@ export async function runFleetMonitorTick(): Promise<void> {
           return;
         }
 
-        const s = bySlugHash.get(`${row.slug}\0${row.hash}`);
-        if (s?.status === "stopped") {
+        if (action === "record-stopped") {
           await db
             .update(projects)
             .set({ healthStatus: "stopped", lastHeartbeatAt: now })
@@ -288,6 +331,7 @@ export async function runFleetMonitorTick(): Promise<void> {
           row.hash,
           isProd,
           catalogProbeMode(row.mode),
+          { lifecycleState: row.lifecycleState },
         );
         const status = ok ? "running" : "error";
         await db

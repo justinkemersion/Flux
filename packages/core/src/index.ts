@@ -123,7 +123,7 @@ export {
   fluxTenantMemoryLimitBytes,
 } from "./docker/docker-resources.ts";
 
-export { tenantVolumeName } from "./docker/docker-names.ts";
+export { postgrestContainerName, tenantVolumeName } from "./docker/docker-names.ts";
 
 export {
   BOOTSTRAP_SQL,

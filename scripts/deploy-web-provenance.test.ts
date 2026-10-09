@@ -169,6 +169,18 @@ test("the candidate is isolated from production state and never routed", () => {
   assert.match(run, /-p "127\.0\.0\.1:\$\{CANARY_PORT\}:3000"/u, "loopback-only publish");
 });
 
+test("web deploy cycles only flux-web and does not compose the v2 data plane", () => {
+  const source = execFileSync("cat", [deployScript], { encoding: "utf8" });
+  const code = source
+    .split("\n")
+    .filter((l) => !/^\s*#/u.test(l))
+    .join("\n");
+  assert.match(code, /\$COMPOSE up -d --remove-orphans --no-build "\$CONTAINER_NAME"/u);
+  assert.match(code, /\$COMPOSE up -d --remove-orphans "\$CONTAINER_NAME"/u);
+  assert.equal(code.includes("docker/v2-shared/docker-compose.yml"), false);
+  assert.equal(code.includes("deploy-v2-shared.sh"), false);
+});
+
 test("the script verifies provenance over HTTP, never by image or file timestamps", () => {
   const source = execFileSync("cat", [deployScript], { encoding: "utf8" });
   assert.match(source, /api\/health/u);

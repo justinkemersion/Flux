@@ -1,6 +1,49 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveV2SharedFleetHealthStatus } from "./fleet-monitor.ts";
+import { fleetHttpProbeAction, resolveV2SharedFleetHealthStatus } from "./fleet-monitor.ts";
+
+test("fleet probe skips archived projects and still probes dormant ones", () => {
+  assert.equal(
+    fleetHttpProbeAction({
+      lifecycleState: "archived",
+      mode: "v2_shared",
+      stopped: false,
+    }),
+    "skip-archived",
+  );
+  assert.equal(
+    fleetHttpProbeAction({
+      lifecycleState: "archived",
+      mode: "v1_dedicated",
+      stopped: false,
+    }),
+    "skip-archived",
+  );
+  assert.equal(
+    fleetHttpProbeAction({
+      lifecycleState: "dormant",
+      mode: "v2_shared",
+      stopped: false,
+    }),
+    "probe",
+  );
+  assert.equal(
+    fleetHttpProbeAction({
+      lifecycleState: "active",
+      mode: "v1_dedicated",
+      stopped: true,
+    }),
+    "record-stopped",
+  );
+  assert.equal(
+    fleetHttpProbeAction({
+      lifecycleState: "active",
+      mode: "v1_dedicated",
+      stopped: false,
+    }),
+    "probe",
+  );
+});
 
 test("resolveV2SharedFleetHealthStatus returns incomplete without jwt_secret", () => {
   assert.equal(

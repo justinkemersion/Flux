@@ -43,7 +43,7 @@ For pooled projects, the control plane renders exact `Host(...)` routers into Tr
 
 ## Example
 
-Dashboard fleet checks (`FLUX_TENANT_PROBE_GATEWAY_URL`) call the tenant API through the gateway with the public tenant `Host`. That mesh probe is separate from gateway `GET /health` (liveness) and `GET /health/deep` (system-database readiness). See `docs/OPERATOR-GATEWAY-HEALTH.md`.
+v2 dashboard fleet checks (`FLUX_TENANT_PROBE_GATEWAY_URL`) call the tenant API through the gateway with the public tenant `Host`. Dedicated fleet checks call that project's PostgREST container, then the public origin, on `/`. Archived projects are not probed. That mesh probe is separate from gateway `GET /health` (liveness) and `GET /health/deep` (system-database readiness). See `docs/OPERATOR-GATEWAY-HEALTH.md`.
 
 ## Next steps
 
