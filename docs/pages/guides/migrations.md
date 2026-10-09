@@ -107,6 +107,8 @@ flux migrations list              # show flux.flux_migrations for the project
 
 **`--dry-run`** builds the same plan, fails on checksum conflicts or oversized files, and applies nothing—useful in CI before a real push.
 
+A single-file **`--plan`** or **`--dry-run`** prints the mode an apply would use and does not read the ledger. With no **`--mode`**, a file under **`migrations/`**, **`flux/migrations/`**, or **`sql/migrations/`** is **versioned**: the preview names the basename and checksum prefix that would be recorded in **`flux.flux_migrations`**, and it says the ledger was not checked. **`--mode versioned`** prints that same preview. **raw** is not recorded. **repeatable** names the script id in **`flux.flux_repeatable_scripts`**.
+
 **`flux migrations list`** reads the remote ledger only (not your local folder). For full flag detail (directory vs file, `--plan` vs `--dry-run`), run **`flux push --help`** and **`flux migrations --help`** on your installed CLI.
 
 **`flux migrations`** is the SQL ledger inspector—not **`flux migrate`** (engine conversion from v2 shared to v1 dedicated).

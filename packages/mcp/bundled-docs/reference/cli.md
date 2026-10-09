@@ -26,7 +26,7 @@ Exact flags evolve—**`flux --help`** and subcommand help are authoritative for
 | `flux init` | Link or create a project from repo-root `flux.json` (Foundry placeholder hash) |
 | `flux create` | Provision a project |
 | `flux list` | Show projects and Service URLs |
-| `flux push` | Apply a `.sql` file or ordered **`migrations/`** directory—**`--mode raw\|versioned\|repeatable`**, **`--force`** (repeatable), **`--plan`** / **`--dry-run`** preview directory pushes; pass **`--project`** / **`--hash`** (or **`flux.json`**) |
+| `flux push` | Apply a `.sql` file or ordered **`migrations/`** directory—**`--mode raw\|versioned\|repeatable`**, **`--force`** (repeatable), **`--plan`** / **`--dry-run`** (directory plan, or single-file mode preview that does not read the ledger); pass **`--project`** / **`--hash`** (or **`flux.json`**) |
 | `flux migrations list` | Show **`flux.flux_migrations`** ledger (remote state, not local files). **`flux migrations`** ≠ **`flux migrate`** (engine conversion) |
 | `flux project credentials` | **v1 dedicated** → structured Postgres block (user, password, host, port, connection URL) plus anon/service JWT keys. **v2_shared** → gateway JWT secret and a short note. Use **`--field postgres.password`** (v1) for paste-friendly password-only output |
 | `flux db password` | **v1 dedicated** → print only the Postgres password. **v2_shared** → explains temporary tunnel credentials (never pooled admin secrets) |
