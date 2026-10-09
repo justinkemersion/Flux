@@ -14,6 +14,7 @@ import {
 import {
   purgeBackupArtifacts,
   sweepProjectBackupRetention,
+  sweepRetentionBatch,
   type BackupRow,
 } from "./project-backups.js";
 
@@ -364,6 +365,159 @@ test("retention removes failed and restore_failed files once a newer verified ba
     { code: "ENOENT" },
   );
   await access(storage.localPathForBackup(PROJECT_ID, newerFailed), constants.F_OK);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("hourly retention sweep cleans a project past the first 10", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "flux-retention-batch-"));
+  const deletedIds: string[] = [];
+  const swept: string[] = [];
+  const foundryId = "00000000-0000-4000-8000-000000000010";
+  const holdId = "00000000-0000-4000-8000-000000000011";
+  const oldFailed = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1";
+  const oldRestoreFailed = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2";
+  const newestFailed = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3";
+  const heldFailed = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4";
+  const storage = mockStorage({
+    localRoot: dir,
+    usesR2: true,
+    deleteOffsite: async () => undefined,
+  });
+
+  function catalogProject(
+    index: number,
+    slug: string,
+    userId = "user-1",
+  ) {
+    return {
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      slug,
+      userId,
+      backupIntervalDays: 7,
+      backupRetentionCount: 4,
+      backupRetentionDays: 30,
+    };
+  }
+
+  const early = Array.from({ length: 10 }, (_, index) =>
+    catalogProject(index, `early-${String(index)}`),
+  );
+  const foundry = catalogProject(10, "flux-app-foundry");
+  const hold = catalogProject(11, "late-hold");
+  const excluded = catalogProject(99, "flux-system", "system");
+  assert.equal(foundry.id, foundryId);
+  assert.equal(hold.id, holdId);
+
+  const foundryRows = [
+    fakeRow({
+      id: oldFailed,
+      projectId: foundryId,
+      status: "failed",
+      artifactValidationStatus: "skipped",
+      restoreVerificationStatus: "skipped",
+      createdAt: daysAgo(20),
+      offsiteKey: null,
+      offsiteStatus: "failed",
+    }),
+    fakeRow({
+      id: oldRestoreFailed,
+      projectId: foundryId,
+      status: "complete",
+      restoreVerificationStatus: "restore_failed",
+      createdAt: daysAgo(40),
+      offsiteKey: null,
+      offsiteStatus: "pending",
+    }),
+    fakeRow({
+      id: newestFailed,
+      projectId: foundryId,
+      status: "failed",
+      artifactValidationStatus: "skipped",
+      restoreVerificationStatus: "skipped",
+      createdAt: daysAgo(0),
+      offsiteKey: null,
+      offsiteStatus: "failed",
+    }),
+    fakeRow({
+      id: "verified-new",
+      projectId: foundryId,
+      createdAt: daysAgo(1),
+      restoreVerificationAt: daysAgo(1),
+      offsiteKey: null,
+      offsiteStatus: "pending",
+    }),
+  ];
+  const holdRows = [
+    fakeRow({
+      id: heldFailed,
+      projectId: holdId,
+      status: "failed",
+      artifactValidationStatus: "skipped",
+      restoreVerificationStatus: "skipped",
+      createdAt: daysAgo(30),
+      offsiteKey: null,
+      offsiteStatus: "failed",
+    }),
+  ];
+  const rowsByProject = new Map<string, BackupRow[]>([
+    [foundryId, foundryRows],
+    [holdId, holdRows],
+  ]);
+
+  await mkdir(path.join(dir, foundryId), { recursive: true });
+  await mkdir(path.join(dir, holdId), { recursive: true });
+  for (const id of [oldFailed, oldRestoreFailed, newestFailed]) {
+    await writeFile(storage.localPathForBackup(foundryId, id), "dump");
+  }
+  await writeFile(storage.localPathForBackup(holdId, heldFailed), "dump");
+
+  await withEnv(
+    {
+      FLUX_MIN_BACKUP_EXCLUDE_SLUGS: undefined,
+      FLUX_MIN_BACKUP_EXCLUDE_USER_IDS: undefined,
+      FLUX_DEMO_USER_ID: undefined,
+    },
+    async () => {
+      const deleted = await sweepRetentionBatch({
+        // Unordered, with the eligible project after the first 10 non-excluded rows.
+        listProjects: async () => [excluded, ...early, foundry, hold],
+        sweepProject: async (project) => {
+          swept.push(project.slug);
+          const rows = rowsByProject.get(project.id);
+          if (!rows) return 0;
+          return sweepProjectBackupRetention(project, {
+            storage,
+            listRows: async () => rows,
+            deleteCatalogRow: async (id) => {
+              deletedIds.push(id);
+            },
+          });
+        },
+      });
+
+      assert.equal(deleted, 2);
+      assert.deepEqual(deletedIds.sort(), [oldFailed, oldRestoreFailed].sort());
+      assert.equal(swept.includes("flux-system"), false);
+      assert.equal(swept.includes("flux-app-foundry"), true);
+      assert.equal(swept.includes("late-hold"), true);
+      assert.equal(swept.length, early.length + 2);
+      for (const project of early) {
+        assert.equal(swept.includes(project.slug), true);
+      }
+    },
+  );
+
+  await assert.rejects(
+    () => access(storage.localPathForBackup(foundryId, oldFailed), constants.F_OK),
+    { code: "ENOENT" },
+  );
+  await assert.rejects(
+    () =>
+      access(storage.localPathForBackup(foundryId, oldRestoreFailed), constants.F_OK),
+    { code: "ENOENT" },
+  );
+  await access(storage.localPathForBackup(foundryId, newestFailed), constants.F_OK);
+  await access(storage.localPathForBackup(holdId, heldFailed), constants.F_OK);
   await rm(dir, { recursive: true, force: true });
 });
 
